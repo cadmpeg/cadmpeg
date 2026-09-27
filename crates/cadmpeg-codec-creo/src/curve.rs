@@ -6624,9 +6624,14 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
 }
 
 /// Validate FC05 point lanes against their exact circle identity.
-pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
+pub(crate) fn fc05_circles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &[CurveParameterRecord],
+) -> Result<Vec<Fc05Circle>, cadmpeg_core::CodecError> {
     let mut circles = Vec::new();
-    for record in uniquely_bounded_parameter_records(parameters) {
+    for record in
+        crate::identity::uniquely_identified_rows_checked(ctx, parameters, |record| record.curve_id)?
+    {
         if record.body.get(..2) != Some(&[0xfc, 0x05]) {
             continue;
         }
@@ -6659,6 +6664,7 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
             let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
                 break;
             };
+            ctx.try_reserve_items(&mut points, 1, "creo fc05 point rows")?;
             points.push((x, z, parameter, ordinate));
             cursor = next;
         }
@@ -6709,11 +6715,10 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
         if ![center_x, center_z, radius].into_iter().all(f64::is_finite) || radius <= 0.0 {
             continue;
         }
-        let residuals = points
+        let max_residual = points
             .iter()
             .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
-            .collect::<Vec<_>>();
-        let max_residual = residuals.iter().copied().fold(0.0, f64::max);
+            .fold(0.0, f64::max);
         if max_residual > EPS_CIRCLE_RESIDUAL * radius {
             continue;
         }
@@ -6763,6 +6768,7 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
         else {
             continue;
         };
+        ctx.try_reserve_items(&mut circles, 1, "creo fc05 circles")?;
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],
@@ -6776,7 +6782,7 @@ pub(crate) fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circl
         });
     }
     circles.sort_by_key(|circle| circle.offset);
-    circles
+    Ok(circles)
 }
 
 /// Bind validated `fc 05` circles to typed cylinder/plane face pairs and retain
