@@ -2,6 +2,7 @@
 //! Sketch text, points, curves, surfaces and NURBS poles.
 
 use super::references::DesignClassTag;
+use super::serde_column::SliceColumn;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1231,8 +1232,8 @@ pub(crate) struct SketchCurveIdentity {
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchSurfaceWire", into = "SketchSurfaceWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchSurfaceWire")]
 pub(crate) struct SketchSurface {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -1250,6 +1251,81 @@ pub(crate) struct SketchSurface {
     pub(crate) persistent_id: std::num::NonZeroU64,
     /// Admitted tensor-product geometry.
     pub(crate) geometry: SketchSurfaceGeometry,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_SURFACE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchSurface {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            geometry: self.geometry.clone(),
+        }
+    }
+}
+
+struct SurfaceControlRow<'a>(&'a [FinitePoint3]);
+
+impl Serialize for SurfaceControlRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|point| point.get()))
+    }
+}
+
+struct SurfaceControlGrid<'a>(&'a [Vec<FinitePoint3>]);
+
+impl Serialize for SurfaceControlGrid<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| SurfaceControlRow(row)))
+    }
+}
+
+impl Serialize for SketchSurface {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_reference: Option<u32>,
+            class_tag: &'a DesignClassTag,
+            byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            persistent_id: std::num::NonZeroU64,
+            u_degree: u32,
+            v_degree: u32,
+            u_knots: SliceColumn<'a, FiniteReal, f64>,
+            v_knots: SliceColumn<'a, FiniteReal, f64>,
+            control_points: SurfaceControlGrid<'a>,
+        }
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: &self.class_tag,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            u_degree: self.geometry.u_degree.get(),
+            v_degree: self.geometry.v_degree.get(),
+            u_knots: SliceColumn::new(&self.geometry.u_knots, |knot| knot.get()),
+            v_knots: SliceColumn::new(&self.geometry.v_knots, |knot| knot.get()),
+            control_points: SurfaceControlGrid(&self.geometry.control_points),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Positive degrees, ordered knots, and a finite rectangular control grid.
@@ -1391,6 +1467,7 @@ impl TryFrom<SketchSurfaceWire> for SketchSurface {
     }
 }
 
+#[cfg(test)]
 impl From<SketchSurface> for SketchSurfaceWire {
     fn from(surface: SketchSurface) -> Self {
         Self {
@@ -1996,6 +2073,36 @@ mod tests {
         assert_eq!(
             serde_json::to_value(surface).expect("serialize surface"),
             wire
+        );
+    }
+
+    #[test]
+    fn sketch_surface_borrowed_wire_matches_owned_wire_bytes() {
+        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let owned = super::SketchSurfaceWire::from(surface.clone());
+        assert_eq!(
+            serde_json::to_vec(&surface).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+
+    #[test]
+    fn sketch_surface_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchSurface,
+        }
+        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-surface#0",
+            value: &surface,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_surfaces",
+            || super::SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_SURFACE_CLONE_COUNT.with(std::cell::Cell::get),
         );
     }
 
