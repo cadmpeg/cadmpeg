@@ -4,6 +4,7 @@
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
+use super::serde_column::SliceColumn;
 use super::sketch_relations::{
     constraint_kinds_from_state, SketchConstraintKind, SKETCH_CONSTRAINT_MASK,
 };
@@ -543,11 +544,8 @@ fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(
 }
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionAnnotationFrameWire",
-    into = "DesignDimensionAnnotationFrameWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignDimensionAnnotationFrameWire")]
 pub(crate) struct DesignDimensionAnnotationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -578,6 +576,34 @@ pub(crate) struct DesignDimensionAnnotationFrame {
     paired_class_tag: DesignClassTag,
     /// Numeric design-entity suffix of the owning sketch.
     pub(crate) owner_reference: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_ANNOTATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignDimensionAnnotationFrame {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        DIMENSION_ANNOTATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: self.operands.clone(),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: self.annotation_bytes.clone(),
+            governing_owner_record_index: self.governing_owner_record_index,
+            return_members: self.return_members.clone(),
+            paired_class_tag: self.paired_class_tag.clone(),
+            owner_reference: self.owner_reference,
+        }
+    }
 }
 
 /// Nullable annotation geometry and its dimension role.
@@ -765,6 +791,7 @@ impl DesignDimensionAnnotationFrame {
     }
 
     /// Recover the payload with its derived offsets.
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignDimensionAnnotationFrameDraft {
         let annotation_byte_offset = self.annotation_byte_offset();
         let governing_owner_reference_offset = self.governing_owner_reference_offset();
@@ -859,6 +886,91 @@ struct DesignDimensionAnnotationFrameWire {
     owner_reference_offset: u64,
 }
 
+struct AnnotationOperands<'a>(&'a DesignDimensionAnnotationFrame);
+
+impl Serialize for AnnotationOperands<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .operands
+                .iter()
+                .enumerate()
+                .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
+                    geometry_record_index: operand.geometry_record_index,
+                    geometry_reference_offset: self.0.byte_offset + 25 + ordinal as u64 * 15,
+                    role: operand.role,
+                    role_offset: self.0.byte_offset + 35 + ordinal as u64 * 15,
+                }),
+        )
+    }
+}
+
+struct AnnotationReturnOffsets<'a>(&'a DesignDimensionAnnotationFrame);
+
+impl Serialize for AnnotationReturnOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let start = self.0.governing_owner_reference_offset() + 15;
+        serializer.collect_seq(
+            self.0
+                .return_members
+                .iter()
+                .enumerate()
+                .map(|(ordinal, _)| start + ordinal as u64 * 11),
+        )
+    }
+}
+
+#[derive(Serialize)]
+struct DesignDimensionAnnotationFrameWireRef<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    companion_record_index: Option<u32>,
+    governing_companion_record_index: u32,
+    byte_offset: u64,
+    class_tag: &'a str,
+    record_index: u32,
+    frame_length: u64,
+    operands: AnnotationOperands<'a>,
+    entity_genesis: u64,
+    annotation_bytes: &'a [u8],
+    annotation_byte_offset: u64,
+    governing_owner_record_index: u32,
+    governing_owner_reference_offset: u64,
+    return_members: SliceColumn<'a, NonZeroU32, u32>,
+    return_member_offsets: AnnotationReturnOffsets<'a>,
+    paired_class_tag: &'a str,
+    paired_byte_offset: u64,
+    owner_reference: u32,
+    owner_reference_offset: u64,
+}
+
+impl Serialize for DesignDimensionAnnotationFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignDimensionAnnotationFrameWireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: AnnotationOperands(self),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: &self.annotation_bytes,
+            annotation_byte_offset: self.annotation_byte_offset(),
+            governing_owner_record_index: self.governing_owner_record_index,
+            governing_owner_reference_offset: self.governing_owner_reference_offset(),
+            return_members: SliceColumn::new(&self.return_members, |member| member.get()),
+            return_member_offsets: AnnotationReturnOffsets(self),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFrame {
     type Error = String;
     fn try_from(wire: DesignDimensionAnnotationFrameWire) -> Result<Self, Self::Error> {
@@ -897,6 +1009,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
         let value = value.into_draft();
