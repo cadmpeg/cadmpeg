@@ -843,17 +843,20 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     ];
     assert!(feature_result_edge_ids(&duplicate_curve_rows, 97).is_none());
     assert_eq!(
-        feature_result_surface_ids(std::slice::from_ref(&table), &rows, 97),
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, std::slice::from_ref(&table), &rows, 97))
+            .expect("service profile admits the result surfaces"),
         Some(vec![98, 145])
     );
     assert_eq!(
-        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(ctx, std::slice::from_ref(&table), &rows, &curve_rows, 97))
+            .expect("service profile admits the result topology")
             .expect("complete result topology")
             .faces(),
         vec!["surface#98", "surface#145"]
     );
     assert_eq!(
-        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
+        crate::decode::with_test_decode_ctx(|ctx| feature_result_topology(ctx, std::slice::from_ref(&table), &rows, &curve_rows, 97))
+            .expect("service profile admits the result topology")
             .expect("complete result topology")
             .edges(),
         vec!["curve#77"]
@@ -863,12 +866,14 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     let extra = entry(98, 204, None);
     duplicate.entries.push(extra);
     duplicate.mark_surface_id(98);
-    assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[duplicate], &rows, 97))
+        .expect("service profile admits the duplicate check").is_none());
 
     let mut missing = table;
     missing.entries[1] = entry(146, 203, None);
     missing.mark_surface_id(146);
-    assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[missing], &rows, 97))
+        .expect("service profile admits the missing-row check").is_none());
 
     let foreign = crate::feature::entity::FeatureEntityTable::new(
         97,
@@ -878,7 +883,8 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         0,
     )
     .with_surface_ids([145]);
-    assert!(feature_result_surface_ids(&[foreign], &[row(145, 144)], 97).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| feature_result_surface_ids(ctx, &[foreign], &[row(145, 144)], 97))
+        .expect("service profile admits the foreign-row check").is_none());
 }
 
 #[test]
