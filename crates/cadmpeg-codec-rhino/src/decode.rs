@@ -1691,6 +1691,7 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let feature = match crate::morph::project(
+            self.expand.ctx(),
             &morph,
             key.as_str(),
             (!identity.name.is_empty()).then(|| identity.name.clone()),
