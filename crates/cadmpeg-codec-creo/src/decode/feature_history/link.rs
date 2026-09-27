@@ -6,6 +6,8 @@ use super::super::uniqueness::{
     exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use crate::container::ContainerScan;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -268,53 +270,66 @@ pub(in super::super) fn analytic_surface_id_for_feature(
 }
 
 pub(in super::super) fn ordered_family_surface_bindings_for_feature(
+    ctx: &DecodeContext<'_>,
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
     order: &crate::feature::definitions::FeatureOrderTable,
     external_ids: impl IntoIterator<Item = u32>,
     expected_kind: crate::surface::SurfaceKind,
-) -> BTreeMap<u32, u32> {
+) -> Result<BTreeMap<u32, u32>, CodecError> {
     let mut bindings = BTreeMap::new();
     let mut bound_surfaces = BTreeSet::new();
     for external_id in external_ids {
         if order.internal_id(external_id).is_none() {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
         let Some(surface_id) = generated_surface_id_for_feature(tables, feature_id, external_id)
         else {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         };
         if !crate::surface::unique_surface_row(surface_rows, surface_id)
             .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
-            || !bound_surfaces.insert(surface_id)
+            || bound_surfaces.contains(&surface_id)
         {
-            return BTreeMap::new();
+            return Ok(BTreeMap::new());
         }
+        ctx.charge_collection_items(1, "creo bound generated surface IDs")?;
+        bound_surfaces.insert(surface_id);
+        ctx.charge_collection_items(1, "creo ordered generated surface bindings")?;
         bindings.insert(external_id, surface_id);
     }
-    bindings
+    Ok(bindings)
 }
 
 pub(in super::super) fn profile_segment_ids(
+    ctx: &DecodeContext<'_>,
     definition_id: u32,
     segments: &[&crate::feature::definitions::FeatureSegment],
     profiles: &[Vec<SketchEntityUse>],
-) -> BTreeSet<u32> {
-    segments
-        .iter()
-        .filter(|segment| {
-            let entity_id = format!(
-                "creo:featdefs:sketch_entity#{definition_id}:{}",
-                segment.external_id
-            );
-            profiles
-                .iter()
-                .flatten()
-                .any(|entity_use| entity_use.entity.as_str() == entity_id)
-        })
-        .map(|segment| segment.external_id)
-        .collect()
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut ids = BTreeSet::new();
+    for segment in segments {
+        let matches = profiles.iter().flatten().any(|entity_use| {
+            let Some(suffix) = entity_use
+                .entity
+                .as_str()
+                .strip_prefix("creo:featdefs:sketch_entity#")
+            else {
+                return false;
+            };
+            let Some((scope, external)) = suffix.split_once(':') else {
+                return false;
+            };
+            crate::identity::matches_numbered_identity(scope, "", definition_id)
+                && crate::identity::matches_numbered_identity(external, "", segment.external_id)
+        });
+        if matches && !ids.contains(&segment.external_id) {
+            ctx.charge_collection_items(1, "creo profile segment ID nodes")?;
+            ids.insert(segment.external_id);
+        }
+    }
+    Ok(ids)
 }
 
 #[cfg(test)]

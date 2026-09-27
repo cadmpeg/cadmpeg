@@ -230,14 +230,16 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         Some(43)
     );
     assert_eq!(
-        ordered_family_surface_bindings_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_family_surface_bindings_for_feature(
+            ctx,
             &rows,
             17,
             std::slice::from_ref(&table),
             &order,
             [9],
             crate::surface::SurfaceKind::TorusOrSphere,
-        ),
+        ))
+        .expect("service profile admits one ordered generated surface binding"),
         BTreeMap::from([(9, 43)])
     );
     assert_eq!(

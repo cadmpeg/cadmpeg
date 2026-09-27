@@ -7,7 +7,10 @@ use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
 };
 
-use super::super::link::{link_feature_sketch_history, section_entity_is_generated_profile};
+use super::super::link::{
+    link_feature_sketch_history, ordered_family_surface_bindings_for_feature, profile_segment_ids,
+    section_entity_is_generated_profile,
+};
 
 fn section_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
@@ -214,4 +217,135 @@ fn rowless_generated_profile_rejects_duplicate_entity_ids() {
         &[table],
         &rows,
     ));
+}
+
+fn ordered_binding_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    crate::feature::definitions::FeatureOrderTable,
+    [crate::surface::SurfaceRow; 1],
+) {
+    let table = crate::feature::entity::FeatureEntityTable::new(
+        17,
+        100,
+        vec![crate::feature::entity::FeatureEntityTableEntry {
+            entity_id: 43,
+            payload: crate::feature::entity::entry_payload(200, Some(9), None, None),
+            prefixed: false,
+            offset: 0,
+            end_offset: 0,
+        }],
+        &std::collections::BTreeSet::new(),
+        0,
+    )
+    .with_surface_ids([43]);
+    let order = crate::feature::definitions::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: Some(3),
+        rows: vec![crate::feature::definitions::FeatureOrderRow {
+            external_id: 9,
+            internal_id: 1,
+            bitmask: 0,
+            offset: 0,
+        }],
+        offset: 0,
+    };
+    let rows = [crate::surface::SurfaceRow {
+        id: 43,
+        kind: crate::surface::SurfaceKind::TorusOrSphere,
+        feature_id: 17,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    }];
+    (table, order, rows)
+}
+
+fn ordered_binding_limit_error(limit: u64, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (table, order, rows) = ordered_binding_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = ordered_family_surface_bindings_for_feature(
+        &ctx,
+        &rows,
+        17,
+        &[table],
+        &order,
+        [9],
+        crate::surface::SurfaceKind::TorusOrSphere,
+    )
+    .expect_err("one generated surface binding exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn ordered_generated_surface_ids_refuse_collection_limit() {
+    ordered_binding_limit_error(0, "creo bound generated surface IDs");
+}
+
+#[test]
+fn ordered_generated_surface_bindings_refuse_collection_limit() {
+    ordered_binding_limit_error(1, "creo ordered generated surface bindings");
+}
+
+#[test]
+fn ordered_generated_surface_binding_keeps_identity_under_service_policy() {
+    let (table, order, rows) = ordered_binding_fixture();
+    let bindings = crate::decode::with_test_decode_ctx(|ctx| {
+        ordered_family_surface_bindings_for_feature(
+            ctx,
+            &rows,
+            17,
+            &[table],
+            &order,
+            [9],
+            crate::surface::SurfaceKind::TorusOrSphere,
+        )
+    })
+    .expect("service profile admits generated surface binding");
+    assert_eq!(bindings, BTreeMap::from([(9, 43)]));
+}
+
+#[test]
+fn profile_segment_ids_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let segment = crate::feature::definitions::FeatureSegment {
+        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 9,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let profiles = [vec![cadmpeg_ir::sketches::SketchEntityUse {
+        entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+            "creo:featdefs:sketch_entity#2:9".to_string(),
+        )
+        .expect("profile entity identity"),
+        reversed: false,
+    }]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = profile_segment_ids(&ctx, 2, &[&segment], &profiles)
+        .expect_err("one matched profile ID exceeds the collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo profile segment ID nodes"), "{error:?}");
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| profile_segment_ids(ctx, 2, &[&segment], &profiles))
+            .expect("service profile admits one profile ID"),
+        std::collections::BTreeSet::from([9]),
+    );
 }
