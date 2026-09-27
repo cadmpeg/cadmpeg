@@ -153,14 +153,12 @@ pub(in super::super) fn section_entity_is_generated_profile(
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .filter_map(|table| {
-            let matching = table
-                .entries
-                .iter()
-                .filter(|entry| entry.source_entity_id() == Some(source_entity_id))
-                .collect::<Vec<_>>();
-            let [entry] = matching.as_slice() else {
-                return None;
-            };
+            let entry = exactly_one(
+                table
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.source_entity_id() == Some(source_entity_id)),
+            )?;
             (!table.contains_surface_id(entry.entity_id)
                 && generated_profile_entry_is_admissible(
                     feature_id,
@@ -220,23 +218,11 @@ fn generated_profile_table_shape(table: &crate::feature::entity::FeatureEntityTa
     {
         return false;
     }
-    let entry_ids = table
-        .entries
-        .iter()
-        .map(|entry| entry.entity_id)
-        .collect::<BTreeSet<_>>();
-    let roster = table
-        .surface_ids_iter()
-        .chain(table.non_surface_entity_ids_iter())
-        .collect::<BTreeSet<_>>();
-    table.entries.len() == entry_ids.len()
-        && roster == entry_ids
-        && table
-            .surface_ids_iter()
-            .all(|id| !table.non_surface_entity_ids_iter().any(|candidate| candidate == id))
-        && table.unique_surface_ids().len() == table.surface_ids_iter().count()
-        && table.non_surface_entity_ids_iter().collect::<BTreeSet<_>>().len()
-            == table.non_surface_entity_ids_iter().count()
+    table.entries.iter().enumerate().all(|(index, entry)| {
+        table.entries[..index]
+            .iter()
+            .all(|prior| prior.entity_id != entry.entity_id)
+    })
 }
 
 pub(in super::super) fn section_generated_profile_surface_kinds(
