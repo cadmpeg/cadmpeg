@@ -1218,138 +1218,177 @@ fn insert_homogeneous_pcurve_knot(
     knots: &mut Vec<f64>,
     controls: &mut Vec<[f64; 4]>,
     knot: f64,
-) -> Option<()> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<()>, CodecError> {
     let count = controls.len();
-    let span = knots
+    let Some(span) = knots
         .windows(2)
-        .position(|pair| pair[0] <= knot && knot < pair[1])?;
+        .position(|pair| pair[0] <= knot && knot < pair[1]) else {
+        return Ok(None);
+    };
     let multiplicity = knots.iter().filter(|candidate| **candidate == knot).count();
     if multiplicity >= degree {
-        return Some(());
+        return Ok(Some(()));
     }
-    let left_end = span.checked_sub(degree)?;
-    let tail_start = span.checked_sub(multiplicity)?;
-    let mut inserted = (0..count.checked_add(1)?)
-        .map(|_| [0.0; 4])
-        .collect::<Vec<_>>();
+    let Some((left_end, tail_start, inserted_count)) = span
+        .checked_sub(degree)
+        .zip(span.checked_sub(multiplicity))
+        .zip(count.checked_add(1))
+        .map(|((left_end, tail_start), count)| (left_end, tail_start, count)) else {
+        return Ok(None);
+    };
+    let mut inserted = reserve_vec(ctx, inserted_count, "iges pcurve inserted controls")?;
+    inserted.resize(inserted_count, [0.0; 4]);
     inserted[..=left_end].copy_from_slice(&controls[..=left_end]);
     inserted[tail_start + 1..].copy_from_slice(&controls[tail_start..]);
     for index in left_end + 1..=tail_start {
         let denominator = knots[index + degree] - knots[index];
         if !denominator.is_finite() || denominator <= 0.0 {
-            return None;
+            return Ok(None);
         }
         let alpha = (knot - knots[index]) / denominator;
         inserted[index] = std::array::from_fn(|axis| {
             alpha * controls[index][axis] + (1.0 - alpha) * controls[index - 1][axis]
         });
     }
+    reserve_vec_growth(ctx, knots, 1, "iges pcurve inserted knots")?;
     knots.insert(span + 1, knot);
     *controls = inserted;
-    Some(())
+    Ok(Some(()))
 }
 
 fn homogeneous_pcurve_spans(
     degree: usize,
     knots: &[f64],
     mut controls: Vec<[f64; 4]>,
-) -> Option<Vec<HomogeneousPcurveSpan>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
+    let Some(expected_knots) = controls.len().checked_add(degree).and_then(|value| value.checked_add(1)) else {
+        return Ok(None);
+    };
     if degree == 0
         || degree >= controls.len()
-        || knots.len() != controls.len().checked_add(degree)?.checked_add(1)?
+        || knots.len() != expected_knots
         || knots.iter().any(|knot| !knot.is_finite())
         || knots.windows(2).any(|pair| pair[0] > pair[1])
     {
-        return None;
+        return Ok(None);
     }
-    let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
+    let Some(domain) = knots.get(degree).copied().zip(knots.get(controls.len()).copied()) else {
+        return Ok(None);
+    };
+    let domain = [domain.0, domain.1];
     if domain[0] >= domain[1] {
-        return None;
+        return Ok(None);
     }
-    let mut knots = knots.to_vec();
-    let mut internal = knots
-        .get(degree + 1..controls.len())?
-        .iter()
-        .copied()
-        .filter(|knot| domain[0] < *knot && *knot < domain[1])
-        .collect::<Vec<_>>();
+    let mut copied_knots = reserve_vec(ctx, knots.len(), "iges pcurve knot copy")?;
+    copied_knots.extend_from_slice(knots);
+    let Some(internal_slice) = copied_knots.get(degree + 1..controls.len()) else {
+        return Ok(None);
+    };
+    let mut internal = reserve_vec(ctx, internal_slice.len(), "iges pcurve internal knots")?;
+    internal.extend(internal_slice.iter().copied().filter(|knot| domain[0] < *knot && *knot < domain[1]));
     internal.sort_by(f64::total_cmp);
     internal.dedup();
     for knot in internal {
-        while knots.iter().filter(|candidate| **candidate == knot).count() < degree {
-            insert_homogeneous_pcurve_knot(degree, &mut knots, &mut controls, knot)?;
+        while copied_knots.iter().filter(|candidate| **candidate == knot).count() < degree {
+            if insert_homogeneous_pcurve_knot(degree, &mut copied_knots, &mut controls, knot, ctx)?.is_none() {
+                return Ok(None);
+            }
         }
     }
-    let mut spans = Vec::new();
+    let mut spans = reserve_vec(ctx, controls.len(), "iges pcurve span descriptors")?;
     for span in degree..controls.len() {
-        let &start = knots.get(span)?;
-        let &end = knots.get(span + 1)?;
+        let Some((start, end)) = copied_knots.get(span).copied().zip(copied_knots.get(span + 1).copied()) else {
+            return Ok(None);
+        };
         if start >= end {
             continue;
         }
+        let Some(start_index) = span.checked_sub(degree) else {
+            return Ok(None);
+        };
+        let Some(span_controls) = controls.get(start_index..=span) else {
+            return Ok(None);
+        };
+        let mut copied_controls = reserve_vec(ctx, span_controls.len(), "iges pcurve span controls")?;
+        copied_controls.extend_from_slice(span_controls);
         spans.push(HomogeneousPcurveSpan {
             domain: [start, end],
-            controls: controls.get(span.checked_sub(degree)?..=span)?.to_vec(),
+            controls: copied_controls,
         });
     }
-    (!spans.is_empty()).then_some(spans)
+    Ok((!spans.is_empty()).then_some(spans))
 }
 
 fn split_homogeneous_pcurve(
     controls: &[[f64; 4]],
     parameter: f64,
-) -> Option<HomogeneousPcurveSplit> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<HomogeneousPcurveSplit>, CodecError> {
     if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
-        return None;
+        return Ok(None);
     }
-    let mut levels = vec![controls.to_vec()];
-    while levels.last()?.len() > 1 {
-        let next = levels
-            .last()?
-            .windows(2)
-            .map(|pair| {
-                std::array::from_fn(|axis| {
-                    (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
-                })
-            })
-            .collect::<Vec<_>>();
+    let mut levels = reserve_vec(ctx, controls.len(), "iges pcurve split levels")?;
+    let mut first = reserve_vec(ctx, controls.len(), "iges pcurve split first controls")?;
+    first.extend_from_slice(controls);
+    levels.push(first);
+    while levels.last().is_some_and(|level| level.len() > 1) {
+        let Some(previous) = levels.last() else {
+            return Ok(None);
+        };
+        let mut next = reserve_vec(ctx, previous.len() - 1, "iges pcurve split level controls")?;
+        for pair in previous.windows(2) {
+            next.push(std::array::from_fn(|axis| {
+                (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+            }));
+        }
         levels.push(next);
     }
-    let left = levels
-        .iter()
-        .map(|level| level.first().copied())
-        .collect::<Option<Vec<_>>>()?;
-    let right = levels
-        .iter()
-        .rev()
-        .map(|level| level.last().copied())
-        .collect::<Option<Vec<_>>>()?;
-    Some((left, right))
+    let mut left = reserve_vec(ctx, levels.len(), "iges pcurve split left controls")?;
+    let mut right = reserve_vec(ctx, levels.len(), "iges pcurve split right controls")?;
+    for level in &levels {
+        let Some(point) = level.first().copied() else { return Ok(None); };
+        left.push(point);
+    }
+    for level in levels.iter().rev() {
+        let Some(point) = level.last().copied() else { return Ok(None); };
+        right.push(point);
+    }
+    Ok(Some((left, right)))
 }
 
 fn restrict_homogeneous_pcurve(
     controls: &[[f64; 4]],
     start: f64,
     end: f64,
-) -> Option<Vec<[f64; 4]>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
+    let _nested = ctx.enter_nested("iges pcurve restricted span")?;
     if start > end {
-        let mut restricted = restrict_homogeneous_pcurve(controls, end, start)?;
+        let Some(mut restricted) = restrict_homogeneous_pcurve(controls, end, start, ctx)? else {
+            return Ok(None);
+        };
         restricted.reverse();
-        return Some(restricted);
+        return Ok(Some(restricted));
     }
     if start == end {
-        let point = split_homogeneous_pcurve(controls, start)?
-            .0
-            .into_iter()
-            .last()?;
-        return Some(std::iter::once(point).collect());
+        let Some(point) = split_homogeneous_pcurve(controls, start, ctx)?
+            .and_then(|(left, _)| left.into_iter().last()) else {
+            return Ok(None);
+        };
+        let mut result = reserve_vec(ctx, 1, "iges pcurve restricted point")?;
+        result.push(point);
+        return Ok(Some(result));
     }
-    let left = split_homogeneous_pcurve(controls, end)?.0;
+    let Some((left, _)) = split_homogeneous_pcurve(controls, end, ctx)? else {
+        return Ok(None);
+    };
     if start == 0.0 {
-        return Some(left);
+        return Ok(Some(left));
     }
     let relative_start = start / end;
-    split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right)
+    Ok(split_homogeneous_pcurve(&left, relative_start, ctx)?.map(|(_, right)| right))
 }
 
 #[cfg(test)]
@@ -1359,9 +1398,11 @@ fn pcurve_within_declared_bounds(
     bounds: Option<[Option<f64>; 4]>,
     periodic: [bool; 2],
 ) -> bool {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let bounds = bounds
         .map(|bounds| bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0))));
-    pcurve_within_declared_intervals(geometry, range, bounds, periodic)
+    pcurve_within_declared_intervals(geometry, range, bounds, periodic, &ctx).unwrap()
 }
 
 fn pcurve_within_declared_intervals(
@@ -1369,44 +1410,42 @@ fn pcurve_within_declared_intervals(
     range: [f64; 2],
     bounds: Option<[Option<DeclaredInterval>; 4]>,
     periodic: [bool; 2],
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     let Some(bounds) = bounds else {
-        return true;
+        return Ok(true);
     };
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
-        return false;
+        return Ok(false);
     };
     let Some(degree) = usize::try_from(nurbs.degree()).ok() else {
-        return false;
+        return Ok(false);
     };
     if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
-        return false;
+        return Ok(false);
     }
-    let Some(controls) = nurbs
-        .control_points()
-        .iter()
-        .enumerate()
-        .map(|(index, point)| {
-            let weight = nurbs.weights().map_or(Some(1.0), |weights| {
-                weights.get(index).map(|weight| weight.get())
-            })?;
-            (weight > 0.0).then_some([weight, weight * point.u, weight * point.v, 0.0])
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return false;
-    };
-    let Some(spans) = homogeneous_pcurve_spans(degree, nurbs.knots(), controls) else {
-        return false;
+    let mut controls = reserve_vec(ctx, nurbs.pole_rows().count(), "iges pcurve homogeneous controls")?;
+    for index in 0..nurbs.pole_rows().count() {
+        let Some(point) = nurbs.pole_rows().point_at(index).map(|point| point.get()) else {
+            return Ok(false);
+        };
+        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
+        if weight <= 0.0 {
+            return Ok(false);
+        }
+        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
+    }
+    let Some(spans) = homogeneous_pcurve_spans(degree, nurbs.knots(), controls, ctx)? else {
+        return Ok(false);
     };
     let Some(first_span) = spans.first() else {
-        return false;
+        return Ok(false);
     };
     let Some(last_span) = spans.last() else {
-        return false;
+        return Ok(false);
     };
     if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
-        return false;
+        return Ok(false);
     }
     let in_bound =
         |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
@@ -1428,10 +1467,10 @@ fn pcurve_within_declared_intervals(
         _ => Some((lower, upper)),
     };
     let Some((u_lower, u_upper)) = expand_periodic(bounds[0], bounds[1], periodic[0]) else {
-        return false;
+        return Ok(false);
     };
     let Some((v_lower, v_upper)) = expand_periodic(bounds[2], bounds[3], periodic[1]) else {
-        return false;
+        return Ok(false);
     };
     let mut covered = false;
     for span in spans {
@@ -1444,17 +1483,17 @@ fn pcurve_within_declared_intervals(
         let Some(local_start) =
             cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
         else {
-            return false;
+            return Ok(false);
         };
         let Some(local_end) =
             cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
         else {
-            return false;
+            return Ok(false);
         };
         let Some(restricted) =
-            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get())
+            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
         else {
-            return false;
+            return Ok(false);
         };
         if restricted.iter().any(|control| {
             let weight = control[0];
@@ -1463,10 +1502,10 @@ fn pcurve_within_declared_intervals(
                 || !in_bound(control[1] / weight, u_lower, u_upper)
                 || !in_bound(control[2] / weight, v_lower, v_upper)
         }) {
-            return false;
+            return Ok(false);
         }
     }
-    covered
+    Ok(covered)
 }
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
@@ -2153,7 +2192,8 @@ pub(super) fn project(
                             *range,
                             support_parameter_intervals,
                             periodic_parameters,
-                        ) && !source_curve_control_polygon_within_bounds(
+                            ctx,
+                        )? && !source_curve_control_polygon_within_bounds(
                             ir,
                             &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
                             &PcurveSupport {

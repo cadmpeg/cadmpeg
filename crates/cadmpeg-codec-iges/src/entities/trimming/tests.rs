@@ -18,7 +18,8 @@ use cadmpeg_ir::CadIr;
 
 use super::{
     append_path, cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
-    linear_boundary_relationship_is_valid, linear_boundary_rings, pcurve_within_declared_bounds,
+    homogeneous_pcurve_spans, linear_boundary_relationship_is_valid, linear_boundary_rings,
+    pcurve_within_declared_bounds,
     BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind, BoundaryVertexClusterError,
     BoundaryVertexCreationError,
     BoundaryVertexSourceEndpoint, DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry,
@@ -399,6 +400,56 @@ fn source_control_interval_fallback_refuses_unadmitted_storage() {
         assert_trimming_collection_refusal(&bytes, operation);
     }
     assert_trimming_retained_refusal(&bytes, "iges source active curve ID");
+}
+
+#[test]
+fn pcurve_support_check_refuses_unadmitted_span_and_split_storage() {
+    let bytes = subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal();
+    for operation in [
+        "iges pcurve homogeneous controls",
+        "iges pcurve knot copy",
+        "iges pcurve span descriptors",
+        "iges pcurve span controls",
+        "iges pcurve split levels",
+        "iges pcurve split first controls",
+        "iges pcurve split level controls",
+        "iges pcurve split left controls",
+        "iges pcurve split right controls",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn pcurve_internal_knot_insertion_refuses_before_storage() {
+    let controls = [[1.0, 0.0, 0.0, 0.0]; 4];
+    let knots = [0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0];
+    for operation in [
+        "iges pcurve internal knots",
+        "iges pcurve inserted controls",
+        "iges pcurve inserted knots",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..128 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match homogeneous_pcurve_spans(2, &knots, controls.to_vec(), &ctx) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected pcurve knot refusal at {operation}"),
+            }
+        }
+        assert!(reached, "pcurve knot refusal was not reached: {operation}");
+    }
 }
 
 #[test]
