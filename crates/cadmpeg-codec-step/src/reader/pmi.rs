@@ -38,6 +38,23 @@ struct MeasureContext<'a> {
     losses: &'a mut Vec<LossNote>,
 }
 
+fn collect_pmi_set<T: Ord>(
+    items: impl IntoIterator<Item = T>,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<BTreeSet<T>, CodecError> {
+    let mut values = BTreeSet::new();
+    for item in items {
+        if !values.contains(&item) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, operation)?;
+            }
+            values.insert(item);
+        }
+    }
+    Ok(values)
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -53,14 +70,18 @@ pub(super) fn decode(
             notes: Vec::new(),
         });
     }
-    let base_aspects = exchange
-        .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
-        .map(|(id, _)| id)
-        .collect::<BTreeSet<_>>();
-    let shape_aspects = exchange
-        .matching_entity_ids(is_shape_aspect_name)
-        .into_iter()
-        .collect::<BTreeSet<_>>();
+    let base_aspects = collect_pmi_set(
+        exchange
+            .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
+            .map(|(id, _)| id),
+        ctx,
+        "step_pmi_base_aspects",
+    )?;
+    let shape_aspects = collect_pmi_set(
+        exchange.matching_entity_ids(is_shape_aspect_name),
+        ctx,
+        "step_pmi_shape_aspects",
+    )?;
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::default();
@@ -743,18 +764,20 @@ pub(super) fn decode(
         &mut typed,
     );
 
-    let targeted_aspects = ir
-        .model
-        .pmi
-        .iter()
-        .flat_map(|annotation| &annotation.targets)
-        .filter_map(|target| match target {
-            PmiTarget::ShapeAspect { source_id } => {
-                source_id.as_str().strip_prefix('#')?.parse().ok()
-            }
-            _ => None,
-        })
-        .collect::<BTreeSet<u64>>();
+    let targeted_aspects = collect_pmi_set(
+        ir.model
+            .pmi
+            .iter()
+            .flat_map(|annotation| &annotation.targets)
+            .filter_map(|target| match target {
+                PmiTarget::ShapeAspect { source_id } => {
+                    source_id.as_str().strip_prefix('#')?.parse().ok()
+                }
+                _ => None,
+            }),
+        ctx,
+        "step_pmi_targeted_aspects",
+    )?;
     typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
     Ok(StageOutcome {
