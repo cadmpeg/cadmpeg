@@ -1487,10 +1487,11 @@ fn composite_child_weights_refuse_collection_limit() {
 #[test]
 fn composite_join_refuses_child_and_joined_lane_storage() {
     let children = |rational: bool| {
-        let weights = rational.then(|| vec![1.0, 1.0]);
+        let first_weights = rational.then(|| vec![1.0, 2.0]);
+        let second_weights = rational.then(|| vec![2.0, 1.0]);
         vec![
-            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], weights.clone()), [0.0, 1.0], ()),
-            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)], weights), [0.0, 1.0], ()),
+            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], first_weights), [0.0, 1.0], ()),
+            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)], second_weights), [0.0, 1.0], ()),
         ]
     };
     for (rational, operation) in [
@@ -1500,6 +1501,7 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
         (false, "iges composite joined knots"),
         (false, "iges composite joined controls"),
         (false, "iges composite joined weights"),
+        (true, "iges composite joined weighted poles"),
     ] {
         let mut cap = 0_u64;
         let mut found = false;

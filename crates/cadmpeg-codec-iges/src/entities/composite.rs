@@ -13,13 +13,13 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoles3}, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3}, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
@@ -1389,7 +1389,7 @@ fn concatenate_nurbs<T>(
         let mut child_control_points = reserve_optional_vec(ctx, control_count, "iges composite child control points")?;
         let child_weights = match poles {
             NurbsPoles3::Polynomial { points } => {
-                child_control_points.extend(points.into_iter().map(FinitePoint3::get));
+                child_control_points.extend(points);
                 match ctx {
                 Some(ctx) => ctx.alloc_filled(
                     control_count,
@@ -1406,7 +1406,7 @@ fn concatenate_nurbs<T>(
             NurbsPoles3::Rational { points } => {
                 let mut weights = reserve_optional_vec(ctx, control_count, "iges composite child weight copy")?;
                 for pole in points {
-                    child_control_points.push(pole.point.get());
+                    child_control_points.push(pole.point);
                     weights.push(pole.weight.get());
                 }
                 weights
@@ -1439,8 +1439,8 @@ fn concatenate_nurbs<T>(
         let (shifted_knots, child_control_points, mut child_weights, next) =
             prepare_child(child, segments.end())?;
         if !close_with_tolerance(
-            control_points[control_points.len() - 1],
-            child_control_points[0],
+            control_points[control_points.len() - 1].get(),
+            child_control_points[0].get(),
             join_tolerance,
         ) {
             return Ok(None);
@@ -1487,13 +1487,21 @@ fn concatenate_nurbs<T>(
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
-    let nurbs = NurbsCurve::from_lanes(
-        degree,
-        knots,
-        control_points,
-        rational.then_some(weights),
-        false,
-    )?;
+    let poles = if rational {
+        let mut weighted = reserve_optional_vec(ctx, control_points.len(), "iges composite joined weighted poles")?;
+        for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
+            let weight = NonZeroReal::new(weight).ok_or_else(|| NurbsError::UnusableWeight {
+                field: "poles".to_owned(),
+                index,
+                weight,
+            })?;
+            weighted.push(WeightedPole3 { point, weight });
+        }
+        NurbsPoles3::Rational { points: weighted }
+    } else {
+        NurbsPoles3::Polynomial { points: control_points }
+    };
+    let nurbs = NurbsCurve::new(degree, knots, poles, false)?;
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
