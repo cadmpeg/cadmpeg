@@ -399,7 +399,7 @@ fn decode_exchange_mode(
     )?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
-    let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
+    let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx)?;
     session.charge_stage("step_topology_association")?;
     geometry::associate_topology_carriers(
         exchange,
@@ -410,7 +410,7 @@ fn decode_exchange_mode(
     session.charge_stage("step_replica_association")?;
     geometry::associate_replica_bases(exchange, &mut session.ir, &carrier_index);
     session.charge_stage("step_pcurve_association")?;
-    geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index);
+    geometry::associate_pcurve_supports(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     session.charge_stage("step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
         exchange,
