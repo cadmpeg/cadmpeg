@@ -3,7 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use super::{mirror_flag_valid, presentation_loss, vertical_text_flag_valid};
-use crate::decode_resource::format_retained;
+use crate::decode_resource::{format_retained, insert_optional_btree_map, insert_optional_btree_set};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -188,14 +188,16 @@ fn text_font_definition(
     }
     let count = record.count(5).filter(|count| *count > 0)?;
     let mut cursor = 6;
-    let mut character_codes = BTreeSet::new();
+    let mut character_codes = 0_u128;
     for _ in 0..count {
         let character_code = record
             .integer(cursor)
             .filter(|value| matches!(value, 0..=127))?;
-        if !character_codes.insert(character_code) {
+        let mask = 1_u128.checked_shl(u32::try_from(character_code).ok()?)?;
+        if character_codes & mask != 0 {
             return None;
         }
+        character_codes |= mask;
         record.integer(cursor + 1)?;
         record.integer(cursor + 2)?;
         let motion_count = record.count(cursor + 3)?;
@@ -221,26 +223,37 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     sequences: &super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        insert_optional_btree_map(
+            Some(ctx), &mut records, record.directory_sequence, record,
+            "iges presentation parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        insert_optional_btree_map(
+            Some(ctx), &mut entries, entry.sequence, entry,
+            "iges presentation directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
-    let text_fonts = directory
+    let mut text_fonts = BTreeMap::new();
+    for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
-        .filter_map(|entry| {
-            let record = records.get(&entry.sequence).copied()?;
+    {
+        if let Some(font) = records.get(&entry.sequence).copied().and_then(|record| {
             text_font_definition(entry, record, &entries, global.global_table())
-                .map(|font| (entry.sequence, font))
-        })
-        .collect::<BTreeMap<_, _>>();
+        }) {
+            insert_optional_btree_map(
+                Some(ctx), &mut text_fonts, entry.sequence, font,
+                "iges presentation font index",
+            )?;
+        }
+    }
     let mut visited_fonts = BTreeSet::new();
 
     for entry in directory
@@ -258,7 +271,7 @@ pub(super) fn project(
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
             losses.push(presentation_loss(
                 entry,
@@ -296,7 +309,7 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
             losses.push(presentation_loss(
                 entry,
@@ -313,17 +326,27 @@ pub(super) fn project(
             losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let levels = record
-            .count(1)
-            .filter(|count| *count > 0)
-            .and_then(|count| {
-                (0..count)
-                    .map(|index| record.integer(2 + index).filter(|level| *level >= 0))
-                    .collect::<Option<Vec<_>>>()
-            });
-        if levels.is_some_and(|levels| levels.iter().collect::<BTreeSet<_>>().len() == levels.len())
-        {
-            decoded.insert(entry.sequence);
+        let levels_valid = if let Some(count) = record.count(1).filter(|count| *count > 0) {
+            let mut levels = BTreeSet::new();
+            let mut valid = true;
+            for index in 0..count {
+                let Some(level) = record.integer(2 + index).filter(|level| *level >= 0) else {
+                    valid = false;
+                    break;
+                };
+                if !insert_optional_btree_set(
+                    Some(ctx), &mut levels, level, "iges presentation definition levels",
+                )? {
+                    valid = false;
+                    break;
+                }
+            }
+            valid
+        } else {
+            false
+        };
+        if levels_valid {
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
             losses.push(presentation_loss(
                 entry,
@@ -384,7 +407,7 @@ pub(super) fn project(
             })
         };
         if valid {
-            decoded.insert(entry.sequence);
+            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
         } else {
             losses.push(presentation_loss(
                 entry,
@@ -401,14 +424,10 @@ pub(super) fn project(
             losses.push(presentation_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(components) = (1..=3)
-            .map(|index| {
-                record
-                    .number(index)
-                    .filter(|value| (0.0..=100.0).contains(value))
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
+        let components = [1, 2, 3].map(|index| {
+            record.number(index).filter(|value| (0.0..=100.0).contains(value))
+        });
+        let [Some(red), Some(green), Some(blue)] = components else {
             losses.push(presentation_loss(
                 entry,
                 "RGB percentage is outside 0 through 100",
@@ -447,9 +466,9 @@ pub(super) fn project(
             continue;
         }
         let Some(color) = Color::new(
-            (components[0] / 100.0) as f32,
-            (components[1] / 100.0) as f32,
-            (components[2] / 100.0) as f32,
+            (red / 100.0) as f32,
+            (green / 100.0) as f32,
+            (blue / 100.0) as f32,
             1.0,
         ) else {
             losses.push(presentation_loss(
@@ -458,14 +477,17 @@ pub(super) fn project(
             ));
             continue;
         };
-        defined.insert(entry.sequence, color);
+        insert_optional_btree_map(
+            Some(ctx), &mut defined, entry.sequence, color,
+            "iges presentation defined colors",
+        )?;
         appearance(
             ir,
             crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
             name,
             color,
         );
-        decoded.insert(entry.sequence);
+        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
     }
 
     let resolve = |value: i64| -> Option<(AppearanceId, Color)> {

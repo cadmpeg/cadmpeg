@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
@@ -45,6 +45,56 @@ fn presentation_names_refuse_retained_limit_before_copy() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(), Some("COLOR".into()));
     assert_eq!(retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(), None);
+}
+
+fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
+    let fonts = text_font_definition_file();
+    for operation in [
+        "iges presentation parameter index",
+        "iges presentation directory index",
+        "iges presentation font index",
+        "iges presentation decoded sequences",
+    ] {
+        assert_presentation_collection_refusal(&fonts, operation);
+    }
+    assert_presentation_collection_refusal(
+        &definition_levels_file(),
+        "iges presentation definition levels",
+    );
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges presentation defined colors");
 }
 
 const GLOBAL_V4: &[u8] =
