@@ -26,7 +26,7 @@ use crate::native::{
     copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
-use crate::resource::{collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_join, retained_string};
+use crate::resource::{collection_vec, insert_hash_map, insert_hash_set, reserve_vec_items, reserved_vec, retained_join, retained_string};
 
 use schema::Admission as GuiSchemaAdmission;
 
@@ -609,6 +609,7 @@ fn transfer_schema_one(
                 }
             }
         }
+        reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
         plan.appearances.push(Appearance {
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
@@ -623,6 +624,7 @@ fn transfer_schema_one(
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
+            reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(ctx, format_args!("fcstd:appearance:binding#{provider_key}:{index}"))?,
                 target: AppearanceTarget::Body(body),
@@ -1123,6 +1125,7 @@ fn transfer_primitive_appearance(
                 .with_provenance(provenance),
         );
     }
+    reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
@@ -1144,6 +1147,7 @@ fn transfer_primitive_appearance(
             .unwrap_or_default(),
     });
     for (index, target) in targets.into_iter().enumerate() {
+        reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
             id: binding_id(ctx, format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
@@ -3874,7 +3878,8 @@ fn transfer_shape_appearances(
                 .retain(|binding| binding.appearance != legacy_id);
             plan.appearances
                 .retain(|appearance| appearance.id != legacy_id);
-            plan.remove_appearances.insert(legacy_id);
+            insert_hash_set(ctx, &mut plan.remove_appearances, legacy_id,
+                "FCStd GUI removed appearances")?;
         } else {
             let Some(_) = group else {
                 continue;
@@ -3905,6 +3910,7 @@ fn transfer_shape_appearances(
         }
         for (index, material) in materials.iter().enumerate() {
             let appearance_id = shape_material_appearance_id(ctx, &provider_key, index)?;
+            reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
             plan.appearances.push(material_appearance(
                 appearance_id.clone(),
                 &provider.name,
@@ -3918,6 +3924,7 @@ fn transfer_shape_appearances(
                             material.diffuse,
                             Some(material.transparency.get()),
                         ).map(Some))?;
+                    reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
                     plan.bindings.push(AppearanceBinding {
                         id: binding_id(ctx, format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
@@ -4114,6 +4121,7 @@ fn bind_material_faces(
             continue;
         };
         let binding_index = ir.model.appearance_bindings.len() + plan.bindings.len();
+        reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
         plan.bindings.push(AppearanceBinding {
             id: binding_id(ctx, format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
@@ -4250,6 +4258,7 @@ fn transfer_topology_colors(
             })
         {
             if !emitted_appearance {
+                reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
                 plan.appearances.push(Appearance {
                     id: appearance_id.clone(),
                     name: Some(format!(
@@ -4297,6 +4306,7 @@ fn transfer_topology_colors(
                 continue;
             };
             let kind_key = topology_binding_kind(kind);
+            reserve_vec_items(ctx, &mut plan.bindings, 1, "FCStd GUI planned bindings")?;
             plan.bindings.push(AppearanceBinding {
                 id: binding_id(ctx, format_args!(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",

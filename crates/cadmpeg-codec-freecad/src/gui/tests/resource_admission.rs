@@ -137,7 +137,7 @@ fn gui_body_update_identity_refuses_at_caller_retained_limit() {
             && failure.operation == "FCStd GUI body update identity"), "{error:?}");
 }
 
-fn primitive_target_refusal(collection_limit: u64, retained_limit: u64) -> cadmpeg_core::CodecError {
+fn primitive_appearance_refusal(collection_limit: u64, retained_limit: u64) -> cadmpeg_core::CodecError {
     use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
     use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
 
@@ -179,12 +179,12 @@ fn primitive_target_refusal(collection_limit: u64, retained_limit: u64) -> cadmp
             ),
         },
     )
-    .expect_err("primitive target must be admitted")
+    .expect_err("primitive appearance transfer must be admitted")
 }
 
 #[test]
 fn gui_primitive_target_refuses_at_caller_collection_limit() {
-    let error = primitive_target_refusal(0, u64::MAX);
+    let error = primitive_appearance_refusal(0, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && failure.operation == "FCStd GUI primitive targets"), "{error:?}");
@@ -192,10 +192,44 @@ fn gui_primitive_target_refuses_at_caller_collection_limit() {
 
 #[test]
 fn gui_primitive_target_identity_refuses_at_caller_retained_limit() {
-    let error = primitive_target_refusal(u64::MAX, 0);
+    let error = primitive_appearance_refusal(u64::MAX, 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && failure.operation == "FCStd GUI primitive target identity"), "{error:?}");
+}
+
+#[test]
+fn gui_planned_appearance_refuses_at_caller_limit() {
+    let error = primitive_appearance_refusal(1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI planned appearances"), "{error:?}");
+}
+
+#[test]
+fn gui_planned_binding_refuses_at_caller_limit() {
+    let error = primitive_appearance_refusal(2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI planned bindings"), "{error:?}");
+}
+
+#[test]
+fn gui_removed_appearance_refuses_at_caller_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let mut plan = super::super::AppearancePlan::default();
+    let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
+        .expect("valid appearance identity");
+    let error = crate::resource::insert_hash_set(
+        &ctx, &mut plan.remove_appearances, id, "FCStd GUI removed appearances",
+    ).expect_err("removed appearance must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && failure.operation == "FCStd GUI removed appearances"), "{error:?}");
 }
 
 #[test]
