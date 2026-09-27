@@ -30,7 +30,8 @@ use crate::test_support::test_surface_fixtures::{
     line_surface_of_revolution_file, line_surface_of_revolution_file_with_global,
     multispan_degree_zero_nurbs_surface_file, nurbs_surface_file, offset_cylinder_file,
     offset_nurbs_surface_file, offset_plane_file, offset_plane_file_with_indicator,
-    placed_surface_of_revolution_file, plane_file, rational_ruled_surface_file, ruled_surface_file,
+    placed_hyperbola_surface_of_revolution_file, placed_surface_of_revolution_file, plane_file,
+    rational_ruled_surface_file, ruled_surface_file,
     ruled_surface_file_with_developable_flag, surface_of_revolution_file, tabulated_cylinder_file,
     tabulated_hyperbola_file, tabulated_hyperbola_file_with_global,
     trimmed_surface_of_revolution_file,
@@ -112,6 +113,22 @@ fn type122_projection_refuses_rational_tabulated_weight_rows() {
         } if nurbs.weights().is_some()
     )));
     for operation in ["iges tabulated weight rows", "iges tabulated weight row controls"] {
+        assert_surface_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
+fn surface_projectors_refuse_neutral_and_placed_curve_slots() {
+    for (bytes, operation) in [
+        (plane_file(), "iges plane neutral surface slots"),
+        (ruled_surface_file(), "iges ruled neutral surface slots"),
+        (placed_tabulated_hyperbola_file(), "iges tabulated exact placed directrix slots"),
+        (tabulated_hyperbola_file(), "iges tabulated exact neutral surface slots"),
+        (hyperbola_surface_of_revolution_file(), "iges revolution exact neutral surface slots"),
+        (placed_hyperbola_surface_of_revolution_file(), "iges revolution exact placed generatrix slots"),
+        (placed_surface_of_revolution_file(), "iges revolution placed generatrix slots"),
+        (offset_plane_file(1.0, 2.0), "iges offset neutral surface slots"),
+    ] {
         assert_surface_collection_refusal(&bytes, operation);
     }
 }

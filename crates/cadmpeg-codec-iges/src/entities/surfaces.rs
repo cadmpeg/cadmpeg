@@ -1244,6 +1244,7 @@ pub(super) fn project(
         sequences.record_surface(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges plane neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1354,6 +1355,7 @@ pub(super) fn project(
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges ruled neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -1498,6 +1500,7 @@ pub(super) fn project(
                         .tail(crate::ids::Word::PlacedDirectrix),
                 );
                 sequences.record_curve(&placed_id, entry.sequence, ctx)?;
+                reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated exact placed directrix slots")?;
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1515,6 +1518,7 @@ pub(super) fn project(
             let procedural_id =
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+            reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated exact neutral surface slots")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1821,6 +1825,7 @@ pub(super) fn project(
                         .tail(crate::ids::Word::PlacedGeneratrix),
                 );
                 sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
+                reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution exact placed generatrix slots")?;
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1854,6 +1859,7 @@ pub(super) fn project(
             let procedural_id =
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+            reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution exact neutral surface slots")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -2031,6 +2037,7 @@ pub(super) fn project(
                     .tail(crate::ids::Word::PlacedGeneratrix),
             );
             sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
+            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution placed generatrix slots")?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -2548,6 +2555,7 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
+        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges offset neutral surface slots")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,

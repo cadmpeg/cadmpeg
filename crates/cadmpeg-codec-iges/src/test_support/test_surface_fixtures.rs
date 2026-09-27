@@ -575,6 +575,47 @@ pub(crate) fn placed_surface_of_revolution_file() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn placed_hyperbola_surface_of_revolution_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let axis = b"110,0,0,0,0,0,1;";
+    let hyperbola = b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;";
+    let transform = b"124,1,0,0,10,0,1,0,20,0,0,1,30;";
+    let revolution = b"120,1,3,0,1.5707963267948966;";
+    let records: [(u32, &str, &str, &str, &str, &[u8]); 4] = [
+        (1, "110", "0", "AXIS", "00010000", axis),
+        (3, "104", "0", "HYPERBOL", "00010000", hyperbola),
+        (5, "124", "0", "PLACE", "00010000", transform),
+        (7, "120", "5", "REVOLVE", "00000000", revolution),
+    ];
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    let mut parameter_start = 1_u32;
+    for (sequence, entity_type, placement, label, status, parameters) in records {
+        let count = u32::try_from(parameter_fragment_count(parameters)).unwrap();
+        bytes.extend(directory_card(
+            [entity_type, &parameter_start.to_string(), "0", "0", "0", "0", placement, "0", status],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", &count.to_string(), "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+        parameter_start += count;
+    }
+    parameter_start = 1;
+    for (sequence, _, _, _, _, parameters) in records {
+        bytes.extend(parameter_cards(parameters, sequence, parameter_start));
+        parameter_start += u32::try_from(parameter_fragment_count(parameters)).unwrap();
+    }
+    let global_cards = global_card_count(global);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000008P{:07}", parameter_start - 1).as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 pub(crate) fn plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
