@@ -741,7 +741,7 @@ impl NativeModel {
         let data_block_object_frames = data_block_object_frames(container);
         let segment_index_rows = segment_index_rows(ctx, container)?;
         let segment_om_links = segment_om_links(container);
-        let segment_stream_links = segment_stream_links(container, streams);
+        let segment_stream_links = segment_stream_links(ctx, container, streams)?;
         let mut linked_deltas = BTreeSet::new();
         for link in segment_stream_links
             .iter()
