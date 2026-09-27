@@ -16,6 +16,30 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 #[test]
+fn product_record_collection_refuses_at_caller_limit() {
+    let object = native::ObjectRecord {
+        id: "fcstd:native:object#Assembly".into(),
+        name: "Assembly".into(),
+        type_name: "App::Part".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    assert!(matches!(super::transfer(&ctx, &[object], &[], &Default::default()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd product records"));
+}
+
+#[test]
 pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="6">

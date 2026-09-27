@@ -952,7 +952,7 @@ impl CodecBackend for FcstdCodec {
                 &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
+            let product_nodes = product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
             let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
