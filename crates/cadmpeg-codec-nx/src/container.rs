@@ -175,9 +175,32 @@ pub(crate) struct SegmentIndexRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SegmentIndex<'a> {
     /// Complete 12-byte rows before the declared table end.
-    pub(crate) rows: Vec<SegmentIndexRow>,
+    rows: &'a [u8],
     /// Zero to eleven trailing bytes after the last complete row.
     padding: &'a [u8],
+}
+
+impl<'a> SegmentIndex<'a> {
+    pub(crate) fn row(&self, ordinal: usize) -> Option<SegmentIndexRow> {
+        let start = ordinal.checked_mul(index_row::LEN)?;
+        let end = start.checked_add(index_row::LEN)?;
+        let bytes = self.rows.get(start..end)?;
+        Self::parse_row(bytes)
+    }
+
+    pub(crate) fn rows(&self) -> impl Iterator<Item = SegmentIndexRow> + 'a {
+        self.rows
+            .chunks_exact(index_row::LEN)
+            .filter_map(Self::parse_row)
+    }
+
+    fn parse_row(bytes: &[u8]) -> Option<SegmentIndexRow> {
+        Some(SegmentIndexRow {
+            type_code: View::u32_le_at(bytes, index_row::TYPE_CODE)?,
+            subtype_code: View::u32_le_at(bytes, index_row::SUBTYPE_CODE)?,
+            value: View::u32_le_at(bytes, index_row::VALUE)?,
+        })
+    }
 }
 
 /// One segment-index word whose target frames a compressed stream.
@@ -291,17 +314,9 @@ impl<'a> Container<'a> {
             return None;
         }
         let complete_len = byte_len / index_row::LEN * index_row::LEN;
-        let rows = payload[..complete_len]
-            .chunks_exact(index_row::LEN)
-            .map(|row| {
-                let row: &[u8; index_row::LEN] = row.try_into().ok()?;
-                Some(SegmentIndexRow {
-                    type_code: View::u32_le_at(row, index_row::TYPE_CODE)?,
-                    subtype_code: View::u32_le_at(row, index_row::SUBTYPE_CODE)?,
-                    value: View::u32_le_at(row, index_row::VALUE)?,
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let rows = &payload[..complete_len];
+        rows.chunks_exact(index_row::LEN)
+            .try_for_each(|row| SegmentIndex::parse_row(row).map(|_| ()))?;
         Some((
             entry,
             SegmentIndex {
@@ -313,62 +328,49 @@ impl<'a> Container<'a> {
 
     /// Resolve every in-bounds compressed-stream wrapper addressed by the
     /// canonical segment index, preserving row and word order.
-    pub(crate) fn segment_stream_wrappers(&self) -> Vec<SegmentStreamWrapper> {
-        let Some((entry, index)) = self.segment_index() else {
-            return Vec::new();
-        };
-        let Some((entry_offset, entry_size)) = entry.file_span() else {
-            return Vec::new();
-        };
-        let (Ok(entry_start), Ok(entry_size)) =
-            (usize::try_from(entry_offset), usize::try_from(entry_size))
-        else {
-            return Vec::new();
-        };
-        let Some(entry_end) = entry_start.checked_add(entry_size) else {
-            return Vec::new();
-        };
-        let Some(payload) = self.data.get(entry_start..entry_end) else {
-            return Vec::new();
-        };
-        let mut wrappers = Vec::new();
-        for (row_ordinal, row) in index.rows.iter().enumerate() {
-            for (word_ordinal, relative) in [row.type_code, row.subtype_code, row.value]
-                .into_iter()
-                .enumerate()
-            {
-                let relative = relative as usize;
-                let Some(wrapper) = payload.get(relative..) else {
-                    continue;
-                };
-                let Some(wrapper_word) = View::u32_le_at(wrapper, 0) else {
-                    continue;
-                };
-                let extension = (wrapper_word & 0x3fff_ffff) as usize;
-                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
-                    0x8000_0000 => 8usize.checked_add(extension),
-                    0xc000_0000 => 33usize.checked_add(extension),
-                    _ => continue,
-                };
-                let Some(wrapper_byte_len) = wrapper_byte_len else {
-                    continue;
-                };
-                let Some(zlib_relative) = relative.checked_add(wrapper_byte_len) else {
-                    continue;
-                };
-                if zlib_relative >= payload.len() {
-                    continue;
-                }
-                wrappers.push(SegmentStreamWrapper {
-                    row_ordinal,
-                    word_ordinal,
-                    wrapper_offset: entry_start + relative,
-                    wrapper_byte_len,
-                    zlib_offset: entry_start + zlib_relative,
-                });
-            }
-        }
-        wrappers
+    pub(crate) fn segment_stream_wrappers(
+        &self,
+    ) -> impl Iterator<Item = SegmentStreamWrapper> + '_ {
+        let source = (|| {
+            let (entry, index) = self.segment_index()?;
+            let (entry_offset, entry_size) = entry.file_span()?;
+            let entry_start = usize::try_from(entry_offset).ok()?;
+            let entry_size = usize::try_from(entry_size).ok()?;
+            let entry_end = entry_start.checked_add(entry_size)?;
+            let payload = self.data.get(entry_start..entry_end)?;
+            Some((index, payload, entry_start))
+        })();
+        source
+            .into_iter()
+            .flat_map(|(index, payload, entry_start)| {
+                index
+                    .rows()
+                    .enumerate()
+                    .flat_map(move |(row_ordinal, row)| {
+                        [row.type_code, row.subtype_code, row.value]
+                            .into_iter()
+                            .enumerate()
+                            .filter_map(move |(word_ordinal, relative)| {
+                                let relative = usize::try_from(relative).ok()?;
+                                let wrapper = payload.get(relative..)?;
+                                let wrapper_word = View::u32_le_at(wrapper, 0)?;
+                                let extension = usize::try_from(wrapper_word & 0x3fff_ffff).ok()?;
+                                let wrapper_byte_len = match wrapper_word & 0xc000_0000 {
+                                    0x8000_0000 => 8usize.checked_add(extension),
+                                    0xc000_0000 => 33usize.checked_add(extension),
+                                    _ => None,
+                                }?;
+                                let zlib_relative = relative.checked_add(wrapper_byte_len)?;
+                                (zlib_relative < payload.len()).then_some(SegmentStreamWrapper {
+                                    row_ordinal,
+                                    word_ordinal,
+                                    wrapper_offset: entry_start.checked_add(relative)?,
+                                    wrapper_byte_len,
+                                    zlib_offset: entry_start.checked_add(zlib_relative)?,
+                                })
+                            })
+                    })
+            })
     }
 
     /// Locate independently size-framed NX object-model sections.
