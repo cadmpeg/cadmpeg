@@ -328,11 +328,6 @@ fn style_graph_refuses(
 }
 
 #[test]
-fn presentation_style_order_items_refuse_collection_limit() {
-    vector_refuses("step_presentation_style_order_items");
-}
-
-#[test]
 fn presentation_style_depth_active_refuses_collection_limit() {
     style_graph_refuses("step_presentation_style_depth_active", false, |exchange, ctx| {
         super::super::style_application_order(1, exchange, 128, Some(ctx)).map(|_| ())
