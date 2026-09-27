@@ -50,7 +50,9 @@ pub(crate) fn parse_with_context(
         ctx.charge_collection_items(nodes, "FCStd persistence XML node tree")?;
     }
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+        .map_err(|error| crate::resource::malformed_optional(ctx,
+            format_args!("invalid Document.xml: {error}"),
+            "FCStd persistence diagnostic"))?;
     parse_document(
         text,
         &xml,

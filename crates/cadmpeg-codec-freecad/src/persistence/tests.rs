@@ -10,6 +10,24 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn persistence_invalid_xml_diagnostic_refuses_at_retained_limit() {
+    let bytes = b"<Document";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("source bytes are within policy");
+    let error = super::parse_with_context(bytes, "4", Some(&ctx))
+        .err().expect("invalid XML diagnostic must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && failure.operation == "FCStd persistence diagnostic"), "{error:?}");
+    let unmetered = super::parse_with_context(bytes, "4", None)
+        .err().expect("invalid XML remains malformed");
+    assert!(matches!(unmetered, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn persistence_object_identity_refuses_at_retained_limit() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let id_len = crate::native::native_id("object", "Body").len();
