@@ -679,11 +679,13 @@ pub(super) fn scan_intersection_carriers(
                 },
             }
         }
-        lane_refusals.extend(chart_refusal.take_records().into_iter().map(|record| {
-            crate::loss::spline_lane_refusal(&format!(
-                "intersection chart for attr {attr}: {record}"
-            ))
-        }));
+        for record in chart_refusal.take_records() {
+            let note = crate::loss::spline_lane_refusal(
+                ctx, format_args!("intersection chart for attr {attr}: {record}"),
+            )?;
+            ctx.reserve_collection_vec(lane_refusals, 1, "collect intersection chart losses")?;
+            lane_refusals.push(note);
+        }
         let Some(selected) = selected else {
             continue;
         };

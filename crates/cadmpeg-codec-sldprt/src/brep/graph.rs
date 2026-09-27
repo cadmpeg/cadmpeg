@@ -1919,12 +1919,13 @@ fn decode_graph(
                 };
                 // The sink is drained before the `?` below: an error on that
                 // route must not drop a refusal the walk above already pushed.
-                out.losses
-                    .extend(pcurve_refusal.take_records().into_iter().map(|record| {
-                        crate::loss::spline_lane_refusal(&format!(
-                            "intersection pcurve for coedge {ce_attr}: {record}"
-                        ))
-                    }));
+                for record in pcurve_refusal.take_records() {
+                    let note = crate::loss::spline_lane_refusal(
+                        ctx, format_args!("intersection pcurve for coedge {ce_attr}: {record}"),
+                    )?;
+                    ctx.reserve_collection_vec(&mut out.losses, 1, "collect intersection pcurve losses")?;
+                    out.losses.push(note);
+                }
                 let pcurves = pcurves
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?
@@ -2231,13 +2232,13 @@ fn decode_graph(
                 } else if let Some((geometry, offset, tag, exactness)) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
                     let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
-                    out.losses
-                        .extend(sweep_refusal.take_records().into_iter().map(|record| {
-                            crate::loss::spline_lane_refusal(&format!(
-                                "swept surface for face attr {}: {record}",
-                                f.surface_attr
-                            ))
-                        }));
+                    for record in sweep_refusal.take_records() {
+                        let note = crate::loss::spline_lane_refusal(
+                            ctx, format_args!("swept surface for face attr {}: {record}", f.surface_attr),
+                        )?;
+                        ctx.reserve_collection_vec(&mut out.losses, 1, "collect swept surface losses")?;
+                        out.losses.push(note);
+                    }
                     resolved
                 } {
                     annotations
@@ -3175,10 +3176,11 @@ fn derive_cylindrical_pcurves(
                 ) {
                     Ok(polar) => polar,
                     Err(error) => {
-                        refusals.push(crate::loss::spline_lane_refusal(&format!(
-                            "cylindrical pcurve for edge {}: {error}",
-                            edge.id
-                        )));
+                        let note = crate::loss::spline_lane_refusal(
+                            ctx, format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
+                        )?;
+                        ctx.reserve_collection_vec(&mut refusals, 1, "collect cylindrical pcurve losses")?;
+                        refusals.push(note);
                         continue;
                     }
                 };
@@ -3230,6 +3232,7 @@ fn derive_cylindrical_pcurves(
         admit_brep_entity(ctx)?;
         out.pcurves.push(pcurve);
     }
+    ctx.reserve_precharged_vec(&mut out.losses, refusals.len(), "move cylindrical pcurve losses")?;
     out.losses.extend(refusals);
     Ok(())
 }
@@ -4094,12 +4097,11 @@ fn derive_nurbs_isoparametric_pcurves(
         .collect::<HashMap<_, _>>();
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
-    out.losses.extend(
-        lane_refusals
-            .take_records()
-            .iter()
-            .map(|record| crate::loss::spline_lane_refusal(record)),
-    );
+    for record in lane_refusals.take_records() {
+        let note = crate::loss::spline_lane_refusal(ctx, &record)?;
+        ctx.reserve_collection_vec(&mut out.losses, 1, "collect isoparametric pcurve losses")?;
+        out.losses.push(note);
+    }
     for (coedge_id, id, pcurve, cache) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {

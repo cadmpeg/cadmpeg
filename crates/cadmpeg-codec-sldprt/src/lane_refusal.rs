@@ -6,6 +6,7 @@ use cadmpeg_core::CodecError;
 
 struct ChargedMessage<'a, 'ctx> {
     ctx: &'a DecodeContext<'ctx>,
+    operation: &'static str,
     text: String,
     failure: Option<CodecError>,
 }
@@ -15,7 +16,7 @@ impl std::fmt::Write for ChargedMessage<'_, '_> {
         if let Err(error) = self.ctx.reserve_retained_string(
             &mut self.text,
             fragment.len(),
-            "record SLDPRT lane refusal",
+            self.operation,
         ) {
             self.failure = Some(error);
             return Err(std::fmt::Error);
@@ -23,6 +24,25 @@ impl std::fmt::Write for ChargedMessage<'_, '_> {
         self.text.push_str(fragment);
         Ok(())
     }
+}
+
+pub(crate) fn format_retained(
+    ctx: &DecodeContext<'_>,
+    message: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut charged = ChargedMessage {
+        ctx,
+        operation,
+        text: String::new(),
+        failure: None,
+    };
+    if std::fmt::write(&mut charged, message).is_err() {
+        return Err(charged.failure.unwrap_or_else(|| {
+            CodecError::malformed("cannot format SLDPRT lane refusal")
+        }));
+    }
+    Ok(charged.text)
 }
 
 /// Every carrier record a reader refused, each named by the record that stated
@@ -52,18 +72,13 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) -> Result<(), CodecError> {
-        let mut message = ChargedMessage {
+        let message = format_retained(
             ctx,
-            text: String::new(),
-            failure: None,
-        };
-        if std::fmt::write(&mut message, format_args!("{record}: {error}")).is_err() {
-            return Err(message.failure.unwrap_or_else(|| {
-                CodecError::malformed("cannot format SLDPRT lane refusal")
-            }));
-        }
+            format_args!("{record}: {error}"),
+            "record SLDPRT lane refusal",
+        )?;
         ctx.reserve_collection_vec(&mut self.records, 1, "collect SLDPRT lane refusals")?;
-        self.records.push(message.text);
+        self.records.push(message);
         Ok(())
     }
 

@@ -923,9 +923,11 @@ pub(crate) fn scan_curve_carriers(
             Ok(nurbs) => nurbs,
             Err(error) => {
                 charge_items(ctx, 1, "collect Parasolid spline refusals")?;
-                refusals.push(crate::loss::spline_lane_refusal(&format!(
-                    "curve carrier attribute {attr}: {error}"
-                )));
+                let note = crate::loss::spline_lane_refusal(
+                    ctx, format_args!("curve carrier attribute {attr}: {error}"),
+                )?;
+                ctx.reserve_precharged_vec(refusals, 1, "collect Parasolid spline refusals")?;
+                refusals.push(note);
                 continue;
             }
         };
@@ -1228,9 +1230,11 @@ pub(crate) fn scan_surface_carriers(
             Ok(nurbs) => nurbs,
             Err(error) => {
                 charge_items(ctx, 1, "collect Parasolid spline refusals")?;
-                refusals.push(crate::loss::spline_lane_refusal(&format!(
-                    "surface carrier attribute {attr}: {error}"
-                )));
+                let note = crate::loss::spline_lane_refusal(
+                    ctx, format_args!("surface carrier attribute {attr}: {error}"),
+                )?;
+                ctx.reserve_precharged_vec(refusals, 1, "collect Parasolid spline refusals")?;
+                refusals.push(note);
                 continue;
             }
         };
