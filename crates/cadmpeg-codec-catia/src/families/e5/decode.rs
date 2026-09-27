@@ -117,16 +117,23 @@ pub(in crate::families) fn try_decode_e5(
             if roster.len() == vertex_count {
                 roster
             } else {
-                match topology
-                    .as_ref()
-                    .and_then(|topology| derive_e5_vertices(topology, &surfaces, refusal))
-                {
-                    // A derived vertex that is not finite states no point, so the
-                    // decode refuses it where the vertex list is admitted.
-                    Some(derived) => derived
-                        .into_iter()
-                        .map(FinitePoint3::new)
-                        .collect::<Option<Vec<_>>>()?,
+                match topology.as_ref() {
+                    Some(topology) => match derive_e5_vertices(ctx, topology, &surfaces, refusal) {
+                        Ok(Some(derived)) => {
+                            let mut points = Vec::new();
+                            for point in derived {
+                                // A derived vertex that is not finite states no point,
+                                // so the decode refuses it where the vertex list is admitted.
+                                let point = FinitePoint3::new(point)?;
+                                if let Err(error) = crate::resource::push(ctx, &mut points, point, "catia_e5_derived_points") {
+                                    return Some(Err(error));
+                                }
+                            }
+                            points
+                        }
+                        Ok(None) => Vec::new(),
+                        Err(error) => return Some(Err(error)),
+                    },
                     None => Vec::new(),
                 }
             }
@@ -368,62 +375,57 @@ pub(in crate::families) fn try_decode_e5(
 }
 
 fn derive_e5_vertices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     topology: &crate::families::e5::graph::E5Topology,
     surfaces: &[crate::families::e5::records::E5Surface],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<Vec<Point3>> {
-    let surface_for_ref: HashMap<u32, &crate::families::e5::records::E5Surface> = surfaces
-        .iter()
-        .map(|surface| (surface.record_id, surface))
-        .collect();
+) -> Result<Option<Vec<Point3>>, cadmpeg_core::CodecError> {
+    let mut surface_for_ref = HashMap::new();
+    for surface in surfaces {
+        crate::resource::insert_map(ctx, &mut surface_for_ref, surface.record_id, surface, "catia_e5_derived_surface_refs")?;
+    }
     let mut candidates = HashMap::<u32, Vec<Point3>>::new();
     for face in &topology.faces {
         for loop_ in &face.loops {
             for member in &loop_.members {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
-                let edge = topology.edges.get(&edge_ref)?;
-                let pcurve = topology.pcurves.get(&pcurve_ref)?;
+                let Some(edge) = topology.edges.get(&edge_ref) else { return Ok(None); };
+                let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else { return Ok(None); };
                 let surface_ref = match pcurve {
                     crate::families::e5::graph::E5Pcurve::Line { surface, .. }
                     | crate::families::e5::graph::E5Pcurve::Circle { surface, .. }
                     | crate::families::e5::graph::E5Pcurve::Jet { surface, .. }
                     | crate::families::e5::graph::E5Pcurve::Nurbs { surface, .. } => *surface,
                 };
-                let surface = surface_for_ref.get(&surface_ref)?;
-                let (_, range, endpoints) = e5_pcurve_on_surface(pcurve, surface, refusal)?;
-                let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)?;
+                let Some(surface) = surface_for_ref.get(&surface_ref) else { return Ok(None); };
+                let Some((_, range, endpoints)) = e5_pcurve_on_surface(pcurve, surface, refusal) else { return Ok(None); };
+                let Some(reversed) = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range) else { return Ok(None); };
                 let endpoints = if reversed {
                     [endpoints[1], endpoints[0]]
                 } else {
                     endpoints
                 };
-                candidates
-                    .entry(edge.start_vertex)
-                    .or_default()
-                    .push(endpoints[0]);
-                candidates
-                    .entry(edge.end_vertex)
-                    .or_default()
-                    .push(endpoints[1]);
+                for (vertex, point) in [(edge.start_vertex, endpoints[0]), (edge.end_vertex, endpoints[1])] {
+                    crate::resource::admit_map_entry(ctx, &mut candidates, &vertex, "catia_e5_derived_candidate_keys")?;
+                    crate::resource::push(ctx, candidates.entry(vertex).or_default(), point, "catia_e5_derived_candidate_points")?;
+                }
             }
         }
     }
-    topology
-        .vertex_refs
-        .iter()
-        .map(|vertex| {
-            let values = candidates.get(vertex)?;
-            let point = *values.first()?;
+    let mut points = Vec::new();
+    for vertex in &topology.vertex_refs {
+            let Some(values) = candidates.get(vertex) else { return Ok(None); };
+            let Some(point) = values.first().copied() else { return Ok(None); };
             if values
                 .iter()
                 .any(|candidate| candidate.distance(point) > E5_ENDPOINT_MATCH_TOLERANCE)
             {
-                return None;
+                return Ok(None);
             }
-            Some(point)
-        })
-        .collect()
+            crate::resource::push(ctx, &mut points, point, "catia_e5_derived_vertices")?;
+    }
+    Ok(Some(points))
 }
 
 fn append_e5_planes(
@@ -504,12 +506,13 @@ fn append_e5_planes(
         }
         let expected_normal = normal.filter(|_| consistent);
         let Some((normal, u_axis, uv_scale)) = solve_e5_plane_frame(
+            ctx,
             plane.record_id,
             plane.origin,
             topology,
             points,
             expected_normal,
-        ) else {
+        )? else {
             continue;
         };
         let Some(frame) = OrthonormalFrame3::from_units(normal, u_axis) else {
@@ -548,21 +551,20 @@ fn e5_uv_vectors_are_independent(left: FiniteVector<2>, right: FiniteVector<2>) 
 }
 
 fn solve_e5_plane_frame(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface_ref: u32,
     origin: FinitePoint3,
     topology: &crate::families::e5::graph::E5Topology,
     points: &[FinitePoint3],
     expected_normal: Option<Vector3>,
-) -> Option<(UnitVector3, UnitVector3, [FiniteReal; 2])> {
+) -> Result<Option<(UnitVector3, UnitVector3, [FiniteReal; 2])>, cadmpeg_core::CodecError> {
     if topology.vertex_refs.len() != points.len() {
-        return None;
+        return Ok(None);
     }
-    let point_by_ref: HashMap<u32, FinitePoint3> = topology
-        .vertex_refs
-        .iter()
-        .copied()
-        .zip(points.iter().copied())
-        .collect();
+    let mut point_by_ref = HashMap::new();
+    for (reference, point) in topology.vertex_refs.iter().copied().zip(points.iter().copied()) {
+        crate::resource::insert_map(ctx, &mut point_by_ref, reference, point, "catia_e5_plane_point_refs")?;
+    }
     let mut segments = Vec::new();
     for face in topology
         .faces
@@ -573,21 +575,21 @@ fn solve_e5_plane_frame(
             for member in &loop_.members {
                 let pcurve_ref = member.pcurve;
                 let edge_ref = member.edge_use;
-                let edge = topology.edges.get(&edge_ref)?;
-                let pcurve = topology.pcurves.get(&pcurve_ref)?;
-                let uv = e5_native_uv_endpoints(pcurve)?;
+                let Some(edge) = topology.edges.get(&edge_ref) else { return Ok(None); };
+                let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else { return Ok(None); };
+                let Some(uv) = e5_native_uv_endpoints(ctx, pcurve)? else { return Ok(None); };
                 let (Some(start), Some(end)) = (
                     point_by_ref.get(&edge.start_vertex),
                     point_by_ref.get(&edge.end_vertex),
                 ) else {
-                    return None;
+                    return Ok(None);
                 };
-                segments.push((uv, [*start, *end]));
+                crate::resource::push(ctx, &mut segments, (uv, [*start, *end]), "catia_e5_plane_segments")?;
             }
         }
     }
     if segments.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let anchors = 'find_anchors: {
@@ -631,11 +633,13 @@ fn solve_e5_plane_frame(
     let mut fitted_axes = Vec::new();
     if let Some(anchors) = anchors {
         for mask in 0usize..(1usize << anchors.len()) {
-            let mut orientations = vec![false; segments.len()];
+            let mut orientations = ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
             for (bit, &index) in anchors.iter().enumerate() {
                 orientations[index] = mask & (1 << bit) != 0;
             }
-            let mut seed_pairs = Vec::with_capacity(2 * anchors.len());
+            let mut seed_pairs = Vec::new();
+            let Some(seed_count) = anchors.len().checked_mul(2) else { return Ok(None); };
+            crate::resource::reserve_vec(ctx, &mut seed_pairs, seed_count, "catia_e5_plane_seed_pairs")?;
             for &index in &anchors {
                 seed_pairs.extend(endpoint_pairs(&segments[index], orientations[index]));
             }
@@ -649,28 +653,30 @@ fn solve_e5_plane_frame(
                 orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
                     < endpoint_error((seed_u, seed_v), segment, false);
             }
-            let mut pairs = Vec::with_capacity(2 * segments.len());
+            let mut pairs = Vec::new();
+            let Some(pair_count) = segments.len().checked_mul(2) else { return Ok(None); };
+            crate::resource::reserve_vec(ctx, &mut pairs, pair_count, "catia_e5_plane_pairs")?;
             for (segment, &reversed) in segments.iter().zip(&orientations) {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
             if let Some(fit) = fit_e5_plane_axes(origin, &pairs) {
-                fitted_axes.push((fit, pairs));
+                crate::resource::push(ctx, &mut fitted_axes, (fit, pairs), "catia_e5_plane_fits")?;
             }
         }
     } else {
-        let normal = expected_normal?;
-        let seed_index = segments.iter().enumerate().find_map(|(index, (uv, _))| {
+        let Some(normal) = expected_normal else { return Ok(None); };
+        let Some(seed_index) = segments.iter().enumerate().find_map(|(index, (uv, _))| {
             uv.iter()
                 .any(|point| point[0] != 0.0 || point[1] != 0.0)
                 .then_some(index)
-        })?;
+        }) else { return Ok(None); };
         for seed_reversed in [false, true] {
             let seed_pairs = endpoint_pairs(&segments[seed_index], seed_reversed);
             let Some((seed_u, seed_v, _)) = fit_rank_one_e5_plane_axes(origin, &seed_pairs, normal)
             else {
                 continue;
             };
-            let mut orientations = vec![false; segments.len()];
+            let mut orientations = ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
             orientations[seed_index] = seed_reversed;
             for (index, segment) in segments.iter().enumerate() {
                 if index == seed_index {
@@ -679,12 +685,14 @@ fn solve_e5_plane_frame(
                 orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
                     < endpoint_error((seed_u, seed_v), segment, false);
             }
-            let mut pairs = Vec::with_capacity(2 * segments.len());
+            let mut pairs = Vec::new();
+            let Some(pair_count) = segments.len().checked_mul(2) else { return Ok(None); };
+            crate::resource::reserve_vec(ctx, &mut pairs, pair_count, "catia_e5_plane_pairs")?;
             for (segment, &reversed) in segments.iter().zip(&orientations) {
                 pairs.extend(endpoint_pairs(segment, reversed));
             }
             if let Some(fit) = fit_rank_one_e5_plane_axes(origin, &pairs, normal) {
-                fitted_axes.push((fit, pairs));
+                crate::resource::push(ctx, &mut fitted_axes, (fit, pairs), "catia_e5_plane_fits")?;
             }
         }
     }
@@ -734,14 +742,14 @@ fn solve_e5_plane_frame(
             existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
                 && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
         }) {
-            candidates.push((normal, u_axis));
+            crate::resource::push(ctx, &mut candidates, (normal, u_axis), "catia_e5_plane_candidates")?;
         }
     }
     let mut canonical: Vec<(UnitVector3, UnitVector3, [FiniteReal; 2])> = Vec::new();
     for (normal, mut u_axis) in candidates {
-        let first = [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z]
+        let Some(first) = [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z]
             .into_iter()
-            .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)?;
+            .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY) else { return Ok(None); };
         let uv_scale = if first < 0.0 {
             u_axis = u_axis.reversed();
             [FiniteReal::ONE.negated(); 2]
@@ -752,15 +760,16 @@ fn solve_e5_plane_frame(
             existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
                 && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
         }) {
-            canonical.push((normal, u_axis, uv_scale));
+            crate::resource::push(ctx, &mut canonical, (normal, u_axis, uv_scale), "catia_e5_plane_canonical")?;
         }
     }
-    (canonical.len() == 1).then(|| canonical[0])
+    Ok((canonical.len() == 1).then(|| canonical[0]))
 }
 
 fn e5_native_uv_endpoints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &crate::families::e5::graph::E5Pcurve,
-) -> Option<[FiniteVector<2>; 2]> {
+) -> Result<Option<[FiniteVector<2>; 2]>, cadmpeg_core::CodecError> {
     let finite = |[start, end]: [[f64; 2]; 2]| {
         let (Some(start), Some(end)) = (FiniteVector::new(start), FiniteVector::new(end)) else {
             return None;
@@ -773,29 +782,29 @@ fn e5_native_uv_endpoints(
             direction,
             range,
             ..
-        } => finite(range.map(|parameter| {
+        } => Ok(finite(range.map(|parameter| {
             [
                 origin[0].get() + parameter.get() * direction[0].get(),
                 origin[1].get() + parameter.get() * direction[1].get(),
             ]
-        })),
+        }))),
         crate::families::e5::graph::E5Pcurve::Circle {
             center,
             radius,
             range,
             ..
-        } => finite(range.map(|parameter| {
+        } => Ok(finite(range.map(|parameter| {
             let radius = radius.get();
             let angle = parameter.get() / radius;
             [
                 center[0].get() + radius * angle.cos(),
                 center[1].get() + radius * angle.sin(),
             ]
-        })),
-        crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => Some([
-            FiniteVector::from(sites.first()?.point),
-            FiniteVector::from(sites.last()?.point),
-        ]),
+        }))),
+        crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => Ok(sites.first().zip(sites.last()).map(|(first, last)| [
+            FiniteVector::from(first.point),
+            FiniteVector::from(last.point),
+        ])),
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
             knots,
@@ -803,27 +812,24 @@ fn e5_native_uv_endpoints(
             range,
             ..
         } => {
-            let knots = knots
-                .iter()
-                .copied()
-                .map(FiniteReal::get)
-                .collect::<Vec<_>>();
-            let control_points = control_points
-                .iter()
-                .map(|[u, v]| Point2::new(u.get(), v.get()))
-                .collect::<Vec<_>>();
+            let mut scalar_knots = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut scalar_knots, knots.len(), "catia_e5_uv_knots")?;
+            scalar_knots.extend(knots.iter().copied().map(FiniteReal::get));
+            let mut scalar_controls = Vec::new();
+            crate::resource::reserve_vec(ctx, &mut scalar_controls, control_points.len(), "catia_e5_uv_controls")?;
+            scalar_controls.extend(control_points.iter().map(|[u, v]| Point2::new(u.get(), v.get())));
             let endpoints = range.map(|parameter| {
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
                     *degree,
-                    &knots,
-                    &control_points,
+                    &scalar_knots,
+                    &scalar_controls,
                     None,
                     parameter.get(),
                 )
                 .ok()
                 .map(FiniteVector::from)
             });
-            Some([endpoints[0]?, endpoints[1]?])
+            Ok(endpoints[0].zip(endpoints[1]).map(|(start, end)| [start, end]))
         }
     }
 }
@@ -3223,7 +3229,8 @@ mod route_tests {
             direction: finite_pair([f64::MAX, 0.0]),
             range: finite_pair([1.0, 2.0]),
         };
-        assert!(e5_native_uv_endpoints(&line).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| e5_native_uv_endpoints(ctx, &line))
+            .expect("service resource budget").is_none());
 
         let circle = E5Pcurve::Circle {
             surface: 0,
@@ -3233,7 +3240,8 @@ mod route_tests {
             range: finite_pair([0.0, 1.0]),
             tail: finite_pair([0.0, 0.0]),
         };
-        assert!(e5_native_uv_endpoints(&circle).is_none());
+        assert!(crate::test_support::with_service_context(|ctx| e5_native_uv_endpoints(ctx, &circle))
+            .expect("service resource budget").is_none());
     }
 
     #[test]
@@ -3311,18 +3319,21 @@ mod route_tests {
         };
 
         let (normal, u_axis, uv_scale) =
-            solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
+            crate::test_support::with_service_context(|ctx| solve_e5_plane_frame(ctx, 100, point([0.0, 0.0, 0.0]), &topology, &points, None))
+                .expect("service resource budget")
                 .expect("17-segment plane frame");
         assert!(normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert!(u_axis.as_raw().dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert_eq!(uv_scale, finite_pair([1.0, 1.0]));
-        assert!(solve_e5_plane_frame(
+        assert!(crate::test_support::with_service_context(|ctx| solve_e5_plane_frame(
+            ctx,
             100,
             point([0.0, 0.0, 0.0]),
             &topology,
             &points,
             Some(Vector3::new(f64::NAN, 0.0, 1.0)),
-        )
+        ))
+        .expect("service resource budget")
         .is_none());
     }
 
@@ -3397,7 +3408,8 @@ mod route_tests {
             point([0.0, -1.0, 0.0]),
         ];
         let (normal, u_axis, uv_scale) =
-            solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
+            crate::test_support::with_service_context(|ctx| solve_e5_plane_frame(ctx, 100, point([0.0, 0.0, 0.0]), &topology, &points, None))
+                .expect("service resource budget")
                 .expect("negative native chart frame");
         assert!(
             normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY
