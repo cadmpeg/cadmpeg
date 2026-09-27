@@ -17,7 +17,7 @@ use crate::records::feature::{
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
     },
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -29,10 +29,12 @@ use std::collections::{HashMap, HashSet};
 /// cells selected for removal, and the trailing value is the total cell count
 /// of the operation's partition.
 fn exact_surface_trim_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignSurfaceTrimOperation> {
+) -> Result<Option<DesignSurfaceTrimOperation>, CodecError> {
+    let parsed_prefix = (|| {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
         || scope.reference_members().len() != 4
     {
@@ -96,9 +98,49 @@ fn exact_surface_trim_operation(
         return None;
     }
     let total_cells = u64::from(trailing_value);
-    let mut cell_entries = Vec::with_capacity(cell_count_usize);
-    let mut cell_record_indices = HashSet::with_capacity(cell_count_usize);
-    let mut cell_ordinals = HashSet::with_capacity(cell_count_usize);
+    Some((
+        selection_record_index,
+        selection_byte_offset,
+        selection,
+        chain_records,
+        cell_table_record_index,
+        cell_table_class_tag,
+        cell_table_paired_class_tag,
+        cell_count_offset,
+        cell_count_usize,
+        entries_start,
+        trailing_value_offset,
+        trailing_zero_offset,
+        trailing_value,
+        total_cells,
+        primary,
+        paired,
+    ))
+    })();
+    let Some((selection_record_index, selection_byte_offset, selection, chain_records,
+        cell_table_record_index, cell_table_class_tag,
+        cell_table_paired_class_tag, cell_count_offset, cell_count_usize, entries_start,
+        trailing_value_offset, trailing_zero_offset, trailing_value, total_cells, primary, paired)) = parsed_prefix else {
+        return Ok(None);
+    };
+    let count = u64::try_from(cell_count_usize)
+        .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim cell count", 0, 1))?;
+    ctx.charge_collection_items(count, "f3d surface-trim cell entries")?;
+    let mut cell_entries = Vec::new();
+    cell_entries.try_reserve_exact(cell_count_usize).map_err(|_| {
+        ctx.refuse_codec_limit("f3d surface-trim cell entry allocation", 0, 1)
+    })?;
+    ctx.charge_collection_items(count, "f3d surface-trim cell record indices")?;
+    let mut cell_record_indices = HashSet::new();
+    cell_record_indices.try_reserve(cell_count_usize).map_err(|_| {
+        ctx.refuse_codec_limit("f3d surface-trim record index allocation", 0, 1)
+    })?;
+    ctx.charge_collection_items(count, "f3d surface-trim cell ordinals")?;
+    let mut cell_ordinals = HashSet::new();
+    cell_ordinals.try_reserve(cell_count_usize).map_err(|_| {
+        ctx.refuse_codec_limit("f3d surface-trim ordinal allocation", 0, 1)
+    })?;
+    let parsed = (|| {
     for ordinal in 0..cell_count_usize {
         let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
         let cell_record_index = marked_record_reference(bytes, entry_start)?;
@@ -145,10 +187,13 @@ fn exact_surface_trim_operation(
         },
     )
     .ok()
+    })();
+    Ok(parsed)
 }
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.
 pub(crate) fn decode_surface_trim_operations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
@@ -168,7 +213,7 @@ pub(crate) fn decode_surface_trim_operations(
         let records = record_offsets
             .entry(stream.to_owned())
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope) else {
+        let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
         operation.id = native_design_surface_trim_operation_id(&entry.name, scope.byte_offset());

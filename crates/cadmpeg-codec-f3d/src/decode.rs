@@ -4296,6 +4296,7 @@ fn extend_related_design_records(
         )?;
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
+            ctx,
             scan,
             &native.design_parameter_scopes,
         )?;
