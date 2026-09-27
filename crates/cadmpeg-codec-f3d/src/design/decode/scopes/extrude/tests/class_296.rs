@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -54,7 +53,7 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
     let parse_raw = |bytes: &[u8], class_tag: &str| {
         parse_parameter_scope(
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             RECORD_INDEX,
             &crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             0,
@@ -169,7 +168,7 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
@@ -303,7 +302,7 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
@@ -468,7 +467,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
     let prologue = |bytes: &[u8]| {
         parse_parameter_scope(
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,
@@ -484,7 +483,7 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
                         direction_reversed: bool| {
         let scope = parse_parameter_scope(
             bytes,
-            &IndexedRecordOffsets::build(bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,

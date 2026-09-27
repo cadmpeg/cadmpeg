@@ -13,7 +13,8 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::indexed_design_record_header as indexed_header;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
 const HEADER_LEN: usize = indexed_header::LEN;
@@ -109,14 +110,9 @@ fn unit_entry(bytes: &[u8], at: usize) -> Option<(String, String)> {
 
 /// Offsets of the unit-system reference count following each `UnitSystems`
 /// collection name. The name is the LP-ASCII string followed by two zero bytes.
-fn collection_counts(bytes: &[u8]) -> Vec<usize> {
-    let mut prefix = Vec::new();
-    prefix.extend_from_slice(&11u32.to_le_bytes());
-    prefix.extend_from_slice(b"UnitSystems");
-    prefix.extend_from_slice(&0u16.to_le_bytes());
-    memchr::memmem::find_iter(bytes, &prefix)
-        .map(|start| start + prefix.len())
-        .collect()
+fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    const PREFIX: &[u8] = b"\x0b\x00\x00\x00UnitSystems\x00\x00";
+    memchr::memmem::find_iter(bytes, PREFIX).map(|start| start + PREFIX.len())
 }
 
 /// The `Custom` system's `modelingLengthName` value, when one design
@@ -127,14 +123,16 @@ fn collection_counts(bytes: &[u8]) -> Vec<usize> {
 /// the five stored length unit names is rejected: the search is a byte-window
 /// scan, and the closed name set is what separates the collection from a window
 /// that merely reads like one.
-fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
-    let offsets = IndexedRecordOffsets::build(bytes);
+fn decode_modeling_length_unit(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<String>, CodecError> {
+    let offsets = IndexedRecordOffsets::build(ctx, bytes)?;
     let payloads = |record_index: u32| {
         offsets
             .offsets(record_index)
             .iter()
             .filter_map(|at| at.checked_add(HEADER_LEN))
-            .collect::<Vec<_>>()
     };
     for count_at in collection_counts(bytes) {
         let Some(systems) = references(bytes, count_at, UNIT_SYSTEM_COUNT) else {
@@ -156,14 +154,14 @@ fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
                         if property == MODELING_LENGTH_PROPERTY
                             && LENGTH_UNIT_NAMES.contains(&value.as_str())
                         {
-                            return Some(value);
+                            return Ok(Some(value));
                         }
                     }
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
 
 /// The document's modelling length unit, read from the first design
@@ -171,21 +169,37 @@ fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
 ///
 /// An entry whose bytes cannot be read is skipped rather than failing the
 /// decode: the unit is presentation metadata, and no geometry depends on it.
-pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String> {
-    scan.entries
+pub(crate) fn decode_document_length_unit(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<String>, CodecError> {
+    for entry in scan
+        .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-        .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
-        .find_map(decode_modeling_length_unit)
+    {
+        if let Ok(bytes) = scan.entry_bytes(&entry.name) {
+            if let Some(unit) = decode_modeling_length_unit(ctx, bytes)? {
+                return Ok(Some(unit));
+            }
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        decode_modeling_length_unit, CUSTOM_SYSTEM, ENTRY_NAMESPACE, LENGTH_UNIT_NAMES,
+        CUSTOM_SYSTEM, ENTRY_NAMESPACE, LENGTH_UNIT_NAMES,
         SYSTEM_NAMESPACE, UNIT_ENTRY_COUNT, UNIT_SYSTEM_COUNT,
     };
     use crate::test_support::{lp_ascii, lp_utf16};
+
+    fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            super::decode_modeling_length_unit(ctx, bytes).unwrap()
+        })
+    }
 
     /// The six systems in collection order.
     const SYSTEMS: [&str; 6] = [

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
 use crate::records::feature::scope::DesignParameterScope;
@@ -93,7 +92,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        let decoded = exact_work_plane_frame(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("325-byte WorkPlane frame");
         for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
             for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {

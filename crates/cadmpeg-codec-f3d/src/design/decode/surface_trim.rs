@@ -210,9 +210,12 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = record_offsets
-            .entry(stream.to_owned())
-            .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+        let records = match record_offsets.entry(stream.to_owned()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(IndexedRecordOffsets::build(ctx, bytes)?)
+            }
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        };
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };

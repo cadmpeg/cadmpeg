@@ -3,7 +3,6 @@ use cadmpeg_test_support::bytes::{put_u32, put_u64};
 
 use super::exact_coil_placement;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
@@ -402,7 +401,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let placement =
             exact_coil_placement(&bytes, &records, &scope, &[]).expect("compact Coil placement");
         assert_eq!(placement.selection_record_index, 100);
@@ -448,7 +447,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
 #[test]
 fn modern_coil_placement_accepts_class_450_matrix_frame() {
     let (bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
-    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+    let placement = exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[])
         .expect("modern Coil matrix placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.selection_class_tag.as_str(), "286");
@@ -476,21 +475,21 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
     let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
     bytes[transform_start + coil_modern_matrix::CONSTANT_512 + 1] = 0;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
     let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
     bytes[transform_start + coil_modern_matrix::IDENTITY_LANE + 7] = 0;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
     let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
     bytes[transform_start + coil_modern_matrix::OWNER_REFERENCE + 1] = 0;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 }
@@ -498,7 +497,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
 #[test]
 fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let (bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
-    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+    let placement = exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[])
         .expect("owner-referenced compact Coil placement");
     assert_eq!(
         *placement.transform(),
@@ -524,7 +523,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
 #[test]
 fn legacy_coil_placement_accepts_identity_frame() {
     let (bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
-    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+    let placement = exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[])
         .expect("legacy Coil placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.transform_record_index, 200);
@@ -554,7 +553,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
     bytes[transform_start + coil_legacy_identity::TAIL_VALUE] = 5;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
@@ -562,14 +561,14 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     scope.class_tag =
         crate::records::references::DesignClassTag::try_from("432".to_owned()).unwrap();
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
     let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
     bytes[transform_start + coil_legacy_identity::SUCCESSOR_RECORD_INDEX] = 203;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 }
@@ -577,7 +576,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
 #[test]
 fn compact_coil_spiral_placement_accepts_seven_reference_form() {
     let (bytes, scope, transform_start) = compact_coil_spiral_placement_fixture();
-    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+    let placement = exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[])
         .expect("seven-reference compact Coil spiral placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.transform_record_index, 200);
@@ -600,7 +599,7 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
             ));
     }
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 }
@@ -616,21 +615,21 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
     let matrix_value_offset = transform_start + 66 + 10 * 8;
     bytes[matrix_value_offset..matrix_value_offset + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
     let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
     bytes[transform_start + 65] = 0;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 
     let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
     bytes[transform_start + 223] ^= 1;
     assert_eq!(
-        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        exact_coil_placement(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope, &[]),
         None
     );
 }
@@ -640,7 +639,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
     let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
     let placement = exact_coil_placement(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &recipes,
     )
@@ -703,7 +702,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
@@ -765,7 +764,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
@@ -801,7 +800,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
             let parsed = parse_parameter_scope(
                 &bytes,
-                &IndexedRecordOffsets::build(&bytes),
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset,
@@ -815,7 +814,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let unsupported = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
@@ -861,7 +860,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
@@ -934,7 +933,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         };
         parse_parameter_scope(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset,

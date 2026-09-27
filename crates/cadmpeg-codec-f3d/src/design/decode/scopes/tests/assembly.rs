@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::assembly::{
     DesignAssemblyAlignment, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
@@ -176,7 +175,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     identity_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
     let identity_paths = exact_assembly_alignment(
         &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -197,7 +196,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     }
     let compact_identity_paths = exact_assembly_alignment(
         &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -211,7 +210,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     }
     let extended_class_329_paths = exact_assembly_alignment(
         &identity_path_bytes,
-        &IndexedRecordOffsets::build(&identity_path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&identity_path_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -238,7 +237,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         .copy_from_slice(&35_u32.to_le_bytes());
     assert!(exact_assembly_alignment(
         &malformed_class_329_identity,
-        &IndexedRecordOffsets::build(&malformed_class_329_identity),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_class_329_identity),
         &scope,
         &rectangular_owners,
     )
@@ -267,7 +266,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
     let paths = exact_assembly_alignment(
         &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -305,7 +304,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     reversed_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
     let reversed_paths = exact_assembly_alignment(
         &reversed_path_assignment,
-        &IndexedRecordOffsets::build(&reversed_path_assignment),
+        &crate::design::test_support::indexed_record_offsets_for_test(&reversed_path_assignment),
         &scope,
         &rectangular_owners,
     )
@@ -317,7 +316,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     duplicate_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
     assert!(exact_assembly_alignment(
         &duplicate_path_assignment,
-        &IndexedRecordOffsets::build(&duplicate_path_assignment),
+        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_path_assignment),
         &scope,
         &rectangular_owners,
     )
@@ -328,7 +327,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         invalid_locator[locator_zero_at] = 1;
         assert!(exact_assembly_alignment(
             &invalid_locator,
-            &IndexedRecordOffsets::build(&invalid_locator),
+            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_locator),
             &scope,
             &rectangular_owners,
         )
@@ -341,7 +340,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         invalid_wrapper[first_wrapper_at + relative_offset] = value;
         assert!(exact_assembly_alignment(
             &invalid_wrapper,
-            &IndexedRecordOffsets::build(&invalid_wrapper),
+            &crate::design::test_support::indexed_record_offsets_for_test(&invalid_wrapper),
             &scope,
             &rectangular_owners,
         )
@@ -352,7 +351,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     extended_wrapper.insert(first_wrapper_end, 0);
     assert!(exact_assembly_alignment(
         &extended_wrapper,
-        &IndexedRecordOffsets::build(&extended_wrapper),
+        &crate::design::test_support::indexed_record_offsets_for_test(&extended_wrapper),
         &scope,
         &rectangular_owners,
     )
@@ -409,7 +408,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     class_294_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
     let class_294_paths = exact_assembly_alignment(
         &class_294_path_bytes,
-        &IndexedRecordOffsets::build(&class_294_path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -429,7 +428,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     }
     let class_299_paths = exact_assembly_alignment(
         &class_294_path_bytes,
-        &IndexedRecordOffsets::build(&class_294_path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&class_294_path_bytes),
         &scope,
         &rectangular_owners,
     )
@@ -448,7 +447,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assembly_bytes[25] = 0;
     assert!(exact_assembly_alignment(
         &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
         &scope,
         &rectangular_owners
     )
@@ -457,7 +456,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assembly_bytes[25] = 2;
     assert!(exact_assembly_alignment(
         &assembly_bytes,
-        &IndexedRecordOffsets::build(&assembly_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
         &scope,
         &rectangular_owners
     )
@@ -479,7 +478,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert_eq!(
         exact_assembly_alignment(
             &assembly_bytes,
-            &IndexedRecordOffsets::build(&assembly_bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
             &scope,
             &rectangular_owners
         ),
@@ -556,7 +555,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     );
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -620,7 +619,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         .copy_from_slice(&999_u64.to_le_bytes());
     let malformed_alignment = exact_assembly_alignment(
         &malformed,
-        &IndexedRecordOffsets::build(&malformed),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
         &scope,
         &owners,
     )
@@ -742,7 +741,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
 
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -869,7 +868,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     path_bytes.extend_from_slice(&5_200_u32.to_le_bytes());
     let paths = exact_assembly_alignment(
         &path_bytes,
-        &IndexedRecordOffsets::build(&path_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&path_bytes),
         &scope,
         &owners,
     )
@@ -906,7 +905,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         .copy_from_slice(&3_u32.to_le_bytes());
     assert!(exact_assembly_alignment(
         &malformed_wrapper,
-        &IndexedRecordOffsets::build(&malformed_wrapper),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_wrapper),
         &scope,
         &owners,
     )
@@ -915,7 +914,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     malformed_path[first_path_at + 417] = 1;
     assert!(exact_assembly_alignment(
         &malformed_path,
-        &IndexedRecordOffsets::build(&malformed_path),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_path),
         &scope,
         &owners,
     )
@@ -925,7 +924,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     malformed[25] = 0;
     assert!(exact_assembly_alignment(
         &malformed,
-        &IndexedRecordOffsets::build(&malformed),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed),
         &scope,
         &owners,
     )
@@ -1021,7 +1020,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
 
     let alignment = exact_assembly_alignment(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &owners,
     )
@@ -1075,7 +1074,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         .copy_from_slice(&2.0_f64.to_le_bytes());
     let incomplete = exact_assembly_alignment(
         &invalid_transform,
-        &IndexedRecordOffsets::build(&invalid_transform),
+        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
         &scope,
         &owners,
     )
@@ -1087,7 +1086,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
     let incomplete = exact_assembly_alignment(
         &duplicate_reference,
-        &IndexedRecordOffsets::build(&duplicate_reference),
+        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
         &scope,
         &owners,
     )
@@ -1255,7 +1254,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         ];
         let alignment = exact_assembly_alignment(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &owners,
         )

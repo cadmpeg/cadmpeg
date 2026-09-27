@@ -2,7 +2,6 @@
 
 use crate::design::decode::scopes::combine::exact_combine_operation;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::feature_project::project_combine;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{
@@ -93,13 +92,13 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     };
     let mut scope = parse_parameter_scope(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
     .expect("Combine scope");
-    let operation = exact_combine_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+    let operation = exact_combine_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
         .expect("Combine construction");
     assert_eq!(
         operation,
@@ -177,7 +176,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         .unwrap();
     let compact = exact_combine_operation(
         &compact_bytes,
-        &IndexedRecordOffsets::build(&compact_bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
     )
     .expect("compact Combine construction");
@@ -199,7 +198,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     malformed_compact_tail[45] = 1;
     assert!(exact_combine_operation(
         &malformed_compact_tail,
-        &IndexedRecordOffsets::build(&malformed_compact_tail),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
         &compact_scope,
     )
     .is_none());
@@ -322,7 +321,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
@@ -372,7 +371,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
         &malformed_reference,
-        &IndexedRecordOffsets::build(&malformed_reference),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
         &scope,
     )
     .is_none());
@@ -381,7 +380,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     malformed_external_asset[usize::try_from(identity.external_asset_id_offset()).unwrap()] = b'g';
     let operation = exact_combine_operation(
         &malformed_external_asset,
-        &IndexedRecordOffsets::build(&malformed_external_asset),
+        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
         &scope,
     )
     .expect("operation remains exact when only the optional external identity is malformed");

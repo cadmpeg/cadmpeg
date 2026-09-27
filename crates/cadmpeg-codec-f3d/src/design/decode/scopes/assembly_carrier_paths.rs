@@ -413,7 +413,6 @@ mod tests {
         exact_class_363_identity_guids, CarrierFrame,
     };
     use crate::bytes::lp_utf16_bounded;
-    use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::layout::{
         assembly_class_307_264_joint_origin_scope as class_307_joint_origin,
         assembly_class_363_264_frame_388_identity as class_363_identity,
@@ -484,7 +483,7 @@ mod tests {
             class_307_joint_origin::KIND_CODE_UNIT_COUNT,
             "JointOrigin",
         );
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: 9,
@@ -524,7 +523,7 @@ mod tests {
         ));
 
         bytes[class_307_joint_origin::REFERENCE_TRAILER] = 0;
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert_eq!(exact_class_307_joint_origin(&bytes, &records, &frame), None);
     }
 
@@ -566,7 +565,7 @@ mod tests {
                     bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
                 }
             }
-            let records = IndexedRecordOffsets::build(&bytes);
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
             assert_eq!(
                 exact_class_363_identity_frame(&bytes, &records, record_index),
                 Some(CarrierFrame {

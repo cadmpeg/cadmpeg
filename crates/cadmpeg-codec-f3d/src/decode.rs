@@ -2245,7 +2245,7 @@ impl<'a> F3dDecodeSession<'a> {
             ir,
             source_attributes,
             unknowns,
-        } = build_metadata_ir(scan)?;
+        } = build_metadata_ir(ctx, scan)?;
         Ok((
             Self {
                 ctx,
@@ -2300,7 +2300,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_types = crate::design::decode::meta::decode_types(scan)?;
         self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
         self.native.design_entity_headers =
-            crate::design::decode::sketch::decode_entity_headers(scan)?;
+            crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
             scan,
             &self.native.design_entity_headers,
@@ -2323,6 +2323,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_relations,
         )?;
         crate::design::decode::operands::bind_work_point_input_carriers(
+            ctx,
             scan,
             &mut self.native.design_parameter_scopes,
             &self.native.design_record_headers,
@@ -2455,6 +2456,7 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         }
         crate::design::feature_project::bind_form_cages(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &mut self.ir.model.features,
@@ -3034,7 +3036,7 @@ fn decode_scanned_document<'a>(
             ir,
             mut source_attributes,
             unknowns,
-        } = build_metadata_ir(scan)?;
+        } = build_metadata_ir(ctx, scan)?;
         annotate_docstruct(&mut source_attributes, scan);
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(scan);
@@ -3233,7 +3235,7 @@ fn project_mesh_bodies(
 ) -> Result<MeshProjection, CodecError> {
     use crate::design::decode::mesh::MeshContainerOutcome;
 
-    let decoded = crate::design::decode::mesh::decode_mesh_bodies(scan)?;
+    let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
@@ -4237,6 +4239,7 @@ fn extend_related_design_records(
     );
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+        ctx,
         scan,
         &native.design_parameters,
         &native.design_record_headers,
@@ -4286,6 +4289,7 @@ fn extend_related_design_records(
         crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     native.design_parameter_scopes =
         crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+            ctx,
             scan,
             &native.design_entity_headers,
             &native.design_types,
@@ -4306,6 +4310,7 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     native.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        ctx,
         scan,
         &native.design_parameter_scopes,
     )?;
@@ -4413,6 +4418,7 @@ fn extend_related_design_records(
             &native.design_record_headers,
         )?;
     crate::design::decode::scopes::mirror::bind_mirror_constructions(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -4652,6 +4658,7 @@ fn extend_related_design_records(
     );
     native.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
@@ -4699,6 +4706,7 @@ fn extend_related_design_records(
         &scope_histories,
     );
     native.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -4719,6 +4727,7 @@ fn extend_related_design_records(
     );
     native.design_edge_treatment_vertex_operands =
         crate::design::decode::operands::decode_edge_treatment_vertex_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
@@ -4736,6 +4745,7 @@ fn extend_related_design_records(
         &scope_histories,
     );
     crate::design::decode::operands::bind_work_plane_constructions(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
@@ -4753,6 +4763,7 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     native.design_face_operands = crate::design::decode::operands::decode_face_operands(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -4785,6 +4796,7 @@ fn extend_related_design_records(
         &native.design_face_operands,
     );
     native.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_entity_headers,
@@ -4898,7 +4910,7 @@ fn build_geometry_ir(
 > {
     let mut ir = CadIr::empty();
     let (source_attributes, tolerances) =
-        source_attributes_and_tolerances(scan, primary_model_brep)?;
+        source_attributes_and_tolerances(ctx, scan, primary_model_brep)?;
     ir.tolerances = tolerances;
     let Brep {
         asm,
@@ -4936,6 +4948,7 @@ fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, Codec
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
 fn source_attributes_and_tolerances(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
 ) -> Result<(std::collections::BTreeMap<String, String>, Tolerances), CodecError> {
@@ -4959,7 +4972,7 @@ fn source_attributes_and_tolerances(
     {
         attributes.insert("solved_record_len".to_string(), off.to_string());
     }
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
         attributes.insert("modeling_length_unit".to_string(), unit);
     }
 
@@ -5086,7 +5099,7 @@ struct MetadataIr {
     unknowns: Vec<UnknownRecord>,
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
+fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
@@ -5098,7 +5111,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         "zip_entry_count".to_string(),
         scan.entries.len().to_string(),
     );
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
         attributes.insert("modeling_length_unit".to_string(), unit);
     }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::decode::sketch::parse_sketch_placement_candidates;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::sketch_project::project_sketch_design;
 use crate::records::entity_header::DesignEntityHeader;
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
@@ -20,7 +19,7 @@ fn candidates(
     entity_id: &str,
     record_index: u32,
 ) -> Vec<DesignSketchPlacement> {
-    let records = IndexedRecordOffsets::build(bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     parse_sketch_placement_candidates(
         bytes,
         scope_record_index,
@@ -339,7 +338,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         )
         .expect("valid module registration"),
     };
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
         entity.byte_offset,
@@ -374,7 +373,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let compact = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
         entity.byte_offset,

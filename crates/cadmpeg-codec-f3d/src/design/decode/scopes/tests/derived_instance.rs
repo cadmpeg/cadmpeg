@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::component_constructions::exact_derived_instance_construction;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::identity_matrix;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
@@ -16,7 +15,7 @@ const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
 #[test]
 fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let (mut bytes, mut scope, occurrence) = fixture();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     let construction = exact_derived_instance_construction(
         &bytes,
@@ -52,7 +51,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(exact_derived_instance_construction(
         &bytes,
         &records,

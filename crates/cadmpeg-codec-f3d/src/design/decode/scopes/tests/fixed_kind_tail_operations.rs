@@ -8,7 +8,6 @@ use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
 use crate::design::decode::scopes::surfaces::{
     exact_surface_extend_operation, exact_surface_offset_operation,
 };
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::feature_project::project_parameter_design;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
@@ -69,7 +68,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &move_scope,
     )
     .expect("class-368 Move frame");
@@ -106,7 +105,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
     )
     .expect("class-296 Move frame");
@@ -119,7 +118,7 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
     )
     .expect("class-362 Move frame");
@@ -155,7 +154,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &class_433_move_scope,
     )
     .expect("class-433 Move frame");
@@ -192,7 +191,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let scale_records = IndexedRecordOffsets::build(&bytes);
+    let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
         exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
         Some(DesignScaleOperation {
@@ -247,7 +246,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_solid_primitive(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &sphere_scope,
             &[],
         ),
@@ -307,7 +306,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_solid_primitive(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &torus_scope,
             &[],
         ),
@@ -352,7 +351,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -391,7 +390,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
                 distance,
@@ -432,7 +431,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -449,7 +448,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert_eq!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
         None
     );
     let compact_thicken_at = bytes.len();
@@ -470,7 +469,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -502,7 +501,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shifted_thicken_scope,
         ),
         Some(DesignDirectFaceOperation::Thicken(
@@ -516,7 +515,7 @@ pub(super) fn fixed_kind_tail_operations(
     {
         let construction = exact_direct_face_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &thicken_scope,
         );
         match (thicken_scope.payload_mut(), construction) {
@@ -651,7 +650,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     {
         let construction =
-            exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &shell_scope);
+            exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &shell_scope);
         match (shell_scope.payload_mut(), construction) {
             (
                 crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
@@ -745,7 +744,7 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &compact_shell_scope),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
             thickness,
             thickness_record_index: 9_000,
@@ -780,7 +779,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &shifted_shell_scope,
         ),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
@@ -794,7 +793,7 @@ pub(super) fn fixed_kind_tail_operations(
     {
         let construction = exact_direct_face_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &compact_shell_scope,
         );
         match (compact_shell_scope.payload_mut(), construction) {
@@ -840,7 +839,7 @@ pub(super) fn fixed_kind_tail_operations(
     {
         let construction = exact_direct_face_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &offset_scope,
         );
         match (offset_scope.payload_mut(), construction) {
@@ -888,7 +887,7 @@ pub(super) fn fixed_kind_tail_operations(
     ));
     bytes[compact_thicken_at + 46] = 0;
     assert_eq!(
-        exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &thicken_scope),
         None
     );
 
@@ -951,7 +950,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
@@ -984,7 +983,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
@@ -1018,7 +1017,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
@@ -1116,7 +1115,7 @@ pub(super) fn fixed_kind_tail_operations(
         })
         .unwrap();
     let operation =
-        exact_surface_extend_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
+        exact_surface_extend_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
             .expect("exact SurfaceExtend construction");
     assert_eq!(
         operation,
@@ -1178,7 +1177,7 @@ pub(super) fn fixed_kind_tail_operations(
         *slot = None;
     }
     let operation =
-        exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope)
+        exact_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
             .expect("exact SurfaceOffset construction");
     assert_eq!(
         operation,
@@ -1272,7 +1271,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let grouped_operation = exact_surface_offset_operation(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &grouped_scope,
     )
     .expect("exact grouped SurfaceOffset construction");
@@ -1291,7 +1290,7 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(
-        exact_surface_offset_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &extend_scope,),
+        exact_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope,),
         None
     );
 
@@ -1352,7 +1351,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],
@@ -1388,7 +1387,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         exact_fixed_extrude_parameters(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &extrude_scope,
             &[],
             &[],

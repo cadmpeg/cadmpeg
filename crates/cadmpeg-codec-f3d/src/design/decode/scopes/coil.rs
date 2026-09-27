@@ -243,6 +243,7 @@ pub(super) fn exact_coil_placement(
     .or_else(|| {
         exact_coil_face_selection(
             bytes,
+            records,
             scope,
             selection_record_index,
             selection_start,
@@ -415,6 +416,7 @@ fn exact_coil_legacy_identity_frame(
 
 fn exact_coil_face_selection(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     selection_record_index: u32,
     selection_start: usize,
@@ -431,7 +433,7 @@ fn exact_coil_face_selection(
     };
     let face = parse_face_operand(
         bytes,
-        &IndexedRecordOffsets::build(bytes),
+        records,
         scope,
         0,
         None,

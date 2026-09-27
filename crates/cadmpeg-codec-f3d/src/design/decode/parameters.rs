@@ -475,6 +475,7 @@ fn valid_design_parameter_family(
 /// Decode the exact same-index-delimited owner frame for every owned Design
 /// parameter.
 pub(crate) fn decode_parameter_owners(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     headers: &[DesignRecordHeader],
@@ -511,7 +512,7 @@ pub(crate) fn decode_parameter_owners(
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
         if streams
-            .insert(stream, (entry, IndexedRecordOffsets::build(bytes)))
+            .insert(stream, (entry, IndexedRecordOffsets::build(ctx, bytes)?))
             .is_some()
         {
             return Err(CodecError::Malformed(
