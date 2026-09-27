@@ -401,11 +401,16 @@ fn homogeneous_control_points(
     Ok(Some(homogeneous))
 }
 
+struct EuclideanControlNet {
+    control_points: Vec<FinitePoint3>,
+    weights: Option<Vec<PositiveReal>>,
+}
+
 fn euclidean_control_points(
     ctx: Option<&DecodeContext<'_>>,
     homogeneous: Vec<[f64; 4]>,
     rational: bool,
-) -> Result<Option<(Vec<FinitePoint3>, Option<Vec<PositiveReal>>)>, CodecError> {
+) -> Result<Option<EuclideanControlNet>, CodecError> {
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(
             homogeneous.len() as u64,
@@ -433,7 +438,10 @@ fn euclidean_control_points(
             weights.push(weight);
         }
     }
-    Ok(Some((control_points, weights)))
+    Ok(Some(EuclideanControlNet {
+        control_points,
+        weights,
+    }))
 }
 
 fn elevate_bezier_homogeneous(
@@ -590,13 +598,19 @@ fn reverse_nurbs(
     Ok((reversed, reversed_range))
 }
 
+#[derive(Debug)]
+struct InsertedKnotNet {
+    control_points: Vec<[f64; 4]>,
+    knots: Vec<f64>,
+}
+
 fn insert_homogeneous_knot(
     ctx: Option<&DecodeContext<'_>>,
     control_points: &[[f64; 4]],
     knots: &[f64],
     degree: usize,
     value: f64,
-) -> Result<Option<(Vec<[f64; 4]>, Vec<f64>)>, CodecError> {
+) -> Result<Option<InsertedKnotNet>, CodecError> {
     let control_count = control_points.len();
     let Some(last_control) = control_count.checked_sub(1) else {
         return Ok(None);
@@ -697,7 +711,10 @@ fn insert_homogeneous_knot(
         }
         inserted_control_points[index] = point;
     }
-    Ok(Some((inserted_control_points, inserted_knots)))
+    Ok(Some(InsertedKnotNet {
+        control_points: inserted_control_points,
+        knots: inserted_knots,
+    }))
 }
 
 /// Trim a curve to `interval`. `Ok(None)` states an interval the curve cannot
@@ -764,8 +781,10 @@ fn trim_nurbs_lanes(
             return Ok(None);
         };
         while knots.iter().filter(|knot| **knot == value).count() < target_multiplicity {
-            let Some((new_homogeneous, new_knots)) =
-                insert_homogeneous_knot(ctx, &homogeneous, &knots, degree, value)?
+            let Some(InsertedKnotNet {
+                control_points: new_homogeneous,
+                knots: new_knots,
+            }) = insert_homogeneous_knot(ctx, &homogeneous, &knots, degree, value)?
             else {
                 return Ok(None);
             };
@@ -810,8 +829,10 @@ fn trim_nurbs_lanes(
     if trimmed_knots.len() != expected_knots {
         return Ok(None);
     }
-    let Some((control_points, weights)) =
-        euclidean_control_points(ctx, trimmed_homogeneous, curve.weights().is_some())?
+    let Some(EuclideanControlNet {
+        control_points,
+        weights,
+    }) = euclidean_control_points(ctx, trimmed_homogeneous, curve.weights().is_some())?
     else {
         return Ok(None);
     };
@@ -1150,9 +1171,11 @@ fn elevate_nurbs_to_degree(
             let Some(points) = homogeneous.take() else {
                 return Err(DegreeElevationError::HomogeneousControlNet.into());
             };
-            let Some((new_points, new_knots)) =
-                insert_homogeneous_knot(ctx, &points, &knots, source_degree, value)
-                    .map_err(DegreeElevationError::Allocation)?
+            let Some(InsertedKnotNet {
+                control_points: new_points,
+                knots: new_knots,
+            }) = insert_homogeneous_knot(ctx, &points, &knots, source_degree, value)
+                .map_err(DegreeElevationError::Allocation)?
             else {
                 return Err(DegreeElevationError::KnotInsertion { knot: value }.into());
             };
@@ -1199,7 +1222,10 @@ fn elevate_nurbs_to_degree(
             }
             .into());
         };
-        let Some((control_points, weights)) = euclidean_control_points(ctx, elevated, rational)
+        let Some(EuclideanControlNet {
+            control_points,
+            weights,
+        }) = euclidean_control_points(ctx, elevated, rational)
             .map_err(DegreeElevationError::Allocation)?
         else {
             return Err(DegreeElevationError::SpanEuclideanNet { span }.into());

@@ -73,8 +73,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             ir,
             source_carriers,
             feature_id,
-            definition,
-            transform,
+            (definition, transform),
             extent.as_ref(),
         )?
         else {

@@ -184,12 +184,18 @@ fn solve_vector_system(
     Some(values)
 }
 
+#[derive(Debug)]
+struct InterpolationCurveData {
+    knots: Vec<f64>,
+    controls: Vec<[f64; 3]>,
+}
+
 fn interpolation_curve_data(
     ctx: &DecodeContext<'_>,
     points: &[[f64; 3]],
     parameters: &[f64],
     endpoint_derivatives: [[f64; 3]; 2],
-) -> Result<Option<(Vec<f64>, Vec<[f64; 3]>)>, CodecError> {
+) -> Result<Option<InterpolationCurveData>, CodecError> {
     const DEGREE: usize = 3;
     let point_count = points.len();
     if point_count < 2
@@ -237,7 +243,8 @@ fn interpolation_curve_data(
     ctx.charge_collection_items(control_count as u64, "creo interpolation input values")?;
     let mut values = points.to_vec();
     values.extend(endpoint_derivatives);
-    Ok(solve_vector_system(matrix, values).map(|controls| (knots, controls)))
+    Ok(solve_vector_system(matrix, values)
+        .map(|controls| InterpolationCurveData { knots, controls }))
 }
 
 pub(in super::super) fn saved_spline_nurbs(
@@ -245,10 +252,10 @@ pub(in super::super) fn saved_spline_nurbs(
     spline: &crate::feature::definitions::FeatureSavedSpline,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<NurbsCurve>, CodecError> {
-    if !spline
+    if spline
         .declared_point_count
         .and_then(|count| usize::try_from(count).ok())
-        .is_some_and(|count| count == spline.interpolation_points.len())
+        .is_none_or(|count| count != spline.interpolation_points.len())
     {
         return Ok(None);
     }
@@ -266,8 +273,10 @@ pub(in super::super) fn saved_spline_nurbs(
     else {
         return Ok(None);
     };
-    let Some((knots, control_points)) =
-        interpolation_curve_data(ctx, &spline.interpolation_points, parameters, tangents)?
+    let Some(InterpolationCurveData {
+        knots,
+        controls: control_points,
+    }) = interpolation_curve_data(ctx, &spline.interpolation_points, parameters, tangents)?
     else {
         return Ok(None);
     };
@@ -398,7 +407,7 @@ pub(in super::super) fn interpolation_spline_surface(
         let samples = (0..u_sample_count)
             .map(|u| points[u * v_sample_count + v])
             .collect::<Vec<_>>();
-        let Some((knots, controls)) = interpolation_curve_data(
+        let Some(InterpolationCurveData { knots, controls }) = interpolation_curve_data(
             ctx,
             &samples,
             u_parameters,
@@ -433,7 +442,7 @@ pub(in super::super) fn interpolation_spline_surface(
         let samples = (0..u_sample_count)
             .map(|u| end_v_derivatives[v_boundary * u_sample_count + u])
             .collect::<Vec<_>>();
-        let Some((_, controls)) = interpolation_curve_data(
+        let Some(InterpolationCurveData { controls, .. }) = interpolation_curve_data(
             ctx,
             &samples,
             u_parameters,
@@ -455,7 +464,7 @@ pub(in super::super) fn interpolation_spline_surface(
     let mut control_points = Vec::with_capacity(control_count);
     let mut v_knots = None;
     for u in 0..u_control_count {
-        let Some((knots, controls)) = interpolation_curve_data(
+        let Some(InterpolationCurveData { knots, controls }) = interpolation_curve_data(
             ctx,
             &position_controls[u],
             v_parameters,

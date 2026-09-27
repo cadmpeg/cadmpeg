@@ -348,7 +348,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             let segment = segments.unique_segment(external_id)?;
             let carrier = section_segment_intersection_carrier_with_missing_line(
                 definition,
-                &radii,
+                radii,
                 points,
                 segment,
                 missing_line.as_ref(),

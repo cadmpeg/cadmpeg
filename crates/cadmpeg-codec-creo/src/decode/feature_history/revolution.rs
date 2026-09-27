@@ -87,8 +87,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             ir,
             source_carriers,
             feature_id,
-            definition,
-            transform,
+            (definition, transform),
             extent.as_ref(),
         )?
         else {
@@ -502,8 +501,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             ir,
             source_carriers,
             feature_id,
-            definition,
-            transform,
+            (definition, transform),
             extent.as_ref(),
         )?
         else {

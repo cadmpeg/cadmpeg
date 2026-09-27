@@ -67,6 +67,13 @@ pub(crate) struct AttributeMaskLanes<'a> {
     pub(crate) large_words: &'a [i32],
 }
 
+/// Split-face symbol lanes consumed while reconstructing connectivity.
+#[derive(Clone, Copy)]
+pub(crate) struct SplitLanes<'a> {
+    pub(crate) faces: &'a [i32],
+    pub(crate) positions: &'a [i32],
+}
+
 struct Symbols<'a> {
     degrees: [&'a [i32]; 8],
     degree_pos: [usize; 8],
@@ -659,8 +666,7 @@ pub(crate) fn decode(
     valences: &[i32],
     groups: &[i32],
     flags: &[i32],
-    split_faces: &[i32],
-    split_positions: &[i32],
+    split: SplitLanes<'_>,
     attribute_masks: AttributeMaskLanes<'_>,
 ) -> Result<Option<Vec<Polygon>>, CodecError> {
     if valences.len() > MAX_TOPOLOGY_ITEMS
@@ -676,8 +682,8 @@ pub(crate) fn decode(
             valences,
             groups,
             flags,
-            split_faces,
-            split_positions,
+            split_faces: split.faces,
+            split_positions: split.positions,
             attribute_masks,
             attribute_mask_pos: [0; 8],
             large_mask_pos: 0,

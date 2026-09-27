@@ -655,8 +655,7 @@ fn arrangement_visit_marks_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::arrangement_has_alternate_path(&[], 0, 0, 0, 2, Some(&ctx))
-        .err()
-        .expect("two visit marks exceed one admitted item");
+        .expect_err("two visit marks exceed one admitted item");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1173,8 +1172,7 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles_and_refuse_vi
     policy.limits.max_collection_items = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = closed_sketch_profiles(Some(&ctx), &sketch, &entities, 1.0e-6)
-        .err()
-        .expect("five edge visit marks exceed four admitted collection items");
+        .expect_err("five edge visit marks exceed four admitted collection items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1387,8 +1385,7 @@ fn nurbs_speed_bound_refuses_unit_weight_allocation_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::nurbs_speed_bound(&curve, Some(&ctx))
-        .err()
-        .expect("two unit weights exceed three admitted items after two points");
+        .expect_err("two unit weights exceed three admitted items after two points");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

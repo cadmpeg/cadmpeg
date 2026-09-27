@@ -15,8 +15,10 @@ fn jt_topological_dual_mesh_reconstructs_closed_tetrahedron() {
         &[3, 3, 3, 3],
         &[10, 12, 11, 13],
         &[0, 0, 0, 0],
-        &[],
-        &[],
+        super::SplitLanes {
+            faces: &[],
+            positions: &[],
+        },
         super::AttributeMaskLanes {
             small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
             context_7_next_30: &[],
@@ -68,8 +70,10 @@ fn jt_vertex_face_slots_refuse_collection_limit() {
         &[3],
         &[10],
         &[0],
-        &[],
-        &[],
+        super::SplitLanes {
+            faces: &[],
+            positions: &[],
+        },
         super::AttributeMaskLanes {
             small: [&[]; 8],
             context_7_next_30: &[],
@@ -77,8 +81,7 @@ fn jt_vertex_face_slots_refuse_collection_limit() {
             large_words: &[],
         },
     )
-    .err()
-    .expect("three vertex face slots exceed two items");
+    .expect_err("three vertex face slots exceed two items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -101,8 +104,10 @@ fn jt_face_vertex_slots_refuse_through_decode() {
         &[3, 3, 3, 3],
         &[10, 12, 11, 13],
         &[0, 0, 0, 0],
-        &[],
-        &[],
+        super::SplitLanes {
+            faces: &[],
+            positions: &[],
+        },
         super::AttributeMaskLanes {
             small: [&[], &[1, 1, 1, 1], &[], &[], &[], &[], &[], &[]],
             context_7_next_30: &[],
@@ -110,8 +115,7 @@ fn jt_face_vertex_slots_refuse_through_decode() {
             large_words: &[],
         },
     )
-    .err()
-    .expect("three face slots exceed remaining collection items");
+    .expect_err("three face slots exceed remaining collection items");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)

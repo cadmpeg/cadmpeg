@@ -190,11 +190,11 @@ fn solve_section_coordinates_with_derived_constraints(
     definition: &crate::feature::definitions::FeatureDefinition,
     equations: &mut Vec<SectionCoordinateEquation>,
     stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
-    point_on_line_constraints: &[(u32, u32, u32)],
-    equal_length_constraints: &[SectionEqualLengthConstraint],
+    geometric_constraints: (&[(u32, u32, u32)], &[SectionEqualLengthConstraint]),
     auxiliary_constraints: &SectionEquationAuxiliaryConstraints,
     auxiliary_scalar_values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
+    let (point_on_line_constraints, equal_length_constraints) = geometric_constraints;
     let mut solved_coordinates =
         solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
     let max_passes = point_on_line_constraints
@@ -632,8 +632,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         definition,
         &mut equations,
         &stored_coordinates,
-        &point_on_line_constraints,
-        &equal_length_constraints,
+        (&point_on_line_constraints, &equal_length_constraints),
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;
@@ -674,8 +673,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         definition,
         &mut equations,
         &stored_coordinates,
-        &point_on_line_constraints,
-        &equal_length_constraints,
+        (&point_on_line_constraints, &equal_length_constraints),
         &auxiliary_constraints,
         &mut auxiliary_scalar_values,
     )?;

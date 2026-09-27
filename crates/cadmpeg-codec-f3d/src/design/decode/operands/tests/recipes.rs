@@ -640,7 +640,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
             .expect("identity grammar"),
         None,
-        None,
     )
     .unwrap();
     assert!(matches!(

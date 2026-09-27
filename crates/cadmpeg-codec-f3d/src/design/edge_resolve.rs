@@ -39,8 +39,10 @@ pub(super) fn resolved_edge_group(
         groups,
         operands,
         identity_operands,
-        previous_state_id,
-        feature_id,
+        EdgeGroupTransition {
+            previous_state_id,
+            feature_id,
+        },
         EdgeGroupProof::Generic,
         ctx,
     )
@@ -316,7 +318,6 @@ pub(super) fn resolved_edge_treatment_group(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
-    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     resolved_edge_treatment_group_with_corners(
         group,
@@ -328,7 +329,7 @@ pub(super) fn resolved_edge_treatment_group(
         previous_state_id,
         feature_id,
         treatment_radius,
-        ctx,
+        None,
     )
 }
 
@@ -359,8 +360,10 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
             groups,
             operands,
             identity_operands,
-            previous_state_id,
-            feature_id,
+            EdgeGroupTransition {
+                previous_state_id,
+                feature_id,
+            },
             EdgeGroupProof::Treatment {
                 radius: treatment_radius,
             },
@@ -414,8 +417,10 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
         groups,
         operands,
         identity_operands,
-        previous_state_id,
-        feature_id,
+        EdgeGroupTransition {
+            previous_state_id,
+            feature_id,
+        },
         EdgeGroupProof::Treatment {
             radius: treatment_radius,
         },
@@ -483,17 +488,27 @@ enum EdgeGroupProof {
     Treatment { radius: Option<f64> },
 }
 
+#[derive(Clone, Copy)]
+struct EdgeGroupTransition<'a> {
+    previous_state_id: Option<i64>,
+    feature_id: &'a cadmpeg_ir::features::FeatureId,
+}
+
 fn resolved_edge_group_with_transition_chain(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
     identity_operands: &[DesignEdgeIdentityOperand],
-    previous_state_id: Option<i64>,
-    feature_id: &cadmpeg_ir::features::FeatureId,
+    transition: EdgeGroupTransition<'_>,
     proof: EdgeGroupProof,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
+
+    let EdgeGroupTransition {
+        previous_state_id,
+        feature_id,
+    } = transition;
 
     let (allow_edge_treatment_transition_chain, treatment_radius) = match proof {
         EdgeGroupProof::Generic => (false, None),
