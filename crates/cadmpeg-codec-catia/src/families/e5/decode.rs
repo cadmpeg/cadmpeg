@@ -1140,72 +1140,49 @@ fn transfer_e5_topology(
         annotations.remove_entity(&curve.id);
     }
 
-    let surface_for_ref: HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)> =
-        decoded_surfaces
-            .iter()
-            .enumerate()
-            .map(|(index, surface)| {
-                (
-                    surface.record_id,
-                    (
-                        SurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-                            index,
-                        ),
-                        surface,
-                    ),
-                )
-            })
-            .collect();
-    let vertex_for_ref: HashMap<u32, VertexId> = topology
-        .vertex_refs
-        .iter()
-        .enumerate()
-        .map(|(index, reference)| {
-            (
-                *reference,
-                VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index),
-            )
-        })
-        .collect();
-    let point_for_ref: HashMap<u32, Point3> = topology
-        .vertex_refs
-        .iter()
-        .zip(&ir.model.points)
-        .map(|(reference, point)| (*reference, point.position().get()))
-        .collect();
+    let mut surface_for_ref = HashMap::new();
+    for (index, surface) in decoded_surfaces.iter().enumerate() {
+        crate::resource::insert_map(ctx, &mut surface_for_ref, surface.record_id, (
+            SurfaceId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), index),
+            surface,
+        ), "catia_e5_transfer_surface_refs")?;
+    }
+    let mut vertex_for_ref = HashMap::new();
+    for (index, reference) in topology.vertex_refs.iter().copied().enumerate() {
+        crate::resource::insert_map(ctx, &mut vertex_for_ref, reference,
+            VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index),
+            "catia_e5_transfer_vertex_refs")?;
+    }
+    let mut point_for_ref = HashMap::new();
+    for (reference, point) in topology.vertex_refs.iter().copied().zip(&ir.model.points) {
+        crate::resource::insert_map(ctx, &mut point_for_ref, reference, point.position().get(), "catia_e5_transfer_point_refs")?;
+    }
 
     let Some(boundary) = plan_e5_boundary(topology, &surface_for_ref, &point_for_ref, refusal)
     else {
         return Ok(false);
     };
     prune_e5_unused_surfaces(
+        ctx,
         ir,
         annotations,
         topology,
         &surface_for_ref,
         &boundary.intersection_plan,
         &boundary.surface_curve_plan,
-    );
+    )?;
 
     let Some(e5_ownership) = resolve_e5_ownership(ctx, topology)? else {
         return Ok(false);
     };
     let E5Ownership { bodies, face_shell } = e5_ownership;
 
-    let edge_ids: HashMap<u32, EdgeId> = topology
-        .edges
-        .keys()
-        .map(|record_id| {
-            (
-                *record_id,
-                EdgeId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "e5", "edge"),
-                    record_id,
-                ),
-            )
-        })
-        .collect();
+    let mut edge_ids = HashMap::new();
+    for record_id in topology.edges.keys().copied() {
+        crate::resource::insert_map(ctx, &mut edge_ids, record_id,
+            EdgeId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "edge"), record_id),
+            "catia_e5_transfer_edge_ids")?;
+    }
     if let Err(error) = emit_e5_curves_and_edges(
         ir,
         annotations,
@@ -1610,14 +1587,16 @@ fn plan_e5_boundary<'a>(
 
 /// Drops surfaces no face, intersection side, or surface curve references.
 fn prune_e5_unused_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     topology: &crate::families::e5::graph::E5Topology,
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
     surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
-) {
-    let used_surfaces = topology
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut used_surfaces = HashSet::new();
+    for id in topology
         .faces
         .iter()
         .filter_map(|face| surface_for_ref.get(&face.surface))
@@ -1633,20 +1612,20 @@ fn prune_e5_unused_surfaces(
                 .values()
                 .map(|(surface, _, _)| surface.clone()),
         )
-        .collect::<HashSet<_>>();
-    let unused_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| !used_surfaces.contains(&surface.id))
-        .map(|surface| surface.id.clone())
-        .collect::<Vec<_>>();
+    {
+        crate::resource::insert_set(ctx, &mut used_surfaces, id, "catia_e5_used_surfaces")?;
+    }
+    let mut unused_surfaces = Vec::new();
+    for surface in ir.model.surfaces.iter().filter(|surface| !used_surfaces.contains(&surface.id)) {
+        crate::resource::push(ctx, &mut unused_surfaces, surface.id.clone(), "catia_e5_unused_surfaces")?;
+    }
     ir.model
         .surfaces
         .retain(|surface| used_surfaces.contains(&surface.id));
     for surface in unused_surfaces {
         annotations.remove_entity(surface);
     }
+    Ok(())
 }
 
 /// Resolves body face groupings into region/shell components, or `None` on failure.

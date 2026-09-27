@@ -597,6 +597,35 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
 }
 
 #[test]
+fn e5_topology_transfer_refuses_before_reference_maps() {
+    let file = object_main_catpart(&e5_torus_topology_stream());
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..2048 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected topology decode refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_e5_transfer_surface_refs",
+        "catia_e5_transfer_vertex_refs",
+        "catia_e5_transfer_point_refs",
+        "catia_e5_transfer_edge_ids",
+        "catia_e5_used_surfaces",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn e5_route_propagates_station_collection_refusal() {
     let mut stream = e5_d8_rolling_ball_stream();
     for id in 100..109 {
