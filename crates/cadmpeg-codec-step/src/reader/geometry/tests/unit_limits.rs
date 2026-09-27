@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Caller-budget refusals for STEP unit resolution.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::PositiveReal;
 
 const HEADER: &str = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;";
 const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
@@ -165,5 +166,130 @@ fn context_angle_scales_refuse_collection_limit() {
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_context_angle_scales"
+    ));
+}
+
+fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let (group, value) = if angle {
+        ("step_angle_candidate_groups", "step_angle_candidate_values")
+    } else {
+        ("step_length_candidate_groups", "step_length_candidate_values")
+    };
+    super::super::add_unit_candidate(&mut BTreeMap::new(), 1, PositiveReal::ONE, &ctx, group, value)
+        .expect_err("candidate exceeds the limit")
+}
+
+#[test]
+fn length_candidate_groups_refuse_collection_limit() {
+    assert!(matches!(candidate_refusal(false, 0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_length_candidate_groups"));
+}
+
+#[test]
+fn length_candidate_values_refuse_collection_limit() {
+    assert!(matches!(candidate_refusal(false, 1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_length_candidate_values"));
+}
+
+#[test]
+fn angle_candidate_groups_refuse_collection_limit() {
+    assert!(matches!(candidate_refusal(true, 0),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_angle_candidate_groups"));
+}
+
+#[test]
+fn angle_candidate_values_refuse_collection_limit() {
+    assert!(matches!(candidate_refusal(true, 1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_angle_candidate_values"));
+}
+
+fn scope_refusal(records: &str, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
+    let source = format!("{HEADER}{records}{TAIL}");
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid scope exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    if let Some(limit) = depth_limit {
+        policy.limits.max_recursion_depth = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+        .expect("source fits policy");
+    super::super::collect_unit_scope_members(
+        1,
+        &exchange,
+        &mut BTreeSet::new(),
+        &mut BTreeSet::new(),
+        &ctx,
+    )
+    .expect_err("scope traversal exceeds the limit")
+}
+
+#[test]
+fn unit_scope_active_refuses_collection_limit() {
+    assert!(matches!(scope_refusal("#1=ITEM();", 0, None),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_unit_scope_active"));
+}
+
+#[test]
+fn unit_scope_members_refuse_collection_limit() {
+    assert!(matches!(scope_refusal("#1=ITEM();", 1, None),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_unit_scope_members"));
+}
+
+#[test]
+fn unit_scope_walk_refuses_depth_limit() {
+    assert!(matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 10, Some(1)),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_unit_scope_walk"));
+}
+
+#[test]
+fn unit_selected_scales_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE])]);
+    let default = PositiveReal::new(2.0).expect("positive default");
+    assert!(matches!(
+        super::super::finalize_unit_candidates(candidates, default, "length", &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_unit_selected_scales"
+    ));
+}
+
+#[test]
+fn conflicting_unit_loss_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE, PositiveReal::new(2.0).expect("positive scale")])]);
+    assert!(matches!(
+        super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", &mut Vec::new(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_geometry_losses"
     ));
 }
