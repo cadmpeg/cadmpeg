@@ -662,7 +662,14 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
     }];
     let scene = HashMap::from([(153, "moDirectionLight_c".into())]);
 
-    enrich_scene_classes(&mut histories, &scene);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    enrich_scene_classes(&ctx, &mut histories, &scene).unwrap();
 
     assert_eq!(
         histories[0].features[0].input_class.as_deref(),
