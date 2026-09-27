@@ -52,58 +52,86 @@ const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
 const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
+    graph_is_coherent_inner(None, history).unwrap_or(false)
+}
+
+pub(crate) fn graph_is_coherent_charged(
+    decode: &cadmpeg_core::decode::DecodeContext<'_>,
+    history: &AsmHistory,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    graph_is_coherent_inner(Some(decode), history)
+}
+
+fn graph_is_coherent_inner(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    history: &AsmHistory,
+) -> Result<bool, cadmpeg_core::CodecError> {
     if history.states.is_empty() {
-        return false;
+        return Ok(false);
     }
-    let by_index = history
-        .states
-        .iter()
-        .map(|state| (state.node_index, state))
-        .collect::<HashMap<_, _>>();
+    let mut by_index = HashMap::new();
+    for state in &history.states {
+        if !by_index.contains_key(&state.node_index) {
+            if let Some(decode) = decode {
+                decode.charge_collection_items(1, "index F3D ASM history states")?;
+                by_index.try_reserve(1).map_err(|_| {
+                    decode.refuse_codec_limit("index F3D ASM history states", 0, 1)
+                })?;
+            }
+        }
+        by_index.insert(state.node_index, state);
+    }
     if by_index.len() != history.states.len()
         || history
             .states
             .iter()
             .any(|state| state.node_index < 0 || state.parent != history.id)
     {
-        return false;
+        return Ok(false);
     }
-    let heads = history
-        .states
-        .iter()
-        .filter(|state| state.previous_ref.is_none())
-        .collect::<Vec<_>>();
+    let mut heads = history.states.iter().filter(|state| state.previous_ref.is_none());
+    let head = heads.next();
     let tails = history
         .states
         .iter()
         .filter(|state| state.next_ref.is_none())
         .count();
-    if heads.len() != 1 || tails != 1 {
-        return false;
+    if head.is_none() || heads.next().is_some() || tails != 1 {
+        return Ok(false);
     }
+    let Some(head) = head else {
+        return Ok(false);
+    };
     if let Some(preamble) = history.preamble {
-        if heads[0].state_id != preamble.stream_size || preamble.history_entry_count < 0 {
-            return false;
+        if head.state_id != preamble.stream_size || preamble.history_entry_count < 0 {
+            return Ok(false);
         }
     }
     let mut visited = HashSet::new();
     let mut previous = None;
-    let mut current = Some(heads[0].node_index);
+    let mut current = Some(head.node_index);
     while let Some(index) = current {
         let Some(state) = by_index.get(&index) else {
-            return false;
+            return Ok(false);
         };
-        if !visited.insert(index) || state.previous_ref != previous {
-            return false;
+        if visited.contains(&index) || state.previous_ref != previous {
+            return Ok(false);
         }
+        if let Some(decode) = decode {
+            decode.charge_collection_items(1, "visit F3D ASM history state")?;
+            visited.try_reserve(1).map_err(|_| {
+                decode.refuse_codec_limit("visit F3D ASM history state", 0, 1)
+            })?;
+        }
+        visited.insert(index);
         if state.version_flag != 1 || state.state_flag != 0 {
-            return false;
+            return Ok(false);
         }
         for board in &state.bulletin_boards {
             if board.parent != state.id
                 || board.changes.iter().any(|change| change.parent != board.id)
             {
-                return false;
+                return Ok(false);
             }
         }
         if state
@@ -111,12 +139,12 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
             .iter()
             .any(|record| record.parent != state.id || record.raw_bytes.is_empty())
         {
-            return false;
+            return Ok(false);
         }
         previous = Some(index);
         current = state.next_ref;
     }
-    visited.len() == history.states.len()
+    Ok(visited.len() == history.states.len())
 }
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
