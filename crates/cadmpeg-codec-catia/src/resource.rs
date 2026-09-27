@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
@@ -35,6 +35,32 @@ pub(crate) fn push<T>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
     values.push(value);
     Ok(())
+}
+
+pub(crate) fn push_back<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut VecDeque<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+    values.push_back(value);
+    Ok(())
+}
+
+pub(crate) fn reserve_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(additional as u64, operation)?;
+    values
+        .try_reserve(additional)
+        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
 }
 
 pub(crate) fn reserve_set<T: Eq + Hash>(
