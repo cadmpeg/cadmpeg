@@ -16,6 +16,7 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod property_diagnostic_tests;
 
 #[test]
 fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
