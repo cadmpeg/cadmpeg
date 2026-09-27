@@ -11,6 +11,57 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::StepCodec;
 
 const VALIDATION_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);ENDSEC;END-ISO-10303-21;";
+const VALIDATION_COLLECTION_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=CARTESIAN_POINT('point',(1.,2.,3.));#5=ITEM(#4);ENDSEC;END-ISO-10303-21;";
+
+fn validation_collection_refuses(operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(VALIDATION_COLLECTION_SOURCE)
+        .expect("valid validation collection source");
+    let setup_arena = DecodeArena::new();
+    let setup_policy = DecodePolicy::service();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(
+        VALIDATION_COLLECTION_SOURCE,
+        &setup_arena,
+        &setup_policy,
+    )
+    .expect("root fits setup policy");
+    let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+        .expect("geometry setup decodes");
+    let refused = (0..=64).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_COLLECTION_SOURCE, &arena, &policy)
+            .expect("root fits collection policy");
+        let mut ir = setup_ir.clone();
+        matches!(
+            super::decode(&exchange, &geometry.value, &mut ir, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+macro_rules! validation_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            validation_collection_refuses($operation);
+        }
+    };
+}
+
+validation_collection_test!(validation_representation_items_refuse_collection_limit, "step_validation_representation_items");
+validation_collection_test!(validation_representations_refuse_collection_limit, "step_validation_representations");
+validation_collection_test!(validation_used_representations_refuse_collection_limit, "step_validation_used_representations");
+validation_collection_test!(validation_points_refuse_collection_limit, "step_validation_points");
+validation_collection_test!(validation_claims_refuse_collection_limit, "step_validation_claims");
+validation_collection_test!(validation_referenced_points_refuse_collection_limit, "step_validation_referenced_points");
 
 fn validation_limit_result(
     retained_limit: Option<u64>,
