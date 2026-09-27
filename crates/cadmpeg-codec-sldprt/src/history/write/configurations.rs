@@ -148,8 +148,16 @@ fn sync_configuration_design_state(
         ));
     };
     let mut current_projection = ir.clone();
+    let design_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let design_arena = DecodeArena::new();
+    let (design_ctx, _) =
+        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
     project_configuration_design_states(
-        None,
+        &design_ctx,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -238,8 +246,16 @@ fn sync_configuration_design_state(
     patch_configuration_parameter_scalars(ir, native)?;
 
     let mut projected = ir.clone();
+    let design_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let design_arena = DecodeArena::new();
+    let (design_ctx, _) =
+        DecodeContext::from_root_bytes(&design_bytes, &design_arena, &DecodePolicy::service())?;
     project_configuration_design_states(
-        None,
+        &design_ctx,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,
