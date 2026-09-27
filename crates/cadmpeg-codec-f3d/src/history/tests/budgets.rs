@@ -144,6 +144,79 @@ fn one_insert_only_state() -> crate::history_records::AsmHistory {
     history
 }
 
+fn archive_record() -> cadmpeg_asm::sab::Record {
+    cadmpeg_asm::sab::Record {
+        index: 0,
+        name: "edge".into(),
+        tokens: vec![cadmpeg_asm::sab::Token::Ref(-1)].into(),
+        offset: 0,
+        len: 0,
+    }
+}
+
+fn archive_error(max_items: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::historical_record_archive(&ctx, &[], &[archive_record()], Default::default())
+        .unwrap_err()
+}
+
+#[test]
+fn history_active_revision_index_refuses_collection_limit() {
+    let error = archive_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D active record revisions"));
+}
+
+#[test]
+fn history_active_record_archive_refuses_collection_limit() {
+    let error = archive_error(1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D active record archive"));
+}
+
+#[test]
+fn history_archived_token_copy_refuses_collection_limit() {
+    let error = archive_error(2);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D archived record tokens"));
+}
+
+fn table_error(max_items: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::history_records::AsmEntityVersion;
+
+    let mut history = one_state_history();
+    history.states[0].entity_versions.push(AsmEntityVersion {
+        entity_ref: 0,
+        record_ref: 0,
+    });
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let archive = std::collections::HashMap::from([(0, archive_record())]);
+    super::super::materialize_record_table(&ctx, &history.states[0], &archive).unwrap_err()
+}
+
+#[test]
+fn history_record_presence_refuses_collection_limit() {
+    let error = table_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D historical record presence"));
+}
+
+#[test]
+fn history_record_table_refuses_collection_limit() {
+    let error = table_error(1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "materialize F3D historical record table"));
+}
+
 #[test]
 fn history_archived_count_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

@@ -1072,14 +1072,19 @@ fn materialized_record_table_normalizes_revision_references() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let archive = historical_record_archive(
-        std::slice::from_ref(&state),
-        &active,
-        HashMap::from([(2, framed)]),
-    )
-    .expect("complete historical record archive");
-    let table =
-        materialize_record_table(&state, &archive).expect("complete historical RecordTable");
+    let table = with_history_decode_context(|ctx| {
+        let archive = historical_record_archive(
+            ctx,
+            std::slice::from_ref(&state),
+            &active,
+            HashMap::from([(2, framed)]),
+        )
+        .expect("history archive budget")
+        .expect("complete historical record archive");
+        materialize_record_table(ctx, &state, &archive)
+            .expect("historical table budget")
+            .expect("complete historical RecordTable")
+    });
 
     assert_eq!(table.len(), 2);
     assert_eq!(table[1].index, 1);
@@ -1174,12 +1179,16 @@ fn qualified_history_marker_remains_an_archived_record() {
     .expect("archived record frames")
     .try_into()
     .expect("one archived record");
-    let archive = historical_record_archive(
-        std::slice::from_ref(&state),
-        &active,
-        HashMap::from([(2, framed)]),
-    )
-    .expect("qualified history marker is an archived record");
+    let archive = with_history_decode_context(|ctx| {
+        historical_record_archive(
+            ctx,
+            std::slice::from_ref(&state),
+            &active,
+            HashMap::from([(2, framed)]),
+        )
+        .expect("history archive budget")
+        .expect("qualified history marker is an archived record")
+    });
     let record = archive.get(&2).expect("marker revision is retained");
     assert_eq!(record.name, "End-of-ASM-History-Section");
     assert_eq!(record.index, 1);
