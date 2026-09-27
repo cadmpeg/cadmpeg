@@ -5,11 +5,8 @@ use crate::om::scalar::ShiftedBinary64;
 use serde::{Deserialize, Serialize};
 
 /// Exact cross-block scalar lane selected by a point-construction header.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePointConstructionScalarLaneWire",
-    into = "FeaturePointConstructionScalarLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePointConstructionScalarLaneWire")]
 pub(in crate::native) struct FeaturePointConstructionScalarLane {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -17,6 +14,32 @@ pub(in crate::native) struct FeaturePointConstructionScalarLane {
     pub(super) data_blocks: [String; 2],
     pub(super) scalars: [ShiftedBinary64; 6],
     pub(super) positions: PointScalarPositions,
+}
+
+#[derive(Serialize)]
+struct FeaturePointConstructionScalarLaneRef<'a> {
+    id: &'a str,
+    operation_label: &'a str,
+    construction_header: &'a str,
+    data_blocks: &'a [String; 2],
+    values: [f64; 6],
+    raw_values: [[u8; 8]; 6],
+    source_offsets: [u64; 6],
+}
+
+impl Serialize for FeaturePointConstructionScalarLane {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FeaturePointConstructionScalarLaneRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            construction_header: &self.construction_header,
+            data_blocks: &self.data_blocks,
+            values: self.scalars.map(|scalar| scalar.value().get()),
+            raw_values: self.scalars.map(ShiftedBinary64::raw),
+            source_offsets: self.positions.source_offsets(),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Physical positions of the preceding block tail and the target block.
@@ -69,6 +92,7 @@ struct FeaturePointConstructionScalarLaneWire {
     source_offsets: [u64; 6],
 }
 
+#[cfg(test)]
 impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalarLaneWire {
     fn from(lane: FeaturePointConstructionScalarLane) -> Self {
         let source_offsets = lane.positions.source_offsets();
@@ -116,7 +140,31 @@ impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructio
 
 #[cfg(test)]
 mod tests {
-    use super::FeaturePointConstructionScalarLane;
+    use super::{FeaturePointConstructionScalarLane, FeaturePointConstructionScalarLaneWire};
+
+    const WIRE: &str = r#"{"id":"nx:feature:point-scalar#0","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,118,126,134,142]}"#;
+
+    #[test]
+    fn point_scalar_borrowed_wire_preserves_bytes() {
+        let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn point_scalar_native_limit_refuses_before_clone() {
+        let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(WIRE).unwrap(),
+        );
+    }
 
     #[test]
     fn point_scalar_lane_requires_derived_positions_and_complete_physical_spans() {
