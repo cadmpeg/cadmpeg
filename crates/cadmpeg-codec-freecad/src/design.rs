@@ -2283,54 +2283,107 @@ fn bind_parameter_dependencies(
             "fcstd parameter dependency object names",
         )?;
     }
-    let candidates = parameters
-        .iter()
-        .map(|parameter| {
-            let mut names = vec![parameter.name.clone()];
-            if let Some(source_name) = parameter.properties.get("source_name") {
-                if source_name != &parameter.name {
-                    names.push(source_name.clone());
-                }
-            }
-            (parameter.id.clone(), parameter.owner.clone(), names)
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = collection_vec(ctx, parameters.len(), "fcstd parameter dependency candidates")?;
+    for parameter in parameters.iter() {
+        let source_name = parameter.properties.get("source_name")
+            .filter(|source_name| *source_name != &parameter.name);
+        let mut names = collection_vec(
+            ctx, 1 + usize::from(source_name.is_some()), "fcstd parameter candidate names",
+        )?;
+        names.push(retained_string(ctx, &parameter.name, "fcstd parameter candidate name")?);
+        if let Some(source_name) = source_name {
+            names.push(retained_string(ctx, source_name, "fcstd parameter source name")?);
+        }
+        candidates.push((
+            ParameterId::mint(retained_string(ctx, parameter.id.as_str(), "fcstd parameter candidate identity")?)
+                .map_err(CodecError::malformed)?,
+            parameter.owner.as_ref().map(|owner| FeatureId::mint(retained_string(
+                ctx, owner.as_str(), "fcstd parameter candidate owner",
+            )?).map_err(CodecError::malformed)).transpose()?,
+            names,
+        ));
+    }
     let mut local_candidates = HashMap::<(FeatureId, String), Vec<ParameterId>>::new();
     let mut qualified_candidates = HashMap::<String, Vec<ParameterId>>::new();
     for (id, owner, names) in &candidates {
         let Some(owner) = owner else { continue };
         for name in names {
-            local_candidates
-                .entry((owner.clone(), name.clone()))
-                .or_default()
-                .push(id.clone());
+            let key = (
+                FeatureId::mint(retained_string(ctx, owner.as_str(), "fcstd local candidate owner")?)
+                    .map_err(CodecError::malformed)?,
+                retained_string(ctx, name, "fcstd local candidate name")?,
+            );
+            if !local_candidates.contains_key(&key) {
+                ctx.charge_collection_items(1, "fcstd local candidate keys")?;
+                local_candidates.try_reserve(1).map_err(|_| collection_allocation_failed(
+                    ctx, 1, "fcstd local candidate keys",
+                ))?;
+            }
+            let bucket = local_candidates.entry(key).or_default();
+            reserve_vec_items(ctx, bucket, 1, "fcstd local candidate identities")?;
+            bucket.push(ParameterId::mint(retained_string(
+                ctx, id.as_str(), "fcstd local candidate identity",
+            )?).map_err(CodecError::malformed)?);
             if let Some(object) = object_names.get(owner) {
-                qualified_candidates
-                    .entry(format!("{object}.{name}"))
-                    .or_default()
-                    .push(id.clone());
+                let key = retained_format(
+                    ctx, format_args!("{object}.{name}"), "fcstd qualified candidate name",
+                )?;
+                if !qualified_candidates.contains_key(&key) {
+                    ctx.charge_collection_items(1, "fcstd qualified candidate keys")?;
+                    qualified_candidates.try_reserve(1).map_err(|_| collection_allocation_failed(
+                        ctx, 1, "fcstd qualified candidate keys",
+                    ))?;
+                }
+                let bucket = qualified_candidates.entry(key).or_default();
+                reserve_vec_items(ctx, bucket, 1, "fcstd qualified candidate identities")?;
+                bucket.push(ParameterId::mint(retained_string(
+                    ctx, id.as_str(), "fcstd qualified candidate identity",
+                )?).map_err(CodecError::malformed)?);
             }
         }
     }
-    let local = local_candidates
-        .into_iter()
-        .filter_map(|(key, ids)| (ids.len() == 1).then(|| (key, ids[0].clone())))
-        .collect::<HashMap<_, _>>();
-    let qualified = qualified_candidates
-        .into_iter()
-        .filter_map(|(key, ids)| (ids.len() == 1).then(|| (key, ids[0].clone())))
-        .collect::<HashMap<_, _>>();
+    let mut local = HashMap::new();
+    for (key, ids) in local_candidates {
+        if ids.len() == 1 {
+            insert_hash_map(
+                ctx, &mut local, key, ids.into_iter().next().ok_or_else(|| CodecError::malformed(
+                    "singleton local candidate lost its identity",
+                ))?, "fcstd unique local candidates",
+            )?;
+        }
+    }
+    let mut qualified = HashMap::new();
+    for (key, ids) in qualified_candidates {
+        if ids.len() == 1 {
+            insert_hash_map(
+                ctx, &mut qualified, key, ids.into_iter().next().ok_or_else(|| CodecError::malformed(
+                    "singleton qualified candidate lost its identity",
+                ))?, "fcstd unique qualified candidates",
+            )?;
+        }
+    }
     for parameter in parameters.iter_mut() {
         let mut dependencies = BTreeSet::new();
         for identifier in expression_identifiers(&parameter.expression) {
-            let dependency = qualified.get(identifier).or_else(|| {
-                parameter
-                    .owner
-                    .as_ref()
-                    .and_then(|owner| local.get(&(owner.clone(), identifier.to_owned())))
-            });
+            let dependency = if let Some(qualified) = qualified.get(identifier) {
+                Some(qualified)
+            } else if let Some(owner) = parameter.owner.as_ref() {
+                local.get(&(
+                    FeatureId::mint(retained_string(
+                        ctx, owner.as_str(), "fcstd dependency lookup owner",
+                    )?).map_err(CodecError::malformed)?,
+                    retained_string(ctx, identifier, "fcstd dependency lookup name")?,
+                ))
+            } else {
+                None
+            };
             if let Some(dependency) = dependency.filter(|id| **id != parameter.id) {
-                dependencies.insert(dependency.clone());
+                if !dependencies.contains(dependency) {
+                    ctx.charge_collection_items(1, "fcstd parameter dependencies")?;
+                    dependencies.insert(ParameterId::mint(retained_string(
+                        ctx, dependency.as_str(), "fcstd parameter dependency identity",
+                    )?).map_err(CodecError::malformed)?);
+                }
             }
         }
         parameter.dependencies = if parameter
@@ -2343,20 +2396,33 @@ fn bind_parameter_dependencies(
             // a history that FreeCAD itself could not topologically sort.
             DistinctMembers::default()
         } else {
-            dependencies.into_iter().collect()
+            let mut members = collection_vec(
+                ctx, dependencies.len(), "fcstd parameter dependency members",
+            )?;
+            members.extend(dependencies);
+            ctx.charge_collection_items(members.len() as u64, "fcstd parameter distinct check")?;
+            members.try_into().map_err(CodecError::malformed)?
         };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
     for parameter in parameters.iter() {
-        owner_ordinals
-            .entry(parameter.owner.clone())
-            .or_default()
-            .push(parameter.ordinal);
+        let owner = parameter.owner.as_ref().map(|owner| FeatureId::mint(retained_string(
+            ctx, owner.as_str(), "fcstd ordinal owner identity",
+        )?).map_err(CodecError::malformed)).transpose()?;
+        if !owner_ordinals.contains_key(&owner) {
+            ctx.charge_collection_items(1, "fcstd ordinal owner groups")?;
+            owner_ordinals.try_reserve(1).map_err(|_| collection_allocation_failed(
+                ctx, 1, "fcstd ordinal owner groups",
+            ))?;
+        }
+        let ordinals = owner_ordinals.entry(owner).or_default();
+        reserve_vec_items(ctx, ordinals, 1, "fcstd owner ordinals")?;
+        ordinals.push(parameter.ordinal);
     }
     for ordinals in owner_ordinals.values_mut() {
         ordinals.sort_unstable();
     }
-    let parameter_cycle_features = order_parameters_by_dependencies(parameters);
+    let parameter_cycle_features = order_parameters_by_dependencies(ctx, parameters)?;
     for parameter in parameters.iter_mut() {
         if parameter
             .owner
@@ -2371,41 +2437,67 @@ fn bind_parameter_dependencies(
     }
     let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
     for parameter in parameters {
-        let index = next_ordinal.entry(parameter.owner.clone()).or_default();
+        let owner = parameter.owner.as_ref().map(|owner| FeatureId::mint(retained_string(
+            ctx, owner.as_str(), "fcstd next ordinal owner",
+        )?).map_err(CodecError::malformed)).transpose()?;
+        if !next_ordinal.contains_key(&owner) {
+            ctx.charge_collection_items(1, "fcstd next ordinal owners")?;
+            next_ordinal.try_reserve(1).map_err(|_| collection_allocation_failed(
+                ctx, 1, "fcstd next ordinal owners",
+            ))?;
+        }
+        let index = next_ordinal.entry(owner).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
     }
     Ok(parameter_cycle_features)
 }
 
-fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
-    let known = parameters
-        .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect::<BTreeSet<_>>();
+fn order_parameters_by_dependencies(
+    ctx: &DecodeContext<'_>,
+    parameters: &mut Vec<DesignParameter>,
+) -> Result<BTreeSet<FeatureId>, CodecError> {
+    let mut known = BTreeSet::new();
+    for parameter in parameters.iter() {
+        if !known.contains(&parameter.id) {
+            ctx.charge_collection_items(1, "fcstd known parameter identities")?;
+            known.insert(ParameterId::mint(retained_string(
+                ctx, parameter.id.as_str(), "fcstd known parameter identity",
+            )?).map_err(CodecError::malformed)?);
+        }
+    }
     let mut remaining = std::mem::take(parameters);
     let mut emitted = BTreeSet::new();
     let mut cycle_features = BTreeSet::new();
     while !remaining.is_empty() {
+        ctx.charge_work(remaining.len() as u64, "fcstd parameter dependency ordering")?;
         let Some(index) = remaining.iter().position(|parameter| {
             parameter
                 .dependencies
                 .iter()
                 .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
         }) else {
-            cycle_features.extend(
-                remaining
-                    .iter()
-                    .filter_map(|parameter| parameter.owner.clone()),
-            );
+            for owner in remaining.iter().filter_map(|parameter| parameter.owner.as_ref()) {
+                if !cycle_features.contains(owner) {
+                    ctx.charge_collection_items(1, "fcstd parameter cycle owners")?;
+                    cycle_features.insert(FeatureId::mint(retained_string(
+                        ctx, owner.as_str(), "fcstd parameter cycle owner identity",
+                    )?).map_err(CodecError::malformed)?);
+                }
+            }
+            reserve_vec_items(ctx, parameters, remaining.len(), "fcstd reordered parameters")?;
             parameters.append(&mut remaining);
             break;
         };
         let parameter = remaining.remove(index);
-        emitted.insert(parameter.id.clone());
+        ctx.charge_collection_items(1, "fcstd emitted parameter identities")?;
+        emitted.insert(ParameterId::mint(retained_string(
+            ctx, parameter.id.as_str(), "fcstd emitted parameter identity",
+        )?).map_err(CodecError::malformed)?);
+        reserve_vec_items(ctx, parameters, 1, "fcstd reordered parameters")?;
         parameters.push(parameter);
     }
-    cycle_features
+    Ok(cycle_features)
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
