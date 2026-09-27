@@ -2,7 +2,9 @@
 //! Archive-wide wire primitives and checked numeric conversions.
 #![deny(clippy::disallowed_methods)]
 
+use std::collections::HashMap;
 use std::fmt;
+use std::hash::Hash;
 
 use cadmpeg_core::decode::{
     u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
@@ -28,6 +30,26 @@ pub(crate) struct ExactVec<T> {
 pub(crate) fn reserve_collection<T>(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
+/// Charges and reserves entries before a decoded hash map grows.
+pub(crate) fn reserve_hash_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
     additional: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {

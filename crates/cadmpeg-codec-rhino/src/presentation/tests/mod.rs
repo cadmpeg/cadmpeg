@@ -929,6 +929,7 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
 fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
     let bytes = future_dimension_style_chunk();
     let value = parse_dimension_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -969,6 +970,7 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
 fn dimension_style_current_minor_transfers_new_text_controls() {
     let bytes = current_dimension_style_chunk();
     let value = parse_dimension_style(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -1184,8 +1186,13 @@ fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
     legacy_body.extend([0xaa, 0xbb]);
     let legacy = anonymous(0, &legacy_body);
     let mut legacy_reader = BoundedReader::new(&legacy, 0, legacy.len()).unwrap();
-    let legacy_component = component(&legacy, &mut legacy_reader, ArchiveVersion::V8)
-        .expect("unknown legacy mask bit is ignored");
+    let legacy_component = component(
+        &cadmpeg_test_support::service_decode_context(),
+        &legacy,
+        &mut legacy_reader,
+        ArchiveVersion::V8,
+    )
+    .expect("unknown legacy mask bit is ignored");
     assert_eq!(legacy_component.index, None);
     assert!(legacy_component.id.is_nil());
     assert_eq!(legacy_component.name, "mask-compatible");
@@ -1193,8 +1200,13 @@ fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
 
     let modern = model_attributes_status_chunk([3, 2, 3, 2, 1], "status-compatible", &[0xcc, 0xdd]);
     let mut modern_reader = BoundedReader::new(&modern, 0, modern.len()).unwrap();
-    let modern_component = component(&modern, &mut modern_reader, ArchiveVersion::V8)
-        .expect("unknown modern status values are ignored");
+    let modern_component = component(
+        &cadmpeg_test_support::service_decode_context(),
+        &modern,
+        &mut modern_reader,
+        ArchiveVersion::V8,
+    )
+    .expect("unknown modern status values are ignored");
     assert_eq!(modern_component.index, None);
     assert!(modern_component.id.is_nil());
     assert_eq!(modern_component.name, "status-compatible");
@@ -1208,7 +1220,13 @@ fn group_preserves_component_identity() {
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
-    let group = parse_group(&bytes, 0..bytes.len(), 120).expect("required invariant");
+    let group = parse_group(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        120,
+    )
+    .expect("required invariant");
     assert_eq!(group.archive_index, 7);
     assert_eq!(group.name, "fixtures");
     assert_eq!(
@@ -1224,10 +1242,26 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     bytes.extend(7_i32.to_le_bytes());
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
-    let first = parse_group(&bytes, 0..bytes.len(), 120).expect("first group");
-    let second = parse_group(&bytes, 0..bytes.len(), 240).expect("second group");
+    let first = parse_group(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        120,
+    )
+    .expect("first group");
+    let second = parse_group(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0..bytes.len(),
+        240,
+    )
+    .expect("second group");
     let mut groups = vec![first, second];
-    assert_eq!(disambiguate_group_ids(&mut groups), 2);
+    assert_eq!(
+        disambiguate_group_ids(&cadmpeg_test_support::service_decode_context(), &mut groups)
+            .expect("duplicate group IDs fit the service profile"),
+        2
+    );
     assert_ne!(groups[0].id, groups[1].id);
     assert_eq!(groups[0].archive_index, 7);
     assert_eq!(groups[1].archive_index, 7);
