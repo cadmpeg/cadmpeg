@@ -18,6 +18,29 @@ use cadmpeg_ir::Exactness;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::CreoCodec;
 
+#[test]
+fn named_datum_plane_refuses_before_aggregate_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let section = super::Section::scan("ActDatums".to_string(), 0, payload.len(), None, payload)
+        .expect("bounded datum section");
+    let run = |items| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("datum fixture fits root limit");
+        super::datum_planes(&ctx, std::slice::from_ref(&section)).map(|rows| rows.len())
+    };
+    assert_eq!(run(14).expect("one named plane admitted"), 1);
+    let error = run(12).expect_err("named plane aggregate needs admission");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo named datum plane aggregation")
+    );
+}
+
 fn scan_primitives_with_limits(
     name: &str,
     bytes: &[u8],
