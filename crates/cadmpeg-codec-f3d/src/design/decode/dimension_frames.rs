@@ -1410,6 +1410,7 @@ fn is_dimension_presentation_type(type_guid: &str) -> bool {
 /// owner. The type table selects the primary and paired classes; no numeric
 /// class tag is treated as a cross-stream type identity.
 pub(crate) fn decode_dimension_presentation_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     inputs: &DimensionDecodeInputs<'_>,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignDimensionPresentationFrame>, CodecError> {
@@ -1449,7 +1450,7 @@ pub(crate) fn decode_dimension_presentation_frames(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let types = decode_types(scan)?;
+    let types = decode_types(ctx, scan)?;
     let mut out = Vec::new();
     for entry in scan
         .entries

@@ -57,7 +57,10 @@ impl<'a> MetaStreamEntry<'a> {
 }
 
 /// Decode the type table of every Design `MetaStream` entry.
-pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
+pub(crate) fn decode_types(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -65,12 +68,98 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
         .filter_map(|entry| MetaStreamEntry::from_design_entry(scan, entry))
     {
         let meta = scan.parsed_metastream(&entry.entry.name)?;
-        out.extend(meta.types.iter().cloned().map(|mut design_type| {
-            design_type.id = ids::native_design_type_id(&entry.entry.name, design_type.byte_offset);
-            design_type
-        }));
+        for design_type in &meta.types {
+            ctx.charge_collection_items(1, "f3d design type table")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d design type table allocation", 0, 1)
+            })?;
+            out.push(copy_design_type(ctx, design_type, &entry.entry.name)?);
+        }
     }
     Ok(out)
+}
+
+fn design_record_id_charged(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    suffix: &'static str,
+    offset: u64,
+    charge_operation: &'static str,
+    allocation_operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut id = super::sketch::native_scope_charged(ctx, stream)?;
+    let digits = usize::try_from(offset.checked_ilog10().unwrap_or(0) + 1).map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    let additional = suffix.len().checked_add(digits).ok_or_else(|| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    ctx.charge_retained(
+        u64::try_from(additional).map_err(|_| {
+            ctx.refuse_codec_limit(allocation_operation, 0, 1)
+        })?,
+        charge_operation,
+    )?;
+    id.try_reserve(additional).map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    id.push_str(suffix);
+    write!(id, "{offset}").map_err(|_| {
+        ctx.refuse_codec_limit(allocation_operation, 0, 1)
+    })?;
+    Ok(id)
+}
+
+fn copy_design_type(
+    ctx: &DecodeContext<'_>,
+    design_type: &SegmentType,
+    stream: &str,
+) -> Result<SegmentType, CodecError> {
+    use crate::records::identity::ReferenceRun;
+
+    let count = design_type.entities.values().len();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "f3d design type registered entities",
+    )?;
+    let entities = if let Some(rows) = design_type.entities.located_rows() {
+        let mut copied = Vec::new();
+        copied.try_reserve(count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d design type entity locations allocation", 0, 1)
+        })?;
+        copied.extend_from_slice(rows);
+        ReferenceRun::located(copied)
+    } else {
+        let mut copied = Vec::new();
+        copied.try_reserve(count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d design type entities allocation", 0, 1)
+        })?;
+        copied.extend(design_type.entities.values().copied());
+        ReferenceRun::unlocated(copied)
+    };
+    let module = String::from_utf8(ctx.copy_retained(
+        design_type.module.as_bytes(),
+        "f3d design type module",
+    )?).map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
+    let id = design_record_id_charged(
+        ctx,
+        stream,
+        ":design-type#",
+        design_type.byte_offset,
+        "f3d design type id suffix",
+        "f3d design type id allocation",
+    )?;
+    Ok(SegmentType {
+        id,
+        byte_offset: design_type.byte_offset,
+        type_guid: design_type.type_guid.clone(),
+        type_guid_offset: design_type.type_guid_offset,
+        base_type_guid: design_type.base_type_guid.clone(),
+        version: design_type.version,
+        version_offset: design_type.version_offset,
+        module,
+        entities,
+    })
 }
 
 fn insert_component_naming_space(
@@ -94,30 +183,17 @@ fn insert_component_naming_space(
     by_component.try_reserve(1).map_err(|_| {
         ctx.refuse_codec_limit("f3d component naming spaces map allocation", 0, 1)
     })?;
-    let mut id = super::sketch::native_scope_charged(ctx, bulk_name)?;
-    let suffix = ":design-component-naming-space#";
-    let digits = usize::try_from(marker.checked_ilog10().unwrap_or(0) + 1).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
-    })?;
-    let additional = suffix.len().checked_add(digits).ok_or_else(|| {
-        ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
-    })?;
-    ctx.charge_retained(
-        u64::try_from(additional).map_err(|_| {
-            ctx.refuse_codec_limit("f3d component naming space id length", 0, 1)
-        })?,
-        "f3d component naming space id suffix",
-    )?;
-    id.try_reserve(additional).map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming space id allocation", 0, 1)
-    })?;
-    id.push_str(suffix);
-    write!(id, "{marker}").map_err(|_| {
-        ctx.refuse_codec_limit("f3d component naming space id formatting", 0, 1)
-    })?;
     let byte_offset = u64::try_from(marker).map_err(|_| {
         ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1)
     })?;
+    let id = design_record_id_charged(
+        ctx,
+        bulk_name,
+        ":design-component-naming-space#",
+        byte_offset,
+        "f3d component naming space id suffix",
+        "f3d component naming space id allocation",
+    )?;
     let context_uuid_offset = u64::try_from(context_uuid_offset).map_err(|_| {
         ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1)
     })?;

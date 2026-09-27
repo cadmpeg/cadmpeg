@@ -2297,7 +2297,7 @@ impl<'a> F3dDecodeSession<'a> {
             crate::design::decode::sketch::decode_lost_edge_references(scan)?;
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
-        self.native.design_types = crate::design::decode::meta::decode_types(scan)?;
+        self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
         self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
@@ -2306,6 +2306,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_entity_headers,
         )?;
         self.native.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
+            ctx,
             scan,
             &self.native.design_record_headers,
         )?;
@@ -2362,6 +2363,7 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_presentation_frames =
             crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
