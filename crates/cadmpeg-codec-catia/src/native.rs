@@ -8388,107 +8388,89 @@ fn consolidated_edge_nodes(
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Result<Vec<CatiaConsolidatedEdgeNode>, CodecError> {
-    let circle_ids = circles
-        .iter()
-        .map(|circle| (circle.byte_offset, circle.id.as_str()))
-        .collect::<HashMap<_, _>>();
-    let frames = records
-        .iter()
-        .filter(|record| {
+    let mut circle_ids = HashMap::new();
+    for circle in circles {
+        crate::resource::insert_map(ctx, &mut circle_ids, circle.byte_offset, circle.id.as_str(), "catia_native_edge_circle_ids")?;
+    }
+    let mut frames = HashMap::new();
+    for record in records.iter().filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
-        })
-        .map(|record| {
-            (
-                record.byte_offset(),
-                (record.width, record.flag, record.source_index),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let owned_nodes =
-        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
-            ctx, bytes, records,
-        )?
-        .into_iter()
-        .map(|owned| (owned.node.pos, (owned.owner_pos, owned.allocation_ordinal)))
-        .collect::<HashMap<_, _>>();
-    let compact_endpoints =
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
-            bytes, records,
-        )
-        .into_iter()
-        .map(|binding| {
-            (
-                binding.node.pos,
-                binding.endpoint_records.map(|pos| pos as u64),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
+        }) {
+        crate::resource::insert_map(ctx, &mut frames, record.byte_offset(),
+            (record.width, record.flag, record.source_index), "catia_native_edge_frames")?;
+    }
+    let mut owned_nodes = HashMap::new();
+    for owned in crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+        ctx, bytes, records,
+    )? {
+        crate::resource::insert_map(ctx, &mut owned_nodes, owned.node.pos,
+            (owned.owner_pos, owned.allocation_ordinal), "catia_native_owned_edge_nodes")?;
+    }
+    let mut compact_endpoints = HashMap::new();
+    for binding in crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
         bytes, records,
-    )
-    .into_iter()
-    .filter_map(|run| {
-        Some((
-            run.node.pos,
-            (
-                native_consolidated_edge_uses(&run.uses)?,
-                run.definition.map(native_consolidated_edge_definition),
-            ),
-        ))
-    })
-    .collect::<HashMap<_, _>>();
-    let analytic_circles =
-        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
-            bytes, records,
-        )
-            .into_iter()
-            .filter_map(|run| {
-                let circle = circle_ids.get(&(run.circle.pos as u64))?;
-                Some((
-                    run.node.pos,
-                    CatiaConsolidatedAnalyticCircleBinding {
-                        descriptor: run.descriptor.into(),
-                        circle: (*circle).to_string(),
-                    },
-                ))
-            })
-            .collect::<HashMap<_, _>>();
-    let class25_descriptors =
-        crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
-            bytes, records,
-        )
-        .into_iter()
-        .map(|run| {
-            (
-                run.node.pos,
-                CatiaConsolidatedClass25Descriptor {
-                    byte_offset: run.descriptor.pos as u64,
-                    record_id: run.descriptor.record_id,
-                    control: run.descriptor.control,
-                    values: run.descriptor.values,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    Ok(crate::families::b2::records::b2_edge_nodes_from_records(bytes, records)
+    ) {
+        crate::resource::insert_map(ctx, &mut compact_endpoints, binding.node.pos,
+            binding.endpoint_records.map(|pos| pos as u64), "catia_native_edge_compact_endpoints")?;
+    }
+    let mut use_runs = HashMap::new();
+    for run in crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
+        bytes, records,
+    ) {
+        let Some(uses) = native_consolidated_edge_uses(&run.uses) else { continue };
+        crate::resource::insert_map(ctx, &mut use_runs, run.node.pos,
+            (uses, run.definition.map(native_consolidated_edge_definition)),
+            "catia_native_edge_use_runs")?;
+    }
+    let mut analytic_circles = HashMap::new();
+    for run in crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
+        bytes, records,
+    ) {
+        let Some(circle) = circle_ids.get(&(run.circle.pos as u64)) else { continue };
+        let circle = crate::resource::copy_retained_str(ctx, circle, "catia_native_analytic_edge_circle_id")?;
+        crate::resource::insert_map(ctx, &mut analytic_circles, run.node.pos,
+            CatiaConsolidatedAnalyticCircleBinding { descriptor: run.descriptor.into(), circle },
+            "catia_native_analytic_edge_bindings")?;
+    }
+    let mut class25_descriptors = HashMap::new();
+    for run in crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
+        bytes, records,
+    ) {
+        crate::resource::insert_map(ctx, &mut class25_descriptors, run.node.pos,
+            CatiaConsolidatedClass25Descriptor {
+                byte_offset: run.descriptor.pos as u64,
+                record_id: run.descriptor.record_id,
+                control: run.descriptor.control,
+                values: run.descriptor.values,
+            }, "catia_native_class25_edge_descriptors")?;
+    }
+    let mut output = Vec::new();
+    for (index, node) in crate::families::b2::records::b2_edge_nodes_from_records(bytes, records)
         .into_iter()
         .enumerate()
-        .filter_map(|(index, node)| {
-            let (width, flag, source_index) = frames.get(&node.pos)?;
-            let owner = owned_nodes.get(&node.pos);
-            Some(CatiaConsolidatedEdgeNode {
-                id: format!("catia:consolidated:edge-node#{index}"),
+    {
+        let Some(&(width, flag, source_index)) = frames.get(&node.pos) else { continue };
+        crate::resource::reserve_vec(ctx, &mut output, 1, "catia_native_consolidated_edge_nodes")?;
+        let allocation = owned_nodes.get(&node.pos)
+            .map(|(pos, ordinal)| {
+                Ok::<_, CodecError>((
+                    crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", *pos, 10, "catia_native_edge_owner_id")?,
+                    *ordinal,
+                ))
+            })
+            .transpose()?;
+        let (uses, definition) = match use_runs.remove(&node.pos) {
+            Some((uses, definition)) => (Some(uses), definition),
+            None => (None, None),
+        };
+        output.push(CatiaConsolidatedEdgeNode {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:edge-node#", index, 1, "catia_native_edge_node_id")?,
                 byte_offset: node.pos as u64,
-                source_index: *source_index,
-                width: *width,
-                flag: *flag,
+                source_index,
+                width,
+                flag,
                 header_token: node.header_token,
-                allocation: owner.map(|(pos, ordinal)| {
-                    (
-                        format!("catia:consolidated:owner-packet#{pos:010}"),
-                        *ordinal,
-                    )
-                }),
+                allocation,
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
                 endpoint_records: compact_endpoints.get(&node.pos).copied(),
@@ -8499,13 +8481,13 @@ fn consolidated_edge_nodes(
                 terminal_value: node.terminal_value,
                 terminal_encoding: native_allocation_reference_encoding(node.terminal_encoding),
                 tail: node.tail,
-                definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
-                uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
-                analytic_circle: analytic_circles.get(&node.pos).cloned(),
-                class25_descriptor: class25_descriptors.get(&node.pos).cloned(),
-            })
-        })
-        .collect())
+                definition,
+                uses,
+                analytic_circle: analytic_circles.remove(&node.pos),
+                class25_descriptor: class25_descriptors.remove(&node.pos),
+        });
+    }
+    Ok(output)
 }
 
 fn native_consolidated_edge_definition(
@@ -8545,23 +8527,20 @@ fn native_allocation_reference_encoding(
 fn native_consolidated_edge_uses(
     uses: &[crate::families::b2::records::B2UseMetadata; 2],
 ) -> Option<CatiaConsolidatedEdgeUses> {
-    let references = uses
-        .iter()
+    let [Some(first), Some(second)] = uses
+        .each_ref()
         .map(|use_| use_.references()?.try_into().ok())
-        .collect::<Option<Vec<[u32; 2]>>>()?
-        .try_into()
-        .ok()?;
-    let senses: [u8; 2] = uses
+    else { return None };
+    let references = [first, second];
+    let [Some(first_sense), Some(second_sense)] = uses
         .each_ref()
         .map(|use_| match use_.sense()? {
             crate::families::b2::records::B2UseSense::Sense84 => Some(0x84),
             crate::families::b2::records::B2UseSense::Sense88 => Some(0x88),
         })
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
-    (senses == [0x88, 0x84]).then_some(CatiaConsolidatedEdgeUses { references })
+    else { return None };
+    ([first_sense, second_sense] == [0x88, 0x84])
+        .then_some(CatiaConsolidatedEdgeUses { references })
 }
 
 fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
