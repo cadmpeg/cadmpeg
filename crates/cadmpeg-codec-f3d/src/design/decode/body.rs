@@ -1422,52 +1422,68 @@ fn typed_browser_node_hidden_flags(
 ///
 /// The GUID is the stable join between browser presentation records; the
 /// adjacent entity suffix joins the node back to the Design body map.
-pub(crate) fn scanned_browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+pub(crate) fn scanned_browser_node_entities(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<HashMap<String, u64>, CodecError> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
     for record in scan_browser_node_identities(bytes) {
         let key = record.guid.to_ascii_lowercase();
-        if entities
-            .insert(key.clone(), record.entity_suffix)
-            .is_some_and(|previous| previous != record.entity_suffix)
-        {
-            ambiguous.insert(key);
+        if let Some(previous) = entities.get_mut(&key) {
+            if *previous != record.entity_suffix {
+                *previous = record.entity_suffix;
+                if !ambiguous.contains(&key) {
+                    ctx.charge_collection_items(1, "f3d ambiguous browser GUIDs")?;
+                    ambiguous.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d ambiguous browser GUIDs allocation", 0, 1)
+                    })?;
+                    ambiguous.insert(key);
+                }
+            }
+        } else {
+            ctx.charge_collection_items(1, "f3d scanned browser GUIDs")?;
+            entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d scanned browser GUIDs allocation", 0, 1)
+            })?;
+            entities.insert(key, record.entity_suffix);
         }
     }
     entities.retain(|guid, _| !ambiguous.contains(guid));
-    entities
+    Ok(entities)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ScannedBrowserNodeIdentity {
     guid: String,
     entity_suffix: u64,
 }
 
-fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity> {
+fn scan_browser_node_identities(bytes: &[u8]) -> impl Iterator<Item = ScannedBrowserNodeIdentity> + '_ {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
-    let mut out = Vec::new();
     let mut at = 0usize;
-    while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
-        if View::u32_le_at(bytes, at) != Some(GUID_CHARS as u32)
-            || !is_utf16_guid(&bytes[at + 4..at + 4 + GUID_BYTES])
-        {
+    std::iter::from_fn(move || {
+        while at + 4 + GUID_BYTES + 3 + 8 <= bytes.len() {
+            let candidate_at = at;
             at += 1;
-            continue;
-        }
-        let flag_at = at + 4 + GUID_BYTES;
-        if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-            if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
-                out.push(ScannedBrowserNodeIdentity {
-                    guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
+            if View::u32_le_at(bytes, candidate_at) != Some(GUID_CHARS as u32)
+                || !is_utf16_guid(&bytes[candidate_at + 4..candidate_at + 4 + GUID_BYTES])
+            {
+                continue;
+            }
+            let flag_at = candidate_at + 4 + GUID_BYTES;
+            if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
+                if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
+                    return Some(ScannedBrowserNodeIdentity {
+                    guid: utf16_le_string(&bytes[candidate_at + 4..candidate_at + 4 + GUID_BYTES]),
                     entity_suffix: member,
                 });
+                }
             }
         }
-        at += 1;
-    }
-    out
+        None
+    })
 }
 
 fn utf16_le_string(bytes: &[u8]) -> String {
@@ -2322,6 +2338,34 @@ mod tests {
             &metadata,
         ).unwrap();
         assert!(selected.get(&42).unwrap().hidden);
+    }
+
+    #[test]
+    fn scanned_browser_guids_refuse_map_and_ambiguity_limits() {
+        const GUID: &str = "AAAAAAAA-BBBB-8CCC-9DDD-EEEEEEEEEEEE";
+        let mut bytes = Vec::new();
+        push_browser_node(&mut bytes, 100, GUID, false, 42);
+        push_browser_node(&mut bytes, 101, GUID, true, 43);
+        for (items, operation) in [
+            (0, "f3d scanned browser GUIDs"),
+            (1, "f3d ambiguous browser GUIDs"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = items;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::scanned_browser_node_entities(&ctx, &bytes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ));
+        }
+        let entities = super::scanned_browser_node_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            &bytes,
+        ).unwrap();
+        assert!(entities.is_empty());
     }
 
     #[test]

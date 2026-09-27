@@ -1507,7 +1507,7 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     }
 
     assert_eq!(
-        crate::materials::browser_body_appearances(&bytes),
+        crate::materials::browser_body_appearances(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap(),
         [
             (
                 37_251,
