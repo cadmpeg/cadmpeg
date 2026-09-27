@@ -19,6 +19,7 @@ use crate::test_support::exchange::decode_inline;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 mod string_limits;
+mod collection_limits;
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
