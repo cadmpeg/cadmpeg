@@ -64,6 +64,61 @@ fn one_framed_history_record() -> Vec<u8> {
     bytes
 }
 
+fn one_state_history() -> crate::history_records::AsmHistory {
+    use crate::history_records::{AsmDeltaState, AsmHistory, AsmTopologyCache};
+
+    AsmHistory {
+        id: "history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![AsmDeltaState {
+            id: "state".into(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 0,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            topology_cache: AsmTopologyCache::Absent,
+            transition: None,
+        }],
+    }
+}
+
+#[test]
+fn history_graph_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::graph_is_coherent_charged(&ctx, &one_state_history()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D ASM history states"));
+}
+
+#[test]
+fn history_graph_visit_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::graph_is_coherent_charged(&ctx, &one_state_history()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "visit F3D ASM history state"));
+}
+
 #[test]
 fn history_record_references_refuse_collection_limit() {
     let bytes = one_framed_history_record();

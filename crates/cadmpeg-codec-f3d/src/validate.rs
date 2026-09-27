@@ -935,7 +935,7 @@ fn validate_loaded(
     validate_sketch_relation_owners(&ctx, &mut findings);
     validate_body_links(&ctx, &mut findings);
     validate_subentity_tags(&ctx, &mut findings);
-    validate_history_graphs(&ctx, &mut findings);
+    validate_history_graphs(decode, &ctx, &mut findings)?;
     Ok(findings)
 }
 
@@ -8155,10 +8155,18 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate each ASM history graph as a coherent state chain.
-fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_history_graphs(
+    decode: Option<&DecodeContext<'_>>,
+    ctx: &Ctx,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let native = ctx.native;
     for history in &native.asm_histories {
-        if !history::graph_is_coherent(history) {
+        let coherent = match decode {
+            Some(decode) => history::graph_is_coherent_charged(decode, history)?,
+            None => history::graph_is_coherent(history),
+        };
+        if !coherent {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -8168,6 +8176,7 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
