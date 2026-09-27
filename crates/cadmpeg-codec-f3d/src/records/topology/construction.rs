@@ -1614,11 +1614,8 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
 }
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignConstructionPersistentIdentityDraft",
-    into = "DesignConstructionPersistentIdentityDraft"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignConstructionPersistentIdentityDraft")]
 pub(crate) struct DesignConstructionPersistentIdentity {
     tail: PersistentIdentityTail,
     /// Local persistent identity preceding the two UUID fields.
@@ -1636,6 +1633,59 @@ pub(crate) struct DesignConstructionPersistentIdentity {
     tail_slot_present: bool,
     /// Identity of the indexed record immediately following this identity.
     pub(crate) next_record_index: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static PERSISTENT_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignConstructionPersistentIdentity {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        PERSISTENT_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            tail: self.tail,
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset,
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            next_record_index: self.next_record_index,
+        }
+    }
+}
+
+impl Serialize for DesignConstructionPersistentIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            local_id: u64,
+            local_id_offset: u64,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            tail_slot_present: bool,
+            tail_slot_offset: u64,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset,
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset,
+            tail_slot_present: self.tail_slot_present,
+            tail_slot_offset: self.tail_slot_offset(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignConstructionPersistentIdentity {
@@ -1676,6 +1726,7 @@ impl DesignConstructionPersistentIdentity {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignConstructionPersistentIdentityDraft {
         let tail_slot_offset = self.tail_slot_offset();
         let next_byte_offset = self.next_byte_offset();
@@ -1751,6 +1802,7 @@ impl TryFrom<DesignConstructionPersistentIdentityDraft> for DesignConstructionPe
     }
 }
 
+#[cfg(test)]
 impl From<DesignConstructionPersistentIdentity> for DesignConstructionPersistentIdentityDraft {
     fn from(value: DesignConstructionPersistentIdentity) -> Self {
         let value = value.into_draft();

@@ -10,6 +10,7 @@ use crate::records::identity::Located;
 use crate::records::identity::NonEmptyByteSpan;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
+use crate::records::serde_column::SliceColumn;
 use cadmpeg_ir::ids::FaceId;
 use serde::Deserialize;
 use serde::Serialize;
@@ -470,11 +471,8 @@ impl DesignFaceOperand {
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignFaceSourceGroupWire",
-    into = "DesignFaceSourceGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignFaceSourceGroupWire")]
 pub(crate) struct DesignFaceSourceGroup {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -494,6 +492,67 @@ pub(crate) struct DesignFaceSourceGroup {
     pub(crate) paired_class_tag: DesignClassTag,
     /// Ordered persistent source-shape identities.
     pub(crate) source_members: Vec<Located<DesignFaceSourceMember>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static FACE_SOURCE_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignFaceSourceGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        FACE_SOURCE_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            carrier_reference_ordinal: self.carrier_reference_ordinal,
+            carrier_record_index: self.carrier_record_index,
+            carrier_span: self.carrier_span,
+            carrier_class_tag: self.carrier_class_tag.clone(),
+            paired_record_index: self.paired_record_index,
+            paired_class_tag: self.paired_class_tag.clone(),
+            source_members: self.source_members.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignFaceSourceGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            carrier_reference_ordinal: u32,
+            carrier_record_index: u32,
+            carrier_byte_offset: u64,
+            carrier_class_tag: &'a str,
+            carrier_frame_length: u64,
+            paired_record_index: u32,
+            paired_byte_offset: u64,
+            paired_class_tag: &'a str,
+            source_reference_offsets: SliceColumn<'a, Located<DesignFaceSourceMember>, u64>,
+            source_members:
+                SliceColumn<'a, Located<DesignFaceSourceMember>, &'a DesignFaceSourceMember>,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            carrier_reference_ordinal: self.carrier_reference_ordinal,
+            carrier_record_index: self.carrier_record_index,
+            carrier_byte_offset: self.carrier_span.start(),
+            carrier_class_tag: self.carrier_class_tag.as_str(),
+            carrier_frame_length: self.carrier_span.byte_len(),
+            paired_record_index: self.paired_record_index,
+            paired_byte_offset: self.carrier_span.end(),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            source_reference_offsets: SliceColumn::new(&self.source_members, |member| {
+                member.offset
+            }),
+            source_members: SliceColumn::new(&self.source_members, |member| &member.value),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Native source-shape carrier owned by a `Face` parameter scope.
@@ -557,6 +616,7 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
     fn from(group: DesignFaceSourceGroup) -> Self {
         let (source_members, source_reference_offsets) = group
