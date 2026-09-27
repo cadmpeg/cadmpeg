@@ -5,6 +5,39 @@
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
 
+use crate::native::features::draft::feature_draft_construction_binary32_lanes;
+use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_graph_payloads;
+use crate::native::features::draft::feature_draft_construction_graph_strings;
+use crate::native::features::draft::feature_draft_construction_identity_frames;
+use crate::native::features::draft::feature_draft_construction_index_lanes;
+use crate::native::features::draft::feature_draft_construction_payloads;
+use crate::native::features::draft::feature_draft_construction_references;
+use crate::native::features::draft::feature_draft_construction_terminal_lanes;
+use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
+use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
+use crate::native::features::draft::FeatureDraftConstructionGraphString;
+use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
+use crate::native::features::draft::FeatureDraftConstructionIndexLane;
+use crate::native::features::draft::FeatureDraftConstructionReference;
+use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::pattern::feature_identical_instance_output_lanes;
+use crate::native::features::pattern::feature_multi_instance_output_lanes;
+use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_payloads;
+use crate::native::features::pattern::feature_pattern_construction_strings;
+use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
+use crate::native::features::pattern::feature_pattern_references;
+use crate::native::features::pattern::feature_pattern_transform_lanes;
+use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
+use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
+use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionString;
+use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
+use crate::native::features::pattern::FeaturePatternReference;
+use crate::native::features::pattern::FeaturePatternTransformLane;
+
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
     display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
@@ -176,6 +209,22 @@ use crate::native::features::extrude_32::{
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
+use crate::native::features::holes::feature_hole_package_construction_group_lanes;
+use crate::native::features::holes::feature_hole_package_construction_group_uses;
+use crate::native::features::holes::feature_simple_hole_construction_groups;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
+use crate::native::features::holes::feature_simple_hole_templates;
+use crate::native::features::holes::feature_symbolic_threads;
+use crate::native::features::holes::feature_threaded_hole_templates;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+use crate::native::features::holes::FeatureSimpleHoleTemplate;
+use crate::native::features::holes::FeatureSymbolicThread;
+use crate::native::features::holes::FeatureThreadedHoleTemplate;
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::payload_name::FeaturePayloadName;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
@@ -1545,56 +1594,6 @@ impl NativeModel {
         super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }
-
-use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
-use crate::native::features::draft::feature_draft_construction_graph_payloads;
-use crate::native::features::draft::feature_draft_construction_graph_strings;
-use crate::native::features::draft::feature_draft_construction_identity_frames;
-use crate::native::features::draft::feature_draft_construction_index_lanes;
-use crate::native::features::draft::feature_draft_construction_payloads;
-use crate::native::features::draft::feature_draft_construction_references;
-use crate::native::features::draft::feature_draft_construction_terminal_lanes;
-use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
-use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
-use crate::native::features::draft::FeatureDraftConstructionGraphString;
-use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
-use crate::native::features::draft::FeatureDraftConstructionIndexLane;
-use crate::native::features::draft::FeatureDraftConstructionReference;
-use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
-use crate::native::features::pattern::feature_identical_instance_output_lanes;
-use crate::native::features::pattern::feature_multi_instance_output_lanes;
-use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
-use crate::native::features::pattern::feature_pattern_construction_payloads;
-use crate::native::features::pattern::feature_pattern_construction_strings;
-use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
-use crate::native::features::pattern::feature_pattern_references;
-use crate::native::features::pattern::feature_pattern_transform_lanes;
-use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
-use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
-use crate::native::features::pattern::FeaturePatternConstructionString;
-use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
-use crate::native::features::pattern::FeaturePatternReference;
-use crate::native::features::pattern::FeaturePatternTransformLane;
-
-use crate::native::features::holes::feature_hole_package_construction_group_lanes;
-use crate::native::features::holes::feature_hole_package_construction_group_uses;
-use crate::native::features::holes::feature_simple_hole_construction_groups;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
-use crate::native::features::holes::feature_simple_hole_templates;
-use crate::native::features::holes::feature_symbolic_threads;
-use crate::native::features::holes::feature_threaded_hole_templates;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
-use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
-use crate::native::features::holes::FeatureSimpleHoleTemplate;
-use crate::native::features::holes::FeatureSymbolicThread;
-use crate::native::features::holes::FeatureThreadedHoleTemplate;
 
 #[cfg(test)]
 mod tests;
