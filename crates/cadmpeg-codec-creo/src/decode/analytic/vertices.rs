@@ -490,7 +490,7 @@ pub(in crate::decode) fn solve_topological_vertices(
         ..TopologicalVertexSolveDiagnostics::default()
     };
     let vertex_faces =
-        crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
+        crate::topology::vertex_incident_faces(ctx, &scan.topology.vertices, &scan.topology.half_edges)?;
     let mut carrier_points = BTreeMap::new();
     for vertex in &scan.topology.vertices {
         let Some(face_ids) = vertex_faces.get(&vertex.id) else {
@@ -551,7 +551,7 @@ pub(in crate::decode) fn solve_topological_vertices(
     }
     diagnostics.carrier_points = carrier_points.len();
     let edge_start_vertices =
-        crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+        crate::topology::edge_start_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
     let mut fixed_points = carrier_points;
     let (endpoint_evidence, pcurve_diagnostics) =
         pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers, source_carriers);

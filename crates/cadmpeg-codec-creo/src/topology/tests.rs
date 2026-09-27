@@ -42,6 +42,128 @@ fn build_service(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<super::Loop>)
     build(&ctx, rows).expect("service topology build")
 }
 
+fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    run(&ctx)
+}
+
+fn with_collection_limit<T>(
+    max_collection_items: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    run(&ctx)
+}
+
+fn assert_collection_error(error: CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn paired_incidence() -> [HalfEdgeVertexIncidence; 2] {
+    [
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            },
+            start_vertex_id: 10,
+            end_vertex_id: Some(20),
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::One,
+            },
+            start_vertex_id: 20,
+            end_vertex_id: None,
+        },
+    ]
+}
+
+#[test]
+fn start_vertex_pairs_refuse_group_node() {
+    let error = with_collection_limit(0, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs a grouping node");
+    assert_collection_error(error, "creo start-vertex pair group nodes");
+}
+
+#[test]
+fn start_vertex_pairs_refuse_output_node() {
+    let error = with_collection_limit(1, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs an output node");
+    assert_collection_error(error, "creo start-vertex pair nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_refuse_group_node() {
+    let error = with_collection_limit(0, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs a grouping node");
+    assert_collection_error(error, "creo edge-vertex pair group nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_refuse_output_node() {
+    let error = with_collection_limit(1, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs an output node");
+    assert_collection_error(error, "creo edge-vertex pair nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
+    let [first, second] = paired_incidence();
+    let incidence = [first.clone(), first, second];
+    let start = with_service_context(|ctx| {
+        edge_start_vertex_pairs(ctx, &incidence).expect("service start pairs")
+    });
+    let edge = with_service_context(|ctx| {
+        edge_vertex_pairs(ctx, &incidence).expect("service edge pairs")
+    });
+    assert!(!start.contains_key(&7));
+    assert!(!edge.contains_key(&7));
+}
+
+fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
+    let edge = orphan_edge();
+    (
+        vec![TopologicalVertex {
+            id: 1,
+            half_edges: vec![edge.id],
+        }],
+        vec![edge],
+    )
+}
+
+#[test]
+fn vertex_incident_faces_refuse_half_edge_lookup_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(0, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one edge needs a lookup node");
+    assert_collection_error(error, "creo incident-face half-edge lookup nodes");
+}
+
+#[test]
+fn vertex_incident_faces_refuse_face_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(1, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one incident face needs a set node");
+    assert_collection_error(error, "creo incident face nodes");
+}
+
+#[test]
+fn vertex_incident_faces_refuse_vertex_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(2, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one vertex needs an output node");
+    assert_collection_error(error, "creo incident-face vertex nodes");
+}
+
 fn build_with_collection_limit(
     rows: &[CurveTopologyRow],
     max_collection_items: u64,
@@ -495,10 +617,10 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         ],
     };
 
-    assert_eq!(
-        vertex_incident_faces(&[vertex], &edges).get(&1).cloned(),
-        Some(BTreeSet::from([10, 20, 30]))
-    );
+    let incident_faces = with_service_context(|ctx| {
+        vertex_incident_faces(ctx, &[vertex], &edges).expect("service incident faces")
+    });
+    assert_eq!(incident_faces.get(&1).cloned(), Some(BTreeSet::from([10, 20, 30])));
 }
 
 #[test]
@@ -524,12 +646,22 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
         ]
     };
 
-    assert_eq!(edge_vertex_pairs(&incidence(None)).get(&7), Some(&[10, 20]));
     assert_eq!(
-        edge_vertex_pairs(&incidence(Some(10))).get(&7),
+        with_service_context(|ctx| edge_vertex_pairs(ctx, &incidence(None)).expect("service pairs"))
+            .get(&7),
         Some(&[10, 20])
     );
-    assert!(!edge_vertex_pairs(&incidence(Some(30))).contains_key(&7));
+    assert_eq!(
+        with_service_context(|ctx| {
+            edge_vertex_pairs(ctx, &incidence(Some(10))).expect("service pairs")
+        })
+        .get(&7),
+        Some(&[10, 20])
+    );
+    assert!(!with_service_context(|ctx| {
+        edge_vertex_pairs(ctx, &incidence(Some(30))).expect("service pairs")
+    })
+    .contains_key(&7));
 }
 
 #[test]
@@ -553,8 +685,17 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         },
     ];
 
-    assert_eq!(edge_start_vertex_pairs(&incidence).get(&7), Some(&[10, 20]));
-    assert!(!edge_vertex_pairs(&incidence).contains_key(&7));
+    assert_eq!(
+        with_service_context(|ctx| {
+            edge_start_vertex_pairs(ctx, &incidence).expect("service start pairs")
+        })
+        .get(&7),
+        Some(&[10, 20])
+    );
+    assert!(!with_service_context(|ctx| {
+        edge_vertex_pairs(ctx, &incidence).expect("service edge pairs")
+    })
+    .contains_key(&7));
 }
 
 #[test]

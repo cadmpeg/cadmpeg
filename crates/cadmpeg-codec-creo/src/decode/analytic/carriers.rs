@@ -78,7 +78,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         source_carriers,
     )?;
     let vertex_faces =
-        crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
+        crate::topology::vertex_incident_faces(ctx, &scan.topology.vertices, &scan.topology.half_edges)?;
     let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
     let unique_curve_ids = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()

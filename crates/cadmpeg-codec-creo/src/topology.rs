@@ -133,25 +133,50 @@ pub(crate) struct HalfEdgeVertexIncidence {
 /// when one or both successor end relations are unresolved. Callers that need
 /// a complete oriented edge must use [`edge_vertex_pairs`] instead.
 pub(crate) fn edge_start_vertex_pairs(
+    ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> BTreeMap<u32, [u32; 2]> {
-    let mut by_curve = BTreeMap::<u32, [Vec<u32>; 2]>::new();
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+    let mut by_curve = BTreeMap::<u32, [SingleSide<u32>; 2]>::new();
     for binding in incidence {
-        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
-            .push(binding.start_vertex_id);
+        let sides = match by_curve.entry(binding.half_edge.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo start-vertex pair group nodes")?;
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
+        };
+        sides[binding.half_edge.side.index()].push(binding.start_vertex_id);
     }
-    by_curve
-        .into_iter()
-        .filter_map(|(curve_id, sides)| {
-            let [first] = sides[0].as_slice() else {
-                return None;
-            };
-            let [second] = sides[1].as_slice() else {
-                return None;
-            };
-            Some((curve_id, [*first, *second]))
-        })
-        .collect()
+    let mut pairs = BTreeMap::new();
+    for (curve_id, sides) in by_curve {
+        if let (Some(first), Some(second)) = (sides[0].sole(), sides[1].sole()) {
+            ctx.charge_collection_items(1, "creo start-vertex pair nodes")?;
+            pairs.insert(curve_id, [*first, *second]);
+        }
+    }
+    Ok(pairs)
+}
+
+enum SingleSide<T> {
+    Empty,
+    One(T),
+    Many,
+}
+
+impl<T> SingleSide<T> {
+    fn push(&mut self, value: T) {
+        *self = match std::mem::replace(self, Self::Empty) {
+            Self::Empty => Self::One(value),
+            Self::One(_) | Self::Many => Self::Many,
+        };
+    }
+
+    fn sole(&self) -> Option<&T> {
+        match self {
+            Self::One(value) => Some(value),
+            Self::Empty | Self::Many => None,
+        }
+    }
 }
 
 /// Return every non-null face incident to a vertex orbit.
@@ -160,66 +185,91 @@ pub(crate) fn edge_start_vertex_pairs(
 /// edge contribute face carriers at the endpoint, even when only one side is a
 /// member of the outgoing orbit.
 pub(crate) fn vertex_incident_faces(
+    ctx: &DecodeContext<'_>,
     vertices: &[TopologicalVertex],
     edges: &[HalfEdge],
-) -> BTreeMap<u32, BTreeSet<u32>> {
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge.face_id))
-        .collect::<BTreeMap<_, _>>();
-    vertices
-        .iter()
-        .map(|vertex| {
-            let faces = vertex
-                .half_edges
-                .iter()
-                .flat_map(|half_edge| {
-                    [
-                        *half_edge,
-                        HalfEdgeId {
-                            curve_id: half_edge.curve_id,
-                            side: half_edge.side.flip(),
-                        },
-                    ]
-                })
-                .filter_map(|half_edge| by_id.get(&half_edge).copied().flatten())
-                .map(NonZeroU32::get)
-                .collect();
-            (vertex.id, faces)
-        })
-        .collect()
+) -> Result<BTreeMap<u32, BTreeSet<u32>>, CodecError> {
+    let mut by_id = BTreeMap::new();
+    for edge in edges {
+        match by_id.entry(edge.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(edge.face_id);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo incident-face half-edge lookup nodes")?;
+                entry.insert(edge.face_id);
+            }
+        }
+    }
+    let mut by_vertex = BTreeMap::new();
+    for vertex in vertices {
+        let mut faces = BTreeSet::new();
+        for half_edge in &vertex.half_edges {
+            for side in [
+                *half_edge,
+                HalfEdgeId {
+                    curve_id: half_edge.curve_id,
+                    side: half_edge.side.flip(),
+                },
+            ] {
+                if let Some(face) = by_id.get(&side).copied().flatten().map(NonZeroU32::get) {
+                    if !faces.contains(&face) {
+                        ctx.charge_collection_items(1, "creo incident face nodes")?;
+                        faces.insert(face);
+                    }
+                }
+            }
+        }
+        match by_vertex.entry(vertex.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(faces);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo incident-face vertex nodes")?;
+                entry.insert(faces);
+            }
+        }
+    }
+    Ok(by_vertex)
 }
 
 /// Resolve a curve's side-0 start and side-1 start as its oriented endpoint
 /// pair when at least one face loop supplies the corresponding end relation.
 /// Any supplied relation must agree with the opposite side's start vertex.
-pub(crate) fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
-    let mut by_curve = BTreeMap::<u32, [Vec<&HalfEdgeVertexIncidence>; 2]>::new();
+pub(crate) fn edge_vertex_pairs(
+    ctx: &DecodeContext<'_>,
+    incidence: &[HalfEdgeVertexIncidence],
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+    let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
-        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
-            .push(binding);
+        let sides = match by_curve.entry(binding.half_edge.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo edge-vertex pair group nodes")?;
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
+        };
+        sides[binding.half_edge.side.index()].push(binding);
     }
-    by_curve
-        .into_iter()
-        .filter_map(|(curve_id, sides)| {
-            let [forward] = sides[0].as_slice() else {
-                return None;
-            };
-            let [reverse] = sides[1].as_slice() else {
-                return None;
-            };
-            forward
-                .end_vertex_id
-                .is_none_or(|end| end == reverse.start_vertex_id)
-                .then_some(())?;
-            reverse
+    let mut pairs = BTreeMap::new();
+    for (curve_id, sides) in by_curve {
+        let (Some(forward), Some(reverse)) = (sides[0].sole(), sides[1].sole()) else {
+            continue;
+        };
+        if !forward
+            .end_vertex_id
+            .is_none_or(|end| end == reverse.start_vertex_id)
+            || !reverse
                 .end_vertex_id
                 .is_none_or(|end| end == forward.start_vertex_id)
-                .then_some(())?;
-            (forward.end_vertex_id.is_some() || reverse.end_vertex_id.is_some())
-                .then_some((curve_id, [forward.start_vertex_id, reverse.start_vertex_id]))
-        })
-        .collect()
+            || (forward.end_vertex_id.is_none() && reverse.end_vertex_id.is_none())
+        {
+            continue;
+        }
+        ctx.charge_collection_items(1, "creo edge-vertex pair nodes")?;
+        pairs.insert(curve_id, [forward.start_vertex_id, reverse.start_vertex_id]);
+    }
+    Ok(pairs)
 }
 
 /// What one half-edge set states about its topological vertices.

@@ -87,7 +87,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     )?;
     let endpoint_evidence = pcurve_edge_endpoint_evidence(scan, ir, source_carriers);
     let edge_vertices =
-        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+        crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         let [Some(first_face), Some(second_face)] = row.faces else {
             continue;

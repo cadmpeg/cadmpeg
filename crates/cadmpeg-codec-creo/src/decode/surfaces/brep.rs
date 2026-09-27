@@ -1161,7 +1161,7 @@ pub(in super::super) fn transfer_native_brep(
             .push((face_0_endpoints, pcurve.offset));
     }
     let native_edge_vertices =
-        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+        crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
     let edge_vertices = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|row| {
