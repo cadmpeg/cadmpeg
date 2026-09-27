@@ -9391,18 +9391,22 @@ fn decode_history_records(
                     .iter()
                     .filter(|token| matches!(token, cadmpeg_asm::sab::Token::Ref(_)))
                     .count();
+                let reference_count_u64 = u64::try_from(reference_count).map_err(|_| {
+                    ctx.refuse_codec_limit("frame F3D history references", 0, u64::MAX)
+                })?;
                 ctx.charge_collection_items(
-                    reference_count as u64,
+                    reference_count_u64,
                     "frame F3D history references",
                 )?;
-                let entity_references = record
-                    .tokens
-                    .iter()
-                    .filter_map(|token| match token {
-                        cadmpeg_asm::sab::Token::Ref(value) => Some(*value),
-                        _ => None,
-                    })
-                    .collect();
+                let mut entity_references = Vec::new();
+                entity_references.try_reserve(reference_count).map_err(|_| {
+                    ctx.refuse_codec_limit("frame F3D history references", 0, reference_count_u64)
+                })?;
+                for token in record.tokens.iter() {
+                    if let cadmpeg_asm::sab::Token::Ref(value) = token {
+                        entity_references.push(*value);
+                    }
+                }
                 let end = record.offset.checked_add(record.len).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed("F3D history record byte range overflows")
                 })?;
@@ -9413,13 +9417,19 @@ fn decode_history_records(
                 })?;
                 let raw_bytes = ctx.copy_retained(source, "retain F3D history record")?;
                 ctx.charge_collection_items(1, "frame F3D history record")?;
+                decoded.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("frame F3D history record", 0, 1)
+                })?;
+                let id = crate::ids::native_scoped_id_charged(
+                    ctx,
+                    stream,
+                    "asm-history-record",
+                    format_args!("{:010}", record.offset),
+                )?;
+                let parent = copy_history_string(ctx, state_id, "copy F3D history record parent")?;
                 decoded.push(AsmHistoryRecord {
-                    id: crate::ids::native_scoped_id(
-                        stream,
-                        "asm-history-record",
-                        format_args!("{:010}", record.offset),
-                    ),
-                    parent: state_id.to_string(),
+                    id,
+                    parent,
                     revision_id: None,
                     byte_offset: record.offset as u64,
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
@@ -9437,22 +9447,53 @@ fn decode_history_records(
             let raw_bytes =
                 ctx.copy_retained(&bytes[start..limit], "retain opaque F3D history record")?;
             ctx.charge_collection_items(1, "frame opaque F3D history record")?;
+            let id = crate::ids::native_scoped_id_charged(
+                ctx,
+                stream,
+                "asm-history-record",
+                format_args!("{start:010}"),
+            )?;
+            let parent = copy_history_string(ctx, state_id, "copy opaque F3D history record parent")?;
+            let error = format_history_error(ctx, &error)?;
             Ok(vec![AsmHistoryRecord {
-                id: crate::ids::native_scoped_id(
-                    stream,
-                    "asm-history-record",
-                    format_args!("{start:010}"),
-                ),
-                parent: state_id.to_string(),
+                id,
+                parent,
                 revision_id: None,
                 byte_offset: start as u64,
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque {
-                    error: error.to_string(),
+                    error,
                 },
                 raw_bytes,
             }])
         }
     }
+}
+
+fn format_history_error(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    error: &cadmpeg_asm::stream_error::StreamFailure,
+) -> Result<String, cadmpeg_core::CodecError> {
+    struct Count(usize);
+    impl std::fmt::Write for Count {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let operation = "retain opaque F3D history error";
+    let mut count = Count(0);
+    std::fmt::Write::write_fmt(&mut count, format_args!("{error}"))
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length = u64::try_from(count.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut text = String::new();
+    text.try_reserve(count.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    std::fmt::Write::write_fmt(&mut text, format_args!("{error}"))
+        .map_err(|_| cadmpeg_core::CodecError::malformed("F3D history error formatting failed"))?;
+    Ok(text)
 }
 
 fn decode_preamble(bytes: &[u8], mut position: usize, width: RefWidth) -> Option<(i64, i64)> {

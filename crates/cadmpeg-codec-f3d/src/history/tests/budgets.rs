@@ -37,6 +37,105 @@ fn history_id_lengths() -> (u64, u64, u64, u64) {
     (history.len() as u64, state.len() as u64, board.len() as u64, change.len() as u64)
 }
 
+fn history_record_with_limits(
+    bytes: &[u8],
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, policy).unwrap();
+    super::super::decode_history_records(
+        &ctx,
+        bytes,
+        0,
+        None,
+        "history",
+        "state",
+        cadmpeg_asm::kernel_header::RefWidth::Four,
+    )
+    .unwrap_err()
+}
+
+fn one_framed_history_record() -> Vec<u8> {
+    let mut bytes = b"\x0d\x01x\x0c".to_vec();
+    bytes.extend_from_slice(&3_i32.to_le_bytes());
+    bytes.push(0x11);
+    bytes
+}
+
+#[test]
+fn history_record_references_refuse_collection_limit() {
+    let bytes = one_framed_history_record();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let error = history_record_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "frame F3D history references"));
+}
+
+#[test]
+fn history_record_vector_refuses_collection_limit() {
+    let bytes = one_framed_history_record();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 4;
+    let error = history_record_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "frame F3D history record"));
+}
+
+#[test]
+fn history_record_id_refuses_retained_limit() {
+    let bytes = one_framed_history_record();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1 + std::mem::size_of::<cadmpeg_asm::sab::Token>() as u64
+        + bytes.len() as u64;
+    let error = history_record_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}
+
+#[test]
+fn history_record_parent_refuses_retained_limit() {
+    let bytes = one_framed_history_record();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let id = crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
+    policy.limits.max_retained_bytes = 1 + std::mem::size_of::<cadmpeg_asm::sab::Token>() as u64
+        + bytes.len() as u64 + id.len() as u64;
+    let error = history_record_with_limits(&bytes, &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D history record parent"));
+}
+
+#[test]
+fn opaque_history_record_id_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let error = history_record_with_limits(&[0xff], &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}
+
+#[test]
+fn opaque_history_record_parent_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let id = crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
+    policy.limits.max_retained_bytes = 1 + id.len() as u64;
+    let error = history_record_with_limits(&[0xff], &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy opaque F3D history record parent"));
+}
+
+#[test]
+fn opaque_history_error_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let id = crate::ids::native_scoped_id("history", "asm-history-record", format_args!("{:010}", 0));
+    policy.limits.max_retained_bytes = 1 + id.len() as u64 + "state".len() as u64;
+    let error = history_record_with_limits(&[0xff], &policy);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain opaque F3D history error"));
+}
+
 #[test]
 fn history_board_id_refuses_retained_limit() {
     let bytes = one_board_state();
