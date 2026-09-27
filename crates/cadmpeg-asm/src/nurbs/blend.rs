@@ -1749,7 +1749,9 @@ pub(super) fn full_rb_blend_spl_sur(ctx: &cadmpeg_core::decode::DecodeContext<'_
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve.clone()),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(
+                    propagate_resource!(curve.try_clone_for_decode(ctx, "ASM rolling ball spine")),
+                ),
                 _ => None,
             },
             radius_offsets: offsets,
