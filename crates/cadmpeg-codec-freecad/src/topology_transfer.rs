@@ -325,7 +325,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         kind: TextShapeKind,
         shape: usize,
         local: Transform,
-        topology_id: String,
+        topology_id: &str,
     ) -> Result<(), CodecError> {
         let key = SourceOccurrenceKey::new(
             shape,
@@ -341,7 +341,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             property: retained_string(self.ctx, &self.payload.property, "FreeCAD topology occurrence property")?,
             indexed_name: indexed_name(kind),
             source_index,
-            topology_id,
+            topology_id: retained_string(self.ctx, topology_id, "FreeCAD topology occurrence identity")?,
         });
         Ok(())
     }
@@ -590,7 +590,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 root_kind,
                 root.shape,
                 Transform::identity(),
-                body_id.into_string(),
+                body_id.as_str(),
             )?;
         }
         Ok(())
@@ -668,7 +668,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     TextShapeKind::Solid,
                     shape_index,
                     transform,
-                    region_id.as_str().to_owned(),
+                    region_id.as_str(),
                 )?;
             }
         reserve_vec_items(ctx, output, 1, "FreeCAD body regions")?;
@@ -772,7 +772,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     TextShapeKind::Shell,
                     shape_index,
                     transform,
-                    component_id.as_str().to_owned(),
+                    component_id.as_str(),
                 )?;
                 shell_ids.push(component_id);
             }
@@ -855,7 +855,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 shape.kind(),
                 shape_index,
                 transform,
-                shell_id.as_str().to_owned(),
+                shell_id.as_str(),
             )?;
         }
         Ok(vec![shell_id])
@@ -1173,7 +1173,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 TextShapeKind::Wire,
                 wire_use.shape,
                 wire_transform,
-                loop_id.as_str().to_owned(),
+                loop_id.as_str(),
             )?;
             reserve_vec_items(self.ctx, &mut loops, 1, "FreeCAD face loops")?;
             loops.push(loop_id);
@@ -1193,7 +1193,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             TextShapeKind::Face,
             face_use.shape,
             face_transform,
-            face_id.as_str().to_owned(),
+            face_id.as_str(),
         )?;
         Ok(Some(face_id))
     }
@@ -1218,7 +1218,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 TextShapeKind::Edge,
                 edge_use.shape,
                 transform,
-                id.as_str().to_owned(),
+                id.as_str(),
             )?;
             return Ok(id);
         }
@@ -1298,7 +1298,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             TextShapeKind::Edge,
             edge_use.shape,
             transform,
-            id.as_str().to_owned(),
+            id.as_str(),
         )?;
         self.edges.insert(key, id.clone());
         Ok(id)
@@ -1456,7 +1456,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 TextShapeKind::Vertex,
                 vertex_use.shape,
                 transform,
-                id.as_str().to_owned(),
+                id.as_str(),
             )?;
             return Ok(id);
         }
@@ -1511,7 +1511,7 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             TextShapeKind::Vertex,
             vertex_use.shape,
             transform,
-            vertex_id.as_str().to_owned(),
+            vertex_id.as_str(),
         )?;
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)

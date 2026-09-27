@@ -138,3 +138,8 @@ fn pcurve_pair_continuity_refuses_at_retained_limit() {
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD edge shape copy"
     ));
 }
+
+#[test]
+fn topology_occurrence_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD topology occurrence identity");
+}
