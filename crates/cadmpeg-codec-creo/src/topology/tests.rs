@@ -91,6 +91,100 @@ fn assert_orbit_collection_refusal(limit: u64, operation: &'static str) {
             && resource.operation == operation));
 }
 
+fn components_with_collection_limit(
+    rows: &[CurveTopologyRow],
+    max_collection_items: u64,
+) -> Result<Vec<super::FaceComponent>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    face_components(&ctx, rows)
+}
+
+fn assert_component_collection_refusal(limit: u64, operation: &'static str) {
+    let error = components_with_collection_limit(&[row(1, 1)], limit)
+        .expect_err("one two-face component exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn face_components_refuse_unique_row_count_node() {
+    assert_component_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn face_components_refuse_unique_row_projection() {
+    assert_component_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn face_components_refuse_adjacency_node() {
+    assert_component_collection_refusal(2, "creo face adjacency nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_group_node() {
+    assert_component_collection_refusal(3, "creo face curve group nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_member_node() {
+    assert_component_collection_refusal(4, "creo face curve member nodes");
+}
+
+#[test]
+fn face_components_refuse_adjacency_link() {
+    assert_component_collection_refusal(8, "creo face adjacency links");
+}
+
+#[test]
+fn face_components_refuse_seen_start_node() {
+    assert_component_collection_refusal(10, "creo seen component faces");
+}
+
+#[test]
+fn face_components_refuse_pending_start() {
+    assert_component_collection_refusal(11, "creo pending component faces");
+}
+
+#[test]
+fn face_components_refuse_face_member_node() {
+    assert_component_collection_refusal(12, "creo component face nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_node() {
+    assert_component_collection_refusal(13, "creo component curve nodes");
+}
+
+#[test]
+fn face_components_refuse_seen_neighbor_node() {
+    assert_component_collection_refusal(14, "creo seen component faces");
+}
+
+#[test]
+fn face_components_refuse_pending_neighbor() {
+    assert_component_collection_refusal(15, "creo pending component faces");
+}
+
+#[test]
+fn face_components_refuse_face_id_vector() {
+    assert_component_collection_refusal(17, "creo component face IDs");
+}
+
+#[test]
+fn face_components_refuse_curve_id_vector() {
+    assert_component_collection_refusal(19, "creo component curve IDs");
+}
+
+#[test]
+fn face_components_refuse_component_vector() {
+    assert_component_collection_refusal(20, "creo face components");
+}
+
 #[test]
 fn vertex_orbits_refuse_half_edge_lookup_node() {
     assert_orbit_collection_refusal(0, "creo vertex-orbit half-edge lookup nodes");
@@ -266,7 +360,10 @@ fn duplicate_curve_identities_do_not_contribute_derived_topology() {
     assert!(half_edges.iter().all(|edge| edge.next.is_none()));
     assert!(loops.is_empty());
 
-    let components = face_components(&rows);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let components = face_components(&ctx, &rows).expect("service face components");
     assert_eq!(components.len(), 1);
     assert_eq!(components[0].face_ids, [10, 20]);
     assert_eq!(components[0].curve_ids, [1]);
