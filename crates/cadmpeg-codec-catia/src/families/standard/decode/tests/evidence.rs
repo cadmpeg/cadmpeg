@@ -1571,7 +1571,7 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
     })
     .expect("service profile admits free vertex owner");
     assert_eq!(ir, before);
@@ -1618,7 +1618,7 @@ fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
     crate::test_support::with_entity_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
-            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+            attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
         else {
             panic!("free-vertex owner must exceed the entity limit");
         };
@@ -1644,7 +1644,7 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
     let mut annotations = AnnotationBuilder::new();
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
-        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+        attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
     })
     .expect("service profile admits free vertex owner");
     assert_eq!(ir.model.bodies.len(), 1);
@@ -1654,6 +1654,27 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         ir.model.shells[0].free_vertices(),
         [VertexId::mint("catia:test:vertex#v".to_string()).expect("identity grammar")]
     );
+}
+
+#[test]
+fn standard_free_vertex_members_refuse_collection_limit() {
+    let mut ir = CadIr::empty();
+    ir.model.vertices.push(Vertex {
+        id: VertexId::mint("catia:test:vertex#limit").expect("identity grammar"),
+        point: PointId::mint("catia:test:point#limit").expect("identity grammar"),
+        tolerance: None,
+    });
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(ctx, &mut ir, &mut AnnotationBuilder::new(), &mut admission)
+    })
+    .expect("service context admits the free vertex");
+    assert_eq!(ir.model.shells[0].free_vertices().len(), 1);
 }
 
 #[test]

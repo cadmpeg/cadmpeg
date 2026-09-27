@@ -1007,13 +1007,14 @@ mod consolidated_analytic_refinement_tests {
 
 /// Attach the standard route's unbound vertices to one wire body.
 fn attach_free_vertices(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let Some((first, rest)) = ir.model.vertices.split_first() else {
+    if ir.model.vertices.is_empty() {
         return Ok(());
-    };
+    }
     let body_id = BodyId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
         cadmpeg_ir::identity_key!("unbound-points"),
@@ -1026,11 +1027,18 @@ fn attach_free_vertices(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
         cadmpeg_ir::identity_key!("unbound-points"),
     );
-    admission.charge()?;
-    let mut shell = Shell::with_free_vertex(shell_id.clone(), region_id.clone(), first.id.clone());
-    for vertex in rest {
-        shell.add_free_vertex(vertex.id.clone());
+    admission.reserve_entity(&mut ir.model.shells, "catia_standard_free_vertex_shells")?;
+    let mut free_vertices = Vec::new();
+    for vertex in &ir.model.vertices {
+        let id = crate::resource::copy_id(ctx, vertex.id.as_str(), VertexId::mint, "catia_standard_free_vertex_id_copy")?;
+        crate::resource::push(ctx, &mut free_vertices, id, "catia_standard_free_vertex_members")?;
     }
+    let shell = Shell::with_free_vertices(
+        crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint, "catia_standard_free_shell_id_copy")?,
+        crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint, "catia_standard_free_shell_region_copy")?,
+        free_vertices,
+    )
+    .map_err(cadmpeg_core::CodecError::malformed)?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             annotations,
@@ -1041,21 +1049,21 @@ fn attach_free_vertices(
             Exactness::Inferred,
         );
     }
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.bodies, "catia_standard_free_vertex_bodies")?;
     ir.model.bodies.push(Body {
-        id: body_id.clone(),
+        id: crate::resource::copy_id(ctx, body_id.as_str(), BodyId::mint, "catia_standard_free_body_id_copy")?,
         kind: BodyKind::Wire,
-        regions: vec![region_id.clone()],
+        regions: ctx.alloc_filled(1, crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint, "catia_standard_free_body_region_copy")?, "catia_standard_free_body_regions")?,
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.regions, "catia_standard_free_vertex_regions")?;
     ir.model.regions.push(Region {
         id: region_id,
         body: body_id,
-        shells: vec![shell_id],
+        shells: ctx.alloc_filled(1, shell_id, "catia_standard_free_region_shells")?,
     });
     ir.model.shells.push(shell);
     Ok(())
@@ -2637,7 +2645,7 @@ fn try_decode_standard_population(
             attach_standard_lines(
                 &mut ir, &mut annotations, &face_bindings, &curve_supports, &mut admission,
             )?;
-            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+            attach_free_vertices(ctx, &mut ir, &mut annotations, &mut admission)
         })();
         match fallback_result {
             Ok(()) => {}
