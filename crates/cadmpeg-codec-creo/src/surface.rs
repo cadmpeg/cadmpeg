@@ -3359,11 +3359,21 @@ fn parsed_named_surface_value(
             };
             array.fill_tokens(slots)?;
         } else if name == "local_sys" {
-            let values =
-                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?;
+            let values = match sequential_named_local_system_slots(
+                ctx, remaining, slot_count, cache, refusal,
+            ) {
+                Ok(Some(values)) => values,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             array.fill_values(values)?;
         } else {
-            array.fill_values(scalar_slots(remaining, slot_count, cache, refusal)?)?;
+            let values = match scalar_slots(ctx, remaining, slot_count, cache, refusal) {
+                Ok(Some(values)) => values,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            array.fill_values(values)?;
         }
         return Some(Ok(SurfaceNamedValue::ScalarArray(array)));
     }
@@ -6233,26 +6243,28 @@ impl ScalarBodyRefusal {
 /// An unresolved slot is a slot whose token the body does encode and whose
 /// value no lane defines. It is not a slot the body omits.
 fn scalar_slots(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
-) -> Option<Vec<Option<f64>>> {
-    let mut slots = Vec::with_capacity(count);
+) -> Result<Option<Vec<Option<f64>>>, CodecError> {
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, count, "creo scalar body slots")?;
     let mut cursor = 0;
     while slots.len() < count {
         let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
             refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
-            return None;
+            return Ok(None);
         };
         slots.push(Some(value));
         cursor = next;
     }
     if cursor != body.len() {
         refusal.state(trailing_scalar_body_refusal(body, count, cursor));
-        return None;
+        return Ok(None);
     }
-    Some(slots)
+    Ok(Some(slots))
 }
 
 /// The reason a bounded scalar body states no slot at `cursor`: the byte no
@@ -6468,21 +6480,30 @@ fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)
 /// inherited slots that the body does encode and that carry no value; those
 /// slots are `None` and are not omitted slots.
 fn sequential_named_local_system_slots(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
-) -> Option<Vec<Option<f64>>> {
-    let mut slots = Vec::with_capacity(count);
+) -> Result<Option<Vec<Option<f64>>>, CodecError> {
+    let mut slots = Vec::new();
+    ctx.try_reserve_items(&mut slots, count, "creo local-system scalar slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body.get(cursor) == Some(&0xe7) {
             let (inherited_count, next) = compact_int(body, cursor + 1);
-            let inherited_count = usize::try_from(inherited_count).ok()?;
-            (next > cursor + 1
-                && inherited_count > 0
-                && slots.len().checked_add(inherited_count)? <= count)
-                .then_some(())?;
+            let Ok(inherited_count) = usize::try_from(inherited_count) else {
+                return Ok(None);
+            };
+            if next <= cursor + 1
+                || inherited_count == 0
+                || !slots
+                    .len()
+                    .checked_add(inherited_count)
+                    .is_some_and(|end| end <= count)
+            {
+                return Ok(None);
+            }
             slots.extend(std::iter::repeat_n(None, inherited_count));
             cursor = next;
             continue;
@@ -6493,7 +6514,9 @@ fn sequential_named_local_system_slots(
             continue;
         }
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            (slots.len() + 3 <= count).then_some(())?;
+            if slots.len() + 3 > count {
+                return Ok(None);
+            }
             slots.extend([Some(0.0), Some(1.0), Some(0.0)]);
             cursor += 2;
             continue;
@@ -6529,18 +6552,18 @@ fn sequential_named_local_system_slots(
             cursor = next;
         } else {
             refusal.state(scalar_body_refusal(body, count, slots.len(), cursor));
-            return None;
+            return Ok(None);
         }
     }
     if slots.len() != count {
         refusal.state(scalar_body_refusal(body, count, slots.len(), body.len()));
-        return None;
+        return Ok(None);
     }
     if cursor != body.len() {
         refusal.state(trailing_scalar_body_refusal(body, count, cursor));
-        return None;
+        return Ok(None);
     }
-    Some(slots)
+    Ok(Some(slots))
 }
 
 pub(crate) struct PlaneFrame {
