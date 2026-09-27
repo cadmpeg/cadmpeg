@@ -97,6 +97,32 @@ fn history_bound_scope_admission_reports_collection_limit() {
 }
 
 #[test]
+fn history_bound_scope_admission_refuses_group_and_output_limits() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for (cap, operation) in [
+        (1, "f3d scope admission groups"),
+        (2, "f3d scope admission group indices"),
+        (3, "f3d scope admission retained output"),
+    ] {
+        let mut scopes = vec![scope(42, 100, 7, 6)];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap();
+        let result = admit_history_bound_scope_variants(&ctx, &mut scopes, &[]);
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+        assert_eq!(scopes.len(), 1);
+    }
+}
+
+#[test]
 fn retains_the_unique_history_bound_scope_envelope() {
     let mut scopes = vec![scope(42, 200, 9, 8), scope(42, 100, 7, 6)];
     let histories = [history(vec![

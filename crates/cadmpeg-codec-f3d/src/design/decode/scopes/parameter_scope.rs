@@ -449,18 +449,25 @@ pub(crate) fn admit_history_bound_scope_variants(
     scopes: &mut Vec<DesignParameterScope>,
     histories: &[crate::history_records::AsmHistory],
 ) -> Result<(), CodecError> {
-    let mut groups = HashMap::<(String, u32), Vec<usize>>::new();
+    let mut admitted = ctx.alloc_filled(scopes.len(), true, "f3d scope admission")?;
+    let mut groups = HashMap::<(&str, u32), Vec<usize>>::new();
     for (index, scope) in scopes.iter().enumerate() {
-        let stream = native_stream(&scope.id)
-            .unwrap_or(ids::DEFAULT_STREAM)
-            .to_owned();
-        groups
-            .entry((stream, scope.record_index))
-            .or_default()
-            .push(index);
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let key = (stream, scope.record_index);
+        if !groups.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d scope admission groups")?;
+            groups.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d scope admission groups allocation", 0, 1)
+            })?;
+        }
+        let indices = groups.entry(key).or_default();
+        ctx.charge_collection_items(1, "f3d scope admission group indices")?;
+        indices.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d scope admission group indices allocation", 0, 1)
+        })?;
+        indices.push(index);
     }
 
-    let mut admitted = ctx.alloc_filled(scopes.len(), true, "f3d scope admission")?;
     for indices in groups.values() {
         let [first, following @ ..] = indices.as_slice() else {
             continue;
@@ -468,29 +475,32 @@ pub(crate) fn admit_history_bound_scope_variants(
         if following.is_empty() {
             continue;
         }
-        let history_bound = indices
-            .iter()
-            .copied()
-            .filter(|index| {
-                let scope = &scopes[*index];
-                let Some(state_id) = scope.history_state_id() else {
-                    return false;
-                };
-                let Some(previous_state_id) =
-                    crate::history::effective_scope_previous_history_state_id(scope, histories)
-                else {
-                    return false;
-                };
-                crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
-                    .is_some()
-            })
-            .collect::<Vec<_>>();
+        let mut history_bound = None;
+        let mut multiple_history_bounds = false;
+        for index in indices {
+            let scope = &scopes[*index];
+            let Some(state_id) = scope.history_state_id() else {
+                continue;
+            };
+            let Some(previous_state_id) =
+                crate::history::effective_scope_previous_history_state_id(scope, histories)
+            else {
+                continue;
+            };
+            if crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
+                .is_some()
+                && history_bound.replace(*index).is_some()
+            {
+                multiple_history_bounds = true;
+                break;
+            }
+        }
         let equivalent_payload = following
             .iter()
             .all(|index| equivalent_scope_variant_payload(&scopes[*first], &scopes[*index]));
-        let keep = match history_bound.as_slice() {
-            [keep] => *keep,
-            [] if equivalent_payload => following.iter().copied().fold(*first, |keep, index| {
+        let keep = match (history_bound, multiple_history_bounds) {
+            (Some(keep), false) => keep,
+            (None, false) if equivalent_payload => following.iter().copied().fold(*first, |keep, index| {
                 if scopes[index].byte_offset() >= scopes[keep].byte_offset() {
                     index
                 } else {
@@ -508,11 +518,21 @@ pub(crate) fn admit_history_bound_scope_variants(
         }
     }
 
-    let retained = std::mem::take(scopes)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, scope)| admitted[index].then_some(scope))
-        .collect();
+    drop(groups);
+    let retained_count = admitted.iter().filter(|selected| **selected).count();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(retained_count),
+        "f3d scope admission retained output",
+    )?;
+    let mut retained = Vec::new();
+    retained.try_reserve(retained_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d scope admission retained output allocation", 0, 1)
+    })?;
+    for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
+        if admitted[index] {
+            retained.push(scope);
+        }
+    }
     *scopes = retained;
     Ok(())
 }
