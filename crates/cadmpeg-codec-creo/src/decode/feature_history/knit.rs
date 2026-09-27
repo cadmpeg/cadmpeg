@@ -5,8 +5,9 @@ use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::axes::model_feature_ids;
 use super::dependencies::{
-    preceding_feature_entity_producers, surface_merge_quilt_ids, surface_merge_quilt_state_offset,
+    surface_merge_quilt_ids, surface_merge_quilt_state_offset,
 };
+use super::outputs::CommaList;
 use super::round::unique_positive_length;
 use super::selections::feature_result_edge_ids;
 use crate::container::ContainerScan;
@@ -59,150 +60,150 @@ pub(in super::super) fn filled_surface_feature_definition(
     })
 }
 
-fn class_100_operand_producers(
-    feature_id: u32,
-    tables: &[crate::feature::entity::FeatureEntityTable],
-) -> Option<Vec<(u32, u32)>> {
-    let consumer_tables = tables
-        .iter()
-        .enumerate()
-        .filter(|(_, table)| table.feature_id == feature_id && table.table_class_id == 100)
-        .collect::<Vec<_>>();
-    let consumers = consumer_tables
-        .iter()
-        .flat_map(|(table_index, table)| {
-            table
-                .entries
-                .iter()
-                .enumerate()
-                .map(move |(entry_index, entry)| {
-                    (
-                        (table.offset, entry.offset, *table_index, entry_index),
-                        entry.entity_id,
-                    )
-                })
-        })
-        .collect::<Vec<_>>();
-    if consumers.is_empty()
-        || consumers
-            .iter()
-            .map(|(_, entity_id)| entity_id)
-            .collect::<BTreeSet<_>>()
-            .len()
-            != consumers.len()
-    {
-        return None;
-    }
-    consumers
-        .into_iter()
-        .map(|(consumer_position, entity_id)| {
-            let producers = tables
-                .iter()
-                .enumerate()
-                .flat_map(|(table_index, table)| {
-                    let owner = table.feature_id;
-                    if owner == feature_id {
-                        return Vec::new();
-                    }
-                    table
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(entry_index, entry)| {
-                            let position = (table.offset, entry.offset, table_index, entry_index);
-                            (position < consumer_position
-                                && entry.class_id() == 200
-                                && entry.entity_id == entity_id)
-                                .then_some(owner)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            let [producer] = producers.as_slice() else {
-                return None;
-            };
-            Some((entity_id, *producer))
-        })
-        .collect()
-}
-
 pub(in super::super) fn knit_class_100_operand_entity_ids(
+    ctx: &DecodeContext<'_>,
     feature_id: u32,
     tables: &[crate::feature::entity::FeatureEntityTable],
-) -> Option<Vec<u32>> {
-    class_100_operand_producers(feature_id, tables).map(|operands| {
-        operands
-            .into_iter()
-            .map(|(entity_id, _)| entity_id)
-            .collect()
-    })
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut ids = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (table_index, table) in tables.iter().enumerate() {
+        if table.feature_id != feature_id || table.table_class_id != 100 {
+            continue;
+        }
+        for (entry_index, entry) in table.entries.iter().enumerate() {
+            if seen.contains(&entry.entity_id) {
+                return Ok(None);
+            }
+            ctx.charge_collection_items(1, "creo knit consumer identity nodes")?;
+            seen.insert(entry.entity_id);
+            let consumer_position = (table.offset, entry.offset, table_index, entry_index);
+            let mut producer = None;
+            for (source_index, source_table) in tables.iter().enumerate() {
+                if source_table.feature_id == feature_id {
+                    continue;
+                }
+                for (source_entry_index, source_entry) in source_table.entries.iter().enumerate() {
+                    let source_position = (
+                        source_table.offset,
+                        source_entry.offset,
+                        source_index,
+                        source_entry_index,
+                    );
+                    if source_position < consumer_position
+                        && source_entry.class_id() == 200
+                        && source_entry.entity_id == entry.entity_id
+                    {
+                        if producer.is_some() {
+                            return Ok(None);
+                        }
+                        producer = Some(source_table.feature_id);
+                    }
+                }
+            }
+            if producer.is_none() {
+                return Ok(None);
+            }
+            ctx.try_reserve_items(&mut ids, 1, "creo knit class 100 operand IDs")?;
+            ids.push(entry.entity_id);
+        }
+    }
+    Ok((!ids.is_empty()).then_some(ids))
 }
 
 fn knit_operand_entity_ids(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<(Vec<u32>, &'static str)> {
+) -> Result<Option<(Vec<u32>, &'static str)>, CodecError> {
     if let Some(ids) = surface_merge_quilt_ids(
         &scan.features.affected_ids,
         &scan.features.surface_merge_replay_affected_ids,
         feature_id,
     ) {
-        let ids = ids.to_vec();
-        if ids.iter().collect::<BTreeSet<_>>().len() == ids.len() {
-            return Some((ids, "surface_merge_quilts"));
+        let mut copied = Vec::new();
+        let mut seen = BTreeSet::new();
+        for &id in ids {
+            if seen.contains(&id) {
+                return Ok(None);
+            }
+            ctx.charge_collection_items(1, "creo knit quilt identity nodes")?;
+            seen.insert(id);
+            ctx.try_reserve_items(&mut copied, 1, "creo knit quilt IDs")?;
+            copied.push(id);
         }
-        return None;
+        return Ok(Some((copied, "surface_merge_quilts")));
     }
-    knit_class_100_operand_entity_ids(feature_id, &scan.features.entity_tables)
-        .map(|ids| (ids, "surface_merge_entities"))
+    Ok(knit_class_100_operand_entity_ids(ctx, feature_id, &scan.features.entity_tables)?
+        .map(|ids| (ids, "surface_merge_entities")))
 }
 
 pub(in super::super) fn knit_operand_surface_ids(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
     quilt_ids: &[u32],
-) -> Option<Vec<u32>> {
-    let consumer_offset = surface_merge_quilt_state_offset(
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let Some(consumer_offset) = surface_merge_quilt_state_offset(
         &scan.features.affected_ids,
         &scan.features.surface_merge_replay_affected_ids,
         feature_id,
         quilt_ids,
-    )?;
-    let surface_ids = quilt_ids
-        .iter()
-        .map(|quilt_id| {
-            let producers = preceding_feature_entity_producers(
-                &scan.features.entity_tables,
-                *quilt_id,
-                consumer_offset,
-            );
-            let [producer] = producers.as_slice() else {
-                return None;
-            };
-            if *producer == feature_id {
-                return None;
+    ) else {
+        return Ok(None);
+    };
+    let mut surface_ids = Vec::new();
+    let mut seen = BTreeSet::new();
+    for quilt_id in quilt_ids {
+        let mut producer = None;
+        for table in &scan.features.entity_tables {
+            for entry in &table.entries {
+                if entry.class_id() == 200
+                    && entry.entity_id == *quilt_id
+                    && entry.offset < consumer_offset
+                {
+                    if producer.is_some() {
+                        return Ok(None);
+                    }
+                    producer = Some(table.feature_id);
+                }
             }
-            let matching_entries = scan
-                .features
-                .entity_tables
-                .iter()
-                .filter(|table| {
-                    table.feature_id == *producer
-                        && table.table_class_id == 100
-                        && table.offset < consumer_offset
-                })
-                .flat_map(|table| table.entries.iter())
-                .filter(|entry| entry.entity_id == *quilt_id && entry.offset < consumer_offset)
-                .collect::<Vec<_>>();
-            let [entry] = matching_entries.as_slice() else {
-                return None;
-            };
-            let surface =
-                crate::surface::unique_surface_row(&scan.surfaces.rows, entry.class_id())?;
-            (surface.feature_id == *producer).then_some(entry.class_id())
-        })
-        .collect::<Option<Vec<_>>>()?;
-    (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
+        }
+        let Some(producer) = producer.filter(|producer| *producer != feature_id) else {
+            return Ok(None);
+        };
+        let mut surface_id = None;
+        for table in &scan.features.entity_tables {
+            if table.feature_id != producer
+                || table.table_class_id != 100
+                || table.offset >= consumer_offset
+            {
+                continue;
+            }
+            for entry in &table.entries {
+                if entry.entity_id == *quilt_id && entry.offset < consumer_offset {
+                    if surface_id.is_some() {
+                        return Ok(None);
+                    }
+                    surface_id = Some(entry.class_id());
+                }
+            }
+        }
+        let Some(surface_id) = surface_id else {
+            return Ok(None);
+        };
+        let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id) else {
+            return Ok(None);
+        };
+        if surface.feature_id != producer || seen.contains(&surface_id) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "creo knit surface identity nodes")?;
+        seen.insert(surface_id);
+        ctx.try_reserve_items(&mut surface_ids, 1, "creo knit surface IDs")?;
+        surface_ids.push(surface_id);
+    }
+    Ok(Some(surface_ids))
 }
 
 pub(super) fn knit_surface_feature_definition(
@@ -210,22 +211,18 @@ pub(super) fn knit_surface_feature_definition(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Result<IrFeatureDefinition, CodecError> {
-    let faces = if let Some((quilt_ids, namespace)) = knit_operand_entity_ids(scan, feature_id) {
-            let native = format!(
-                "creo:allfeatur:{namespace}#{feature_id}:{}",
-                quilt_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
+    let faces = if let Some((quilt_ids, namespace)) = knit_operand_entity_ids(ctx, scan, feature_id)? {
+            let native = ctx.format_retained(
+                format_args!("creo:allfeatur:{namespace}#{feature_id}:{}", CommaList(&quilt_ids)),
+                "creo knit native selection",
+            )?;
             let available_features = model_feature_ids(ctx, scan)?;
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 ctx,
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             )?;
-            let generated = match knit_operand_surface_ids(scan, feature_id, &quilt_ids) {
+            let generated = match knit_operand_surface_ids(ctx, scan, feature_id, &quilt_ids)? {
                 Some(surface_ids) => generated_surface_face_refs(
                         ctx,
                         &surface_ids,
@@ -236,7 +233,10 @@ pub(super) fn knit_surface_feature_definition(
                 None => None,
             };
             match generated {
-                Some(faces) => FaceSelection::generated(faces, native.clone())
+                Some(faces) => FaceSelection::generated(
+                    faces,
+                    ctx.copy_retained_text(&native, "creo knit generated native selection")?,
+                )
                     .unwrap_or(FaceSelection::Native(native)),
                 None => FaceSelection::Native(native),
             }

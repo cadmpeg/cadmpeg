@@ -1,7 +1,164 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{feature_result_surface_ids, feature_result_topology, generated_surface_face_refs};
+use super::{
+    feature_result_surface_ids, feature_result_topology, generated_surface_face_refs,
+    knit_class_100_operand_entity_ids, knit_operand_entity_ids, knit_operand_surface_ids,
+    knit_surface_feature_definition,
+};
 use super::super::selections::feature_result_edge_ids;
+
+fn one_knit_scan() -> crate::container::ContainerScan<'static> {
+    let entry = |entity_id, class_id, offset| crate::feature::entity::FeatureEntityTableEntry {
+        payload: crate::feature::entity::entry_payload(class_id, None, None, None),
+        entity_id,
+        prefixed: true,
+        offset,
+        end_offset: offset + 1,
+    };
+    let table = |feature_id, table_class_id, entry, offset| {
+        crate::feature::entity::FeatureEntityTable::new(
+            feature_id,
+            table_class_id,
+            vec![entry],
+            &std::collections::BTreeSet::new(),
+            offset,
+        )
+        .with_surface_ids([])
+    };
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.entity_tables = vec![
+        table(97, 67, entry(103, 200, 11), 10),
+        table(97, 100, entry(103, 98, 21), 20),
+        table(97, 67, entry(98, 0, 31), 30).with_surface_ids([98]),
+        table(416, 100, entry(103, 98, 41), 40),
+    ];
+    scan.surfaces.rows = vec![crate::surface::SurfaceRow {
+        id: 98,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 97,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    }];
+    scan.features.surface_merge_replay_affected_ids.push(
+        crate::feature::rows::FeatureSurfaceMergeAffectedIds {
+            feature_id: 416,
+            geometry_ids: Vec::new(),
+            edge_ids: Vec::new(),
+            quilt_ids: vec![103],
+            geometry_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            quilt_extent: crate::feature::rows::ReplayExtentSource::Explicit,
+            offset: 100,
+        },
+    );
+    scan
+}
+
+fn knit_operand_collection_error(
+    limit: u64,
+    operation: &'static str,
+    route: &str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = one_knit_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = match route {
+        "class" => knit_class_100_operand_entity_ids(&ctx, 416, &scan.features.entity_tables).map(|_| ()),
+        "quilt" => knit_operand_entity_ids(&ctx, &scan, 416).map(|_| ()),
+        "surface" => knit_operand_surface_ids(&ctx, &scan, 416, &[103]).map(|_| ()),
+        _ => panic!("unknown fixture route"),
+    }
+    .expect_err("one operand exceeds the resource limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == operation), "{error:?}");
+}
+
+#[test]
+fn knit_consumer_identity_nodes_refuse_collection_limit() {
+    knit_operand_collection_error(0, "creo knit consumer identity nodes", "class");
+}
+
+#[test]
+fn knit_class_100_operand_ids_refuse_collection_limit() {
+    knit_operand_collection_error(1, "creo knit class 100 operand IDs", "class");
+}
+
+#[test]
+fn knit_quilt_identity_nodes_refuse_collection_limit() {
+    knit_operand_collection_error(0, "creo knit quilt identity nodes", "quilt");
+}
+
+#[test]
+fn knit_quilt_ids_refuse_collection_limit() {
+    knit_operand_collection_error(1, "creo knit quilt IDs", "quilt");
+}
+
+#[test]
+fn knit_surface_identity_nodes_refuse_collection_limit() {
+    knit_operand_collection_error(0, "creo knit surface identity nodes", "surface");
+}
+
+#[test]
+fn knit_surface_ids_refuse_collection_limit() {
+    knit_operand_collection_error(1, "creo knit surface IDs", "surface");
+}
+
+#[test]
+fn knit_native_selection_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = one_knit_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = knit_surface_feature_definition(&ctx, &scan, 416)
+        .expect_err("one native selection exceeds the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo knit native selection"), "{error:?}");
+}
+
+#[test]
+fn knit_generated_native_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let scan = one_knit_scan();
+    let native = "creo:allfeatur:surface_merge_quilts#416:103";
+    let producer = "creo:model:feature#97";
+    let local = "surface#98";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = (native.len() + producer.len() * 2 + local.len()) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = knit_surface_feature_definition(&ctx, &scan, 416)
+        .expect_err("generated native copy exceeds the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo knit generated native selection"), "{error:?}");
+}
+
+#[test]
+fn knit_operand_fixture_generates_a_surface_face_under_service_policy() {
+    let scan = one_knit_scan();
+    let definition = crate::decode::with_test_decode_ctx(|ctx| {
+        knit_surface_feature_definition(ctx, &scan, 416)
+    })
+    .expect("service profile admits the knit surface selection");
+    assert!(matches!(
+        definition,
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::KnitSurface {
+                faces: cadmpeg_ir::features::FaceSelection::Generated { .. },
+                ..
+            }
+        )
+    ));
+}
 
 fn generated_face_reference_error(
     collection: Option<u64>,
