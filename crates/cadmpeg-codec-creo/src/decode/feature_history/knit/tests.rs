@@ -7,6 +7,16 @@ use super::{
 };
 use super::super::selections::feature_result_edge_ids;
 
+fn draft_neutral_plane_selection_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> cadmpeg_ir::features::FaceSelection {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::draft_neutral_plane_selection(ctx, scan, feature_id)
+    })
+    .expect("service profile admits draft neutral plane selection")
+}
+
 fn one_knit_scan() -> crate::container::ContainerScan<'static> {
     let entry = |entity_id, class_id, offset| crate::feature::entity::FeatureEntityTableEntry {
         payload: crate::feature::entity::entry_payload(class_id, None, None, None),
@@ -459,7 +469,7 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
     });
 
     assert_eq!(
-        super::draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         cadmpeg_ir::features::FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
@@ -467,9 +477,49 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
         .entries
         .push(crate::feature::entity::dummy_table_entry(226));
     assert_eq!(
-        super::draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         cadmpeg_ir::features::FaceSelection::Unresolved
     );
+}
+
+#[test]
+fn draft_neutral_plane_native_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.entity_tables.push(
+        crate::feature::entity::FeatureEntityTable::new(
+            225,
+            29,
+            vec![crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 226,
+                payload: crate::feature::entity::entry_payload(209, None, None, None),
+                prefixed: true,
+                offset: 0,
+                end_offset: 0,
+            }],
+            &std::collections::BTreeSet::new(),
+            0,
+        )
+        .with_surface_ids([226]),
+    );
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 226,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 225,
+        reversed: false,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = super::draft_neutral_plane_selection(&ctx, &scan, 225)
+        .expect_err("draft neutral plane native exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo draft neutral plane native"), "{error:?}");
 }
 
 #[test]

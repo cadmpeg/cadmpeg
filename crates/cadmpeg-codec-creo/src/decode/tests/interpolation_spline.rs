@@ -50,6 +50,16 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::BTreeMap;
 
+fn draft_neutral_plane_selection_with_service(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> FaceSelection {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        draft_neutral_plane_selection(ctx, scan, feature_id)
+    })
+    .expect("service profile admits draft neutral plane selection")
+}
+
 const EPS_FULL_TURN: f64 = 1e-12;
 
 fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
@@ -832,13 +842,13 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(226, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Native("creo:visibgeom:surface#226".to_string())
     );
 
     scan.features.entity_tables[0].mark_surface_ids([]);
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Unresolved
     );
     scan.features.entity_tables[0].mark_surface_ids([226]);
@@ -849,7 +859,7 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         .rows
         .push(row(227, crate::surface::SurfaceKind::Plane, 225));
     assert_eq!(
-        draft_neutral_plane_selection(&scan, 225),
+        draft_neutral_plane_selection_with_service(&scan, 225),
         FaceSelection::Unresolved
     );
 }
@@ -886,7 +896,7 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
             offset: 0,
         });
         assert_eq!(
-            draft_neutral_plane_selection(&scan, 225),
+            draft_neutral_plane_selection_with_service(&scan, 225),
             FaceSelection::Unresolved
         );
     }
