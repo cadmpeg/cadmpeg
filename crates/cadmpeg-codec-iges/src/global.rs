@@ -2,7 +2,7 @@
 //! Global delimiters, count-driven Hollerith values, units, and metadata.
 
 use crate::card::{CardScan, Section};
-use crate::decode_resource::{format_retained, lossy_retained};
+use crate::decode_resource::{format_retained, lossy_retained, reserve_vec_growth};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
 use cadmpeg_core::decode::{
@@ -355,25 +355,50 @@ const LINE_WEIGHT_CONSEQUENCE: &str =
     "the line-weight scale is unavailable, so no entity carries a display width";
 
 fn global_loss_note(
+    ctx: &DecodeContext<'_>,
     code: IgesLossCode,
     index: usize,
     defect: Defect,
     consequence: &str,
-) -> LossNote {
-    code.note(format!(
-        "IGES Global field {} ({}) is {}; {consequence}",
-        index + 1,
-        field_name(index),
-        defect.as_str()
-    ))
+) -> Result<LossNote, CodecError> {
+    let message = format_retained(
+        ctx,
+        format_args!(
+            "IGES Global field {} ({}) is {}; {consequence}",
+            index + 1,
+            field_name(index),
+            defect.as_str()
+        ),
+        "iges global loss message",
+    )?;
+    admitted_global_loss(ctx, code, message)
 }
 
-fn recovered_real_loss_note(index: usize, source: &str, value: f64) -> LossNote {
-    IgesLossCode::GlobalNumericSyntaxRecovered.note(format!(
-        "IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the decoder recovered finite value {value}; {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
-        index + 1,
-        field_name(index),
-    ))
+fn admitted_global_loss(
+    ctx: &DecodeContext<'_>,
+    code: IgesLossCode,
+    message: String,
+) -> Result<LossNote, CodecError> {
+    ctx.charge_retained(4 + code.code().len() as u64, "iges global loss kind")?;
+    Ok(code.note(message))
+}
+
+fn recovered_real_loss_note(
+    ctx: &DecodeContext<'_>,
+    index: usize,
+    source: &str,
+    value: f64,
+) -> Result<LossNote, CodecError> {
+    let message = format_retained(
+        ctx,
+        format_args!(
+            "IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the decoder recovered finite value {value}; {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
+            index + 1,
+            field_name(index),
+        ),
+        "iges global recovered real loss message",
+    )?;
+    admitted_global_loss(ctx, IgesLossCode::GlobalNumericSyntaxRecovered, message)
 }
 
 fn malformed(message: impl Into<String>) -> CodecError {
@@ -959,9 +984,17 @@ impl Resolution<'_, '_> {
         self.values.get(index).unwrap_or(&Value::Omitted)
     }
 
-    fn charge(&mut self, code: IgesLossCode, index: usize, defect: Defect, consequence: &str) {
-        self.losses
-            .push(global_loss_note(code, index, defect, consequence));
+    fn charge(
+        &mut self,
+        code: IgesLossCode,
+        index: usize,
+        defect: Defect,
+        consequence: &str,
+    ) -> Result<(), CodecError> {
+        let note = global_loss_note(self.ctx, code, index, defect, consequence)?;
+        reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+        self.losses.push(note);
+        Ok(())
     }
 
     fn declaration_text(&self, index: usize) -> Result<String, CodecError> {
@@ -1046,8 +1079,9 @@ impl Resolution<'_, '_> {
 
     fn charge_recovered_real(&mut self, index: usize, value: f64) -> Result<(), CodecError> {
         let source = self.declaration_text(index)?;
-        self.losses
-            .push(recovered_real_loss_note(index, &source, value));
+        let note = recovered_real_loss_note(self.ctx, index, &source, value)?;
+        reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+        self.losses.push(note);
         Ok(())
     }
 
@@ -1062,18 +1096,18 @@ impl Resolution<'_, '_> {
         index: usize,
         supplied: &Supplied<T>,
         global_table: GlobalTable,
-    ) {
+    ) -> Result<(), CodecError> {
         let defect = match supplied {
             Supplied::Absent if global_table.field_requires_value(index) => Defect::Absent,
             Supplied::Malformed => Defect::Malformed,
-            Supplied::Absent | Supplied::Value(_) => return,
+            Supplied::Absent | Supplied::Value(_) => return Ok(()),
         };
         self.charge(
             IgesLossCode::GlobalMetadataFieldUnusable,
             index,
             defect,
             METADATA_CONSEQUENCE,
-        );
+        )
     }
 
     /// The supplied integer, with a value the field does not admit read as malformed.
@@ -1091,7 +1125,7 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
     ) -> Result<Option<String>, CodecError> {
         let supplied = self.supplied_string(index)?;
-        self.charge_metadata(index, &supplied, global_table);
+        self.charge_metadata(index, &supplied, global_table)?;
         Ok(match supplied {
             Supplied::Value(text) => Some(text),
             Supplied::Absent | Supplied::Malformed => None,
@@ -1105,25 +1139,25 @@ impl Resolution<'_, '_> {
         global_table: GlobalTable,
     ) -> Result<(), CodecError> {
         let supplied = self.supplied_string(index)?;
-        self.charge_metadata(index, &supplied, global_table);
+        self.charge_metadata(index, &supplied, global_table)?;
         Ok(())
     }
 
     fn metadata_date(&mut self, index: usize, global_table: GlobalTable) -> Result<(), CodecError> {
         let supplied = self.supplied_date(index, global_table)?;
-        self.charge_metadata(index, &supplied, global_table);
+        self.charge_metadata(index, &supplied, global_table)?;
         Ok(())
     }
 
-    #[must_use]
     fn metadata_integer_value(
         &mut self,
         index: usize,
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
-    ) -> Option<i64> {
-        self.metadata_integer_declaration(index, global_table, admits)
-            .value()
+    ) -> Result<Option<i64>, CodecError> {
+        Ok(self
+            .metadata_integer_declaration(index, global_table, admits)?
+            .value())
     }
 
     fn metadata_integer_declaration(
@@ -1131,10 +1165,10 @@ impl Resolution<'_, '_> {
         index: usize,
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
-    ) -> Supplied<i64> {
+    ) -> Result<Supplied<i64>, CodecError> {
         let supplied = self.admitted_integer(index, admits);
-        self.charge_metadata(index, &supplied, global_table);
-        supplied
+        self.charge_metadata(index, &supplied, global_table)?;
+        Ok(supplied)
     }
 
     /// Charges a metadata integer field whose value the model does not carry.
@@ -1143,9 +1177,9 @@ impl Resolution<'_, '_> {
         index: usize,
         global_table: GlobalTable,
         admits: fn(i64) -> bool,
-    ) {
+    ) -> Result<(), CodecError> {
         let supplied = self.admitted_integer(index, admits);
-        self.charge_metadata(index, &supplied, global_table);
+        self.charge_metadata(index, &supplied, global_table)
     }
 
     /// Charges the maximum-coordinate field.
@@ -1163,7 +1197,7 @@ impl Resolution<'_, '_> {
                     FIELD_MAXIMUM_COORDINATE,
                     Defect::Absent,
                     METADATA_CONSEQUENCE,
-                );
+                )?;
             }
             SuppliedReal::Absent => {}
             SuppliedReal::Value(value) if value.get() >= 0.0 => {}
@@ -1176,17 +1210,17 @@ impl Resolution<'_, '_> {
                     FIELD_MAXIMUM_COORDINATE,
                     Defect::Malformed,
                     METADATA_CONSEQUENCE,
-                );
+                )?;
             }
         }
         Ok(())
     }
 
-    fn significance(&mut self, index: usize) -> Supplied<u32> {
+    fn significance(&mut self, index: usize) -> Result<Supplied<u32>, CodecError> {
         let defect = match self.supplied_integer(index) {
             Supplied::Absent => Defect::Absent,
             Supplied::Value(value) => match u32::try_from(value).ok().filter(|value| *value > 0) {
-                Some(value) => return Supplied::Value(value),
+                Some(value) => return Ok(Supplied::Value(value)),
                 None => Defect::Malformed,
             },
             Supplied::Malformed => Defect::Malformed,
@@ -1196,11 +1230,11 @@ impl Resolution<'_, '_> {
             index,
             defect,
             SIGNIFICANCE_CONSEQUENCE,
-        );
-        match defect {
+        )?;
+        Ok(match defect {
             Defect::Absent => Supplied::Absent,
             Defect::Malformed => Supplied::Malformed,
-        }
+        })
     }
 
     fn minimum_resolution(
@@ -1214,7 +1248,7 @@ impl Resolution<'_, '_> {
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Absent,
                     RESOLUTION_CONSEQUENCE,
-                );
+                )?;
                 NonNegativeReal::ZERO
             }
             SuppliedReal::Absent => NonNegativeReal::ZERO,
@@ -1226,7 +1260,7 @@ impl Resolution<'_, '_> {
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
-                    );
+                    )?;
                     NonNegativeReal::ZERO
                 }
             },
@@ -1241,7 +1275,7 @@ impl Resolution<'_, '_> {
                         FIELD_MINIMUM_RESOLUTION,
                         Defect::Malformed,
                         RESOLUTION_CONSEQUENCE,
-                    );
+                    )?;
                     NonNegativeReal::ZERO
                 }
             },
@@ -1251,7 +1285,7 @@ impl Resolution<'_, '_> {
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Malformed,
                     RESOLUTION_CONSEQUENCE,
-                );
+                )?;
                 NonNegativeReal::ZERO
             }
         };
@@ -1319,7 +1353,7 @@ impl Resolution<'_, '_> {
                 index,
                 defect,
                 LINE_WEIGHT_CONSEQUENCE,
-            );
+            )?;
         }
         let (Some(gradations), Some(mode)) = (gradations, mode) else {
             return Ok(None);
@@ -1378,7 +1412,7 @@ impl Resolution<'_, '_> {
                         FIELD_UNITS_NAME,
                         Defect::Absent,
                         METADATA_CONSEQUENCE,
-                    );
+                    )?;
                     None
                 }
                 Supplied::Absent => None,
@@ -1389,7 +1423,7 @@ impl Resolution<'_, '_> {
                         FIELD_UNITS_NAME,
                         Defect::Malformed,
                         METADATA_CONSEQUENCE,
-                    );
+                    )?;
                     None
                 }
             };
@@ -1413,16 +1447,27 @@ impl Resolution<'_, '_> {
                     index,
                     defect,
                     LENGTH_CONSEQUENCE,
-                ),
-                None => self
-                    .losses
-                    .push(IgesLossCode::GlobalLengthUnitUnresolved.note(format!(
-                        "IGES Global fields {} ({}) and {} ({}) produce no finite positive millimetre length factor; {LENGTH_CONSEQUENCE}",
-                        FIELD_MODEL_SCALE + 1,
-                        field_name(FIELD_MODEL_SCALE),
-                        FIELD_UNITS_FLAG + 1,
-                        field_name(FIELD_UNITS_FLAG),
-                    ))),
+                )?,
+                None => {
+                    let message = format_retained(
+                        self.ctx,
+                        format_args!(
+                            "IGES Global fields {} ({}) and {} ({}) produce no finite positive millimetre length factor; {LENGTH_CONSEQUENCE}",
+                            FIELD_MODEL_SCALE + 1,
+                            field_name(FIELD_MODEL_SCALE),
+                            FIELD_UNITS_FLAG + 1,
+                            field_name(FIELD_UNITS_FLAG),
+                        ),
+                        "iges global length loss message",
+                    )?;
+                    let note = admitted_global_loss(
+                        self.ctx,
+                        IgesLossCode::GlobalLengthUnitUnresolved,
+                        message,
+                    )?;
+                    reserve_vec_growth(self.ctx, &mut self.losses, 1, "iges global loss notes")?;
+                    self.losses.push(note);
+                }
             }
         }
         Ok((units_name, length_factor_mm))
@@ -1461,12 +1506,17 @@ fn resolve(
     let global_field_count = global_table.global_field_count();
 
     if field_count > global_field_count {
-        resolution
-            .losses
-            .push(IgesLossCode::GlobalNoncanonicalFraming.note(format!(
+        let message = format_retained(
+            ctx,
+            format_args!(
                 "IGES Global record has {field_count} fields; IGES {} Table 1 defines {global_field_count} and the decoder ignored the rest",
                 effective_version.name(),
-            )));
+            ),
+            "iges global framing loss message",
+        )?;
+        let note = admitted_global_loss(ctx, IgesLossCode::GlobalNoncanonicalFraming, message)?;
+        reserve_vec_growth(ctx, &mut resolution.losses, 1, "iges global loss notes")?;
+        resolution.losses.push(note);
     }
 
     let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table)?;
@@ -1474,13 +1524,13 @@ fn resolve(
     resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table)?;
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table)?;
     let integer_bits = resolution
-        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)
+        .metadata_integer_value(FIELD_INTEGER_BITS, global_table, |_| true)?
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
     let single_magnitude =
-        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
+        resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true)?;
+    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE)?.value();
     let double_magnitude =
-        resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
+        resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true)?;
     let double_significance = if global_table == GlobalTable::V5_0
         && matches!(
             resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
@@ -1488,7 +1538,7 @@ fn resolve(
         ) {
         Supplied::Absent
     } else {
-        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)?
     };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT)? {
         Supplied::Absent if global_table.defaults_receiver_product_to_sender() => sender_product
@@ -1507,7 +1557,7 @@ fn resolve(
                 FIELD_RECEIVER_PRODUCT,
                 Defect::Absent,
                 METADATA_CONSEQUENCE,
-            );
+            )?;
             None
         }
         Supplied::Absent => None,
@@ -1518,7 +1568,7 @@ fn resolve(
                 FIELD_RECEIVER_PRODUCT,
                 Defect::Malformed,
                 METADATA_CONSEQUENCE,
-            );
+            )?;
             None
         }
     };
@@ -1531,7 +1581,7 @@ fn resolve(
     resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table)?;
     resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
-    });
+    })?;
     if global_table.has_model_date() {
         resolution.metadata_date(FIELD_MODEL_DATE, global_table)?;
     }
@@ -1642,28 +1692,35 @@ impl ResolvedGlobal {
     pub(crate) fn conditional_double_precision_losses(
         &self,
         uses_double_precision: bool,
-    ) -> Vec<LossNote> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<LossNote>, CodecError> {
         if self.global_table() != GlobalTable::V5_0 || !uses_double_precision {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mut losses = Vec::new();
         if matches!(self.numeric.double_magnitude, Supplied::Absent) {
-            losses.push(global_loss_note(
+            let note = global_loss_note(
+                ctx,
                 IgesLossCode::GlobalMetadataFieldUnusable,
                 FIELD_DOUBLE_MAGNITUDE,
                 Defect::Absent,
                 METADATA_CONSEQUENCE,
-            ));
+            )?;
+            reserve_vec_growth(ctx, &mut losses, 1, "iges global conditional loss notes")?;
+            losses.push(note);
         }
         if matches!(self.numeric.double_significance, Supplied::Absent) {
-            losses.push(global_loss_note(
+            let note = global_loss_note(
+                ctx,
                 IgesLossCode::GlobalSemanticContextSubstituted,
                 FIELD_DOUBLE_SIGNIFICANCE,
                 Defect::Absent,
                 SIGNIFICANCE_CONSEQUENCE,
-            ));
+            )?;
+            reserve_vec_growth(ctx, &mut losses, 1, "iges global conditional loss notes")?;
+            losses.push(note);
         }
-        losses
+        Ok(losses)
     }
 
     /// Inspection notes for this Global section.

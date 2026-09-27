@@ -146,6 +146,51 @@ fn global_supplied_string_refuses_retained_limit_before_copy() {
 }
 
 #[test]
+fn global_loss_note_refuses_collection_limit_before_push() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: Vec::new(),
+        losses: Vec::new(),
+    };
+    let result = resolution.charge(
+        IgesLossCode::GlobalMetadataFieldUnusable,
+        2,
+        crate::global::Defect::Malformed,
+        "its value was not transferred",
+    );
+    assert!(matches!(
+        result,
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.used == 0
+                && limit.additional == 1
+                && limit.operation == "iges global loss notes"
+    ));
+    assert!(resolution.losses.is_empty());
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut resolution = crate::global::Resolution {
+        ctx: &ctx,
+        values: Vec::new(),
+        losses: Vec::new(),
+    };
+    resolution
+        .charge(
+            IgesLossCode::GlobalMetadataFieldUnusable,
+            2,
+            crate::global::Defect::Malformed,
+            "its value was not transferred",
+        )
+        .unwrap();
+    assert_eq!(resolution.losses.len(), 1);
+}
+
+#[test]
 fn global_field_source_locations_follow_72_byte_card_boundaries() {
     let first = [b'A'; CARD_DATA_COLUMNS];
     let second = [b'B'; CARD_DATA_COLUMNS];
