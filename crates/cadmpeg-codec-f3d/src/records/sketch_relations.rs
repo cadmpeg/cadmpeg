@@ -5,6 +5,7 @@ use super::{
     identity::{Located, ReferenceRun},
     references::DesignClassTag,
 };
+use crate::records::serde_column::SliceColumn;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
@@ -407,9 +408,11 @@ impl std::fmt::Display for SketchRelationPayloadError {
 impl std::error::Error for SketchRelationPayloadError {}
 
 /// Counted constraint relation owned by a sketch container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchRelationSerde", into = "SketchRelationSerde")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "SketchRelationSerde")]
 pub(crate) struct SketchRelation {
+    #[cfg(test)]
+    clone_probe: SketchRelationCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Index of this relation record within the `BulkStream` tree.
@@ -444,6 +447,122 @@ pub(crate) struct SketchRelation {
     return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
     raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_RELATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct SketchRelationCloneProbe;
+
+#[cfg(test)]
+impl Clone for SketchRelationCloneProbe {
+    fn clone(&self) -> Self {
+        SKETCH_RELATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
+struct FilteredColumn<'a, T, U> {
+    items: &'a [T],
+    value: fn(&'a T) -> Option<U>,
+}
+
+impl<T, U: Serialize> Serialize for FilteredColumn<'_, T, U> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.items.iter().filter_map(self.value))
+    }
+}
+
+struct ConstraintKinds(u64);
+
+impl Serialize for ConstraintKinds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(constraint_kinds_iter(self.0))
+    }
+}
+
+impl Serialize for SketchRelation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            record_index: u32,
+            class_tag: &'a str,
+            byte_offset: u64,
+            state_offset: u32,
+            owner_reference: u32,
+            owner_entity_id: &'a str,
+            auxiliary_references: SliceColumn<'a, Located<u32, u32>, u32>,
+            auxiliary_reference_offsets: SliceColumn<'a, Located<u32, u32>, u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            rectangular_counted_reference_count: Option<u32>,
+            members: SliceColumn<'a, SketchRelationMember, u32>,
+            resolved_members: FilteredColumn<'a, SketchRelationMember, &'a SketchRelationOperand>,
+            member_offsets: SliceColumn<'a, SketchRelationMember, u32>,
+            owner_reference_offset: u32,
+            state: u64,
+            constraint_kinds: ConstraintKinds,
+            unknown_constraint_bits: u64,
+            member_relation_ordinals: FilteredColumn<'a, SketchRelationMember, u32>,
+            entity_genesis: Option<u64>,
+            pattern: Option<&'a SketchPatternDefinition>,
+            return_members: SliceColumn<'a, SketchRelationReturnMember, u32>,
+            resolved_return_members:
+                FilteredColumn<'a, SketchRelationReturnMember, &'a SketchRelationOperand>,
+            return_member_offsets: SliceColumn<'a, SketchRelationReturnMember, u32>,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            raw_bytes: &'a [u8],
+        }
+        let auxiliary = self.auxiliary_references.located_rows().ok_or_else(|| {
+            serde::ser::Error::custom("sketch relation auxiliary_references must be located")
+        })?;
+        let members = &self.members.0;
+        let returns = &self.return_members.0;
+        let state = self.definition.state();
+        BorrowedWire {
+            id: &self.id,
+            record_index: self.record_index,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            state_offset: self.state_offset,
+            owner_reference: self.owner_reference,
+            owner_entity_id: self
+                .owner_entity_id
+                .as_ref()
+                .map_or("", |owner| owner.as_str()),
+            auxiliary_references: SliceColumn::new(auxiliary, |row| row.value),
+            auxiliary_reference_offsets: SliceColumn::new(auxiliary, |row| row.offset),
+            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
+            members: SliceColumn::new(members, |row| row.reference.record_index()),
+            resolved_members: FilteredColumn {
+                items: members,
+                value: |row| row.reference.resolved(),
+            },
+            member_offsets: SliceColumn::new(members, |row| row.offset),
+            owner_reference_offset: self.owner_reference_offset,
+            state,
+            constraint_kinds: ConstraintKinds(state),
+            unknown_constraint_bits: state & !SKETCH_CONSTRAINT_MASK,
+            member_relation_ordinals: FilteredColumn {
+                items: members,
+                value: |row| row.relation_ordinal,
+            },
+            entity_genesis: self.entity_genesis,
+            pattern: self.definition.pattern.as_ref(),
+            return_members: SliceColumn::new(returns, |row| row.reference.record_index()),
+            resolved_return_members: FilteredColumn {
+                items: returns,
+                value: |row| row.reference.resolved(),
+            },
+            return_member_offsets: SliceColumn::new(returns, |row| row.offset),
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Unchecked sketch relation payload and byte frame.
@@ -529,6 +648,8 @@ impl SketchRelation {
             }
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: SketchRelationCloneProbe,
             id: draft.id,
             record_index: draft.record_index,
             class_tag: draft.class_tag,
@@ -892,6 +1013,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     }
 }
 
+#[cfg(test)]
 impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =
