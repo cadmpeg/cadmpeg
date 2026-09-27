@@ -72,6 +72,22 @@ impl KnotVector {
     }
 }
 
+fn try_copy_lane<T: Copy>(source: &[T]) -> Result<Vec<T>, std::collections::TryReserveError> {
+    let mut copy = Vec::new();
+    copy.try_reserve_exact(source.len())?;
+    copy.extend_from_slice(source);
+    Ok(copy)
+}
+
+fn try_copy_rows<T: Copy>(source: &[Vec<T>]) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
+    let mut rows = Vec::new();
+    rows.try_reserve_exact(source.len())?;
+    for row in source {
+        rows.push(try_copy_lane(row)?);
+    }
+    Ok(rows)
+}
+
 impl std::ops::Deref for KnotVector {
     type Target = [f64];
     fn deref(&self) -> &[f64] {
@@ -999,6 +1015,28 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Copy the admitted surface with fallible reservations for every lane and grid row.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: try_copy_rows(rows)?,
+            },
+            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: try_copy_rows(rows)?,
+            },
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots: self.u_knots.try_clone()?,
+            v_knots: self.v_knots.try_clone()?,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1365,6 +1403,24 @@ impl NurbsCurve {
     /// Curve degree.
     pub const fn degree(&self) -> u32 {
         self.degree
+    }
+
+    /// Copy the admitted curve with fallible reservations for each lane.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+                points: try_copy_lane(points)?,
+            },
+            NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+                points: try_copy_lane(points)?,
+            },
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots: self.knots.try_clone()?,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Full knot vector.
