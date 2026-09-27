@@ -43,7 +43,7 @@ fn entity_unions_are_ordered_unique_and_name_order_independent() {
 }
 
 #[test]
-fn poisoned_entity_union_cache_preserves_completed_entries_and_accepts_new_queries() {
+fn entity_union_queries_remain_ordered_across_repeated_queries() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#3=C();#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = parse(source).expect("valid record graph");
     assert_eq!(
@@ -53,12 +53,6 @@ fn poisoned_entity_union_cache_preserves_completed_entries_and_accepts_new_queri
             .collect::<Vec<_>>(),
         vec![1, 2],
     );
-
-    let interrupted = std::panic::catch_unwind(|| {
-        let _cache = exchange.entity_unions().lock().expect("unpoisoned cache");
-        panic!("interrupt between completed cache entries");
-    });
-    assert!(interrupted.is_err());
 
     for names in [["B", "A"], ["B", "C"]] {
         let actual = exchange

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -239,45 +239,65 @@ pub(crate) struct Exchange {
     entity_ids: EntityIndex,
 }
 
-type EntityUnionCache = Mutex<HashMap<Vec<String>, Arc<[u64]>>>;
-
-#[derive(Debug, Default)]
-struct EntityIndex(
-    OnceLock<HashMap<String, Vec<u64>>>,
-    OnceLock<EntityUnionCache>,
-);
-
-const EMPTY_ENTITY_IDS: &[u64] = &[];
-
-enum EntityIdIter<'a> {
-    Borrowed(std::slice::Iter<'a, u64>),
-    Shared { ids: Arc<[u64]>, at: usize },
-}
-
-impl Iterator for EntityIdIter<'_> {
-    type Item = u64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Borrowed(ids) => ids.next().copied(),
-            Self::Shared { ids, at } => {
-                let id = ids.get(*at).copied();
-                *at += usize::from(id.is_some());
-                id
-            }
-        }
-    }
-}
-
-impl Clone for EntityIndex {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
+#[derive(Debug, Clone, Default)]
+struct EntityIndex(Arc<HashMap<String, Vec<u64>>>);
 
 impl PartialEq for EntityIndex {
     fn eq(&self, _other: &Self) -> bool {
         true
+    }
+}
+
+impl EntityIndex {
+    fn build(
+        records: &BTreeMap<u64, RawRecord>,
+        budget: Option<&DecodeContext<'_>>,
+    ) -> Result<Self, ParseError> {
+        let mut index = HashMap::<String, Vec<u64>>::new();
+        for (&id, record) in records {
+            for partial in &record.partials {
+                if let Some(ids) = index.get_mut(partial.name.as_str()) {
+                    if let Some(ctx) = budget {
+                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
+                    }
+                    ids.try_reserve(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                    })?;
+                    ids.push(id);
+                } else {
+                    if let Some(ctx) = budget {
+                        ctx.charge_collection_items(1, "step_entity_index_names")?;
+                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
+                        ctx.charge_retained(
+                            u64_from_index(partial.name.len()),
+                            "step_entity_index_name_storage",
+                        )?;
+                    }
+                    let mut name = String::new();
+                    name.try_reserve_exact(partial.name.len()).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                    })?;
+                    name.push_str(&partial.name);
+                    let mut ids = Vec::new();
+                    ids.try_reserve_exact(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                    })?;
+                    ids.push(id);
+                    index.try_reserve(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                    })?;
+                    index.insert(name, ids);
+                }
+            }
+        }
+        Ok(Self(Arc::new(index)))
+    }
+}
+
+fn refuse_index(budget: Option<&DecodeContext<'_>>, operation: &'static str) -> CodecError {
+    match budget {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
     }
 }
 
@@ -351,26 +371,9 @@ impl Exchange {
         std::mem::take(&mut self.signatures)
     }
 
-    // The record graph is immutable while these indexes exist. Every indexed ID
-    // therefore owns a record; release_source_graph clears both together.
+    // The record graph is immutable while its charged name index exists.
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
-        self.entity_ids.0.get_or_init(|| {
-            let mut entity_ids = HashMap::<String, Vec<u64>>::new();
-            for (&id, record) in &self.records {
-                for partial in &record.partials {
-                    if let Some(ids) = entity_ids.get_mut(partial.name.as_str()) {
-                        ids.push(id);
-                    } else {
-                        entity_ids.insert(partial.name.clone(), vec![id]);
-                    }
-                }
-            }
-            entity_ids
-        })
-    }
-
-    fn entity_unions(&self) -> &EntityUnionCache {
-        self.entity_ids.1.get_or_init(|| Mutex::new(HashMap::new()))
+        &self.entity_ids.0
     }
 
     pub(crate) fn has_entity(&self, name: &str) -> bool {
@@ -381,16 +384,17 @@ impl Exchange {
         self.entity_ids().keys().any(|name| matches(name))
     }
 
-    pub(crate) fn matching_entity_ids(&self, matches: impl Fn(&str) -> bool) -> Vec<u64> {
-        let mut ids = self
-            .entity_ids()
-            .iter()
-            .filter(|(name, _)| matches(name))
-            .flat_map(|(_, ids)| ids.iter().copied())
-            .collect::<Vec<_>>();
-        ids.sort_unstable();
-        ids.dedup();
-        ids
+    pub(crate) fn matching_entity_ids<'a>(
+        &'a self,
+        matches: impl Fn(&str) -> bool + 'a,
+    ) -> impl Iterator<Item = u64> + 'a {
+        self.records.iter().filter_map(move |(&id, record)| {
+            record
+                .partials
+                .iter()
+                .any(|partial| matches(&partial.name))
+                .then_some(id)
+        })
     }
 
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
@@ -403,51 +407,15 @@ impl Exchange {
 
     pub(crate) fn entities_any<'a>(
         &'a self,
-        names: &[&str],
-    ) -> impl Iterator<Item = (u64, &'a RawRecord)> {
-        let ids = if let [name] = names {
-            let ids = self
-                .entity_ids()
-                .get(*name)
-                .map_or(EMPTY_ENTITY_IDS, Vec::as_slice);
-            EntityIdIter::Borrowed(ids.iter())
-        } else {
-            let mut key = names
+        names: &'a [&str],
+    ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
+        self.records.iter().filter_map(move |(&id, record)| {
+            record
+                .partials
                 .iter()
-                .map(|name| (*name).to_owned())
-                .collect::<Vec<_>>();
-            key.sort_unstable();
-            key.dedup();
-            // This map is a derived index. A panic while populating it can poison
-            // the lock. Entries are inserted only after their sorted union is
-            // complete, so every retained entry is safe to reuse.
-            let mut unions = match self.entity_unions().lock() {
-                Ok(unions) => unions,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let ids = unions
-                .entry(key.clone())
-                .or_insert_with(|| {
-                    let capacity = key
-                        .iter()
-                        .filter_map(|name| self.entity_ids().get(name))
-                        .map(Vec::len)
-                        .sum();
-                    let mut ids = Vec::with_capacity(capacity);
-                    ids.extend(
-                        key.iter()
-                            .filter_map(|name| self.entity_ids().get(name))
-                            .flatten()
-                            .copied(),
-                    );
-                    ids.sort_unstable();
-                    ids.dedup();
-                    Arc::from(ids.into_boxed_slice())
-                })
-                .clone();
-            EntityIdIter::Shared { ids, at: 0 }
-        };
-        ids.map(|id| (id, &self.records[&id]))
+                .any(|partial| names.contains(&partial.name.as_str()))
+                .then_some((id, record))
+        })
     }
 }
 
@@ -1179,6 +1147,7 @@ impl Parser<'_, '_, '_> {
         ] {
             self.charge_retained(capacity, "step_parse_exchange_storage")?;
         }
+        let entity_ids = EntityIndex::build(&records, self.budget)?;
         Ok((
             Exchange {
                 header,
@@ -1189,7 +1158,7 @@ impl Parser<'_, '_, '_> {
                 records,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
-                entity_ids: EntityIndex::default(),
+                entity_ids,
             },
             self.diagnostics,
         ))
