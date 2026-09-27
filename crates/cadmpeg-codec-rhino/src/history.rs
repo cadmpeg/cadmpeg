@@ -5,12 +5,17 @@ use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
+use crate::chunks::{
+    admitted_vec, checked_count_bytes, chunk_at, reserve_admitted_vec, ArchiveVersion,
+    BoundedReader, FramingError,
+};
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, MillimeterScale, Point3, Vector3, Xform};
 use crate::wire::{comma_list, uuid, Uuid};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 const HISTORY_RECORD: u32 = 0x2000_807b;
 const ANONYMOUS: u32 = 0x4000_8000;
@@ -163,6 +168,7 @@ fn count(reader: &mut BoundedReader<'_>, element_size: usize) -> Result<usize, F
 }
 
 fn uuid_list(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -170,7 +176,7 @@ fn uuid_list(
 ) -> Result<(Vec<Uuid>, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let count = count(&mut reader, 16)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = admitted_vec(ctx, count, "Rhino history UUID list")?;
     for _ in 0..count {
         values.push(uuid(&mut reader)?);
     }
@@ -179,12 +185,13 @@ fn uuid_list(
 }
 
 fn array<'a, T>(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'a>,
     element_size: usize,
     mut read: impl FnMut(&mut BoundedReader<'a>) -> Result<T, FramingError>,
 ) -> Result<Vec<T>, FramingError> {
     let count = count(reader, element_size)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = admitted_vec(ctx, count, "Rhino history value array")?;
     for _ in 0..count {
         values.push(read(reader)?);
     }
@@ -257,6 +264,7 @@ fn instance_reference(
 }
 
 fn object_reference(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -269,7 +277,7 @@ fn object_reference(
     let point = point(&mut reader)?;
     let mut evaluation = evaluation(&mut reader, 0)?;
     let path_count = count(&mut reader, 1)?;
-    let mut instance_path = Vec::new();
+    let mut instance_path = admitted_vec(ctx, path_count, "Rhino history instance path")?;
     for _ in 0..path_count {
         let (value, value_next) =
             instance_reference(bytes, reader.position(), reader.end(), archive)?;
@@ -300,13 +308,15 @@ fn object_reference(
 }
 
 fn object_references(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<ObjectReference>, FramingError> {
     let count = count(reader, 1)?;
-    let mut values = Vec::new();
+    let mut values = admitted_vec(ctx, count, "Rhino history object references")?;
     for _ in 0..count {
         let (value, next) = object_reference(
+            ctx,
             reader.backing_bytes(),
             reader.position(),
             reader.end(),
@@ -319,6 +329,7 @@ fn object_references(
 }
 
 fn geometries(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<EmbeddedGeometry>, FramingError> {
@@ -329,7 +340,7 @@ fn geometries(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = admitted_vec(ctx, count, "Rhino history embedded geometries")?;
     for _ in 0..count {
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
@@ -353,13 +364,15 @@ fn geometries(
 }
 
 fn curve_proxy(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(Segment<HistoryReference>, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    let (curve, curve_next) = object_reference(bytes, reader.position(), reader.end(), archive)?;
+    let (curve, curve_next) =
+        object_reference(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(curve_next - reader.position())?;
     let reversed = reader.bool()?;
     let full_domain = interval(&mut reader)?;
@@ -390,6 +403,7 @@ fn curve_proxy(
 }
 
 fn poly_edge(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -397,13 +411,14 @@ fn poly_edge(
 ) -> Result<(HistoryPolyEdge, usize), FramingError> {
     let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let segment_count = count(&mut reader, 1)?;
-    let mut segments = Vec::new();
+    let mut segments = admitted_vec(ctx, segment_count, "Rhino history polyedge segments")?;
     for _ in 0..segment_count {
-        let (segment, segment_next) = curve_proxy(bytes, reader.position(), reader.end(), archive)?;
+        let (segment, segment_next) =
+            curve_proxy(ctx, bytes, reader.position(), reader.end(), archive)?;
         reader.skip(segment_next - reader.position())?;
         segments.push(segment);
     }
-    let parameters = array(&mut reader, 8, BoundedReader::f64)?;
+    let parameters = array(ctx, &mut reader, 8, BoundedReader::f64)?;
     let evaluation_mode = reader.i32()?;
     reader.skip_remaining()?;
     Ok((
@@ -419,6 +434,7 @@ fn poly_edge(
 }
 
 fn poly_edges(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<HistoryPolyEdge>, FramingError> {
@@ -429,9 +445,10 @@ fn poly_edges(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = admitted_vec(ctx, count, "Rhino history polyedges")?;
     for _ in 0..count {
         let (value, value_next) = poly_edge(
+            ctx,
             nested.backing_bytes(),
             nested.position(),
             nested.end(),
@@ -446,6 +463,7 @@ fn poly_edges(
 }
 
 fn subd_edge_chain(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -461,21 +479,17 @@ fn subd_edge_chain(
     }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
-    let edge_ids = array(&mut reader, 4, BoundedReader::u32)?;
-    let orientations = array(&mut reader, 1, BoundedReader::u8)?;
+    let edge_ids = array(ctx, &mut reader, 4, BoundedReader::u32)?;
+    let orientations = array(ctx, &mut reader, 1, BoundedReader::u8)?;
     let orientation_start = reader.position() - orientations.len();
-    let orientations = orientations
-        .into_iter()
-        .enumerate()
-        .map(|(index, orientation)| match orientation {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(FramingError::structural(
+    for (index, orientation) in orientations.iter().enumerate() {
+        if *orientation > 1 {
+            return Err(FramingError::structural(
                 orientation_start + index,
                 "invalid history SubD edge orientation",
-            )),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            ));
+        }
+    }
     let edges = if edge_ids.len() != count || orientations.len() != count {
         warnings.push_coded(
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -483,17 +497,24 @@ fn subd_edge_chain(
         );
         Vec::new()
     } else {
-        edge_ids
-            .into_iter()
-            .zip(orientations)
-            .map(|(id, reversed)| SubdEdge { id, reversed })
-            .collect()
+        let mut edges = admitted_vec(ctx, count, "Rhino history SubD edges")?;
+        edges.extend(
+            edge_ids
+                .into_iter()
+                .zip(orientations)
+                .map(|(id, orientation)| SubdEdge {
+                    id,
+                    reversed: orientation == 1,
+                }),
+        );
+        edges
     };
     reader.skip_remaining()?;
     Ok((SubdEdgeChain { subd_id, edges }, next))
 }
 
 fn subd_edge_chains(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
@@ -511,9 +532,10 @@ fn subd_edge_chains(
         ));
     }
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::new();
+    let mut values = admitted_vec(ctx, count, "Rhino history SubD edge chains")?;
     for _ in 0..count {
         let (value, value_next) = subd_edge_chain(
+            ctx,
             nested.backing_bytes(),
             nested.position(),
             nested.end(),
@@ -530,16 +552,18 @@ fn subd_edge_chains(
 
 #[cfg(test)]
 fn parse_value(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
     let mut warnings = Diagnostics::new();
-    parse_value_with_warnings(bytes, offset, end, archive, &mut warnings)
+    parse_value_with_warnings(ctx, bytes, offset, end, archive, &mut warnings)
 }
 
 fn parse_value_with_warnings(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     offset: usize,
     end: usize,
@@ -552,19 +576,19 @@ fn parse_value_with_warnings(
     let payload = reader.position()..reader.end();
     let value = match type_code {
         0 => Value::None,
-        1 => Value::Booleans(array(&mut reader, 1, BoundedReader::bool)?),
-        2 => Value::Integers(array(&mut reader, 4, BoundedReader::i32)?),
-        3 => Value::Doubles(array(&mut reader, 8, BoundedReader::f64)?),
-        4 => Value::Colors(array(&mut reader, 4, BoundedReader::array)?),
-        5 => Value::Points(array(&mut reader, 24, point)?),
-        6 => Value::Vectors(array(&mut reader, 24, vector)?),
-        7 => Value::Transforms(array(&mut reader, 128, xform)?),
-        8 => Value::Strings(array(&mut reader, 4, utf16)?),
-        9 => Value::ObjectReferences(object_references(&mut reader, archive)?),
-        10 => Value::Geometries(geometries(&mut reader, archive)?),
-        11 => Value::Uuids(array(&mut reader, 16, uuid)?),
-        13 => Value::PolyEdges(poly_edges(&mut reader, archive)?),
-        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive, warnings)?),
+        1 => Value::Booleans(array(ctx, &mut reader, 1, BoundedReader::bool)?),
+        2 => Value::Integers(array(ctx, &mut reader, 4, BoundedReader::i32)?),
+        3 => Value::Doubles(array(ctx, &mut reader, 8, BoundedReader::f64)?),
+        4 => Value::Colors(array(ctx, &mut reader, 4, BoundedReader::array)?),
+        5 => Value::Points(array(ctx, &mut reader, 24, point)?),
+        6 => Value::Vectors(array(ctx, &mut reader, 24, vector)?),
+        7 => Value::Transforms(array(ctx, &mut reader, 128, xform)?),
+        8 => Value::Strings(array(ctx, &mut reader, 4, utf16)?),
+        9 => Value::ObjectReferences(object_references(ctx, &mut reader, archive)?),
+        10 => Value::Geometries(geometries(ctx, &mut reader, archive)?),
+        11 => Value::Uuids(array(ctx, &mut reader, 16, uuid)?),
+        13 => Value::PolyEdges(poly_edges(ctx, &mut reader, archive)?),
+        14 => Value::SubdEdgeChains(subd_edge_chains(ctx, &mut reader, archive, warnings)?),
         _ => {
             reader.skip(reader.remaining())?;
             Value::Opaque {
@@ -578,6 +602,7 @@ fn parse_value_with_warnings(
 }
 
 fn parse_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -605,15 +630,16 @@ fn parse_record(
     let id = uuid(&mut reader)?;
     let version = reader.i32()?;
     let command_id = uuid(&mut reader)?;
-    let (descendants, next) = uuid_list(bytes, reader.position(), reader.end(), archive)?;
+    let (descendants, next) = uuid_list(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(next - reader.position())?;
-    let (antecedents, next) = uuid_list(bytes, reader.position(), reader.end(), archive)?;
+    let (antecedents, next) = uuid_list(ctx, bytes, reader.position(), reader.end(), archive)?;
     reader.skip(next - reader.position())?;
     let (mut values_reader, next, _) = anonymous(bytes, reader.position(), reader.end(), archive)?;
     let value_count = count(&mut values_reader, 1)?;
-    let mut values = Vec::new();
+    let mut values = admitted_vec(ctx, value_count, "Rhino history record values")?;
     for _ in 0..value_count {
         let (value, value_next) = parse_value_with_warnings(
+            ctx,
             bytes,
             values_reader.position(),
             values_reader.end(),
@@ -657,21 +683,34 @@ fn parse_record(
 
 /// Decodes valid built-in records and isolates malformed records at table boundaries.
 pub(crate) fn parse_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[Record],
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
     table_typecode: u32,
-) -> HistoryScan {
+) -> Result<HistoryScan, CodecError> {
     let mut result = HistoryScan::default();
     for record in records {
-        match parse_record(bytes, record, archive, warnings) {
-            Ok(value) => result.records.push(value),
+        match parse_record(ctx, bytes, record, archive, warnings) {
+            Ok(value) => {
+                reserve_admitted_vec(ctx, &mut result.records, 1, "Rhino history records")
+                    .map_err(history_resource_error)?;
+                result.records.push(value);
+            }
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 warnings.push(format!(
                     "history record at {} degraded: {error}",
                     record.range.start
                 ));
+                reserve_admitted_vec(
+                    ctx,
+                    &mut result.opaque_records,
+                    1,
+                    "Rhino opaque history records",
+                )
+                .map_err(history_resource_error)?;
                 result.opaque_records.push(OpaqueRecord {
                     table_typecode,
                     record: record.clone(),
@@ -679,7 +718,14 @@ pub(crate) fn parse_records(
             }
         }
     }
-    result
+    Ok(result)
+}
+
+fn history_resource_error(error: FramingError) -> CodecError {
+    match error {
+        FramingError::Resource(limit) => CodecError::ResourceLimit(limit),
+        other => CodecError::Malformed(other.to_string()),
+    }
 }
 
 fn value_text(value: &Value) -> Option<String> {

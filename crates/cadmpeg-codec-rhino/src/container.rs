@@ -1238,12 +1238,13 @@ fn scan_with_record_limit<'a>(
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
             let parsed = crate::history::parse_records(
+                ctx,
                 data,
                 &records,
                 archive,
                 &mut warnings,
                 chunk.typecode,
-            );
+            )?;
             history = parsed.records;
             opaque_records.extend(parsed.opaque_records);
         }
