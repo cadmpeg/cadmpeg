@@ -2,6 +2,8 @@
 //! Input-sized BREP parser allocation tests.
 
 use super::super::{parse_binary_prefix, parse_text};
+use crate::native::{EntryRecord, PropertyBody, PropertyFamily, PropertyRecord, RetainedXml};
+use crate::test_support::assert_retained_refusal_at;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
@@ -150,4 +152,69 @@ fn binary_triangulation_triangles_refuse_at_collection_limit() {
 #[test]
 fn binary_triangulation_normals_refuse_at_collection_limit() {
     assert_binary_lane_refusal(BinaryLane::TriangulationNormals, 2, "FreeCAD binary triangulation normals");
+}
+
+fn shape_property(xml: &str) -> PropertyRecord {
+    PropertyRecord {
+        id: "fcstd:native:property#Owner:Shape".into(),
+        owner: "fcstd:native:object#Owner".into(),
+        name: "Shape".into(),
+        type_name: "Part::PropertyPartShape".into(),
+        family: PropertyFamily::Geometry,
+        status: None,
+        body: PropertyBody::Transient,
+        order: 0,
+        xml: RetainedXml::from_text(xml.into(), 0).expect("test XML span"),
+    }
+}
+
+#[test]
+fn missing_shape_entry_diagnostic_refuses_at_retained_limit() {
+    let property = shape_property("<Property><Part file=\"missing.brp\"/></Property>");
+    assert_retained_refusal_at(&[], "FreeCAD missing shape entry", |ctx| {
+        super::super::parse_payloads(ctx, &[property.clone()], &[])
+    });
+}
+
+#[test]
+fn shape_property_xml_diagnostic_refuses_at_retained_limit() {
+    let property = shape_property("<Property>");
+    assert_retained_refusal_at(&[], "FreeCAD shape property XML diagnostic", |ctx| {
+        super::super::direct_shape_entry(ctx, &property)
+    });
+}
+
+#[test]
+fn shape_property_root_diagnostic_refuses_at_retained_limit() {
+    let property = shape_property("<Wrong/>");
+    assert_retained_refusal_at(&[], "FreeCAD shape property root diagnostic", |ctx| {
+        super::super::direct_shape_entry(ctx, &property)
+    });
+}
+
+#[test]
+fn shape_property_carrier_diagnostic_refuses_at_retained_limit() {
+    let property = shape_property("<Property><Part file=\"a.brp\"/><Part file=\"b.brp\"/></Property>");
+    assert_retained_refusal_at(&[], "FreeCAD shape property carrier diagnostic", |ctx| {
+        super::super::direct_shape_entry(ctx, &property)
+    });
+}
+
+#[test]
+fn uppercase_binary_shape_extension_selects_binary_reader() {
+    let property = shape_property("<Property><Part file=\"Body.BIN\"/></Property>");
+    let entry = EntryRecord {
+        id: "fcstd:native:entry#Body.BIN".into(),
+        name: "Body.BIN".into(),
+        role: cadmpeg_core::container::ContainerRole::Brep,
+        referenced_by: Vec::new(),
+        data: b"garbage\n".to_vec(),
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
+    let error = super::super::parse_payloads(&ctx, &[property], &[entry])
+        .expect_err("malformed binary payload");
+    assert!(error.to_string().contains("unsupported binary B-rep header"));
 }
