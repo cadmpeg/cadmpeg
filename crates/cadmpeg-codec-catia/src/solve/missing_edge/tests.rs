@@ -177,6 +177,35 @@ fn ordered_port_seed_refuses_before_binding_point_map() {
 }
 
 #[test]
+fn partial_port_projection_refuses_before_known_rows() {
+    let ports = [Some([10, 11]), None];
+    let pairs = [Some([0, 1]), Some([2, 3])];
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(pairs.to_vec()));
+    let mut operations = HashSet::new();
+    for limit in 0..=128 {
+        match crate::test_support::with_collection_limit(limit, run) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                operations.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            outcome => panic!("unexpected partial port outcome: {outcome:?}"),
+        }
+    }
+    for operation in [
+        "catia_partial_port_resolved_pairs",
+        "catia_partial_known_port_rows",
+        "catia_partial_port_rows",
+        "catia_partial_pair_rows",
+        "catia_partial_ordered_rows",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn edge_port_solution_propagates_collection_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
