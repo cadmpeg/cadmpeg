@@ -978,6 +978,19 @@ pub(crate) fn utf16_retained(
     reader: &mut BoundedReader<'_>,
     operation: &'static str,
 ) -> Result<String, FramingError> {
+    utf16_deferred(reader)?.admit(ctx, operation)
+}
+
+/// Validates UTF-16 bytes and measures their UTF-8 length without allocating.
+pub(crate) struct DeferredUtf16<'a> {
+    bytes: &'a [u8],
+    length: usize,
+    error_offset: usize,
+}
+
+pub(crate) fn utf16_deferred<'a>(
+    reader: &mut BoundedReader<'a>,
+) -> Result<DeferredUtf16<'a>, FramingError> {
     let bytes = utf16_payload(reader)?;
     let error_offset = reader.position();
     let mut length = 0_usize;
@@ -989,12 +1002,26 @@ pub(crate) fn utf16_retained(
             })?;
         Ok(())
     })?;
-    let mut value = crate::wire::admitted_retained_string(ctx, length, operation)?;
-    visit_utf16(bytes, error_offset, |character| {
-        value.push(character);
-        Ok(())
-    })?;
-    Ok(value)
+    Ok(DeferredUtf16 {
+        bytes,
+        length,
+        error_offset,
+    })
+}
+
+impl DeferredUtf16<'_> {
+    pub(crate) fn admit(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<String, FramingError> {
+        let mut value = crate::wire::admitted_retained_string(ctx, self.length, operation)?;
+        visit_utf16(self.bytes, self.error_offset, |character| {
+            value.push(character);
+            Ok(())
+        })?;
+        Ok(value)
+    }
 }
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
