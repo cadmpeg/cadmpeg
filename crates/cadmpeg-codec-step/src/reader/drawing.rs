@@ -51,6 +51,50 @@ enum TargetResolution {
     Unresolved,
 }
 
+fn reserve_drawing_items<T>(
+    values: &mut Vec<T>,
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(count), operation)?;
+    values
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
+
+fn insert_drawing_set<T: Ord>(
+    values: &mut BTreeSet<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains(&value) {
+        ctx.charge_collection_items(1, operation)?;
+        values.insert(value);
+    }
+    Ok(())
+}
+
+fn visit_drawing_references(
+    value: &Value,
+    ctx: &DecodeContext<'_>,
+    visitor: &mut impl FnMut(u64) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let _nested = ctx.enter_nested("step_drawing_reference_walk")?;
+    match value {
+        Value::Reference(id) => visitor(*id)?,
+        Value::List(values) => {
+            for value in values {
+                visit_drawing_references(value, ctx, visitor)?;
+            }
+        }
+        Value::Typed(_, value) => visit_drawing_references(value, ctx, visitor)?,
+        _ => {}
+    }
+    Ok(())
+}
+
 impl TargetContext<'_> {
     fn resolve(&self, id: u64) -> Result<TargetResolution, CodecError> {
         target_resolution(
@@ -73,27 +117,28 @@ pub(super) fn decode(
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
-    let mut candidates = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            let (name, kind) = drawing_type(record)?;
-            let parameters = source_parameters(record, name);
-            if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
-                losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
-                        "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
-                    )));
-                return None;
-            }
-            Some(DrawingCandidate {
-                id,
-                name,
-                identity: ids::drawing(kind, id),
-                offset: record.span.start,
-                parameters,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (&id, record) in exchange.records() {
+        let Some((name, kind)) = drawing_type(record) else {
+            continue;
+        };
+        let parameters = source_parameters(record, name);
+        if required_parameter_count(name).is_some_and(|count| parameters.len() < count) {
+            reserve_drawing_items(&mut losses, 1, ctx, "step_drawing_losses")?;
+            losses.push(StepLossCode::DrawingRecordTooFewParameters.note(format!(
+                "STEP drawing record #{id} has too few {name} parameters and was retained opaque"
+            )));
+            continue;
+        }
+        reserve_drawing_items(&mut candidates, 1, ctx, "step_drawing_candidates")?;
+        candidates.push(DrawingCandidate {
+            id,
+            name,
+            identity: ids::drawing(kind, id),
+            offset: record.span.start,
+            parameters,
+        });
+    }
     candidates.sort_by_key(|candidate| candidate.offset);
 
     if candidates.is_empty() {
@@ -105,27 +150,27 @@ pub(super) fn decode(
         });
     }
 
-    let drawing_ids = candidates
-        .iter()
-        .map(|candidate| candidate.id)
-        .collect::<BTreeSet<_>>();
-    let hidden_drawing_ids = exchange
-        .records()
-        .values()
-        .filter_map(|record| {
-            record
-                .partials
-                .iter()
-                .find(|partial| partial.name == "INVISIBILITY")
-                .and_then(|partial| partial.parameters.first())
-        })
-        .flat_map(|items| {
-            let mut targets = Vec::new();
-            collect_references(items, &mut targets);
-            targets
-        })
-        .filter(|id| drawing_ids.contains(id))
-        .collect::<BTreeSet<_>>();
+    let mut drawing_ids = BTreeSet::new();
+    for candidate in &candidates {
+        insert_drawing_set(&mut drawing_ids, candidate.id, ctx, "step_drawing_ids")?;
+    }
+    let mut hidden_drawing_ids = BTreeSet::new();
+    for record in exchange.records().values() {
+        let Some(items) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "INVISIBILITY")
+            .and_then(|partial| partial.parameters.first())
+        else {
+            continue;
+        };
+        visit_drawing_references(items, ctx, &mut |id| {
+            if drawing_ids.contains(&id) {
+                insert_drawing_set(&mut hidden_drawing_ids, id, ctx, "step_hidden_drawing_ids")?;
+            }
+            Ok(())
+        })?;
+    }
 
     let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
     for candidate in &candidates {
