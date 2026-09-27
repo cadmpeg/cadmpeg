@@ -433,16 +433,20 @@ pub(crate) fn decode(
                     {
                         double_vertices = Some(finite);
                     } else {
-                        decoded
-                            .warnings
-                            .push("double vertices rejected; using float vertices".to_string());
+                        decoded.warnings.push_admitted(
+                            expand.ctx(),
+                            format_args!("double vertices rejected; using float vertices"),
+                        )?;
                     }
                 }
             } else {
-                decoded.warnings.push_coded(
+                decoded.warnings.push_coded_admitted(
+                    expand.ctx(),
                     crate::loss::RhinoLossCode::RedundantFieldRepaired,
-                    "redundant mesh double vertex count mismatch; using float vertices".to_string(),
-                );
+                    format_args!(
+                        "redundant mesh double vertex count mismatch; using float vertices"
+                    ),
+                )?;
             }
         }
         if minor >= 8 {
@@ -471,31 +475,47 @@ pub(crate) fn decode(
                 face_count,
             ) {
                 Ok(Some(count)) => ngon_count = count,
-                Ok(None) => decoded.warnings.push(format!(
-                    "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
-                    extra.range.start
-                )),
+                Ok(None) => decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
+                        extra.range.start
+                    ),
+                )?,
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(error) => decoded.warnings.push(format!(
-                    "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
-                    extra.range.start
-                )),
+                Err(error) => decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
+                        extra.range.start
+                    ),
+                )?,
             }
         }
     }
     if major == 3 && minor >= 4 && !post_2006_fields {
         let dropped = reader.skip_remaining()?;
         if dropped != 0 && writer_version.is_none() {
-            decoded.losses.push(crate::loss::writer_stamp_unverified(format!(
-                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"
-            )));
+            crate::wire::reserve_collection(
+                expand.ctx(),
+                &mut decoded.losses,
+                1,
+                "Rhino mesh losses",
+            )?;
+            decoded.losses.push(crate::wire::admitted_loss(
+                expand.ctx(),
+                crate::loss::RhinoLossCode::SourceWriterStampUnverified,
+                format_args!("ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp"),
+                "Rhino mesh loss text",
+            )?);
         }
     }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
-        decoded
-            .warnings
-            .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
+        decoded.warnings.push_admitted(
+            expand.ctx(),
+            format_args!("ON_Mesh skipped {skipped} trailing bytes"),
+        )?;
     }
     if double_vertices.is_none() {
         if let Some(extra) = userdata
@@ -508,15 +528,15 @@ pub(crate) fn decode(
         {
             match read_v5_double_vertices(expand.ctx(), data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
-                Ok(None) => decoded.warnings.push_coded(crate::loss::RhinoLossCode::RedundantFieldRepaired, format!(
+                Ok(None) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
                     "redundant V5 mesh double-precision userdata at offset {} was rejected; using float vertices",
                     extra.range.start
-                )),
+                ))?,
                 Err(error @ GeometryError::Codec(_)) => return Err(error),
-                Err(error) => decoded.warnings.push_coded(crate::loss::RhinoLossCode::RedundantFieldRepaired, format!(
+                Err(error) => decoded.warnings.push_coded_admitted(expand.ctx(), crate::loss::RhinoLossCode::RedundantFieldRepaired, format_args!(
                     "redundant V5 mesh double-precision userdata at offset {} was dropped: {error}",
                     extra.range.start
-                )),
+                ))?,
             }
         }
     }
@@ -540,10 +560,13 @@ pub(crate) fn decode(
             if let Err(error) =
                 parse_mesh_correspondence_userdata(data, extra.payload_range.clone(), mapping)
             {
-                decoded.warnings.push(format!(
-                    "{label} userdata at offset {} could not be transferred: {error}",
-                    extra.range.start
-                ));
+                decoded.warnings.push_admitted(
+                    expand.ctx(),
+                    format_args!(
+                        "{label} userdata at offset {} could not be transferred: {error}",
+                        extra.range.start
+                    ),
+                )?;
             }
         }
     }
@@ -810,19 +833,22 @@ fn read_raw_channels(
     channels: &mut Vec<TessellationChannel>,
     warnings: &mut Diagnostics,
 ) -> Result<(), GeometryError> {
-    let vertex_bytes = read_counted_raw(reader, vertices, 12, "vertices", warnings)?;
+    let vertex_bytes = read_counted_raw(ctx, reader, vertices, 12, "vertices", warnings)?;
     if let Some(bytes) = vertex_bytes {
         *points = parse_f32_points(ctx, bytes)?;
     }
-    let normal_bytes = read_counted_raw(reader, vertices, 12, "normals", warnings)?;
+    let normal_bytes = read_counted_raw(ctx, reader, vertices, 12, "normals", warnings)?;
     if let Some(bytes) = normal_bytes {
         match parse_f32_vectors(ctx, bytes) {
             Ok(value) => *normals = Some(value),
             Err(error @ GeometryError::Codec(_)) => return Err(error),
-            Err(_) => warnings.push("normals channel contains nonfinite values".to_string()),
+            Err(_) => warnings.push_admitted(
+                ctx,
+                format_args!("normals channel contains nonfinite values"),
+            )?,
         }
     }
-    let uv = read_counted_raw(reader, vertices, 8, "UV", warnings)?;
+    let uv = read_counted_raw(ctx, reader, vertices, 8, "UV", warnings)?;
     if let Some(bytes) = uv {
         channels.push(channel(
             CHANNEL_UV,
@@ -830,7 +856,7 @@ fn read_raw_channels(
             ctx.copy_retained(bytes, "Rhino mesh raw UV channel")?,
         )?);
     }
-    let curvature = read_counted_raw(reader, vertices, 16, "curvature", warnings)?;
+    let curvature = read_counted_raw(ctx, reader, vertices, 16, "curvature", warnings)?;
     if let Some(bytes) = curvature {
         channels.push(channel(
             CHANNEL_CURVATURE,
@@ -838,7 +864,7 @@ fn read_raw_channels(
             ctx.copy_retained(bytes, "Rhino mesh raw curvature channel")?,
         )?);
     }
-    let colors = read_counted_raw(reader, vertices, 4, "colors", warnings)?;
+    let colors = read_counted_raw(ctx, reader, vertices, 4, "colors", warnings)?;
     if let Some(bytes) = colors {
         channels.push(channel(
             CHANNEL_COLOR,
@@ -944,6 +970,7 @@ fn read_compressed_channels(
 }
 
 fn read_counted_raw<'a>(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'a>,
     vertices: usize,
     item_size: usize,
@@ -952,10 +979,11 @@ fn read_counted_raw<'a>(
 ) -> Result<Option<&'a [u8]>, GeometryError> {
     let count = reader.i32()?;
     if count < 0 {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
-            format!("redundant mesh {name} channel has a negative count; channel dropped"),
-        );
+            format_args!("redundant mesh {name} channel has a negative count; channel dropped"),
+        )?;
         return Ok(None);
     }
     if count == 0 {
@@ -966,10 +994,11 @@ fn read_counted_raw<'a>(
         .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
     let data = reader.take(bytes)?;
     if count as usize != vertices {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            ctx,
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
-            format!("redundant mesh {name} channel count mismatch; channel dropped"),
-        );
+            format_args!("redundant mesh {name} channel count mismatch; channel dropped"),
+        )?;
         return Ok(None);
     }
     Ok(Some(data))
@@ -1079,10 +1108,11 @@ fn read_buffer<'a>(
                 verify_checksum(reader.backing_bytes(), &chunk)?,
                 ChecksumStatus::Mismatch { .. }
             ) {
-                warnings.push_coded(
+                warnings.push_coded_admitted(
+                    expand.ctx(),
                     crate::loss::RhinoLossCode::IntegrityFailure,
-                    format!("{name} compressed chunk CRC mismatch"),
-                );
+                    format_args!("{name} compressed chunk CRC mismatch"),
+                )?;
             }
             (
                 Cow::Borrowed(view.window()),
@@ -1098,17 +1128,19 @@ fn read_buffer<'a>(
     };
     reader.skip(consumed)?;
     if bytes.len() != expected {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            expand.ctx(),
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
-            format!("redundant mesh {name} compressed-buffer size mismatch; channel dropped"),
-        );
+            format_args!("redundant mesh {name} compressed-buffer size mismatch; channel dropped"),
+        )?;
         return Ok(None);
     }
     if crc32fast::hash(&bytes) != crc {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            expand.ctx(),
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!("{name} compressed-buffer CRC mismatch"),
-        );
+            format_args!("{name} compressed-buffer CRC mismatch"),
+        )?;
         return Ok(None);
     }
     Ok(Some(bytes))
@@ -1309,13 +1341,14 @@ fn read_double_chunk<'a>(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
-        warnings.push_coded(
+        warnings.push_coded_admitted(
+            expand.ctx(),
             crate::loss::RhinoLossCode::IntegrityFailure,
-            format!(
+            format_args!(
                 "mesh double vertices CRC mismatch at offset {}",
                 chunk.header_start
             ),
-        );
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     if count != vertex_count {
@@ -1792,6 +1825,30 @@ mod tests {
             refused,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "Rhino mesh f32 normals"
+        ));
+    }
+
+    #[test]
+    fn negative_raw_channel_diagnostic_refuses_collection_limit() {
+        let raw = (-1_i32).to_le_bytes();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let refused = with_expand_policy(&raw, policy, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            super::read_counted_raw(
+                expand.ctx(),
+                &mut reader,
+                1,
+                12,
+                "normals",
+                &mut Diagnostics::new(),
+            )
+            .expect_err("diagnostic exceeds zero collection items")
+        });
+        assert!(matches!(
+            refused,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino diagnostics"
         ));
     }
 
