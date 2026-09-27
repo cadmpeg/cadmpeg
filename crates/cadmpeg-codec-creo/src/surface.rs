@@ -3563,7 +3563,11 @@ pub(crate) fn named_prototype_records(
     for frame in named_prototype_frames(payload) {
         let mut parameters = Vec::new();
         for range in frame.parameters {
-            let body = payload[range.value_offset..range.value_end].to_vec();
+            ctx.try_reserve_items(&mut parameters, 1, "creo named prototype parameters")?;
+            let body = ctx.copy_retained(
+                &payload[range.value_offset..range.value_end],
+                "creo named prototype parameter body",
+            )?;
             let value = named_surface_value(
                 ctx,
                 &frame.family,
@@ -3584,6 +3588,7 @@ pub(crate) fn named_prototype_records(
                 value_offset: range.value_offset,
             });
         }
+        ctx.try_reserve_items(&mut records, 1, "creo named prototype records")?;
         records.push(SurfacePrototypeRecord {
             family: frame.family,
             parameters,
