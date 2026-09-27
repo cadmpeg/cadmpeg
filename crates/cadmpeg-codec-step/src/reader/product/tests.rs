@@ -167,6 +167,62 @@ fn product_usage_parent_members_refuse_collection_limit() {
     product_collection_refuses("step_product_usage_parent_members");
 }
 
+fn product_representation_collection_refuses(operation: &str) {
+    let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
+        "ENDSEC;END-ISO-10303-21;",
+        "#11=PRODUCT_DEFINITION_SHAPE('','',#9);#12=SHAPE_DEFINITION_REPRESENTATION(#11,#13);#13=SHAPE_REPRESENTATION('',(),$);ENDSEC;END-ISO-10303-21;",
+    );
+    product_collection_refuses_source(source.as_bytes(), operation);
+}
+
+#[test]
+fn shape_binding_shapes_refuse_collection_limit() {
+    product_representation_collection_refuses("step_shape_binding_shapes");
+}
+
+#[test]
+fn body_placement_shapes_refuse_collection_limit() {
+    product_representation_collection_refuses("step_body_placement_shapes");
+}
+
+#[test]
+fn occurrence_placement_shapes_refuse_collection_limit() {
+    product_representation_collection_refuses("step_occurrence_placement_shapes");
+}
+
+#[test]
+fn definition_representation_groups_refuse_collection_limit() {
+    product_representation_collection_refuses("step_definition_representation_groups");
+}
+
+#[test]
+fn definition_representation_members_refuse_collection_limit() {
+    product_representation_collection_refuses("step_definition_representation_members");
+}
+
+#[test]
+fn assembly_representations_refuse_collection_limit() {
+    product_representation_collection_refuses("step_assembly_representations");
+}
+
+#[test]
+fn represented_definition_groups_refuse_collection_limit() {
+    product_representation_collection_refuses("step_represented_definition_groups");
+}
+
+#[test]
+fn represented_definition_members_refuse_collection_limit() {
+    product_representation_collection_refuses("step_represented_definition_members");
+}
+
+#[test]
+fn body_placement_indices_refuse_collection_limit() {
+    product_collection_refuses_source(
+        include_bytes!("../../../tests/fixtures/ap214_sheet.p21"),
+        "step_body_placement_indices",
+    );
+}
+
 #[test]
 fn product_definition_descriptions_refuse_collection_limit() {
     product_collection_refuses("step_product_definition_descriptions");
