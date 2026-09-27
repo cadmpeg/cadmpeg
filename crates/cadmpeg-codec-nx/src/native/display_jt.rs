@@ -3413,7 +3413,7 @@ pub(super) fn display_jt_indices(
 
 /// Decode complete standard JT headers and tables of contents from an outer index.
 pub(super) fn display_jt_documents(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     container: &Container,
     indices: &[DisplayJtIndex],
 ) -> Result<Vec<DisplayJtDocument>, CodecError> {
@@ -3439,9 +3439,7 @@ pub(super) fn display_jt_documents(
     let mut documents = Vec::new();
     let mut rows = index.rows.iter().peekable();
     while let Some(row) = rows.next() {
-        if let Some(ctx) = ctx {
-            ctx.charge_work(1, "scan DisplayJT document")?;
-        }
+        ctx.charge_work(1, "scan DisplayJT document")?;
         let Ok(document_start) = usize::try_from(row.header_offset) else {
             return Ok(Vec::new());
         };
@@ -3457,12 +3455,10 @@ pub(super) fn display_jt_documents(
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
             return Ok(Vec::new());
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(version_field.len()),
-                "retain DisplayJT version text",
-            )?;
-        }
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(version_field.len()),
+            "retain DisplayJT version text",
+        )?;
         let Ok(version) = JtVersionField::new(version_field.to_owned()) else {
             return Ok(Vec::new());
         };
@@ -3506,27 +3502,21 @@ pub(super) fn display_jt_documents(
             .id
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
-        if let Some(ctx) = ctx {
-            ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
-            ctx.charge_collection_items(u64::from(toc_count), "admit DisplayJT toc entries")?;
-            let entry_size = u64::try_from(std::mem::size_of::<DisplayJtTocEntry>())
-                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX))?;
-            ctx.charge_retained(
-                u64::from(toc_count)
-                    .checked_mul(entry_size)
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX)
-                    })?,
-                "retain DisplayJT toc entries",
-            )?;
-        }
+        ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
+        ctx.charge_collection_items(u64::from(toc_count), "admit DisplayJT toc entries")?;
+        let entry_size = u64::try_from(std::mem::size_of::<DisplayJtTocEntry>())
+            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX))?;
+        ctx.charge_retained(
+            u64::from(toc_count)
+                .checked_mul(entry_size)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT toc entries", 0, u64::MAX)
+                })?,
+            "retain DisplayJT toc entries",
+        )?;
         let mut toc_entries = Vec::new();
-        if toc_entries.try_reserve_exact(toc_count_usize).is_err() {
-            return match ctx {
-                Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT toc entries", 0, 1)),
-                None => Ok(Vec::new()),
-            };
-        }
+        toc_entries.try_reserve_exact(toc_count_usize)
+            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT toc entries", 0, 1))?;
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
@@ -3550,17 +3540,15 @@ pub(super) fn display_jt_documents(
             {
                 return Ok(Vec::new());
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_entities(1, "admit DisplayJT toc entry")?;
-                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#".len())
-                    .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
-                    .and_then(|len| len.checked_add(1))
-                    .and_then(|len| len.checked_add(decimal_digits(ordinal)))
-                    .ok_or_else(|| {
-                        ctx.refuse_codec_limit("retain DisplayJT toc identity", 0, u64::MAX)
-                    })?;
-                ctx.charge_retained(id_len, "retain DisplayJT toc identity")?;
-            }
+            ctx.charge_entities(1, "admit DisplayJT toc entry")?;
+            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#".len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+                .and_then(|len| len.checked_add(1))
+                .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT toc identity", 0, u64::MAX)
+                })?;
+            ctx.charge_retained(id_len, "retain DisplayJT toc identity")?;
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
                 ordinal: ordinal as u32,
@@ -3571,29 +3559,23 @@ pub(super) fn display_jt_documents(
                 source_offset: stream_source_offset + document_start as u64 + offset as u64,
             });
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_entities(1, "admit DisplayJT document entity")?;
-            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:document#".len())
-                .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit("retain DisplayJT document identity", 0, u64::MAX)
-                })?;
-            ctx.charge_retained(id_len, "retain DisplayJT document identity")?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(row.id.len()),
-                "retain DisplayJT document index reference",
-            )?;
-            ctx.charge_collection_items(1, "admit DisplayJT document")?;
-            let document_size = u64::try_from(std::mem::size_of::<DisplayJtDocument>())
-                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT document", 0, u64::MAX))?;
-            ctx.charge_retained(document_size, "retain DisplayJT document")?;
-        }
-        if documents.try_reserve_exact(1).is_err() {
-            return match ctx {
-                Some(ctx) => Err(ctx.refuse_codec_limit("allocate DisplayJT documents", 0, 1)),
-                None => Ok(Vec::new()),
-            };
-        }
+        ctx.charge_entities(1, "admit DisplayJT document entity")?;
+        let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:document#".len())
+            .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("retain DisplayJT document identity", 0, u64::MAX)
+            })?;
+        ctx.charge_retained(id_len, "retain DisplayJT document identity")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(row.id.len()),
+            "retain DisplayJT document index reference",
+        )?;
+        ctx.charge_collection_items(1, "admit DisplayJT document")?;
+        let document_size = u64::try_from(std::mem::size_of::<DisplayJtDocument>())
+            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT document", 0, u64::MAX))?;
+        ctx.charge_retained(document_size, "retain DisplayJT document")?;
+        documents.try_reserve_exact(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT documents", 0, 1))?;
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
@@ -7151,7 +7133,7 @@ mod tests {
         assert_eq!(indices[0].declared_count(), 1);
         assert_eq!(indices[0].rows.first().header_offset, 28);
         assert_eq!(indices[0].rows.first().value.get(), 100);
-        let documents = super::display_jt_documents(None, &container, &indices).unwrap();
+        let documents = super::display_jt_documents(&ctx, &container, &indices).unwrap();
         assert_eq!(
             (documents[0].version.major(), documents[0].version.minor()),
             (9, 4)

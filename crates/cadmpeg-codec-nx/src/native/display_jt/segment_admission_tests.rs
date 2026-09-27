@@ -69,7 +69,7 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     let index_policy = DecodePolicy::service();
     let (index_ctx, _) = DecodeContext::from_root_bytes(&[], &index_arena, &index_policy).unwrap();
     let indices = super::display_jt_indices(&index_ctx, &container).unwrap();
-    let documents = super::display_jt_documents(None, &container, &indices).unwrap();
+    let documents = super::display_jt_documents(&index_ctx, &container, &indices).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
