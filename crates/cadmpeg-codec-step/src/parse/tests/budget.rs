@@ -523,6 +523,46 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
 }
 
 #[test]
+fn anchor_reference_stack_refuses_collection_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("reference stack needs one item");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_anchor_reference_stack"
+    ));
+}
+
+#[test]
+fn anchor_reference_stack_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("reference stack needs retained pointer storage");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_anchor_reference_stack_storage"
+    ));
+}
+
+#[test]
 fn reference_bindings_are_admitted_before_map_allocation() {
     let anchors = BTreeMap::new();
     let references = [ReferenceEntry {
@@ -577,6 +617,31 @@ fn reference_stack_item_is_admitted_before_push() {
     assert!(
         matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_stack")
     );
+}
+
+#[test]
+fn reference_stack_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        super::super::btree_node_storage::<ReferenceName, &str>();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        .expect("binding storage fits selected profile")
+        .resolve_value(&Value::ValueReference(2), 0)
+        .expect_err("reference stack needs retained storage");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_reference_stack_storage"
+    ));
 }
 
 #[test]

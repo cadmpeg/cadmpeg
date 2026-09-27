@@ -2531,7 +2531,21 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     context
                         .charge_collection_items(1, "step_anchor_reference_stack")
                         .map_err(ResolveError::Resource)?;
+                    if stack.len() == stack.capacity() {
+                        context
+                            .charge_retained(
+                                u64_from_index(size_of::<&str>()),
+                                "step_anchor_reference_stack_storage",
+                            )
+                            .map_err(ResolveError::Resource)?;
+                    }
                 }
+                stack.try_reserve(1).map_err(|_| {
+                    ResolveError::Resource(refuse_index(
+                        self.budget,
+                        "step_anchor_reference_stack_storage",
+                    ))
+                })?;
                 stack.push(name);
                 let resolved = self.resolve(source, stack, budget, depth + 1);
                 stack.pop();
@@ -2771,7 +2785,18 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             context
                 .charge_collection_items(1, "step_reference_stack")
                 .map_err(ResolveError::Resource)?;
+            if self.stack.len() == self.stack.capacity() {
+                context
+                    .charge_retained(
+                        u64_from_index(size_of::<ReferenceName>()),
+                        "step_reference_stack_storage",
+                    )
+                    .map_err(ResolveError::Resource)?;
+            }
         }
+        self.stack.try_reserve(1).map_err(|_| {
+            ResolveError::Resource(refuse_index(self.budget, "step_reference_stack_storage"))
+        })?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();
