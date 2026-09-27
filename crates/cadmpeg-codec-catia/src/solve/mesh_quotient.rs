@@ -12167,7 +12167,7 @@ fn endpoint_relation_face_choices_refuse_before_invalid_edge_result() {
     assert!(matches!(
         crate::test_support::with_collection_limit(0, run),
         Err(CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_endpoint_relation_config_pairs"
+            if limit.operation == "catia_endpoint_cycle_pair_map"
     ));
 }
 
