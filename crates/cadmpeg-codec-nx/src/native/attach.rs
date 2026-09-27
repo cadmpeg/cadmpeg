@@ -228,8 +228,8 @@ pub(super) fn attach(
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations)?;
-    attach_rm_appearances(ir, model, scan, annotations)?;
+    attach_rm_face_colors(ctx, ir, model, scan, annotations)?;
+    attach_rm_appearances(ctx, ir, model, scan, annotations)?;
     let display_jt_tessellations = display_jt_tessellations(
         ctx,
         &DisplayJtTessellationInputs {
@@ -431,6 +431,7 @@ pub(super) fn attach(
 }
 
 fn attach_rm_face_colors(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
@@ -449,7 +450,7 @@ fn attach_rm_face_colors(
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
+        &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     for (face_id, color) in bindings {
         let Some(index) = face_indices.get(&face_id).copied() else {
@@ -481,6 +482,7 @@ struct RmFaceColorBinding {
 }
 
 fn attach_rm_appearances(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
@@ -498,7 +500,7 @@ fn attach_rm_appearances(
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
+        &super::substrate::paired_delta_streams(ctx, scan)?,
     );
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());

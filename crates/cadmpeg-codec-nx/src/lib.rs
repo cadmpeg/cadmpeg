@@ -171,7 +171,7 @@ impl CodecBackend for NxCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        Ok(summarize(&scan))
+        summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -181,9 +181,9 @@ impl CodecBackend for NxCodec {
 
 /// Build the container summary: one entry per catalogued directory stream, plus
 /// one per embedded Parasolid stream, and the shared container notes.
-fn summarize(scan: &decode::Scan) -> ContainerSummary {
+fn summarize(ctx: &DecodeContext<'_>, scan: &decode::Scan) -> Result<ContainerSummary, CodecError> {
     let mut entries = Vec::new();
-    let semantic_streams = native::substrate::topology_streams(scan);
+    let semantic_streams = native::substrate::topology_streams(ctx, scan)?;
 
     for entry in &scan.container.entries {
         let mut attributes = BTreeMap::new();
@@ -348,7 +348,13 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     notes.extend(storage_notes);
     let container_kind = classification.container_kind();
     let (dialects, dialect_losses) = classification.into_report_parts();
-    ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
+    Ok(ContainerSummary::classified(
+        dialects,
+        container_kind,
+        entries,
+        dialect_losses,
+        notes,
+    ))
 }
 
 #[cfg(test)]
