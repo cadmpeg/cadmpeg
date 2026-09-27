@@ -518,6 +518,94 @@ fn ordered_feature_ids_refuse_before_vec_growth() {
 }
 
 #[test]
+fn section_header_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"\n#Body\nabc";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
+    let error = super::scan_sections(&ctx, data, 0)
+        .err()
+        .expect("name copy needs retained bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo section header names"));
+}
+
+#[test]
+fn section_header_hit_refuses_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"\n#Body\nabc";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
+    let error = super::scan_sections(&ctx, data, 0)
+        .err()
+        .expect("hit needs one collection item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo section header hits"));
+}
+
+#[test]
+fn scanned_section_refuses_before_output_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"\n#Body\nabc";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
+    let error = super::scan_sections(&ctx, data, 0)
+        .err()
+        .expect("output needs another collection item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo scanned sections"));
+}
+
+#[test]
+fn scanned_section_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let data = b"\n#Body\nabc";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(data, &arena, &policy).expect("section input is admitted");
+    let error = super::scan_sections(&ctx, data, 0)
+        .err()
+        .expect("output name needs another four bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo scanned section names"));
+}
+
+#[test]
+fn scanned_section_succeeds_under_service_policy() {
+    let data = b"\n#Body\nabc";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        .expect("section input is admitted");
+    let sections = super::scan_sections(&ctx, data, 0).expect("section is admitted");
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].section.raw_name, "Body");
+}
+
+#[test]
 fn two_chart_pcurve_count_node_refuses_before_insertion() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
