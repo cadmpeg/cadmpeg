@@ -22,6 +22,7 @@ impl<S: AsRef<str>> PrintableString<S> {
         self.0.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn into_inner(self) -> S {
         self.0
     }

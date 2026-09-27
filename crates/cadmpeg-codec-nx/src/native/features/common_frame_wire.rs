@@ -3,6 +3,7 @@
 
 use super::{FeatureOperationCommonFrame, FeatureOperationTerminalFrame};
 use crate::om::common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
 /// Exactly framed common record in one bounded feature operation.
@@ -111,6 +112,68 @@ pub(super) struct TerminalFrameWire {
     object_index_source_offset: u64,
 }
 
+impl Serialize for FeatureOperationCommonFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let frame = &self.frame;
+        let prefix = frame.prefix();
+        let suffix = frame.suffix();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_record", &self.operation_record)?;
+        wire.serialize_entry("ordinal", &self.ordinal)?;
+        wire.serialize_entry("indices", &prefix.indices())?;
+        wire.serialize_entry("raw_indices", &prefix.raw_indices_ref())?;
+        wire.serialize_entry("marker", &prefix.marker())?;
+        wire.serialize_entry("state", &frame.state())?;
+        if let Some(value) = frame.legacy_inactive_modules() {
+            wire.serialize_entry("legacy_inactive_modules", &value)?;
+        }
+        if let Some(value) = frame.modifies_parasolid_data() {
+            wire.serialize_entry("modifies_parasolid_data", &value)?;
+        }
+        wire.serialize_entry("split_tracking_data", &frame.split_tracking_data())?;
+        wire.serialize_entry("group_count", &frame.group_count())?;
+        wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
+        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry("object_index", &suffix.object_index())?;
+        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        if let Some(value) = suffix.target().and_then(Option::as_deref) {
+            wire.serialize_entry("data_block", value)?;
+        }
+        wire.serialize_entry("byte_len", &(frame.byte_len() as u64))?;
+        wire.serialize_entry("source_offset", &frame.offset())?;
+        wire.serialize_entry("index_source_offsets", &frame.index_offsets())?;
+        wire.serialize_entry("state_source_offset", &frame.state_offset())?;
+        wire.serialize_entry("local_ordinal_source_offset", &frame.local_ordinal_offset())?;
+        wire.serialize_entry("object_index_source_offset", &frame.object_index_offset())?;
+        wire.end()
+    }
+}
+
+impl Serialize for FeatureOperationTerminalFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let frame = &self.frame;
+        let suffix = frame.suffix();
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_record", &self.operation_record)?;
+        if let Some(value) = &self.immediate_common_frame {
+            wire.serialize_entry("immediate_common_frame", value)?;
+        }
+        wire.serialize_entry("local_ordinal", &suffix.local_ordinal())?;
+        wire.serialize_entry("raw_local_ordinal", suffix.raw_local_ordinal())?;
+        wire.serialize_entry("object_index", &suffix.object_index())?;
+        wire.serialize_entry("raw_object_index", suffix.raw_object_index())?;
+        if let Some(value) = suffix.target().and_then(Option::as_deref) {
+            wire.serialize_entry("data_block", value)?;
+        }
+        wire.serialize_entry("source_offset", &frame.offset())?;
+        wire.serialize_entry("object_index_source_offset", &frame.object_index_offset())?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureOperationCommonFrame> for CommonFrameWire {
     fn from(value: FeatureOperationCommonFrame) -> Self {
         let frame = value.frame;
@@ -194,6 +257,7 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
     }
 }
 
+#[cfg(test)]
 impl From<FeatureOperationTerminalFrame> for TerminalFrameWire {
     fn from(value: FeatureOperationTerminalFrame) -> Self {
         Self {
@@ -241,9 +305,40 @@ impl TryFrom<TerminalFrameWire> for FeatureOperationTerminalFrame {
 mod tests {
     use super::super::FeatureOperationCommonFrame;
     use super::super::FeatureOperationTerminalFrame;
+    use super::{CommonFrameWire, TerminalFrameWire};
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
 
     const COMMON: &str = r#"{"id":"common","operation_record":"record","ordinal":0,"indices":[0,4097,0],"raw_indices":[[0],[144,1],[128,0]],"marker":[1,3,2],"state":[1,2,3,0,1,86,169,7],"legacy_inactive_modules":false,"modifies_parasolid_data":true,"split_tracking_data":[86,169],"group_count":7,"local_ordinal":1,"raw_local_ordinal":[1],"object_index":null,"raw_object_index":[255],"byte_len":20,"source_offset":100,"index_source_offsets":[100,101,103],"state_source_offset":108,"local_ordinal_source_offset":116,"object_index_source_offset":118}"#;
+
+    #[test]
+    fn common_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = COMMON.replace("\"id\":\"common\"", "\"id\":\"nx:feature:common#0\"");
+        let record: FeatureOperationCommonFrame = serde_json::from_str(&json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&CommonFrameWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+        );
+    }
+
+    #[test]
+    fn terminal_frame_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:terminal#0","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":null,"raw_object_index":[255],"source_offset":100,"object_index_source_offset":104}"#;
+        let record: FeatureOperationTerminalFrame = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&TerminalFrameWire::from(record.clone())).unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn common_frame_preserves_exact_wire_and_checks_every_derived_column() {

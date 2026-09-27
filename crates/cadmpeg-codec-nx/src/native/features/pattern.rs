@@ -36,6 +36,8 @@ use crate::printable_string::PrintableString;
 use serde::Serialize;
 use std::num::NonZeroU8;
 
+mod borrowed_wires;
+
 use super::offset_data_block_bytes;
 
 use super::unique_offset_data_block;
@@ -67,11 +69,8 @@ pub(in crate::native) struct FeaturePatternReference {
 }
 
 /// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternCountedReferenceLaneWire",
-    into = "FeaturePatternCountedReferenceLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeaturePatternCountedReferenceLaneWire")]
 pub(in crate::native) struct FeaturePatternCountedReferenceLane {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -99,6 +98,7 @@ struct FeaturePatternCountedReferenceLaneWire {
     object_index_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeaturePatternCountedReferenceLane> for FeaturePatternCountedReferenceLaneWire {
     fn from(value: FeaturePatternCountedReferenceLane) -> Self {
         Self {
@@ -197,11 +197,8 @@ pub(in crate::native) struct FeaturePatternConstructionString {
 }
 
 /// Complete signed Q1.55 lane in a reconstructed pattern payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternConstructionFixedLaneWire",
-    into = "FeaturePatternConstructionFixedLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePatternConstructionFixedLaneWire")]
 pub(in crate::native) struct FeaturePatternConstructionFixedLane {
     /// Globally unique lane identity.
     pub(in crate::native) id: String,
@@ -243,6 +240,7 @@ struct FeaturePatternConstructionFixedLaneWire {
     value_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
     fn from(record: FeaturePatternConstructionFixedLane) -> Self {
         Self {
@@ -336,11 +334,8 @@ enum FeaturePatternTransformLayout {
 }
 
 /// Exact counted transform lane carried by a bounded pattern payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePatternTransformLaneWire",
-    into = "FeaturePatternTransformLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePatternTransformLaneWire")]
 pub(in crate::native) struct FeaturePatternTransformLane {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -380,6 +375,7 @@ struct FeaturePatternTransformLaneWire {
     selector_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl FeaturePatternTransformLaneWire {
     fn push_scalar(
         &mut self,
@@ -401,6 +397,7 @@ impl FeaturePatternTransformLaneWire {
     }
 }
 
+#[cfg(test)]
 impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
     fn from(lane: FeaturePatternTransformLane) -> Self {
         let layout = match &lane.rows {
@@ -625,11 +622,8 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
 }
 
 /// Exact counted instance-output lane carried by a bounded operation payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureMultiInstanceOutputLaneWire",
-    into = "FeatureMultiInstanceOutputLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureMultiInstanceOutputLaneWire")]
 pub(in crate::native) struct FeatureMultiInstanceOutputLane {
     /// Globally unique output-lane identity.
     pub(in crate::native) id: String,
@@ -673,6 +667,7 @@ struct FeatureMultiInstanceOutputLaneWire {
     trailing_object_index_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire {
     fn from(lane: FeatureMultiInstanceOutputLane) -> Self {
         Self {
@@ -798,11 +793,8 @@ impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputL
 }
 
 /// Exact counted selector lane carried by an identical-instance output payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureIdenticalInstanceOutputLaneWire",
-    into = "FeatureIdenticalInstanceOutputLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureIdenticalInstanceOutputLaneWire")]
 pub(in crate::native) struct FeatureIdenticalInstanceOutputLane {
     /// Globally unique output-lane identity.
     pub(in crate::native) id: String,
@@ -844,6 +836,7 @@ struct FeatureIdenticalInstanceOutputLaneWire {
     selector_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutputLaneWire {
     fn from(lane: FeatureIdenticalInstanceOutputLane) -> Self {
         Self {

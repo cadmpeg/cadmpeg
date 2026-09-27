@@ -5,16 +5,14 @@ use super::control_index_data_block;
 use crate::container::Container;
 use crate::om::compact_lane::scan::{abr_lanes, counted_lanes};
 use crate::om::compact_lane::{AbrLane, CountedLane};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use wire::{DataBlockAbrReferenceLaneWire, DataBlockCountedIndexLaneWire};
 
+mod borrowed_wires;
 mod wire;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockCountedIndexLaneWire",
-    into = "DataBlockCountedIndexLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockCountedIndexLaneWire")]
 pub(in crate::native) struct DataBlockCountedIndexLane {
     id: String,
     data_block: String,
@@ -22,11 +20,8 @@ pub(in crate::native) struct DataBlockCountedIndexLane {
     frame: CountedLane<String, u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DataBlockAbrReferenceLaneWire",
-    into = "DataBlockAbrReferenceLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DataBlockAbrReferenceLaneWire")]
 pub(in crate::native) struct DataBlockAbrReferenceLane {
     pub(in crate::native) id: String,
     section_ordinal: u32,

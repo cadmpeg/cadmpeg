@@ -6,8 +6,8 @@ use crate::om::name_field::NameField;
 use serde::{Deserialize, Serialize};
 
 /// Exact framed name retained from a reconstructed construction payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FeaturePayloadNameWire", into = "FeaturePayloadNameWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeaturePayloadNameWire")]
 pub(in crate::native) struct FeaturePayloadName {
     /// Globally unique name-field identity.
     pub(super) id: String,
@@ -21,6 +21,47 @@ pub(in crate::native) struct FeaturePayloadName {
     pub(super) frame: NameField<String>,
     /// Absolute file offset of the opening marker.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct FeaturePayloadNameRef<'a> {
+    id: &'a str,
+    operation_label: &'a str,
+    construction_payload: &'a str,
+    ordinal: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    type_code: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    raw_type_code: Option<&'a [u8]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    type_code_payload_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    type_code_source_offset: Option<u64>,
+    payload_leading: bool,
+    value: &'a str,
+    payload_offset: u64,
+    source_offset: u64,
+}
+
+impl Serialize for FeaturePayloadName {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let code = self.frame.code();
+        FeaturePayloadNameRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            construction_payload: &self.construction_payload,
+            ordinal: self.ordinal,
+            type_code: code.as_ref().map(|code| code.atom.value()),
+            raw_type_code: code.as_ref().map(|code| code.atom.raw()),
+            type_code_payload_offset: code.as_ref().map(|code| code.offset),
+            type_code_source_offset: code.and_then(|code| *code.target),
+            payload_leading: code.is_none(),
+            value: self.frame.value(),
+            payload_offset: self.frame.offset(),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -59,6 +100,7 @@ struct FeaturePayloadNameWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeaturePayloadName> for FeaturePayloadNameWire {
     fn from(value: FeaturePayloadName) -> Self {
         let code = value.frame.code();
@@ -134,7 +176,11 @@ mod tests {
                 "value": "Point1", "payload_offset": 10, "source_offset": 100,
             });
             let name: FeaturePayloadName = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(name).unwrap(), wire);
+            assert_eq!(serde_json::to_value(&name).unwrap(), wire);
+            assert_eq!(
+                serde_json::to_vec(&name).unwrap(),
+                serde_json::to_vec(&super::FeaturePayloadNameWire::from(name.clone())).unwrap()
+            );
             for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
                 let mut invalid = wire.clone();
                 invalid["raw_type_code"] = serde_json::json!(invalid_raw);
@@ -152,6 +198,10 @@ mod tests {
         ] {
             let name: FeaturePayloadName = serde_json::from_str(json).unwrap();
             assert_eq!(serde_json::to_string(&name).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&name).unwrap(),
+                serde_json::to_vec(&super::FeaturePayloadNameWire::from(name.clone())).unwrap()
+            );
             let wire: serde_json::Value = serde_json::from_str(json).unwrap();
             for (field, replacement) in [
                 ("payload_offset", serde_json::json!(1)),
@@ -171,6 +221,20 @@ mod tests {
         });
         let name = serde_json::from_value::<FeaturePayloadName>(overflowing).unwrap_err();
         assert!(name.to_string().contains("payload_offset"));
+    }
+
+    #[test]
+    fn payload_name_native_limit_refuses_before_type_token_copy() {
+        let wire = serde_json::json!({
+            "id": "nx:feature:payload-name#0",
+            "operation_label": "operation", "construction_payload": "payload",
+            "ordinal": 0, "type_code": 131, "raw_type_code": [128, 131],
+            "type_code_payload_offset": 11, "type_code_source_offset": 20,
+            "payload_leading": false, "value": "Point1",
+            "payload_offset": 10, "source_offset": 100
+        });
+        let name: FeaturePayloadName = serde_json::from_value(wire.clone()).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&name, wire);
     }
 }
 

@@ -5,6 +5,39 @@
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
 
+use crate::native::features::draft::feature_draft_construction_binary32_lanes;
+use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_graph_payloads;
+use crate::native::features::draft::feature_draft_construction_graph_strings;
+use crate::native::features::draft::feature_draft_construction_identity_frames;
+use crate::native::features::draft::feature_draft_construction_index_lanes;
+use crate::native::features::draft::feature_draft_construction_payloads;
+use crate::native::features::draft::feature_draft_construction_references;
+use crate::native::features::draft::feature_draft_construction_terminal_lanes;
+use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
+use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
+use crate::native::features::draft::FeatureDraftConstructionGraphString;
+use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
+use crate::native::features::draft::FeatureDraftConstructionIndexLane;
+use crate::native::features::draft::FeatureDraftConstructionReference;
+use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::pattern::feature_identical_instance_output_lanes;
+use crate::native::features::pattern::feature_multi_instance_output_lanes;
+use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_payloads;
+use crate::native::features::pattern::feature_pattern_construction_strings;
+use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
+use crate::native::features::pattern::feature_pattern_references;
+use crate::native::features::pattern::feature_pattern_transform_lanes;
+use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
+use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
+use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionString;
+use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
+use crate::native::features::pattern::FeaturePatternReference;
+use crate::native::features::pattern::FeaturePatternTransformLane;
+
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
     display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
@@ -176,6 +209,22 @@ use crate::native::features::extrude_32::{
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
+use crate::native::features::holes::feature_hole_package_construction_group_lanes;
+use crate::native::features::holes::feature_hole_package_construction_group_uses;
+use crate::native::features::holes::feature_simple_hole_construction_groups;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
+use crate::native::features::holes::feature_simple_hole_templates;
+use crate::native::features::holes::feature_symbolic_threads;
+use crate::native::features::holes::feature_threaded_hole_templates;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+use crate::native::features::holes::FeatureSimpleHoleTemplate;
+use crate::native::features::holes::FeatureSymbolicThread;
+use crate::native::features::holes::FeatureThreadedHoleTemplate;
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::payload_name::FeaturePayloadName;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
@@ -827,12 +876,12 @@ impl NativeModel {
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
-        let display_jt_indices = display_jt_indices(container);
-        let display_jt_documents = display_jt_documents(container, &display_jt_indices);
+        let display_jt_indices = display_jt_indices(Some(ctx), container)?;
+        let display_jt_documents = display_jt_documents(Some(ctx), container, &display_jt_indices)?;
         let budget = Some((ctx, root));
-        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents);
+        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
         let display_jt_shape_lod_elements =
-            display_jt_shape_lod_elements(container, &display_jt_segments);
+            display_jt_shape_lod_elements(budget, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
             display_jt_tri_strip_lod_headers(container, &display_jt_shape_lod_elements);
         let display_jt_initial_face_degree_symbols =
@@ -882,57 +931,57 @@ impl NativeModel {
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
             display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
-            display_jt_string_property_atoms(budget, container, &display_jt_segments);
+            display_jt_string_property_atoms(budget, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
-            display_jt_shape_lod_bindings(budget, container, &display_jt_segments);
+            display_jt_shape_lod_bindings(budget, container, &display_jt_segments)?;
         let display_jt_base_node_data = display_jt_base_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_group_node_data = display_jt_group_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_instance_nodes = display_jt_instance_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_material_attributes = display_jt_material_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_partition_nodes = display_jt_partition_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let feature_datum_csys_constructions = feature_datum_csys_constructions(container);
         let feature_datum_csys_payloads =
             feature_datum_csys_payloads(container, &feature_datum_csys_constructions);
@@ -1258,17 +1307,19 @@ impl NativeModel {
             fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
         );
-        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
+        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
-                graph: DisplayJtGraphWire {
-                    documents: display_jt_documents,
-                    segments: display_jt_segments,
-                    shape_lod_elements: display_jt_shape_lod_elements,
-                    compressed_elements: display_jt_compressed_elements,
-                    compressed_element_sequences: display_jt_compressed_element_sequences,
-                }
-                .try_into()?,
+                graph: DisplayJtGraph::from_wire_with_context(
+                    ctx,
+                    DisplayJtGraphWire {
+                        documents: display_jt_documents,
+                        segments: display_jt_segments,
+                        shape_lod_elements: display_jt_shape_lod_elements,
+                        compressed_elements: display_jt_compressed_elements,
+                        compressed_element_sequences: display_jt_compressed_element_sequences,
+                    },
+                )?,
                 display_jt_indices,
                 display_jt_tri_strip_lod_headers,
                 display_jt_initial_face_degree_symbols,
@@ -1545,56 +1596,6 @@ impl NativeModel {
         super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }
-
-use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
-use crate::native::features::draft::feature_draft_construction_graph_payloads;
-use crate::native::features::draft::feature_draft_construction_graph_strings;
-use crate::native::features::draft::feature_draft_construction_identity_frames;
-use crate::native::features::draft::feature_draft_construction_index_lanes;
-use crate::native::features::draft::feature_draft_construction_payloads;
-use crate::native::features::draft::feature_draft_construction_references;
-use crate::native::features::draft::feature_draft_construction_terminal_lanes;
-use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
-use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
-use crate::native::features::draft::FeatureDraftConstructionGraphString;
-use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
-use crate::native::features::draft::FeatureDraftConstructionIndexLane;
-use crate::native::features::draft::FeatureDraftConstructionReference;
-use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
-use crate::native::features::pattern::feature_identical_instance_output_lanes;
-use crate::native::features::pattern::feature_multi_instance_output_lanes;
-use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
-use crate::native::features::pattern::feature_pattern_construction_payloads;
-use crate::native::features::pattern::feature_pattern_construction_strings;
-use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
-use crate::native::features::pattern::feature_pattern_references;
-use crate::native::features::pattern::feature_pattern_transform_lanes;
-use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
-use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
-use crate::native::features::pattern::FeaturePatternConstructionString;
-use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
-use crate::native::features::pattern::FeaturePatternReference;
-use crate::native::features::pattern::FeaturePatternTransformLane;
-
-use crate::native::features::holes::feature_hole_package_construction_group_lanes;
-use crate::native::features::holes::feature_hole_package_construction_group_uses;
-use crate::native::features::holes::feature_simple_hole_construction_groups;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
-use crate::native::features::holes::feature_simple_hole_templates;
-use crate::native::features::holes::feature_symbolic_threads;
-use crate::native::features::holes::feature_threaded_hole_templates;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
-use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
-use crate::native::features::holes::FeatureSimpleHoleTemplate;
-use crate::native::features::holes::FeatureSymbolicThread;
-use crate::native::features::holes::FeatureThreadedHoleTemplate;
 
 #[cfg(test)]
 mod tests;

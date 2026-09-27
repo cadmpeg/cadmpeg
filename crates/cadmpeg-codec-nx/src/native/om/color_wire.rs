@@ -27,6 +27,39 @@ pub(super) struct PartColorTableWire {
     source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct PartColorTableRef<'a> {
+    id: &'a str,
+    class_definition: &'a str,
+    background_name: &'static str,
+    background_rgb: [f32; 3],
+    raw_background_components: [&'a [u8]; 3],
+    background_component_source_offsets: [u64; 3],
+    definitions: &'a [String],
+    source_entry: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for PartColorTable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PartColorTableRef {
+            id: &self.id,
+            class_definition: &self.class_definition,
+            background_name: BACKGROUND_NAME,
+            background_rgb: self.background.map(|(component, _)| component.value()),
+            raw_background_components: self
+                .background
+                .each_ref()
+                .map(|(component, _)| component.raw()),
+            background_component_source_offsets: self.background.map(|(_, offset)| offset),
+            definitions: &self.definitions,
+            source_entry: &self.source_entry,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct PartColorDefinitionWire {
     /// Globally unique color-definition identity.
@@ -47,6 +80,40 @@ pub(super) struct PartColorDefinitionWire {
     source_offset: u64,
     /// Absolute file offsets of the three component atoms.
     component_source_offsets: [u64; 3],
+}
+
+#[derive(Serialize)]
+struct PartColorDefinitionRef<'a> {
+    id: &'a str,
+    color_table: &'a str,
+    color_index: u16,
+    name: &'a str,
+    rgb: [f32; 3],
+    raw_color_index: &'a [u8],
+    raw_components: [&'a [u8]; 3],
+    source_offset: u64,
+    component_source_offsets: [u64; 3],
+}
+
+impl Serialize for PartColorDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (raw_color_index, width) = self.color_index.definition_token();
+        PartColorDefinitionRef {
+            id: &self.id,
+            color_table: &self.color_table,
+            color_index: self.color_index.value(),
+            name: &self.name,
+            rgb: self.components.map(|(component, _)| component.value()),
+            raw_color_index: &raw_color_index[..width],
+            raw_components: self
+                .components
+                .each_ref()
+                .map(|(component, _)| component.raw()),
+            source_offset: self.source_offset,
+            component_source_offsets: self.components.map(|(_, offset)| offset),
+        }
+        .serialize(serializer)
+    }
 }
 
 fn components_from_wire(
@@ -84,6 +151,7 @@ impl TryFrom<PartColorTableWire> for PartColorTable {
         })
     }
 }
+#[cfg(test)]
 impl From<PartColorTable> for PartColorTableWire {
     fn from(value: PartColorTable) -> Self {
         Self {
@@ -107,7 +175,8 @@ impl TryFrom<PartColorDefinitionWire> for PartColorDefinition {
     fn try_from(wire: PartColorDefinitionWire) -> Result<Self, Self::Error> {
         let color_index =
             PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
-        if color_index.definition_raw() != wire.raw_color_index {
+        let (raw, width) = color_index.definition_token();
+        if &raw[..width] != wire.raw_color_index.as_slice() {
             return Err("raw_color_index: differs from color_index definition token".into());
         }
         Ok(Self {
@@ -124,6 +193,7 @@ impl TryFrom<PartColorDefinitionWire> for PartColorDefinition {
         })
     }
 }
+#[cfg(test)]
 impl From<PartColorDefinition> for PartColorDefinitionWire {
     fn from(value: PartColorDefinition) -> Self {
         Self {
@@ -147,6 +217,55 @@ mod tests {
     use super::super::ColorComponent;
     use super::super::PartColorDefinition;
     use super::super::PartColorTable;
+    use super::{PartColorDefinitionWire, PartColorTableWire};
+
+    #[test]
+    fn palette_definition_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"id":"nx:om:color#0","color_table":"table","color_index":128,"name":"test","rgb":[0.0,1.0,0.5],"raw_color_index":[128,127],"raw_components":[[0],[1],[48,0,0,0,0,0,0,0]],"source_offset":10,"component_source_offsets":[20,30,40]}"#;
+        let record: PartColorDefinition = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&PartColorDefinitionWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn palette_definition_retained_limit_refuses_before_atom_clones() {
+        let json = r#"{"id":"nx:om:color#0","color_table":"table","color_index":128,"name":"test","rgb":[0.0,1.0,0.5],"raw_color_index":[128,127],"raw_components":[[0],[1],[48,0,0,0,0,0,0,0]],"source_offset":10,"component_source_offsets":[20,30,40]}"#;
+        let record: PartColorDefinition = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
+
+    fn table() -> PartColorTable {
+        PartColorTable {
+            id: "nx:om:color-table#0".into(),
+            class_definition: "class".into(),
+            background: [(ColorComponent::read(&[1]).unwrap(), 10); 3],
+            definitions: std::array::from_fn(|i| format!("color-{}", i + 1)),
+            source_entry: "entry".into(),
+            source_offset: 0,
+        }
+    }
+
+    #[test]
+    fn palette_table_borrowed_wire_matches_owned_bytes() {
+        let record = table();
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&PartColorTableWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn palette_table_retained_limit_refuses_before_definition_clone() {
+        let record = table();
+        let expected = serde_json::to_value(&record).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+    }
 
     #[test]
     fn palette_definition_keeps_wire_and_rejects_derived_field_mismatches() {
