@@ -45,6 +45,33 @@ use super::StageOutcome;
 const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
+fn push_topology_vec<T>(
+    values: &mut Vec<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.push(value);
+    Ok(())
+}
+
+fn push_topology_group<K: Ord, V>(
+    values: &mut BTreeMap<K, Vec<V>>,
+    key: K,
+    value: V,
+    ctx: &DecodeContext<'_>,
+    group_operation: &'static str,
+    member_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !values.contains_key(&key) {
+        ctx.charge_collection_items(1, group_operation)?;
+    }
+    push_topology_vec(values.entry(key).or_default(), value, ctx, member_operation)
+}
+
 mod admissions;
 
 pub(super) struct TopologyData {
@@ -297,7 +324,10 @@ pub(super) fn representation_bodies<'a>(
 /// it to the body-producing representation with `SHAPE_REPRESENTATION_RELATIONSHIP`.
 /// The relationship is undirected for body reachability; retain both endpoints
 /// in one indexed graph so resolution does not rescan the exchange per call.
-fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<u64>> {
+fn shape_representation_relationships(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeMap<u64, Vec<u64>>, CodecError> {
     let mut related = BTreeMap::<u64, Vec<u64>>::new();
     for record in exchange.records().values() {
         let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
@@ -323,14 +353,16 @@ fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<
                 (first, second)
             }
         };
-        related.entry(first).or_default().push(second);
-        related.entry(second).or_default().push(first);
+        push_topology_group(&mut related, first, second, ctx,
+            "step_shape_relationship_groups", "step_shape_relationship_members")?;
+        push_topology_group(&mut related, second, first, ctx,
+            "step_shape_relationship_groups", "step_shape_relationship_members")?;
     }
     for representations in related.values_mut() {
         representations.sort_unstable();
         representations.dedup();
     }
-    related
+    Ok(related)
 }
 
 fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
@@ -383,7 +415,7 @@ pub(super) fn decode(
     let mut result = StageOutcome {
         value: TopologyData {
             body_by_root: BTreeMap::new(),
-            shape_representation_relationships: shape_representation_relationships(exchange),
+            shape_representation_relationships: shape_representation_relationships(exchange, ctx)?,
             body_by_shell: BTreeMap::new(),
             faces_by_source: BTreeMap::new(),
             edges_by_source: BTreeMap::new(),
