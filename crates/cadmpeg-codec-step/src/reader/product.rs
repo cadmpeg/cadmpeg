@@ -62,6 +62,23 @@ fn reserve_product_items<T>(
     })
 }
 
+fn clone_product_text(
+    value: &str,
+    ctx: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+    }
+    let mut copy = String::new();
+    copy.try_reserve_exact(value.len()).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 fn claim_product_typed(
     typed: &mut HashSet<u64>,
     id: u64,
@@ -178,7 +195,7 @@ pub(super) fn decode(
             definition_descriptions.entry(id).or_insert(description);
         }
     }
-    let shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
+    let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
     let mut definition_counts = BTreeMap::<u64, usize>::new();
     for product in definitions.values() {
         if !definition_counts.contains_key(product) {
@@ -266,17 +283,29 @@ pub(super) fn decode(
                     Ok(id)
                 },
             )?;
-            let definition_description =
-                definition.and_then(|definition| definition_descriptions.get(&definition).cloned());
+            let definition_description = definition
+                .and_then(|definition| definition_descriptions.get(&definition))
+                .map(|text| clone_product_text(text, ctx, "step_product_definition_description_copy"))
+                .transpose()?;
             let description = if definition_count <= 1 {
-                product_description.clone().or(definition_description)
+                product_description
+                    .as_deref()
+                    .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                    .transpose()?
+                    .or(definition_description)
             } else {
-                definition_description.or_else(|| product_description.clone())
+                match definition_description {
+                    Some(description) => Some(description),
+                    None => product_description
+                        .as_deref()
+                        .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                        .transpose()?,
+                }
             };
             let has_shape_binding =
                 definition.is_some_and(|definition| shape_bindings.contains_key(&definition));
             let mut bodies = definition
-                .and_then(|definition| shape_bindings.get(&definition).cloned())
+                .and_then(|definition| shape_bindings.remove(&definition))
                 .unwrap_or_default();
             let missing = bodies
                 .iter()
@@ -322,10 +351,20 @@ pub(super) fn decode(
             ir.model.product_definitions.push(ProductDefinition {
                 id: product_definition_id.clone(),
                 kind: ProductDefinitionKind::Part,
-                source_name: name.clone(),
-                label: name.clone(),
+                source_name: name
+                    .as_deref()
+                    .map(|text| clone_product_text(text, ctx, "step_product_source_name_copy"))
+                    .transpose()?,
+                label: name
+                    .as_deref()
+                    .map(|text| clone_product_text(text, ctx, "step_product_label_copy"))
+                    .transpose()?,
                 description,
-                part_number: Some(product_id.clone()),
+                part_number: Some(clone_product_text(
+                    &product_id,
+                    ctx,
+                    "step_product_part_number_copy",
+                )?),
                 bom_properties: BTreeMap::new(),
                 bodies,
                 native_ref: Some(
@@ -591,7 +630,11 @@ pub(super) fn decode(
                 transform,
                 linked_prototype: None,
                 scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: usage.name.clone(),
+                name: usage
+                    .name
+                    .as_deref()
+                    .map(|text| clone_product_text(text, ctx, "step_product_occurrence_name_copy"))
+                    .transpose()?,
                 visible: None,
                 link: None,
                 native_ref: Some(format!("#{usage_id}")),

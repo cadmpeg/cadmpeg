@@ -361,6 +361,68 @@ fn product_string_text_refuses_retained_limit() {
     assert!(refused, "no retained limit refused a product string");
 }
 
+fn product_copy_refuses_retained_limit(operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = String::from_utf8_lossy(PRODUCT_STRING_LIMIT_SOURCE).replace(
+        "PRODUCT('P','Part name',''",
+        "PRODUCT('P','Part name','Summary'",
+    );
+    let (exchange, diagnostics) = crate::parse::parse(source.as_bytes())
+        .expect("valid product exchange");
+    let refused = (0..=4096).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            crate::reader::decode_exchange(
+                source.as_bytes(),
+                exchange.clone(),
+                &diagnostics,
+                &ctx,
+                crate::reader::Packaging::Bare,
+            ),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no retained limit refused {operation}");
+}
+
+#[test]
+fn product_definition_description_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_definition_description_copy");
+}
+
+#[test]
+fn product_description_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_description_copy");
+}
+
+#[test]
+fn product_source_name_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_source_name_copy");
+}
+
+#[test]
+fn product_label_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_label_copy");
+}
+
+#[test]
+fn product_part_number_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_part_number_copy");
+}
+
+#[test]
+fn product_occurrence_name_copy_refuses_retained_limit() {
+    product_copy_refuses_retained_limit("step_product_occurrence_name_copy");
+}
+
 #[test]
 fn product_usage_entries_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
