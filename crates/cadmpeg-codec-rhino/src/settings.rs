@@ -2,7 +2,7 @@
 //! Bounded Rhino document properties, settings, units, and layer metadata.
 
 use crate::loss::Diagnostics;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::HashMap;
 use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -2279,6 +2279,16 @@ fn checksum_warning_excluding(
     }
 }
 
+fn push_layer_extension_item(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<u8>,
+    item: u8,
+) -> Result<(), FramingError> {
+    crate::chunks::reserve_admitted_vec(ctx, items, 1, "Rhino layer extension items")?;
+    items.push(item);
+    Ok(())
+}
+
 fn parse_layer(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -2429,6 +2439,7 @@ fn parse_layer(
             layer.hierarchy.map(|hierarchy| hierarchy.parent_id),
         ) {
             Ok(settings) => layer.per_viewport_settings = settings,
+            Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 source_requires_opaque = true;
                 warnings.push(format!(
@@ -2444,35 +2455,35 @@ fn parse_layer(
         // consumed only as an ID; its value has no generic width.
         let mut item = reader.u8()?;
         if item == 28 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
             read_uuid_list(ctx, &mut reader, archive)?;
             item = reader.u8()?;
         }
         if version.1 > 10 {
             if item == 29 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 reader.skip(4)?;
                 item = reader.u8()?;
             }
             if item == 30 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
             if item == 31 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
         }
         if version.1 > 11 && item == 32 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             reader.skip(1)?;
             item = reader.u8()?;
         }
         if version.1 > 12 && item == 33 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.embedded_linetype =
                 Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
             // The direct linetype has no neutral CADIR owner. Preserve the
@@ -2482,13 +2493,13 @@ fn parse_layer(
             item = reader.u8()?;
         }
         if version.1 > 13 && item == 34 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.visible_in_new_details = Some(reader.bool_with_writer_version(writer_version)?);
             item = reader.u8()?;
         }
         if version.1 > 14 {
             if item == 35 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 layer.embedded_section_style = Some(parse_direct_section_style(
                     data,
                     &mut reader,
@@ -2500,12 +2511,12 @@ fn parse_layer(
                 item = reader.u8()?;
             }
             if item == 36 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 reader.skip(1)?;
                 item = reader.u8()?;
             }
             if item == 37 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
                 let trim = |character: char| {
                     matches!(
@@ -2543,9 +2554,12 @@ pub(crate) fn parse_metadata(
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
-    let mut ids = BTreeSet::new();
-    let mut property_singletons = BTreeSet::new();
-    let mut setting_singletons = BTreeSet::new();
+    let mut ids = HashMap::<Uuid, ()>::new();
+    let mut property_singletons = HashMap::<u32, ()>::new();
+    let mut setting_singletons = HashMap::<u32, ()>::new();
+    let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
+    let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
+    let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
     let mut opaque_records = Vec::new();
     for table in tables {
         let table_type = table.typecode & !0x0000_8000;
@@ -2574,8 +2588,8 @@ pub(crate) fn parse_metadata(
             };
             let duplicate_singleton = singleton
                 && match table_type {
-                    PROPERTIES => property_singletons.contains(&record.typecode),
-                    SETTINGS => setting_singletons.contains(&record.typecode),
+                    PROPERTIES => property_singletons.contains_key(&record.typecode),
+                    SETTINGS => setting_singletons.contains_key(&record.typecode),
                     _ => false,
                 };
             let result = if table_type == PROPERTIES {
@@ -2595,6 +2609,12 @@ pub(crate) fn parse_metadata(
                     AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
                         .map(|value| metadata.properties.as_file_name = Some(value)),
                     PREVIEW | COMPRESSED_PREVIEW => {
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut metadata.properties.previews,
+                            1,
+                            "Rhino property previews",
+                        )?;
                         metadata.properties.previews.push(PreviewDescriptor {
                             source: SourceRange {
                                 range: record.range.clone(),
@@ -2620,17 +2640,40 @@ pub(crate) fn parse_metadata(
                 ) {
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
-                            if !ids.insert(id) {
+                            if ids.contains_key(&id) {
                                 warnings.push_coded(
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
                                     format!(
                                     "duplicate layer UUID {id}; first record owns archive identity"
                                 ),
                                 );
+                            } else {
+                                id_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                                    std::mem::size_of::<(Uuid, ())>(),
+                                ))?;
+                                crate::wire::reserve_hash_map(
+                                    ctx,
+                                    &mut ids,
+                                    1,
+                                    "Rhino layer UUID keys",
+                                )?;
+                                ids.insert(id, ());
                             }
                         }
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut metadata.layers,
+                            1,
+                            "Rhino metadata layers",
+                        )?;
                         metadata.layers.push(layer);
                         if source_requires_opaque {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut opaque_records,
+                                1,
+                                "Rhino metadata opaque records",
+                            )?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -2646,10 +2689,32 @@ pub(crate) fn parse_metadata(
             if result.is_ok() && singleton {
                 match table_type {
                     PROPERTIES => {
-                        property_singletons.insert(record.typecode);
+                        if !property_singletons.contains_key(&record.typecode) {
+                            property_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                                std::mem::size_of::<(u32, ())>(),
+                            ))?;
+                            crate::wire::reserve_hash_map(
+                                ctx,
+                                &mut property_singletons,
+                                1,
+                                "Rhino property singleton keys",
+                            )?;
+                            property_singletons.insert(record.typecode, ());
+                        }
                     }
                     SETTINGS => {
-                        setting_singletons.insert(record.typecode);
+                        if !setting_singletons.contains_key(&record.typecode) {
+                            setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                                std::mem::size_of::<(u32, ())>(),
+                            ))?;
+                            crate::wire::reserve_hash_map(
+                                ctx,
+                                &mut setting_singletons,
+                                1,
+                                "Rhino setting singleton keys",
+                            )?;
+                            setting_singletons.insert(record.typecode, ());
+                        }
                     }
                     _ => {}
                 }
@@ -2670,6 +2735,12 @@ pub(crate) fn parse_metadata(
                 if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
                     && (table_type != LAYER || record.typecode == LAYER_RECORD)
                 {
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino metadata opaque records",
+                    )?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
@@ -2682,9 +2753,24 @@ pub(crate) fn parse_metadata(
             }
         }
     }
-    let mut layer_index_counts = BTreeMap::<i32, usize>::new();
+    let mut layer_index_counts = Vec::<(i32, usize)>::new();
+    let mut index_workspace = ctx.reserve_scoped(0, "Rhino layer index workspace")?;
     for layer in &metadata.layers {
-        *layer_index_counts.entry(layer.index).or_default() += 1;
+        match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
+            Ok(position) => layer_index_counts[position].1 += 1,
+            Err(position) => {
+                index_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(i32, usize)>(),
+                ))?;
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut layer_index_counts,
+                    1,
+                    "Rhino layer index counts",
+                )?;
+                layer_index_counts.insert(position, (layer.index, 1));
+            }
+        }
     }
     for (index, count) in layer_index_counts {
         if count > 1 {
@@ -2697,15 +2783,29 @@ pub(crate) fn parse_metadata(
         }
     }
     metadata.opaque_records = opaque_records;
-    report_layer_parent_references(&metadata.layers, warnings);
+    report_layer_parent_references(ctx, &metadata.layers, warnings)?;
     Ok(metadata)
 }
 
-fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnostics) {
-    let mut id_counts = BTreeMap::<Uuid, usize>::new();
+fn report_layer_parent_references(
+    ctx: &DecodeContext<'_>,
+    layers: &[LayerRecord],
+    warnings: &mut Diagnostics,
+) -> Result<(), CodecError> {
+    let mut id_counts = HashMap::<Uuid, usize>::new();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     for layer in layers {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
-            *id_counts.entry(id).or_default() += 1;
+            if let Some(count) = id_counts.get_mut(&id) {
+                *count += 1;
+            } else {
+                workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    Uuid,
+                    usize,
+                )>()))?;
+                crate::wire::reserve_hash_map(ctx, &mut id_counts, 1, "Rhino layer parent counts")?;
+                id_counts.insert(id, 1);
+            }
         }
     }
     for layer in layers {
@@ -2731,6 +2831,7 @@ fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnos
             ),
         }
     }
+    Ok(())
 }
 
 fn utf16_record(
@@ -2806,6 +2907,12 @@ fn parse_setting(
         MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")
             .map(|value| settings.model_url = Some(value)),
         _ => {
+            crate::wire::reserve_collection(
+                ctx,
+                &mut settings.unsupported,
+                1,
+                "Rhino unsupported settings",
+            )?;
             settings.unsupported.push(SettingDescriptor {
                 typecode: record.typecode,
                 source: SourceRange {
