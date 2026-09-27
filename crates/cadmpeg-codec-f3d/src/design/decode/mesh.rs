@@ -40,7 +40,7 @@ use crate::records::mesh::{
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
     MeshAffineTransform,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
@@ -640,6 +640,7 @@ fn parse_mesh_collection_record(
 }
 
 fn parse_mesh_texture_table_record(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshTextureTableRecord, CodecError> {
@@ -652,55 +653,118 @@ fn parse_mesh_texture_table_record(
     )?;
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-texture-table")?;
-    let parsed = (|| {
-        (record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT) == Some(&[0; 10]))
-            .then_some(())?;
-        let flags_count =
-            usize::try_from(View::u32_le_at(record, texture_table::FLAGS_MAP_COUNT)?).ok()?;
-        let mut at = texture_table::FLAGS_MAP_COUNT.checked_add(4)?;
-        let mut flags = Vec::with_capacity(flags_count);
-        let mut flag_keys = HashSet::with_capacity(flags_count);
+    let parsed = (|| -> Result<Option<MeshTextureTableRecord>, CodecError> {
+        if record.get(texture_table::ZERO_RUN_10..texture_table::FLAGS_MAP_COUNT)
+            != Some(&[0; 10][..])
+        {
+            return Ok(None);
+        }
+        let Some(raw_flags_count) = View::u32_le_at(record, texture_table::FLAGS_MAP_COUNT) else {
+            return Ok(None);
+        };
+        let Some(mut at) = texture_table::FLAGS_MAP_COUNT.checked_add(4) else {
+            return Ok(None);
+        };
+        let Some(flags_count) = record.len().checked_sub(at).and_then(|remaining| {
+            bounded_len(u64::from(raw_flags_count), 44, remaining)
+        }) else {
+            return Ok(None);
+        };
+        ctx.charge_collection_items(u64::from(raw_flags_count), "f3d mesh texture flags")?;
+        let mut flags = Vec::new();
+        flags.try_reserve(flags_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh texture flags allocation", 0, 1)
+        })?;
+        ctx.charge_collection_items(u64::from(raw_flags_count), "f3d mesh texture flag keys")?;
+        let mut flag_keys = HashSet::new();
+        flag_keys.try_reserve(flags_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh texture flag keys allocation", 0, 1)
+        })?;
         for ordinal in 0..flags_count {
-            let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
-            flag_keys
-                .insert(resource_guid.as_str().to_ascii_uppercase())
-                .then_some(())?;
+            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+                return Ok(None);
+            };
+            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+                return Ok(None);
+            };
+            if !flag_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+                return Ok(None);
+            }
             at = end;
-            let value = View::u32_le_at(record, at)?;
-            at = at.checked_add(4)?;
+            let Some(value) = View::u32_le_at(record, at) else {
+                return Ok(None);
+            };
+            let Some(next_at) = at.checked_add(4) else {
+                return Ok(None);
+            };
+            at = next_at;
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
             flags.push(MeshTextureMapEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
+                ordinal,
                 resource_guid,
                 value,
             });
         }
-        let filename_count = usize::try_from(View::u32_le_at(record, at)?).ok()?;
-        at = at.checked_add(4)?;
-        let mut filenames = Vec::with_capacity(filename_count);
-        let mut filename_keys = HashSet::with_capacity(filename_count);
+        let Some(raw_filename_count) = View::u32_le_at(record, at) else {
+            return Ok(None);
+        };
+        let Some(next_at) = at.checked_add(4) else {
+            return Ok(None);
+        };
+        at = next_at;
+        let Some(filename_count) = record.len().checked_sub(at).and_then(|remaining| {
+            bounded_len(u64::from(raw_filename_count), 51, remaining)
+        }) else {
+            return Ok(None);
+        };
+        ctx.charge_collection_items(u64::from(raw_filename_count), "f3d mesh texture filenames")?;
+        let mut filenames = Vec::new();
+        filenames.try_reserve(filename_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh texture filenames allocation", 0, 1)
+        })?;
+        ctx.charge_collection_items(u64::from(raw_filename_count), "f3d mesh texture filename keys")?;
+        let mut filename_keys = HashSet::new();
+        filename_keys.try_reserve(filename_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d mesh texture filename keys allocation", 0, 1)
+        })?;
         for ordinal in 0..filename_count {
-            let (resource_guid, end) = lp_ascii_strict(record, at, 36..=36)?;
-            let resource_guid = DesignGuidText::try_from(resource_guid).ok()?;
-            filename_keys
-                .insert(resource_guid.as_str().to_ascii_uppercase())
-                .then_some(())?;
+            let Some((resource_guid, end)) = lp_ascii_strict(record, at, 36..=36) else {
+                return Ok(None);
+            };
+            let Ok(resource_guid) = DesignGuidText::try_from(resource_guid) else {
+                return Ok(None);
+            };
+            if !filename_keys.insert(resource_guid.as_str().to_ascii_uppercase()) {
+                return Ok(None);
+            }
             at = end;
-            let filename_record_index = exact_local_record_index(record, at)?;
-            at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+            let Some(filename_record_index) = exact_local_record_index(record, at) else {
+                return Ok(None);
+            };
+            let Some(next_at) = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES) else {
+                return Ok(None);
+            };
+            at = next_at;
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return Ok(None);
+            };
             filenames.push(MeshTextureFilenameEntry {
-                ordinal: u32::try_from(ordinal).ok()?,
+                ordinal,
                 resource_guid,
                 filename_record_index,
             });
         }
-        (at == record.len() && flag_keys == filename_keys).then_some(())?;
-        Some(MeshTextureTableRecord {
+        if at != record.len() || flag_keys != filename_keys {
+            return Ok(None);
+        }
+        Ok(Some(MeshTextureTableRecord {
             identity,
             flags,
             filenames,
-        })
-    })();
+        }))
+    })()?;
     parsed.ok_or_else(|| malformed_frame("mesh-texture-table", frame.entity_id))
 }
 
@@ -1123,7 +1187,7 @@ where
             "mesh-texture-table",
         )?
         .into_iter()
-        .map(|frame| parse_mesh_texture_table_record(bytes, frame))
+        .map(|frame| parse_mesh_texture_table_record(ctx, bytes, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
@@ -2504,8 +2568,10 @@ mod tests {
         let [frame] = frames.as_slice() else {
             panic!("one texture-table frame");
         };
-        let table =
-            parse_mesh_texture_table_record(&graph.bytes, *frame).expect("original texture table");
+        let table = crate::design::test_support::with_test_decode_context(|ctx| {
+            parse_mesh_texture_table_record(ctx, &graph.bytes, *frame)
+        })
+        .expect("original texture table");
         let [first, second] = table.filenames.as_slice() else {
             panic!("two texture resources");
         };
@@ -2576,9 +2642,43 @@ mod tests {
             design_type: &graph.meta.types[5],
         };
         assert!(matches!(
-            parse_mesh_texture_table_record(&bytes, frame),
+            crate::design::test_support::with_test_decode_context(|ctx| {
+                parse_mesh_texture_table_record(ctx, &bytes, frame)
+            }),
             Err(CodecError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn mesh_texture_table_charges_each_input_sized_collection() {
+        const RESOURCE: &str = "10000000-0000-4000-8000-000000000001";
+        let graph = synthetic_mesh_graph(false);
+        let bytes = mesh_texture_table_record(261, 101, &[(RESOURCE, 2)], &[(RESOURCE, 113)]);
+        let frame = TypedPrimaryFrame {
+            entity_id: 101,
+            start: 0,
+            end: bytes.len(),
+            design_type: &graph.meta.types[5],
+        };
+        for max_collection_items in 0..4 {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+            policy.limits.max_collection_items = max_collection_items;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .unwrap();
+            assert!(matches!(
+                parse_mesh_texture_table_record(&ctx, &bytes, frame),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            ));
+        }
+        crate::design::test_support::with_test_decode_context(|ctx| {
+            let table = parse_mesh_texture_table_record(ctx, &bytes, frame).unwrap();
+            assert_eq!(table.flags.len(), 1);
+            assert_eq!(table.filenames.len(), 1);
+        });
     }
 
     #[test]
