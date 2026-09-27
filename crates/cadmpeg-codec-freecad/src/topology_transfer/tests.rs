@@ -37,6 +37,18 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
         .expect("translation is affine")
 }
 
+fn test_indexed_polygon(
+    nodes: Vec<cadmpeg_ir::features::FinitePoint3>,
+    parameters: Option<Vec<FiniteReal>>,
+    deflection: cadmpeg_ir::scalar::NonNegativeReal,
+) -> Result<IndexedPolygon, CodecError> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within the input limit");
+    IndexedPolygon::try_new(&ctx, nodes, parameters, deflection)
+}
+
 fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
@@ -69,9 +81,29 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
 #[test]
+fn indexed_polygon_vertex_capacity_refuses_on_collection_limit() {
+    let node = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within the input limit");
+    assert!(matches!(
+        IndexedPolygon::try_new(
+            &ctx,
+            vec![node],
+            Some(vec![FiniteReal::ZERO]),
+            cadmpeg_ir::scalar::NonNegativeReal::ZERO,
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.operation == "FreeCAD indexed polygon vertices"
+    ));
+}
+
+#[test]
 fn indexed_polygon_pairs_checked_samples() {
     let node = cadmpeg_ir::features::FinitePoint3::ZERO;
-    let polygon = IndexedPolygon::try_new(
+    let polygon = test_indexed_polygon(
         vec![node],
         Some(vec![
             cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
@@ -91,7 +123,7 @@ fn indexed_polygon_pairs_checked_samples() {
         }
     );
     assert!(
-        IndexedPolygon::try_new(vec![node], None, cadmpeg_ir::scalar::NonNegativeReal::ZERO)
+        test_indexed_polygon(vec![node], None, cadmpeg_ir::scalar::NonNegativeReal::ZERO)
             .is_ok()
     );
 }
@@ -100,8 +132,8 @@ fn indexed_polygon_pairs_checked_samples() {
 fn indexed_polygon_admits_only_aligned_parameters() {
     let node = cadmpeg_ir::features::FinitePoint3::ZERO;
     let deflection = cadmpeg_ir::scalar::NonNegativeReal::ZERO;
-    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), deflection).is_err());
-    let polygon = IndexedPolygon::try_new(
+    assert!(test_indexed_polygon(vec![node], Some(vec![]), deflection).is_err());
+    let polygon = test_indexed_polygon(
         vec![node],
         Some(vec![
             cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
@@ -120,7 +152,7 @@ fn indexed_polygon_admits_only_aligned_parameters() {
             .expect("nonempty polyline fixture")
         }
     );
-    assert!(IndexedPolygon::try_new(vec![node], None, deflection).is_ok());
+    assert!(test_indexed_polygon(vec![node], None, deflection).is_ok());
 }
 
 #[test]

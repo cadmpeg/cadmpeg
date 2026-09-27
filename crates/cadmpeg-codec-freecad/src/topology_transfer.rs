@@ -58,6 +58,7 @@ impl IndexedPolygon {
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(
+        ctx: &DecodeContext<'_>,
         nodes: Vec<FinitePoint3>,
         parameters: Option<Vec<FiniteReal>>,
         deflection: cadmpeg_ir::scalar::NonNegativeReal,
@@ -74,7 +75,11 @@ impl IndexedPolygon {
                         "polygon parameters length must equal nodes length".into(),
                     ));
                 }
-                let mut vertices = Vec::with_capacity(nodes.len());
+                let mut vertices = crate::resource::collection_vec(
+                    ctx,
+                    nodes.len(),
+                    "FreeCAD indexed polygon vertices",
+                )?;
                 for (point, parameter) in nodes.into_iter().zip(parameters) {
                     vertices.push(PolylineVertex { parameter, point });
                 }
@@ -122,7 +127,7 @@ pub(crate) fn transfer(
             );
         let source_object = cadmpeg_core::text::NonBlankString::new(source_object)
             .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?;
-        let mut builder = Builder::new(payload, tables, source_object)?;
+        let mut builder = Builder::new(ctx, payload, tables, source_object)?;
         builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
             builder.append_body(ctx, ir, root)?;
@@ -180,7 +185,8 @@ impl SourceOccurrenceKey {
     }
 }
 
-struct Builder<'a> {
+struct Builder<'a, 'c, 'r> {
+    ctx: &'c DecodeContext<'r>,
     payload: &'a ShapePayloadRecord,
     tables: Tables<'a>,
     vertices: HashMap<OccurrenceKey, VertexId>,
@@ -197,14 +203,16 @@ struct Builder<'a> {
     losses: Vec<LossNote>,
 }
 
-impl<'a> Builder<'a> {
+impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
     fn new(
+        ctx: &'c DecodeContext<'r>,
         payload: &'a ShapePayloadRecord,
         tables: Tables<'a>,
         source_object: cadmpeg_core::text::NonBlankString,
     ) -> Result<Self, CodecError> {
         let source_indices = source_topology_indices(tables)?;
         Ok(Self {
+            ctx,
             payload,
             tables,
             vertices: HashMap::new(),
@@ -630,7 +638,11 @@ impl<'a> Builder<'a> {
                 .filter(|child| self.tables.tshapes[child.shape - 1].kind() == TextShapeKind::Face)
                 .collect::<Vec<_>>();
             let components = self.face_components(ctx, &face_uses, transform)?;
-            let mut shell_ids = Vec::with_capacity(components.len());
+            let mut shell_ids = crate::resource::collection_vec(
+                self.ctx,
+                components.len(),
+                "FreeCAD shell components",
+            )?;
             for (component_index, component) in components.iter().enumerate() {
                 let component_id = if component_index == 0 {
                     shell_id.clone()
@@ -644,7 +656,11 @@ impl<'a> Builder<'a> {
                         .map_err(CodecError::malformed)?,
                     )
                 };
-                let mut faces = Vec::with_capacity(component.len());
+                let mut faces = crate::resource::collection_vec(
+                    self.ctx,
+                    component.len(),
+                    "FreeCAD component faces",
+                )?;
                 for &face_index in component {
                     if let Some(face) = self.append_face(
                         ir,
@@ -761,7 +777,11 @@ impl<'a> Builder<'a> {
         if face_uses.is_empty() {
             return Ok(vec![Vec::new()]);
         }
-        let mut connectivity = Vec::with_capacity(face_uses.len());
+        let mut connectivity = crate::resource::collection_vec(
+            ctx,
+            face_uses.len(),
+            "FreeCAD face connectivity",
+        )?;
         for face_use in face_uses {
             let face_transform = parent
                 .compose(self.tables.location(face_use.location)?)
@@ -1192,6 +1212,7 @@ impl<'a> Builder<'a> {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 let polygon = &self.tables.polygons3d[polygon - 1];
                 IndexedPolygon::try_new(
+                    self.ctx,
                     polygon.nodes.clone(),
                     polygon.parameters.clone(),
                     polygon.deflection,
@@ -1279,7 +1300,7 @@ impl<'a> Builder<'a> {
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        IndexedPolygon::try_new(points, polygon.parameters.clone(), polygon.deflection)
+        IndexedPolygon::try_new(self.ctx, points, polygon.parameters.clone(), polygon.deflection)
     }
 
     fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[FiniteReal]> {
