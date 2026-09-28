@@ -1064,30 +1064,32 @@ pub(crate) fn decode_dimension_locus_pairs(
     Ok(out)
 }
 
-pub(crate) fn following_dimension_companion_record_index<'a>(
+pub(crate) fn following_dimension_companion_record_index<'a, I>(
     native_id: &str,
     paired_byte_offset: u64,
     owners: &[DesignParameterOwner],
-    parameter_records: impl IntoIterator<Item = &'a DesignParameter>,
-) -> Option<u32> {
+    parameter_records: I,
+) -> Option<u32>
+where
+    I: IntoIterator<Item = &'a DesignParameter>,
+    I::IntoIter: Clone,
+{
     let scope = native_stream(native_id)?;
-    let mut parameters = HashMap::<u32, Option<&DesignParameter>>::new();
-    for parameter in parameter_records
-        .into_iter()
-        .filter(|parameter| native_stream(&parameter.id) == Some(scope))
-    {
-        parameters
-            .entry(parameter.record_index)
-            .and_modify(|parameter| *parameter = None)
-            .or_insert(Some(parameter));
-    }
+    let parameter_records = parameter_records.into_iter();
+    let following_offset = paired_byte_offset.checked_add(59)?;
     let mut matches = owners.iter().filter(|owner| {
         native_stream(owner.id()) == Some(scope)
-            && owner.byte_offset() == paired_byte_offset.saturating_add(59)
-            && parameters
-                .get(&owner.parameter_record_index())
-                .and_then(|parameter| *parameter)
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
+            && owner.byte_offset() == following_offset
+            && {
+                let mut candidates = parameter_records.clone().filter(|parameter| {
+                    native_stream(&parameter.id) == Some(scope)
+                        && parameter.record_index == owner.parameter_record_index()
+                });
+                candidates.next().is_some_and(|parameter| {
+                    parameter.kind() == DesignParameterKind::Dimension
+                        && candidates.next().is_none()
+                })
+            }
     });
     let owner = matches.next()?;
     matches
