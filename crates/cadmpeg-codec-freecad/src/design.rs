@@ -1369,7 +1369,7 @@ fn parse_sketch(
                 .flatten()
             {
                 Some(nurbs) => nurbs,
-                None => sketch_geometry(&native_kind, &attributes)?,
+                None => sketch_geometry(ctx, &native_kind, &attributes)?,
             };
             reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
@@ -1453,7 +1453,7 @@ fn parse_sketch(
                 .flatten()
             {
                 Some(nurbs) => nurbs,
-                None => sketch_geometry(&native_kind, &attributes)?,
+                None => sketch_geometry(ctx, &native_kind, &attributes)?,
             };
             reserve_vec_items(ctx, &mut entities, 1, "fcstd sketch entities")?;
             entities.push(
@@ -3036,14 +3036,19 @@ fn constraint_kind(kind: i64) -> &'static str {
 }
 
 fn sketch_geometry(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     attributes: &BTreeMap<String, String>,
 ) -> Result<SketchGeometry, CodecError> {
-    let native_kind = cadmpeg_core::text::NonBlankString::new(kind)
-        .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
+    if !kind.chars().any(|character| !character.is_whitespace()) {
+        return Err(CodecError::malformed("native_kind must not be empty"));
+    }
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
-    let native = || SketchGeometryDefinition::Native {
-        native_kind: native_kind.clone(),
+    let native = || -> Result<SketchGeometry, CodecError> {
+        let native_kind = cadmpeg_core::text::NonBlankString::new(retained_string(
+            ctx, kind, "fcstd native sketch geometry kind",
+        )?).ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
+        Ok(SketchGeometry::native(native_kind))
     };
     if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
         let frame_angle = number("AngleXU").unwrap_or(0.0);
@@ -3065,7 +3070,10 @@ fn sketch_geometry(
             })
             .ok()
         })();
-        return Ok(admitted.unwrap_or_else(|| SketchGeometry::native(native_kind)));
+        return match admitted {
+            Some(geometry) => Ok(geometry),
+            None => native(),
+        };
     }
     let project = || {
         Some(
@@ -3085,7 +3093,7 @@ fn sketch_geometry(
                             end: Point2::new(end_x, end_y),
                         }
                     }
-                    _ => native(),
+                    _ => return None,
                 }
             } else if matches!(
                 kind,
@@ -3129,7 +3137,7 @@ fn sketch_geometry(
                             },
                         }
                     }
-                    _ => native(),
+                    _ => return None,
                 }
             } else if matches!(
                 kind,
@@ -3162,7 +3170,7 @@ fn sketch_geometry(
                             bounds,
                         }
                     }
-                    _ => native(),
+                    _ => return None,
                 }
             } else if matches!(
                 kind,
@@ -3191,7 +3199,7 @@ fn sketch_geometry(
                             bounds,
                         }
                     }
-                    _ => native(),
+                    _ => return None,
                 }
             } else if matches!(kind, "Part::GeomCircle" | "Circle") {
                 match (number("CenterX"), number("CenterY"), number("Radius")) {
@@ -3204,21 +3212,24 @@ fn sketch_geometry(
                     (Some(x), Some(y), Some(0.0)) => SketchGeometryDefinition::Point {
                         position: Point2::new(x, y),
                     },
-                    _ => native(),
+                    _ => return None,
                 }
             } else if kind == "Part::GeomPoint" {
                 match (number("X"), number("Y")) {
                     (Some(x), Some(y)) => SketchGeometryDefinition::Point {
                         position: Point2::new(x, y),
                     },
-                    _ => native(),
+                    _ => return None,
                 }
             } else {
-                native()
+                return None
             },
         )
     };
-    SketchGeometry::try_from(project().unwrap_or_else(native)).map_err(CodecError::malformed)
+    match project() {
+        Some(definition) => SketchGeometry::try_from(definition).map_err(CodecError::malformed),
+        None => native(),
+    }
 }
 
 fn build_profiles(
