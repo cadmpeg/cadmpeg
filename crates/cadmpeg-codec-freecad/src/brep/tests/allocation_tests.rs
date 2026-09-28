@@ -19,6 +19,21 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceObjectAssociation;
 
 #[test]
+fn binary_section_diagnostic_refuses_at_matching_retained_limit() {
+    assert_retained_refusal_at(&[], "FreeCAD binary section diagnostic", |ctx| {
+        let mut cursor = super::super::BinaryCursor::new(ctx, b"Wrong 0\n");
+        cursor.section_count("Locations")
+    });
+}
+
+#[test]
+fn tshape_flags_diagnostic_refuses_at_matching_retained_limit() {
+    assert_retained_refusal_at(&[], "FreeCAD TShape flag diagnostic", |ctx| {
+        super::super::parse_shape_flags(ctx, "invalid-input-flags", 1)
+    });
+}
+
+#[test]
 fn text_brep_token_index_refuses_at_materialized_limit() {
     let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 0 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0 *";
     let token_count = bytes.split(|byte| byte.is_ascii_whitespace())

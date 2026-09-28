@@ -3949,9 +3949,11 @@ impl<'a, 'c, 'r> BinaryCursor<'a, 'c, 'r> {
         };
         let mut tokens = line.split_ascii_whitespace();
         if tokens.next() != Some(name) || tokens.clone().count() != 1 {
-            return Err(CodecError::malformed(format_args!(
-                "binary B-rep expected {name} section, found {line:?}"
-            )));
+            return Err(crate::resource::malformed_charged(
+                self.ctx,
+                format_args!("binary B-rep expected {name} section, found {line:?}"),
+                "FreeCAD binary section diagnostic",
+            ));
         }
         tokens
             .next()
@@ -4543,7 +4545,8 @@ fn parse_tshapes(
         let token = cursor.next("TShape kind")?;
         let kind = parse_shape_kind(cursor.ctx, token)?;
         let geometry = parse_tshape_geometry(kind, &mut cursor, section_counts, topology_version)?;
-        let flags = parse_shape_flags(cursor.next("TShape flags")?, topology_version)?;
+        let flags_token = cursor.next("TShape flags")?;
+        let flags = parse_shape_flags(cursor.ctx, flags_token, topology_version)?;
         let mut children = Vec::new();
         loop {
             if cursor.peek() == Some("*") {
@@ -4895,11 +4898,13 @@ fn parse_face_geometry(
     })
 }
 
-fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], CodecError> {
+fn parse_shape_flags(ctx: &DecodeContext<'_>, token: &str, topology_version: u8) -> Result<[bool; 7], CodecError> {
     if token.len() != 7 || !token.bytes().all(|byte| matches!(byte, b'0' | b'1')) {
-        return Err(CodecError::malformed(format_args!(
-            "invalid TShape flags {token:?}"
-        )));
+        return Err(crate::resource::malformed_charged(
+            ctx,
+            format_args!("invalid TShape flags {token:?}"),
+            "FreeCAD TShape flag diagnostic",
+        ));
     }
     let mut flags = [false; 7];
     for (index, byte) in token.bytes().enumerate() {
