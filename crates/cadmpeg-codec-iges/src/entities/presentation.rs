@@ -572,12 +572,10 @@ pub(super) fn project(
             continue;
         };
         let body = &mut ir.model.bodies[index];
-        ctx.charge_retained(body.id.as_str().len() as u64, "iges appearance body ID copy")?;
-        let body_id = body.id.clone();
+        let body_id = crate::decode_resource::clone_optional_identity(Some(ctx), &body.id, "iges appearance body ID copy")?;
         body.color = Some(color);
         body.visible = Some(visible);
-        ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
-        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+        appearance(ir, crate::decode_resource::clone_optional_identity(Some(ctx), &appearance_id, "iges appearance ID copy")?, None, color, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
@@ -657,11 +655,9 @@ pub(super) fn project(
             continue;
         };
         let face = &mut ir.model.faces[index];
-        ctx.charge_retained(face.id.as_str().len() as u64, "iges appearance face ID copy")?;
-        let face_id = face.id.clone();
+        let face_id = crate::decode_resource::clone_optional_identity(Some(ctx), &face.id, "iges appearance face ID copy")?;
         face.color = Some(color);
-        ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
-        appearance(ir, appearance_id.clone(), None, color, ctx)?;
+        appearance(ir, crate::decode_resource::clone_optional_identity(Some(ctx), &appearance_id, "iges appearance ID copy")?, None, color, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
