@@ -48,6 +48,17 @@ pub(crate) struct CurvePrototype {
     pub(crate) offset: usize,
 }
 
+#[cfg(test)]
+pub(crate) fn dummy_curve_prototype() -> CurvePrototype {
+    CurvePrototype {
+        id: 8,
+        type_byte: 1,
+        feature_id: Some(2),
+        directions: None,
+        offset: 11,
+    }
+}
+
 /// One source line in a curve-equation expression program.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CurveExpressionLine {

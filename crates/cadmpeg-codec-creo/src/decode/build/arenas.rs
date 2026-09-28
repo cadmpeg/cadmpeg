@@ -268,7 +268,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_curve_parameter_record",
         Exactness::ByteExact,
     )?;
-    let fc_curve_coordinates = fc_curve_coordinate_records(scan);
+    let fc_curve_coordinates = fc_curve_coordinate_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -285,9 +285,9 @@ pub(super) fn emit_geometry_arenas(
     store_arena(ctx, ir, "fc05_circles", &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
     store_arena(ctx, ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
-    let prototype_pcurves = prototype_pcurve_records(scan);
+    let prototype_pcurves = prototype_pcurve_records(ctx, scan)?;
     store_arena(ctx, ir, "prototype_pcurves", &prototype_pcurves)?;
-    let curve_prototype_topology = curve_prototype_topology_records(scan);
+    let curve_prototype_topology = curve_prototype_topology_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
@@ -295,7 +295,7 @@ pub(super) fn emit_geometry_arenas(
         &curve_prototype_topology,
     )?;
     let curve_prototypes =
-        curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
+        curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype")?;
     emit_uniform(
         ctx,
         ir,
@@ -309,10 +309,11 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_curve_prototypes = curve_prototype_records(
+        ctx,
         scan,
         &scan.curves.nonvisible_prototypes,
         "creo:novisgeom:curve_prototype",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -326,10 +327,11 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let cross_section_curve_prototypes = curve_prototype_records(
+        ctx,
         scan,
         &scan.curves.cross_section_prototypes,
         "creo:cross_section_geometry:curve_prototype",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -486,16 +488,18 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let plane_local_systems = plane_local_system_records(
+        ctx,
         scan,
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
-    );
+    )?;
     store_arena(ctx, ir, "plane_local_systems", &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
+        ctx,
         scan,
         &scan.planes.cross_section_local_systems,
         "creo:cross_section_geometry:plane_local_system",
-    );
+    )?;
     store_arena(
         ctx,
         ir,
@@ -503,13 +507,14 @@ pub(super) fn emit_geometry_arenas(
         &cross_section_plane_local_systems,
     )?;
     let plane_envelopes =
-        plane_envelope_records(scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
+        plane_envelope_records(ctx, scan, &scan.planes.envelopes, "creo:surface:plane_envelope")?;
     store_arena(ctx, ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
+        ctx,
         scan,
         &scan.planes.cross_section_envelopes,
         "creo:cross_section_geometry:plane_envelope",
-    );
+    )?;
     store_arena(
         ctx,
         ir,
@@ -517,37 +522,39 @@ pub(super) fn emit_geometry_arenas(
         &cross_section_plane_envelopes,
     )?;
     let outline_planes =
-        outline_plane_records(scan, &scan.planes.outlines, "creo:surface:outline_plane");
+        outline_plane_records(ctx, scan, &scan.planes.outlines, "creo:surface:outline_plane")?;
     store_arena(ctx, ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
+        ctx,
         scan,
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
-    );
+    )?;
     store_arena(ctx, ir, "positional_frame_planes", &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
+        ctx,
         scan,
         &scan.planes.cross_section_outlines,
         "creo:cross_section_geometry:outline_plane",
-    );
+    )?;
     store_arena(
         ctx,
         ir,
         "cross_section_outline_planes",
         &cross_section_outline_planes,
     )?;
-    let datum_planes = datum_plane_records(scan);
+    let datum_planes = datum_plane_records(ctx, scan)?;
     store_arena(ctx, ir, "datum_planes", &datum_planes)?;
-    let datum_cylinders = datum_cylinder_records(scan);
+    let datum_cylinders = datum_cylinder_records(ctx, scan)?;
     store_arena(ctx, ir, "datum_cylinders", &datum_cylinders)?;
-    let feature_section_transforms = feature_section_transform_records(scan);
+    let feature_section_transforms = feature_section_transform_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
         "feature_section_transforms",
         &feature_section_transforms,
     )?;
-    let feature_placement_instructions = feature_placement_instruction_records(scan);
+    let feature_placement_instructions = feature_placement_instruction_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
