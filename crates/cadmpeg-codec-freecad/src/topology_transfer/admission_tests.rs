@@ -235,6 +235,11 @@ fn tessellation_key_refuses_at_retained_limit() {
 }
 
 #[test]
+fn tessellation_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD tessellation identity");
+}
+
+#[test]
 fn tessellation_body_identity_refuses_at_retained_limit() {
     assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD tessellation body identity");
 }
