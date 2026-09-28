@@ -2903,7 +2903,7 @@ pub(super) fn project(
 
     let mut commit_session = CommitSession::new(ir);
     for (entry, candidate) in legacy_face_candidates {
-        if commit_session.commit_model(candidate).is_err() {
+        if commit_session.commit_model_admitted(candidate, ctx)?.is_err() {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "legacy single-parent plane hole failed neutral topology validation"))?;
         }
     }

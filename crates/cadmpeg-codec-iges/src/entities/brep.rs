@@ -1324,7 +1324,7 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        if commit_session.commit_model(candidate).is_err() {
+        if commit_session.commit_model_admitted(candidate, ctx)?.is_err() {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell candidate failed neutral validation"))?;
             continue;
         }
