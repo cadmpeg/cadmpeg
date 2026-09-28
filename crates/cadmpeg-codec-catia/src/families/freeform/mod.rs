@@ -814,18 +814,20 @@ pub(super) fn try_decode_freeform_surfaces(
         } else {
             false
         };
-        let mut losses = if wire_topology_transferred {
-            Vec::new()
-        } else if topology_transferred && b5_complete {
-            vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
+        let mut losses = Vec::new();
+        if !wire_topology_transferred {
+        if topology_transferred && b5_complete {
+            admitted!(crate::resource::push_loss(ctx, &mut losses,
+                CatiaLossCode::TopologyB5GaugeSubstituted, format_args!(
                 "The B5 reference graph is closed; face sense and body kind use a deterministic \
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
                 b5_face_object_ids.len(),
                 identity_statement(&b5_face_object_ids)
-            ))]
+            ), "catia_freeform_topology_loss"));
         } else if topology_transferred {
-            vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
+            admitted!(crate::resource::push_loss(ctx, &mut losses,
+                CatiaLossCode::TopologyB5SubsetIncomplete, format_args!(
             "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant \
              nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
@@ -834,24 +836,25 @@ pub(super) fn try_decode_freeform_surfaces(
             identity_statement(&b5_face_object_ids),
             b5_loop_object_ids.len(),
             identity_statement(&b5_loop_object_ids)
-        ))]
+        ), "catia_freeform_topology_loss"));
         } else if object_stream_selection_exhausted {
-            vec![
-                CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+            admitted!(crate::resource::push_loss(ctx, &mut losses,
+                CatiaLossCode::TopologyObjectStreamWorkSliceExhausted, format_args!(
             "The object-stream graph exceeds the bounded frame-index and record-materialization \
              work slice; its topology remains native. The {object_stream_run_count} object runs \
              stay inside retained record {payload_id}."
-        )),
-            ]
+        ), "catia_freeform_topology_loss"));
         } else {
-            vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
+            admitted!(crate::resource::push_loss(ctx, &mut losses,
+                CatiaLossCode::TopologyB5GraphUnclosed, format_args!(
                 "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
                 census_face_object_ids.len(),
                 identity_statement(&census_face_object_ids)
-            ))]
-        };
+            ), "catia_freeform_topology_loss"));
+        }
+        }
         if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
             return Some(Err(error));
         }
