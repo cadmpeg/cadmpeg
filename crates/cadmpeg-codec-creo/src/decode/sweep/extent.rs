@@ -1160,16 +1160,16 @@ pub(in super::super) fn resolved_feature_extrusion_span(
         return Ok(None);
     };
     let mut span = generated_arc_cylinder_extent(scan, ir, source_carriers, definition, transform)
-        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
-        .or_else(|| {
-            feature_plane_equations(scan, ir, source_carriers, feature_id)
-                .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes))
-        })
-        .or_else(|| {
-            generated_cap_plane_extent(scan, ir, source_carriers, feature_id).and_then(
-                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
-            )
-        });
+        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction));
+    if span.is_none() {
+        span = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
+            .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes));
+    }
+    if span.is_none() {
+        span = generated_cap_plane_extent(scan, ir, source_carriers, feature_id).and_then(
+            |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
+        );
+    }
     if span.is_none() {
         span = generated_bounded_cylinder_extent(
             ctx, scan, ir, source_carriers, feature_id, Some(transform),
