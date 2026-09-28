@@ -113,6 +113,26 @@ fn collect_decode_map<K: Eq + std::hash::Hash, V>(
     Ok(map)
 }
 
+fn index_selected_body_key(
+    ctx: &DecodeContext<'_>,
+    index: &mut std::collections::HashMap<String, std::collections::HashSet<u64>>,
+    blob_name: &str,
+    body_key: u64,
+) -> Result<(), CodecError> {
+    if let Some(keys) = index.get_mut(blob_name) {
+        return insert_decode_set(ctx, keys, body_key, "index F3D selected body keys");
+    }
+    ctx.charge_collection_items(1, "index F3D selected body blobs")?;
+    index
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("index F3D selected body blobs", 0, 1))?;
+    let name = copy_decode_string(ctx, blob_name, "retain F3D selected body blob name")?;
+    let mut keys = std::collections::HashSet::new();
+    insert_decode_set(ctx, &mut keys, body_key, "index F3D selected body keys")?;
+    index.insert(name, keys);
+    Ok(())
+}
+
 fn append_decode_items<T>(
     ctx: &DecodeContext<'_>,
     target: &mut Vec<T>,
@@ -3434,10 +3454,7 @@ fn decode_scanned_document<'a>(
         let mut selected_body_keys =
             std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
         for binding in &unbound_body_bindings {
-            selected_body_keys
-                .entry(binding.blob_name().to_owned())
-                .or_default()
-                .insert(binding.asm_body_key);
+            index_selected_body_key(ctx, &mut selected_body_keys, binding.blob_name(), binding.asm_body_key)?;
         }
         for &candidate in &model_breps {
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
