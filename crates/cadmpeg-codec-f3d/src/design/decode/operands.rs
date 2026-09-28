@@ -5411,16 +5411,31 @@ fn parse_edge_operand(
         Ok(parsed) => parsed,
         Err(error) => return Some(Err(error)),
     };
-    let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
-    let surface_patch_recipe_structure = (scope.kind()
-        == crate::records::feature::scope::DesignFeatureKind::SurfacePatch)
-        .then(|| {
-            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
-        })
-        .flatten();
-    let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
-        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
-    });
+    let recipe_structure = match edge_recipe_structure_with_context(Some(ctx), &parsed.recipe_program) {
+        Ok(structure) => structure,
+        Err(error) => return Some(Err(error)),
+    };
+    let surface_patch_recipe_structure = if scope.kind()
+        == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
+    {
+        match surface_patch_recipe_structure_with_context(
+            Some(ctx), &parsed.recipe_program, parsed.recipe_references.len(),
+        ) {
+            Ok(structure) => structure,
+            Err(error) => return Some(Err(error)),
+        }
+    } else {
+        None
+    };
+    let local_topology_references = match recipe_structure.as_ref() {
+        Some(structure) => match edge_recipe_local_topology_references_with_context(
+            Some(ctx), structure, parsed.recipe_references.len(),
+        ) {
+            Ok(references) => references,
+            Err(error) => return Some(Err(error)),
+        },
+        None => None,
+    };
     let id = match design_record_id_charged(
         ctx, stream.strip_prefix(crate::ids::SCHEME_PREFIX).unwrap_or(stream),
         ":design-edge-operand#", header.byte_offset,
@@ -5481,7 +5496,45 @@ fn parse_edge_operand(
 pub(crate) fn edge_recipe_structure(
     program: &[i32],
 ) -> Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure> {
-    edge_recipe_structure_tail(program.get(7..)?)
+    edge_recipe_structure_with_context(None, program).ok().flatten()
+}
+
+fn edge_recipe_structure_with_context(
+    ctx: Option<&DecodeContext<'_>>,
+    program: &[i32],
+) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
+    let Some(tail) = program.get(7..) else { return Ok(None); };
+    edge_recipe_structure_tail(ctx, tail)
+}
+
+fn reserve_recipe_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        let count_u64 = u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count_u64, operation)?;
+        items.try_reserve(count).map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, 1)
+        })?;
+    } else {
+        items.reserve(count);
+    }
+    Ok(())
+}
+
+fn copy_recipe_items<T: Copy>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &[T],
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut copy = Vec::new();
+    reserve_recipe_items(ctx, &mut copy, items.len(), operation)?;
+    copy.extend_from_slice(items);
+    Ok(copy)
 }
 
 /// Decode the alternate two-clause edge-recipe grammar owned by `SurfacePatch`.
@@ -5494,42 +5547,53 @@ pub(crate) fn surface_patch_recipe_structure(
     program: &[i32],
     reference_count: usize,
 ) -> Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure> {
-    let mut remaining = program.get(7..)?;
-    let (&root, tail) = remaining.split_first()?;
+    surface_patch_recipe_structure_with_context(None, program, reference_count)
+        .ok().flatten()
+}
+
+fn surface_patch_recipe_structure_with_context(
+    ctx: Option<&DecodeContext<'_>>,
+    program: &[i32],
+    reference_count: usize,
+) -> Result<Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure>, CodecError> {
+    let Some(mut remaining) = program.get(7..) else { return Ok(None); };
+    let Some((&root, tail)) = remaining.split_first() else { return Ok(None); };
     if root != 2 {
-        return None;
+        return Ok(None);
     }
     remaining = tail;
     let mut clauses = Vec::with_capacity(2);
     for _ in 0..2 {
         let mut fields = Vec::with_capacity(6);
         for _ in 0..6 {
-            let delimiter_at = remaining.iter().position(|word| *word == -1)?;
+            let Some(delimiter_at) = remaining.iter().position(|word| *word == -1) else { return Ok(None); };
             if delimiter_at > 2 {
-                return None;
+                return Ok(None);
             }
-            let field = remaining.get(..delimiter_at)?.to_vec();
+            let Some(field) = remaining.get(..delimiter_at) else { return Ok(None); };
+            let field = field.to_vec();
             if field.is_empty() || field.iter().any(|word| *word < 0) {
-                return None;
+                return Ok(None);
             }
-            remaining = remaining.get(delimiter_at + 1..)?;
+            let Some(tail) = remaining.get(delimiter_at + 1..) else { return Ok(None); };
+            remaining = tail;
             fields.push(field);
         }
-        let (&payload_entry_count, tail) = remaining.split_first()?;
-        let payload_entry_count = u32::try_from(payload_entry_count).ok()?;
-        let payload_word_count = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
-        let payload = tail.get(..payload_word_count)?;
-        let entries = edge_recipe_entries(payload)?;
-        if entries.len() != usize::try_from(payload_entry_count).ok()? {
-            return None;
+        let Some((&payload_entry_count, tail)) = remaining.split_first() else { return Ok(None); };
+        let Ok(payload_entry_count) = u32::try_from(payload_entry_count) else { return Ok(None); };
+        let Some(payload_word_count) = usize::try_from(payload_entry_count).ok().and_then(|count| count.checked_mul(8)) else { return Ok(None); };
+        let Some(payload) = tail.get(..payload_word_count) else { return Ok(None); };
+        let Some(entries) = edge_recipe_entries_with_context(ctx, payload)? else { return Ok(None); };
+        if u32::try_from(entries.len()).ok() != Some(payload_entry_count) {
+            return Ok(None);
         }
-        let (&delimiter, tail) = tail.get(payload_word_count..)?.split_first()?;
+        let Some((&delimiter, tail)) = tail.get(payload_word_count..).and_then(|tail| tail.split_first()) else { return Ok(None); };
         if delimiter != -1 {
-            return None;
+            return Ok(None);
         }
         remaining = tail;
         let [first, second, third, fourth, fifth, sixth] = fields.as_slice() else {
-            return None;
+            return Ok(None);
         };
         if !(first.len() == 1 || first.len() == 2 && first[0] == 2)
             || second.len() != 1
@@ -5539,14 +5603,14 @@ pub(crate) fn surface_patch_recipe_structure(
             || fifth.len() != 1
             || sixth.as_slice() != [0, 0]
         {
-            return None;
+            return Ok(None);
         }
         let ordinal = |field: &[i32], position: usize| {
             let ordinal = usize::try_from(*field.get(position)?).ok()?;
             (ordinal < reference_count).then_some(u32::try_from(ordinal).ok()?)
         };
-        let face_reference_ordinals = [ordinal(first, first.len() - 1)?, ordinal(second, 0)?];
-        let edge_reference_ordinals = [ordinal(third, 1)?, ordinal(fifth, 0)?];
+        let Some(face_reference_ordinals) = (|| Some([ordinal(first, first.len() - 1)?, ordinal(second, 0)?]))() else { return Ok(None); };
+        let Some(edge_reference_ordinals) = (|| Some([ordinal(third, 1)?, ordinal(fifth, 0)?]))() else { return Ok(None); };
         clauses.push(
             crate::records::topology::edge_recipe::DesignSurfacePatchRecipeClause {
                 fields,
@@ -5559,25 +5623,32 @@ pub(crate) fn surface_patch_recipe_structure(
     }
     if let Some(&delimiter) = remaining.first() {
         if delimiter != 0 {
-            return None;
+            return Ok(None);
         }
         remaining = &remaining[1..];
     }
     if !remaining.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(
-        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure {
-            clauses: clauses.try_into().ok()?,
-        },
-    )
+    Ok(clauses.try_into().ok().map(|clauses| {
+        crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure { clauses }
+    }))
 }
 
 fn edge_recipe_local_topology_references(
     structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
     reference_count: usize,
 ) -> Option<Vec<std::num::NonZeroU32>> {
-    topology_recipe_references(
+    edge_recipe_local_topology_references_with_context(None, structure, reference_count)
+        .ok().flatten()
+}
+
+fn edge_recipe_local_topology_references_with_context(
+    ctx: Option<&DecodeContext<'_>>,
+    structure: &crate::records::topology::edge_recipe::DesignEdgeRecipeStructure,
+    reference_count: usize,
+) -> Result<Option<Vec<std::num::NonZeroU32>>, CodecError> {
+    topology_recipe_references(ctx,
         structure.sides.iter().flat_map(|side| {
             std::iter::once(side.header_value).chain(side.scalars.iter().copied())
         }),
@@ -5586,37 +5657,48 @@ fn edge_recipe_local_topology_references(
 }
 
 fn edge_recipe_structure_tail(
+    ctx: Option<&DecodeContext<'_>>,
     program: &[i32],
-) -> Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure> {
-    let (&root, mut remaining) = program.split_first()?;
-    let side_count = usize::try_from(root).ok()?;
+) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
+    let Some((&root, mut remaining)) = program.split_first() else { return Ok(None); };
+    let Ok(side_count) = usize::try_from(root) else { return Ok(None); };
     if side_count == 0 {
-        return None;
+        return Ok(None);
     }
-    remaining = recipe_delimiter(remaining)?;
-    let structures = edge_recipe_side_sequences(remaining, side_count)
-        .into_iter()
-        .filter_map(|(sides, tail)| {
-            matches!(tail, [] | [-1 | 0]).then_some(
-                crate::records::topology::edge_recipe::DesignEdgeRecipeStructure { root, sides },
-            )
-        })
-        .collect::<Vec<_>>();
-    let [structure] = structures.as_slice() else {
-        return None;
-    };
-    Some(structure.clone())
+    let Some(delimited) = recipe_delimiter(remaining) else { return Ok(None); };
+    remaining = delimited;
+    let mut structure = None;
+    for (sides, tail) in edge_recipe_side_sequences(ctx, remaining, side_count)? {
+        if !matches!(tail, [] | [-1 | 0]) {
+            continue;
+        }
+        if structure.is_some() {
+            return Ok(None);
+        }
+        structure = Some(crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+            root, sides,
+        });
+    }
+    Ok(structure)
 }
 
-fn edge_recipe_side_sequences(
-    words: &[i32],
+fn edge_recipe_side_sequences<'w>(
+    ctx: Option<&DecodeContext<'_>>,
+    words: &'w [i32],
     side_count: usize,
-) -> Vec<(Vec<DesignTopologyRecipeSide>, &[i32])> {
+) -> Result<Vec<(Vec<DesignTopologyRecipeSide>, &'w [i32])>, CodecError> {
+    let _depth = match ctx {
+        Some(ctx) => Some(ctx.enter_nested("f3d recipe side recursion")?),
+        None => None,
+    };
     if side_count == 0 {
-        return vec![(Vec::new(), words)];
+        let mut empty = Vec::new();
+        reserve_recipe_items(ctx, &mut empty, 1, "f3d recipe empty side sequence")?;
+        empty.push((Vec::new(), words));
+        return Ok(empty);
     }
     let mut out = Vec::new();
-    for (side, tail) in edge_recipe_counted_side_candidates(words) {
+    for (side, tail) in edge_recipe_counted_side_candidates(ctx, words)? {
         let remaining = if side_count == 1 {
             tail
         } else if let Some(remaining) = recipe_delimiter(tail) {
@@ -5624,12 +5706,27 @@ fn edge_recipe_side_sequences(
         } else {
             continue;
         };
-        for (mut following, tail) in edge_recipe_side_sequences(remaining, side_count - 1) {
-            following.insert(0, side.clone());
+        for (mut following, tail) in edge_recipe_side_sequences(ctx, remaining, side_count - 1)? {
+            let copied = copy_recipe_side(ctx, &side)?;
+            reserve_recipe_items(ctx, &mut following, 1, "f3d recipe following side")?;
+            following.insert(0, copied);
+            reserve_recipe_items(ctx, &mut out, 1, "f3d recipe side sequence")?;
             out.push((following, tail));
         }
     }
-    out
+    Ok(out)
+}
+
+fn copy_recipe_side(
+    ctx: Option<&DecodeContext<'_>>,
+    side: &DesignTopologyRecipeSide,
+) -> Result<DesignTopologyRecipeSide, CodecError> {
+    Ok(DesignTopologyRecipeSide {
+        header_value: side.header_value,
+        scalars: copy_recipe_items(ctx, &side.scalars, "f3d recipe copied scalars")?,
+        payload_prefix: copy_recipe_items(ctx, &side.payload_prefix, "f3d recipe copied payload prefix")?,
+        entries: copy_recipe_items(ctx, &side.entries, "f3d recipe copied entries")?,
+    })
 }
 
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
@@ -5660,51 +5757,62 @@ fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
     field_count > 0
 }
 
-fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyRecipeSide, &[i32])> {
+fn edge_recipe_counted_side_candidates<'w>(
+    ctx: Option<&DecodeContext<'_>>,
+    words: &'w [i32],
+) -> Result<Vec<(DesignTopologyRecipeSide, &'w [i32])>, CodecError> {
     let Some(field_count) = words
         .first()
         .and_then(|word| u32::try_from(*word).ok())
         .and_then(std::num::NonZeroU32::new)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if field_count.get() < 2 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(scalar_count) = usize::try_from(field_count.get())
         .ok()
         .and_then(|count| count.checked_sub(1))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(&header_value) = words.get(1) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     // Each scalar consumes at least one remaining word; a larger count is
     // corrupt and must not reach the allocator.
     if scalar_count > remaining.len() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut scalars = Vec::with_capacity(scalar_count);
+    let mut scalars = Vec::new();
+    reserve_recipe_items(ctx, &mut scalars, scalar_count, "f3d recipe scalars")?;
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         scalars.push(scalar);
         let Some(tail) = recipe_delimiter(tail) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         remaining = tail;
     }
-    (0..remaining.len())
-        .filter(|entry_count_at| {
-            let payload_prefix = &remaining[..*entry_count_at];
-            complete_recipe_payload_prefix(payload_prefix)
-        })
-        .filter_map(|entry_count_at| {
+    let mut candidates = Vec::new();
+    for entry_count_at in 0..remaining.len() {
+        if let Some(ctx) = ctx {
+            let work = u64::try_from(entry_count_at)
+                .ok()
+                .and_then(|length| length.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("f3d recipe payload candidates", 0, 1))?;
+            ctx.charge_work(work, "f3d recipe payload candidates")?;
+        }
+        if !complete_recipe_payload_prefix(&remaining[..entry_count_at]) {
+            continue;
+        }
+        let candidate = (|| {
             let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;
             if entry_count_at != 1 && payload_entry_count == 0 {
                 return None;
@@ -5712,48 +5820,59 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
             let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
             let entries_at = entry_count_at.checked_add(1)?;
             let entries_end = entries_at.checked_add(payload_len)?;
-            let entries = edge_recipe_entries(remaining.get(entries_at..entries_end)?)?;
-            Some((
-                DesignTopologyRecipeSide {
-                    header_value,
-                    scalars: scalars.clone(),
-                    payload_prefix: remaining[..entry_count_at].to_vec(),
-
-                    entries,
-                },
-                remaining.get(entries_end..)?,
-            ))
-        })
-        .collect()
+            Some((entries_at, entries_end, remaining.get(entries_end..)?))
+        })();
+        let Some((entries_at, entries_end, tail)) = candidate else { continue; };
+        let Some(entries) = edge_recipe_entries_with_context(
+            ctx, &remaining[entries_at..entries_end],
+        )? else { continue; };
+        let side = DesignTopologyRecipeSide {
+            header_value,
+            scalars: copy_recipe_items(ctx, &scalars, "f3d recipe candidate scalars")?,
+            payload_prefix: copy_recipe_items(ctx, &remaining[..entry_count_at], "f3d recipe payload prefix")?,
+            entries,
+        };
+        reserve_recipe_items(ctx, &mut candidates, 1, "f3d recipe side candidate")?;
+        candidates.push((side, tail));
+    }
+    Ok(candidates)
 }
 
 pub(crate) fn face_recipe_structure(
     program: &[i32],
 ) -> Option<crate::records::topology::face::DesignFaceRecipeStructure> {
-    let (&root, remaining) = program.split_first()?;
-    let (&first_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
-    let (&second_prelude, remaining) = recipe_delimiter(remaining)?.split_first()?;
-    let remaining = recipe_delimiter(remaining)?;
-    let structures = edge_recipe_side_sequences(remaining, 2)
-        .into_iter()
-        .filter_map(|(sides, tail)| {
+    face_recipe_structure_with_context(None, program).ok().flatten()
+}
+
+fn face_recipe_structure_with_context(
+    ctx: Option<&DecodeContext<'_>>,
+    program: &[i32],
+) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {
+    let Some((&root, remaining)) = program.split_first() else { return Ok(None); };
+    let Some(remaining) = recipe_delimiter(remaining) else { return Ok(None); };
+    let Some((&first_prelude, remaining)) = remaining.split_first() else { return Ok(None); };
+    let Some(remaining) = recipe_delimiter(remaining) else { return Ok(None); };
+    let Some((&second_prelude, remaining)) = remaining.split_first() else { return Ok(None); };
+    let Some(remaining) = recipe_delimiter(remaining) else { return Ok(None); };
+    let mut structure = None;
+    for (sides, tail) in edge_recipe_side_sequences(ctx, remaining, 2)? {
             let postlude = match tail {
                 [] | [-1 | 0] => None,
                 [-1, value, -1, 0, 0, -1] => Some(*value),
-                _ => return None,
+                _ => continue,
             };
-            Some((sides.try_into().ok()?, postlude))
-        })
-        .collect::<Vec<([DesignTopologyRecipeSide; 2], Option<i32>)>>();
-    let [(sides, postlude)] = structures.as_slice() else {
-        return None;
-    };
-    Some(crate::records::topology::face::DesignFaceRecipeStructure {
-        root,
-        prelude: [first_prelude, second_prelude],
-        sides: sides.clone(),
-        postlude_value: *postlude,
-    })
+            let Ok(sides) = sides.try_into() else { continue; };
+            if structure.is_some() {
+                return Ok(None);
+            }
+            structure = Some(crate::records::topology::face::DesignFaceRecipeStructure {
+                root,
+                prelude: [first_prelude, second_prelude],
+                sides,
+                postlude_value: postlude,
+            });
+    }
+    Ok(structure)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5774,24 +5893,94 @@ pub(crate) fn face_recipe_program_kind(program: &[i32]) -> Option<FaceRecipeProg
         .then_some(FaceRecipeProgramKind::Counted { header_value })
 }
 
+fn face_recipe_nodes_with_context(
+    ctx: &DecodeContext<'_>,
+    recipe_program: &[i32],
+    recipe_program_at: usize,
+    program_kind: FaceRecipeProgramKind,
+) -> Result<Option<Vec<crate::records::topology::face::DesignFaceRecipeNode>>, CodecError> {
+    let mut recipe_node_indices = Vec::new();
+    for (index, values) in recipe_program.windows(3).enumerate() {
+        if values != [-1, -1, 2] {
+            continue;
+        }
+        reserve_recipe_items(Some(ctx), &mut recipe_node_indices, 1, "f3d face recipe node index")?;
+        recipe_node_indices.push(index);
+    }
+    if recipe_node_indices.first().is_some_and(|index| *index < 3) {
+        return Ok(None);
+    }
+    if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {
+        return Ok(None);
+    }
+    let node_ranges = recipe_node_indices
+        .iter()
+        .copied()
+        .zip(
+            recipe_node_indices
+                .iter()
+                .copied()
+                .skip(1)
+                .chain(std::iter::once(recipe_program.len())),
+        );
+    let mut recipe_nodes = Vec::new();
+    for (start, end) in node_ranges {
+        let Some(program) = recipe_program.get(start..end) else { return Ok(None); };
+        let Some(byte_offset) = start.checked_mul(4)
+            .and_then(|offset| recipe_program_at.checked_add(offset))
+            .and_then(|offset| u64::try_from(offset).ok()) else { return Ok(None); };
+        let Some(end_byte_offset) = end.checked_mul(4)
+            .and_then(|offset| recipe_program_at.checked_add(offset))
+            .and_then(|offset| u64::try_from(offset).ok()) else { return Ok(None); };
+        let recipe_structure = match program.get(3..) {
+            Some(tail) => face_recipe_structure_with_context(Some(ctx), tail)?,
+            None => None,
+        };
+        let program = copy_recipe_items(Some(ctx), program, "f3d face recipe node program")?;
+        reserve_recipe_items(Some(ctx), &mut recipe_nodes, 1, "f3d face recipe node")?;
+        recipe_nodes.push(crate::records::topology::face::DesignFaceRecipeNode {
+            byte_offset,
+            end_byte_offset,
+            recipe_structure,
+            program,
+        });
+    }
+    Ok(Some(recipe_nodes))
+}
+
 fn topology_recipe_references(
+    ctx: Option<&DecodeContext<'_>>,
     words: impl IntoIterator<Item = i32>,
     reference_count: usize,
-) -> Option<Vec<std::num::NonZeroU32>> {
-    words
-        .into_iter()
-        .filter(|word| *word != 0)
-        .map(|word| {
-            let ordinal = std::num::NonZeroU32::new(u32::try_from(word).ok()?)?;
-            (usize::try_from(ordinal.get()).ok()? <= reference_count).then_some(ordinal)
-        })
-        .collect()
+) -> Result<Option<Vec<std::num::NonZeroU32>>, CodecError> {
+    let mut references = Vec::new();
+    for word in words {
+        if word == 0 {
+            continue;
+        }
+        let Some(ordinal) = u32::try_from(word).ok().and_then(std::num::NonZeroU32::new) else {
+            return Ok(None);
+        };
+        if usize::try_from(ordinal.get()).ok().is_none_or(|index| index > reference_count) {
+            return Ok(None);
+        }
+        reserve_recipe_items(ctx, &mut references, 1, "f3d recipe topology reference")?;
+        references.push(ordinal);
+    }
+    Ok(Some(references))
 }
 
 fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> {
-    let entries = words
-        .chunks_exact(8)
-        .map(|entry| {
+    edge_recipe_entries_with_context(None, words).ok().flatten()
+}
+
+fn edge_recipe_entries_with_context(
+    ctx: Option<&DecodeContext<'_>>,
+    words: &[i32],
+) -> Result<Option<Vec<DesignTopologyRecipeEntry>>, CodecError> {
+    let mut entries = Vec::new();
+    for entry in words.chunks_exact(8) {
+        let Some(parsed) = (|| {
             let selector = entry[0];
             if selector < 0 {
                 return None;
@@ -5809,12 +5998,14 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
                     boundary_edge_count,
                     topology_triplets,
                 })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    entries
-        .windows(2)
-        .all(|pair| pair[0].selector < pair[1].selector)
-        .then_some(entries)
+        })() else { return Ok(None); };
+        if entries.last().is_some_and(|last: &DesignTopologyRecipeEntry| last.selector >= parsed.selector) {
+            return Ok(None);
+        }
+        reserve_recipe_items(ctx, &mut entries, 1, "f3d recipe topology entry")?;
+        entries.push(parsed);
+    }
+    Ok(Some(entries))
 }
 
 fn edge_recipe_topology_triplet(
@@ -5987,41 +6178,11 @@ pub(super) fn parse_face_operand(
     };
     let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
-    let recipe_node_indices = recipe_program
-        .windows(3)
-        .enumerate()
-        .filter(|(_, values)| *values == [-1, -1, 2])
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    if recipe_node_indices.first().is_some_and(|index| *index < 3) {
-        return None;
-    }
-    if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {
-        return None;
-    }
-    let recipe_nodes = recipe_node_indices
-        .iter()
-        .copied()
-        .zip(
-            recipe_node_indices
-                .iter()
-                .copied()
-                .skip(1)
-                .chain(std::iter::once(recipe_program.len())),
-        )
-        .map(|(start, end)| {
-            let program = recipe_program.get(start..end)?.to_vec();
-            let recipe_structure = program.get(3..).and_then(face_recipe_structure);
-            Some(crate::records::topology::face::DesignFaceRecipeNode {
-                byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
-                    .ok()?,
-                end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
-                    .ok()?,
-                recipe_structure,
-                program,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let recipe_nodes = match face_recipe_nodes_with_context(ctx, &recipe_program, recipe_program_at, program_kind) {
+        Ok(Some(nodes)) => nodes,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let recipe_id = match copy_ascii_retained(ctx, &recipe.id, "f3d face operand recipe ID") {
         Ok(id) => id,
         Err(error) => return Some(Err(error)),
