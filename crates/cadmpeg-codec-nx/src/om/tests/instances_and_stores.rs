@@ -10,7 +10,10 @@ use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
-use crate::om::operation_body_reference_lanes;
+
+fn operation_body_reference_lanes_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBodyReferenceLane> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference_lanes(ctx, record)).unwrap()
+}
 
 fn operation_body_11_continuations_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBody11Continuation> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_body_11_continuations(ctx, record)).unwrap()
@@ -1323,7 +1326,7 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     let compact = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(compact, 100, 0, label).unwrap();
-    let lanes = operation_body_reference_lanes(record);
+    let lanes = operation_body_reference_lanes_for_test(record);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].body_object_index, 110);
     let OperationBodyReferenceLaneValues::CompactIndex(values) = &lanes[0].values else {
@@ -1353,7 +1356,7 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
         record.name(),
     )
     .unwrap();
-    let lanes = operation_body_reference_lanes(object_record);
+    let lanes = operation_body_reference_lanes_for_test(object_record);
     let OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else {
         panic!("expected PayloadObjectIndex lane")
     };
@@ -1373,7 +1376,7 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     );
 
     let truncated = &objects[..objects.len() - 1];
-    assert!(operation_body_reference_lanes(
+    assert!(operation_body_reference_lanes_for_test(
         crate::om::operation_record::OperationBodyInput::new(
             truncated,
             object_record.offset(),
@@ -1386,7 +1389,7 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
 
     let branch_11 =
         b"\x01\x02\x10\x70\xff\x11\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
-    let lanes = operation_body_reference_lanes(
+    let lanes = operation_body_reference_lanes_for_test(
         crate::om::operation_record::OperationBodyInput::new(
             branch_11,
             record.offset(),

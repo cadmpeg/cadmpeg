@@ -7414,10 +7414,16 @@ pub(super) fn feature_operation_body_reference_lanes(ctx: &cadmpeg_core::decode:
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            for lane in crate::om::operation_body_reference_lanes(record.body_view()) {
+            if failure.is_some() { return; }
+            let parsed = match crate::om::operation_body_reference_lanes(ctx, record.body_view()) {
+                Ok(parsed) => parsed,
+                Err(error) => { failure = Some(error); return; }
+            };
+            for lane in parsed {
                 let references = match lane.values {
                     crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => {
                         FeatureOperationBodyReferences::CompactIndex(
@@ -7466,6 +7472,7 @@ pub(super) fn feature_operation_body_reference_lanes(ctx: &cadmpeg_core::decode:
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(lanes)
 }
 
