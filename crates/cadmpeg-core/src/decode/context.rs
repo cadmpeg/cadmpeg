@@ -2,6 +2,7 @@
 //! Decode state, decompression limits, and session lifecycle.
 
 use std::cell::Cell;
+use std::fmt;
 use std::io::SeekFrom;
 
 use crate::{CodecError, ReadSeek};
@@ -31,6 +32,27 @@ pub struct DecodeContext<'a> {
     container_only: bool,
     budget: DecodeBudget,
     derived_spaces: Cell<usize>,
+}
+
+struct RetainedMessage<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
+    operation: &'static str,
+    text: String,
+    failure: Option<CodecError>,
+}
+
+impl fmt::Write for RetainedMessage<'_, '_> {
+    fn write_str(&mut self, fragment: &str) -> fmt::Result {
+        if let Err(error) = self
+            .ctx
+            .reserve_retained_string(&mut self.text, fragment.len(), self.operation)
+        {
+            self.failure = Some(error);
+            return Err(fmt::Error);
+        }
+        self.text.push_str(fragment);
+        Ok(())
+    }
 }
 
 impl<'a> DecodeContext<'a> {
@@ -343,6 +365,26 @@ impl<'a> DecodeContext<'a> {
             self.budget
                 .retained_allocation_failed(additional as u64, operation)
         })
+    }
+
+    /// Formats retained text through charged, fallible string growth.
+    pub fn format_retained(
+        &self,
+        message: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut output = RetainedMessage {
+            ctx: self,
+            operation,
+            text: String::new(),
+            failure: None,
+        };
+        if fmt::write(&mut output, message).is_err() {
+            return Err(output
+                .failure
+                .unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
+        }
+        Ok(output.text)
     }
 
     /// Enters one recursive nesting level until the returned guard is dropped.

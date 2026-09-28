@@ -4,47 +4,6 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-struct ChargedMessage<'a, 'ctx> {
-    ctx: &'a DecodeContext<'ctx>,
-    operation: &'static str,
-    text: String,
-    failure: Option<CodecError>,
-}
-
-impl std::fmt::Write for ChargedMessage<'_, '_> {
-    fn write_str(&mut self, fragment: &str) -> std::fmt::Result {
-        if let Err(error) = self.ctx.reserve_retained_string(
-            &mut self.text,
-            fragment.len(),
-            self.operation,
-        ) {
-            self.failure = Some(error);
-            return Err(std::fmt::Error);
-        }
-        self.text.push_str(fragment);
-        Ok(())
-    }
-}
-
-pub(crate) fn format_retained(
-    ctx: &DecodeContext<'_>,
-    message: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut charged = ChargedMessage {
-        ctx,
-        operation,
-        text: String::new(),
-        failure: None,
-    };
-    if std::fmt::write(&mut charged, message).is_err() {
-        return Err(charged.failure.unwrap_or_else(|| {
-            CodecError::malformed("cannot format SLDPRT lane refusal")
-        }));
-    }
-    Ok(charged.text)
-}
-
 /// Every carrier record a reader refused, each named by the record that stated
 /// it.
 ///
@@ -72,8 +31,7 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) -> Result<(), CodecError> {
-        let message = format_retained(
-            ctx,
+        let message = ctx.format_retained(
             format_args!("{record}: {error}"),
             "record SLDPRT lane refusal",
         )?;
