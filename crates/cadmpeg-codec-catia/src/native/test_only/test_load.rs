@@ -282,12 +282,20 @@ impl CatiaNative {
                             != entity_suffix_value(entity.record_suffix()).as_ref()
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_framing()
-                            != entity_suffix_framing(entity.record_suffix()).as_ref()
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            entity_suffix_framing(ctx, entity.record_suffix())
+                        });
+                        expected.as_ref().map_or(true, |framing| {
+                            entity.suffix_framing() != framing.as_ref()
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.suffix_schema_selection
-                            != entity_suffix_schema_selection(entity.suffix_value(), catalog)
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)
+                        });
+                        expected.as_ref().map_or(true, |selection| {
+                            entity.suffix_schema_selection != *selection
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.range_interval

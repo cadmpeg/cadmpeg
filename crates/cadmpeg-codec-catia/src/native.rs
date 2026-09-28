@@ -4416,20 +4416,23 @@ fn entity_value_schema_selections(
 }
 
 fn entity_suffix_schema_selection(
+    ctx: &DecodeContext<'_>,
     suffix_value: Option<&CatiaEntitySuffixValue>,
     catalog: Option<&CatiaCatalog>,
-) -> Option<CatiaEntitySuffixSchemaSelection> {
+) -> Result<Option<CatiaEntitySuffixSchemaSelection>, CodecError> {
+    let Some(suffix_value) = suffix_value else { return Ok(None) };
     let CatiaEntitySuffixPayload::SchemaSelected {
         selector_offset,
         selector,
         value,
-    } = &suffix_value?.payload
+    } = &suffix_value.payload
     else {
-        return None;
+        return Ok(None);
     };
-    let entry = usize::try_from(*selector)
+    let Some(entry) = usize::try_from(*selector)
         .ok()
-        .and_then(|ordinal| catalog?.entries.get(ordinal))?;
+        .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)))
+    else { return Ok(None) };
     let value = match value {
         CatiaEntitySuffixSchemaValue::Atom { value } => {
             CatiaEntitySuffixSchemaValue::Atom { value: *value }
@@ -4448,24 +4451,30 @@ fn entity_suffix_schema_selection(
         } => {
             let selected = usize::try_from(*ordinal)
                 .ok()
-                .and_then(|ordinal| catalog?.entries.get(ordinal));
+                .and_then(|ordinal| catalog.and_then(|catalog| catalog.entries.get(ordinal)));
             CatiaEntitySuffixSchemaValue::SchemaSelector {
                 offset: *offset,
                 ordinal: *ordinal,
-                resolution: selected.map(|entry| CatiaDesignClass {
-                    entry: entry.id.clone(),
-                    name: entry.value.clone(),
-                }),
+                resolution: selected.map(|entry| -> Result<CatiaDesignClass, CodecError> {
+                    Ok(CatiaDesignClass {
+                        entry: crate::resource::copy_retained_str(ctx, &entry.id,
+                            "catia_suffix_nested_entry")?,
+                        name: crate::resource::copy_retained_str(ctx, &entry.value,
+                            "catia_suffix_nested_name")?,
+                    })
+                }).transpose()?,
             }
         }
     };
-    Some(CatiaEntitySuffixSchemaSelection {
+    Ok(Some(CatiaEntitySuffixSchemaSelection {
         offset: *selector_offset,
         ordinal: *selector,
-        entry: entry.id.clone(),
-        name: entry.value.clone(),
+        entry: crate::resource::copy_retained_str(ctx, &entry.id,
+            "catia_suffix_selection_entry")?,
+        name: crate::resource::copy_retained_str(ctx, &entry.value,
+            "catia_suffix_selection_name")?,
         value,
-    })
+    }))
 }
 
 fn value_production(
@@ -5125,8 +5134,11 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
     })
 }
 
-fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
-    match suffix {
+fn entity_suffix_framing(
+    ctx: &DecodeContext<'_>,
+    suffix: &[u8],
+) -> Result<Option<CatiaEntitySuffixFraming>, CodecError> {
+    let framing = match suffix {
         [0x80, _, _, _, _, state] => {
             let state = match state {
                 0x00 => CatiaEntitySuffixEscapedWordState::State00,
@@ -5134,26 +5146,31 @@ fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
                 0x03 => CatiaEntitySuffixEscapedWordState::State03,
                 0x04 => CatiaEntitySuffixEscapedWordState::State04,
                 0x09 => CatiaEntitySuffixEscapedWordState::State09,
-                _ => return None,
+                _ => return Ok(None),
             };
-            Some(CatiaEntitySuffixFraming::EscapedWord(
+            CatiaEntitySuffixFraming::EscapedWord(
                 CatiaEntitySuffixEscapedWord {
-                    word: View::u32_le_at(suffix, 1)?,
+                    word: match View::u32_le_at(suffix, 1) {
+                        Some(word) => word,
+                        None => return Ok(None),
+                    },
                     state,
                 },
-            ))
+            )
         }
-        [0x81, 0x49] => Some(CatiaEntitySuffixFraming::Token8149),
+        [0x81, 0x49] => CatiaEntitySuffixFraming::Token8149,
         [0xfe, 0xf6, payload @ ..] if payload.len() == 16 => {
-            Some(CatiaEntitySuffixFraming::FixedFeF6 {
-                payload: payload.to_vec(),
-            })
+            CatiaEntitySuffixFraming::FixedFeF6 {
+                payload: crate::resource::copy_retained_slice(ctx, payload,
+                    "catia_native_fixed_suffix_payload")?,
+            }
         }
-        [lead @ 0xd1..=0xe4, low, 0x01] => Some(CatiaEntitySuffixFraming::PagedAtomState01 {
+        [lead @ 0xd1..=0xe4, low, 0x01] => CatiaEntitySuffixFraming::PagedAtomState01 {
             value: u32::from(*lead - 0xd1) * 256 + u32::from(*low) + 1,
-        }),
-        _ => None,
-    }
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(framing))
 }
 
 fn object_production(
@@ -9427,10 +9444,9 @@ impl CatiaNative {
                 let value_packets = entity.value_packets(ctx, &value_fields)?;
                 entity.value_schema_selections =
                     entity_value_schema_selections(ctx, &value_fields, catalog, &value_packets)?;
-                let record_suffix = entity.record_suffix().to_vec();
-                entity.set_suffix_from_bytes(&record_suffix);
+                entity.parse_suffix(ctx)?;
                 entity.suffix_schema_selection =
-                    entity_suffix_schema_selection(entity.suffix_value(), catalog);
+                    entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)?;
                 entity.value_production = value_production(entity, &graph.records, &value_fields);
                 entity.range_interval = range_interval(
                     entity.value_payload(),

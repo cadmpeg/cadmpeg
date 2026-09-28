@@ -349,12 +349,16 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(super) fn set_suffix_from_bytes(&mut self, suffix: &[u8]) {
-        self.suffix = match (entity_suffix_value(suffix), entity_suffix_framing(suffix)) {
+    pub(super) fn parse_suffix(&mut self, ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
+        let suffix = self.record_suffix();
+        let value = entity_suffix_value(suffix);
+        let framing = entity_suffix_framing(ctx, suffix)?;
+        self.suffix = match (value, framing) {
             (Some(value), _) => Some(CatiaEntityRecordSuffix::Value(value)),
             (None, Some(framing)) => Some(CatiaEntityRecordSuffix::Framing(framing)),
             (None, None) => None,
         };
+        Ok(())
     }
 }
 
