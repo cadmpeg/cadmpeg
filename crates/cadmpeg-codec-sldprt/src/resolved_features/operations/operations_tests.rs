@@ -15,6 +15,46 @@ use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
 
 #[test]
+fn feature_operation_binding_refuses_history_index_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let histories = [FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "native-extrude".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "Extrude".into(),
+            kind: "operation".into(),
+            input_class: Some("moExtrusion_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = super::bind_feature_operations(&ctx, &mut [], &histories, &[], None)
+        .expect_err("one history feature exceeds zero collection items");
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "index SLDPRT extrusion history"));
+}
+
+#[test]
 fn split_line_projection_mode_requires_one_owned_project_class() {
     let native_feature = |id: &str, source: &str, class: &str| Feature {
         id: id.into(),
@@ -477,6 +517,7 @@ fn revolution_form_words_distinguish_new_body_and_join() {
 
 #[test]
 fn configuration_operation_fallback_fills_only_unresolved_matching_operations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::{
         AngularTermination, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -484,6 +525,10 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::sketches::SketchId;
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
 
     let extrude = |op| {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -601,7 +646,8 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         ),
     ];
 
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+        .expect("bind configuration operations");
 
     assert!(matches!(
         configured[0].evaluation.definition(),
@@ -621,7 +667,8 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
     configured[0]
         .evaluation
         .set_definition(extrude(BooleanOp::NewBody));
-    inherit_configuration_operations(&mut configured, &base, &histories, &[], None);
+    inherit_configuration_operations(&ctx, &mut configured, &base, &histories, &[], None)
+        .expect("bind configuration operations");
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -666,12 +713,14 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &ctx,
         &mut inherited,
         &base,
         &histories,
         &[operation_lane.clone()],
         Some(4),
-    );
+    )
+    .expect("bind configuration operations");
     assert!(matches!(
         inherited[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -687,12 +736,14 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         extrude(BooleanOp::Unresolved),
     )];
     inherit_configuration_operations(
+        &ctx,
         &mut unresolved,
         &base,
         &histories,
         &[operation_lane],
         Some(4),
-    );
+    )
+    .expect("bind configuration operations");
     assert!(matches!(
         unresolved[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
