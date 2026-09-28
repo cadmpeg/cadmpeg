@@ -2,6 +2,7 @@
 //! B-spline/list carrier tables.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -74,9 +75,43 @@ fn charge_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-            ctx.charge_collection_items(count as u64, operation)?;
+    ctx.charge_collection_items(
+        u64::try_from(count).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?,
+        operation,
+    )
+}
 
+fn reserve_map_key<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    map: &mut HashMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !map.contains_key(key) {
+        charge_items(ctx, 1, operation)?;
+        map.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
     Ok(())
+}
+
+fn read_array<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+    mut read: impl FnMut(usize) -> Option<T>,
+) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    ctx.reserve_collection_vec(&mut values, count, operation)?;
+    for index in 0..count {
+        let Some(value) = read(index) else {
+            return Ok(None);
+        };
+        values.push(value);
+    }
+    Ok(Some(values))
 }
 
 fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
@@ -193,12 +228,10 @@ fn scan_arrays(
                 if let Some(attr) = View::u16_be_at(bytes, off + compact_arr::ATTR)
                     .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
                 {
-                    charge_items(ctx, 1, "scan Parasolid compact arrays")?;
-                    arrays
-                        .compact
-                        .entry(attr)
-                        .or_default()
-                        .push(CompactArray { offset: off, count });
+                    reserve_map_key(ctx, &mut arrays.compact, &attr, "index Parasolid compact arrays")?;
+                    let entries = arrays.compact.entry(attr).or_default();
+                    ctx.reserve_collection_vec(entries, 1, "scan Parasolid compact arrays")?;
+                    entries.push(CompactArray { offset: off, count });
                 }
             }
         }
@@ -227,14 +260,13 @@ fn scan_arrays(
             {
                 continue;
             }
-            charge_items(ctx, count, "decode Parasolid integer array values")?;
-            let Some(values) = (0..count)
-                .map(|i| View::u16_be_at(bytes, values_at + i * 2))
-                .collect::<Option<Vec<_>>>()
+            let Some(values) = read_array(ctx, count, "decode Parasolid integer array values", |i| {
+                View::u16_be_at(bytes, values_at + i * 2)
+            })?
             else {
                 continue;
             };
-            charge_items(ctx, 1, "collect Parasolid integer arrays")?;
+            reserve_map_key(ctx, &mut arrays.u16s, &attr, "collect Parasolid integer arrays")?;
             arrays.u16s.entry(attr).or_insert(values);
         } else {
             if count
@@ -244,10 +276,9 @@ fn scan_arrays(
             {
                 continue;
             }
-            charge_items(ctx, count, "decode Parasolid scalar array values")?;
-            let Some(values) = (0..count)
-                .map(|i| View::f64_be_at(bytes, values_at + i * 8))
-                .collect::<Option<Vec<_>>>()
+            let Some(values) = read_array(ctx, count, "decode Parasolid scalar array values", |i| {
+                View::f64_be_at(bytes, values_at + i * 8)
+            })?
             else {
                 continue;
             };
@@ -255,7 +286,7 @@ fn scan_arrays(
             // the descriptor's distinct-knot count. Their bits are not
             // semantic data when the matching multiplicities are zero, so
             // defer finite-value checks until descriptor binding.
-            charge_items(ctx, 1, "collect Parasolid scalar arrays")?;
+            reserve_map_key(ctx, &mut arrays.f64s, &attr, "collect Parasolid scalar arrays")?;
             arrays.f64s.entry(attr).or_insert(values);
         }
     }
@@ -270,9 +301,11 @@ fn compact_f64_arrays(
 ) -> Result<Vec<Vec<f64>>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     if let Some(values) = arrays.f64s.get(&attr) {
-        charge_items(ctx, values.len(), "copy Parasolid scalar array values")?;
-        charge_items(ctx, 1, "collect Parasolid scalar candidates")?;
-        candidates.push(values.clone());
+        let mut copy = Vec::new();
+        ctx.reserve_collection_vec(&mut copy, values.len(), "copy Parasolid scalar array values")?;
+        copy.extend_from_slice(values);
+        ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid scalar candidates")?;
+        candidates.push(copy);
     }
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         if compact
@@ -283,15 +316,14 @@ fn compact_f64_arrays(
         {
             continue;
         }
-        charge_items(ctx, compact.count, "decode Parasolid compact scalar values")?;
-        let Some(values) = (0..compact.count)
-            .map(|index| View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8))
-            .collect::<Option<Vec<_>>>()
+        let Some(values) = read_array(ctx, compact.count, "decode Parasolid compact scalar values", |index| {
+            View::f64_be_at(bytes, compact.offset + compact_arr::LEN + index * 8)
+        })?
         else {
             continue;
         };
         if !candidates.contains(&values) {
-            charge_items(ctx, 1, "collect Parasolid scalar candidates")?;
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid scalar candidates")?;
             candidates.push(values);
         }
     }
@@ -306,9 +338,11 @@ fn compact_u16_arrays(
 ) -> Result<Vec<Vec<u16>>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     if let Some(values) = arrays.u16s.get(&attr) {
-        charge_items(ctx, values.len(), "copy Parasolid integer array values")?;
-        charge_items(ctx, 1, "collect Parasolid integer candidates")?;
-        candidates.push(values.clone());
+        let mut copy = Vec::new();
+        ctx.reserve_collection_vec(&mut copy, values.len(), "copy Parasolid integer array values")?;
+        copy.extend_from_slice(values);
+        ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid integer candidates")?;
+        candidates.push(copy);
     }
     for compact in arrays.compact.get(&attr).into_iter().flatten() {
         if compact
@@ -319,19 +353,14 @@ fn compact_u16_arrays(
         {
             continue;
         }
-        charge_items(
-            ctx,
-            compact.count,
-            "decode Parasolid compact integer values",
-        )?;
-        let Some(values) = (0..compact.count)
-            .map(|index| View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2))
-            .collect::<Option<Vec<_>>>()
+        let Some(values) = read_array(ctx, compact.count, "decode Parasolid compact integer values", |index| {
+            View::u16_be_at(bytes, compact.offset + compact_arr::LEN + index * 2)
+        })?
         else {
             continue;
         };
         if !candidates.contains(&values) {
-            charge_items(ctx, 1, "collect Parasolid integer candidates")?;
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid integer candidates")?;
             candidates.push(values);
         }
     }
@@ -393,7 +422,7 @@ fn scan_curve_descriptors(
         if attr <= 1 || !(dimension == 3 || dimension == 4) || control_count == 0 {
             continue;
         }
-        charge_items(ctx, 1, "collect Parasolid curve descriptors")?;
+        reserve_map_key(ctx, &mut out, &attr, "collect Parasolid curve descriptors")?;
         out.entry(attr).or_insert(CurveDescriptor {
             degree,
             control_count,
@@ -442,7 +471,7 @@ fn expanded_knots(
         if next_len > expected {
             return Ok(None);
         }
-        charge_items(ctx, usize::from(multiplicity), "expand Parasolid knots")?;
+        ctx.reserve_collection_vec(&mut out, usize::from(multiplicity), "expand Parasolid knots")?;
         out.extend(std::iter::repeat_n(*value, multiplicity as usize));
     }
     Ok(Some(out))
@@ -952,7 +981,7 @@ fn scan_surface_descriptors(
         let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
             continue;
         };
-        charge_items(ctx, 1, "collect Parasolid surface descriptors")?;
+        reserve_map_key(ctx, &mut out, &descriptor.attr, "collect Parasolid surface descriptors")?;
         out.entry(descriptor.attr).or_insert(descriptor);
     }
     Ok(out)
