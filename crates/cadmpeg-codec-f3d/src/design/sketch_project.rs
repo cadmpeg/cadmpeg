@@ -55,15 +55,23 @@ fn collect_project_items<T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut collected = Vec::new();
     for item in items {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-            collected.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, 0, 1)
-            })?;
-        }
-        collected.push(item);
+        push_project_item(ctx, &mut collected, item, operation)?;
     }
     Ok(collected)
+}
+
+fn push_project_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
 }
 
 fn record_spline_segment<'a>(
@@ -90,6 +98,27 @@ fn record_spline_segment<'a>(
         })
         .or_insert(Some(points));
     Ok(())
+}
+
+fn distinct_return_member_indices(
+    ctx: Option<&DecodeContext<'_>>,
+    members: &[crate::records::sketch_relations::SketchRelationReturnMember],
+) -> Result<bool, CodecError> {
+    let mut seen = HashSet::new();
+    for member in members {
+        let index = member.reference.record_index();
+        if seen.contains(&index) {
+            return Ok(false);
+        }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d spatial spline member index")?;
+            seen.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d spatial spline member allocation", 0, 1)
+            })?;
+        }
+        seen.insert(index);
+    }
+    Ok(true)
 }
 
 fn spatial_geometry_owners<'a>(
@@ -548,11 +577,11 @@ pub(crate) fn project_spatial_sketch_design(
         // Only the second reference run of a relation record is in semantic
         // order: the control polygon ends with the spline there, and the
         // interleaved first run orders its members by nothing a reader can use.
-        let members = relation.return_member_indices();
+        let members = relation.return_members();
         if relation.unknown_constraint_bits() != 0
             || relation.constraint_kinds() != [SketchConstraintKind::SplineGroup]
             || members.len() < 2
-            || members.iter().collect::<HashSet<_>>().len() != members.len()
+            || !distinct_return_member_indices(ctx, members)?
         {
             continue;
         }
@@ -561,7 +590,7 @@ pub(crate) fn project_spatial_sketch_design(
         };
         let Some(curve) = members
             .last()
-            .and_then(|record| curves_by_record.get(&(scope, *record)))
+            .and_then(|member| curves_by_record.get(&(scope, member.reference.record_index())))
         else {
             continue;
         };
@@ -574,26 +603,32 @@ pub(crate) fn project_spatial_sketch_design(
         {
             continue;
         }
-        let segments = members[..members.len() - 1]
+        let mut segments = Vec::new();
+        let mut complete = true;
+        for (member, (first, second)) in members[..members.len() - 1]
             .iter()
             .zip(poles.points().zip(poles.points().skip(1)))
-            .map(|(record, (first, second))| {
-                let member = curves_by_record.get(&(scope, *record))?;
+        {
+            let candidate = (|| {
+                let record = member.reference.record_index();
+                let member = curves_by_record.get(&(scope, record))?;
                 if member.owner_reference != Some(relation.owner_reference) {
                     return None;
                 }
                 match member.geometry.as_ref() {
-                    None => Some((*record, [*first, *second])),
+                    None => Some((record, [*first, *second])),
                     Some(SketchCurveGeometry::Line { start, end, .. })
                         if start.as_raw() == first && end.as_raw() == second =>
                     {
-                        Some((*record, [*first, *second]))
+                        Some((record, [*first, *second]))
                     }
                     _ => None,
                 }
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(segments) = segments else { continue };
+            })();
+            let Some(candidate) = candidate else { complete = false; break; };
+            push_project_item(ctx, &mut segments, candidate, "f3d spatial spline segment candidates")?;
+        }
+        if !complete { continue; }
         for (record, points) in segments {
             record_spline_segment(ctx, &mut spline_segments, scope, record, points)?;
         }
