@@ -996,13 +996,14 @@ fn inline_schema_declarations(
         let mut at = offset;
         while at < gap_end {
             ctx.charge_work(1, "scan NX inline schema declarations")?;
-            let declaration = inline_schema_declaration(stream, at, gap_end).or_else(|| {
-                (parse_end > gap_end
-                    && stream.get(at..at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
-                        == Some(ATTDEF_LIST_SCHEMA_HEADER))
-                .then(|| inline_schema_declaration(stream, at, parse_end))
-                .flatten()
-            });
+            let mut declaration = inline_schema_declaration(ctx, stream, at, gap_end)?;
+            if declaration.is_none()
+                && parse_end > gap_end
+                && at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
+                    .and_then(|end| stream.get(at..end)) == Some(ATTDEF_LIST_SCHEMA_HEADER)
+            {
+                declaration = inline_schema_declaration(ctx, stream, at, parse_end)?;
+            }
             let Some(declaration) = declaration else {
                 break;
             };
@@ -1060,10 +1061,25 @@ const TYPE_101_SCHEMA_STATE_PREFIX: &[u8] = &[
 const TYPE_101_COMPACT_STATE_LEN: usize = 58;
 
 fn inline_schema_declaration(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<InlineSchemaDeclaration> {
+) -> Result<Option<InlineSchemaDeclaration>, CodecError> {
+    if offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
+        .and_then(|end| stream.get(offset..end)) == Some(ATTDEF_LIST_SCHEMA_HEADER)
+    {
+        let Some(body) = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len()) else { return Ok(None); };
+        let Some(shape) = attdef_list_shape(stream, body) else { return Ok(None); };
+        if shape.end > gap_end { return Ok(None); }
+        let Some(state) = materialize_attdef_list(ctx, stream, shape)? else { return Ok(None); };
+        return Ok(Some(InlineSchemaDeclaration {
+            fields: InlineSchemaFields::AttdefList { state },
+            offset,
+            end: shape.end,
+        }));
+    }
+    let parsed = (|| {
     if stream.get(offset..offset.checked_add(BODY_SCHEMA_HEADER.len())?) == Some(BODY_SCHEMA_HEADER)
     {
         let end = offset.checked_add(BODY_SCHEMA_HEADER.len())?;
@@ -1078,18 +1094,6 @@ fn inline_schema_declaration(
         == Some(REGION_SCHEMA_HEADER)
     {
         return region_schema_declaration(stream, offset, gap_end);
-    }
-    if stream.get(offset..offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?)
-        == Some(ATTDEF_LIST_SCHEMA_HEADER)
-    {
-        let body = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())?;
-        let (state, end) = attdef_list_body(stream, body)?;
-        (end <= gap_end).then_some(())?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::AttdefList { state },
-            offset,
-            end,
-        });
     }
     if stream.get(offset..offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?)
         == Some(TYPE_70_SCHEMA_HEADER)
@@ -1308,6 +1312,8 @@ fn inline_schema_declaration(
         });
     }
     None
+    })();
+    Ok(parsed)
 }
 
 fn type_38_reference_lanes(
@@ -2617,17 +2623,16 @@ fn consume_group(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Resul
 fn consume_attdef_list(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
-        let direct = attdef_list_body(stream, offset.checked_add(2)?);
+        let direct = attdef_list_shape(stream, offset.checked_add(2)?);
         let escaped_marker = stream.get(offset + 2) == Some(&0xff);
         let escaped = escaped_marker
-            .then(|| attdef_list_body(stream, offset.checked_add(3)?))
+            .then(|| attdef_list_shape(stream, offset.checked_add(3)?))
             .flatten();
-        let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-        let xmt = state.xmt();
-        Some((RecordFamily::AttdefList { slots: state.into_slots() }, xmt, end))
+        select_enveloped_layout(escaped_marker, direct, escaped)
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
-    admitted_record(ctx, stream, offset, end, family, xmt)
+    let Some(shape) = parsed else { return Ok(None); };
+    let Some(state) = materialize_attdef_list(ctx, stream, shape)? else { return Ok(None); };
+    admitted_record(ctx, stream, offset, shape.end, RecordFamily::AttdefList { slots: state.into_slots() }, shape.xmt)
 }
 
 fn consume_type_70(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
@@ -2734,33 +2739,77 @@ fn read_status_one_reference(stream: &[u8], at: &mut usize) -> Option<u32> {
     Some(reference)
 }
 
-fn attdef_list_body(stream: &[u8], body: usize) -> Option<(AttdefState, usize)> {
+#[derive(Clone, Copy)]
+struct AttdefListShape {
+    xmt: u32,
+    slot_count: u32,
+    active_count: u32,
+    references_start: usize,
+    end: usize,
+}
+
+fn attdef_list_shape(stream: &[u8], body: usize) -> Option<AttdefListShape> {
     let slot_count_value = View::u32_be_at(stream, body)?;
     let slot_count = usize::try_from(slot_count_value).ok()?;
+    (slot_count > 0).then_some(())?;
     let (xmt, consumed) = read_xmt(stream, body.checked_add(4)?)?;
     let mut at = body.checked_add(4 + consumed)?;
     let active_count_value = View::u32_be_at(stream, at)?;
+    (active_count_value <= slot_count_value).then_some(())?;
     at += 4;
     (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
     at += 4;
-    (slot_count <= stream.len().saturating_sub(at) / 3).then_some(())?;
-    let mut references = Vec::new();
+    let remaining = stream.len().checked_sub(at)?;
+    (slot_count <= remaining / 3).then_some(())?;
     let (sentinel, consumed) = read_xmt(stream, at)?;
     (sentinel == 1).then_some(())?;
     at = at.checked_add(consumed)?;
     (stream.get(at) == Some(&1)).then_some(())?;
     at += 1;
-    for _ in 0..slot_count {
+    let references_start = at;
+    for index in 0..slot_count {
         let (reference, consumed) = read_xmt(stream, at)?;
         at = at.checked_add(consumed)?;
         (stream.get(at) == Some(&1)).then_some(())?;
         at += 1;
+        if index < usize::try_from(active_count_value).ok()? {
+            NonNullXmt::try_from(reference).ok()?;
+        } else {
+            (reference == 1).then_some(())?;
+        }
+    }
+    Some(AttdefListShape {
+        xmt,
+        slot_count: slot_count_value,
+        active_count: active_count_value,
+        references_start,
+        end: at,
+    })
+}
+
+fn materialize_attdef_list(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    shape: AttdefListShape,
+) -> Result<Option<AttdefState>, CodecError> {
+    let count = usize::try_from(shape.slot_count)
+        .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count)))?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "NX ATTDEF references")?;
+    let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
+    ctx.charge_retained(bytes, "NX ATTDEF references")?;
+    let mut references = Vec::new();
+    references.try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
+    let mut at = shape.references_start;
+    for _ in 0..count {
+        let Some((reference, consumed)) = read_xmt(stream, at) else { return Ok(None); };
+        let Some(next) = at.checked_add(consumed).and_then(|next| next.checked_add(1)) else { return Ok(None); };
+        at = next;
         references.push(reference);
     }
-    Some((
-        AttdefState::new(xmt, slot_count_value, active_count_value, references).ok()?,
-        at,
-    ))
+    Ok(AttdefState::new(shape.xmt, shape.slot_count, shape.active_count, references).ok())
 }
 
 fn group_layout(
@@ -3509,16 +3558,19 @@ mod inline_schema_tests {
         let mut stream = BODY_SCHEMA_HEADER.to_vec();
         stream.extend_from_slice(&[0xaa, 0xbb]);
 
-        let declaration = inline_schema_declaration(&stream, 0, stream.len())
+        let declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, 0, stream.len()))
+            .expect("test context admits declaration")
             .expect("complete BODY schema header must be admitted");
 
         assert_eq!(declaration.fields, InlineSchemaFields::BodyHeader);
         assert_eq!(declaration.end, BODY_SCHEMA_HEADER.len());
-        assert!(inline_schema_declaration(
+        assert!(crate::test_support::with_decode_context(|ctx| inline_schema_declaration(
+            ctx,
             &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
             0,
             BODY_SCHEMA_HEADER.len() - 1,
-        )
+        ))
+        .expect("test context admits prefix")
         .is_none());
     }
 
@@ -3583,6 +3635,34 @@ mod inline_schema_tests {
             bytes.push(1);
         }
         bytes
+    }
+
+    #[test]
+    fn deltas_attdef_route_refuses_collection_limit() {
+        let stream = attdef_list_declaration();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("test root is admitted");
+        assert!(matches!(
+            super::census::walk(&ctx, &stream),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn deltas_attdef_route_refuses_retained_limit() {
+        let stream = attdef_list_declaration();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+            .expect("test root is admitted");
+        assert!(matches!(
+            super::census::walk(&ctx, &stream),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
     }
 
     fn type_70_declaration() -> Vec<u8> {
@@ -4024,9 +4104,11 @@ mod inline_schema_tests {
             [attdef_list.as_slice(), type_70.as_slice()].concat(),
             [type_70.as_slice(), attdef_list.as_slice()].concat(),
         ] {
-            let first = inline_schema_declaration(&stream, 0, stream.len())
+            let first = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, 0, stream.len()))
+                .expect("test context admits declaration")
                 .expect("first declaration must be complete");
-            let second = inline_schema_declaration(&stream, first.end, stream.len())
+            let second = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, first.end, stream.len()))
+                .expect("test context admits declaration")
                 .expect("second declaration must be complete");
             assert_eq!(second.end, stream.len());
             assert!(
@@ -4088,7 +4170,8 @@ mod inline_schema_tests {
         single.extend_from_slice(&45u16.to_be_bytes());
         single.push(0);
 
-        let single_declaration = inline_schema_declaration(&single, 0, single.len())
+        let single_declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &single, 0, single.len()))
+            .expect("test context admits declaration")
             .expect("complete single-tail type-70 declaration");
         assert!(matches!(
             single_declaration.fields,
@@ -4098,7 +4181,8 @@ mod inline_schema_tests {
         ));
         assert_eq!(single_declaration.end, single.len());
 
-        let duplicated_declaration = inline_schema_declaration(&duplicated, 0, duplicated.len())
+        let duplicated_declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &duplicated, 0, duplicated.len()))
+            .expect("test context admits declaration")
             .expect("complete duplicated-tail type-70 declaration");
         assert!(matches!(
             duplicated_declaration.fields,

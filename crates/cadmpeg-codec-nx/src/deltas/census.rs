@@ -181,7 +181,7 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             push_event(ctx, &mut census.events.schema_reference_preambles, preamble, "NX deltas schema preambles")?;
             continue;
         }
-        if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
+        if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
