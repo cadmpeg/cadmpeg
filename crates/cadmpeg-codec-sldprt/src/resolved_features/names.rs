@@ -285,14 +285,21 @@ pub(crate) fn class_declarations(
     Ok(classes)
 }
 
-pub(super) fn configuration(section: &str) -> Option<String> {
-    let start = section.find("Config-")? + "Config-".len();
+pub(super) fn configuration(
+    ctx: &DecodeContext<'_>,
+    section: &str,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(start) = section.find("Config-") else { return Ok(None); };
+    let start = start + "Config-".len();
     let tail = &section[start..];
     let end = tail
         .find("-ResolvedFeatures")
         .or_else(|| tail.find('/'))
         .unwrap_or(tail.len());
-    (!tail[..end].is_empty()).then(|| tail[..end].to_string())
+    if tail[..end].is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(retained_text(ctx, &tail[..end], "retain SLDPRT feature input configuration")?))
 }
 
 #[cfg(test)]

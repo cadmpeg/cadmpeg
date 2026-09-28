@@ -1,5 +1,6 @@
 //! Sketch projection from B-rep geometry.
 
+use super::assembly::contains_ascii_case_insensitive;
 use super::names::configuration;
 use super::sketch_edges::{project_edge, project_endpoint_constraints, project_point};
 use crate::container::ContainerScan;
@@ -33,7 +34,7 @@ pub(crate) fn sketches(
         let Some(section) = source.name() else {
             continue;
         };
-        if !section.to_ascii_lowercase().contains("resolvedfeatures") {
+        if !contains_ascii_case_insensitive(section, "resolvedfeatures") {
             continue;
         }
         let source_stream = source.source_stream();
@@ -48,6 +49,7 @@ pub(crate) fn sketches(
                 &stream.header,
                 source_stream,
             )?;
+            let configuration = configuration(ctx, section)?;
             project_brep(
                 ctx,
                 &brep,
@@ -56,7 +58,7 @@ pub(crate) fn sketches(
                 stream.offset,
                 source_stream,
                 &stream.header.description,
-                configuration(section).as_deref(),
+                configuration.as_deref(),
                 &native_ref,
                 annotations,
                 &mut sketches,
