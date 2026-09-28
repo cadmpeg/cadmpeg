@@ -7186,12 +7186,16 @@ pub(super) fn feature_operation_body_scalar_triples(ctx: &cadmpeg_core::decode::
 ) -> Result<Vec<FeatureOperationBodyScalarTriple>, cadmpeg_core::CodecError>
 {
     let mut triples = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            for triple in
-                crate::om::body_scalar_triple::operation_body_scalar_triples(record.body_view())
-            {
+            if failure.is_some() { return; }
+            let rows = match crate::om::body_scalar_triple::operation_body_scalar_triples(ctx, record.body_view()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return; }
+            };
+            for triple in rows {
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
                     continue;
                 };
@@ -7211,6 +7215,7 @@ pub(super) fn feature_operation_body_scalar_triples(ctx: &cadmpeg_core::decode::
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(triples)
 }
 
