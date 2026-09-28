@@ -281,9 +281,9 @@ pub(super) fn emit_geometry_arenas(
         "fc_curve_coordinates",
         Exactness::ByteExact,
     )?;
-    let fc05_circles = fc05_circle_records(scan);
+    let fc05_circles = fc05_circle_records(ctx, scan)?;
     store_arena(ctx, ir, "fc05_circles", &fc05_circles)?;
-    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
+    let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(ctx, scan)?;
     store_arena(ctx, ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
     let prototype_pcurves = prototype_pcurve_records(scan);
     store_arena(ctx, ir, "prototype_pcurves", &prototype_pcurves)?;

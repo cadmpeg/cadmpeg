@@ -762,7 +762,7 @@ pub(super) struct CreoHalfEdgeRef {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFc05CircleRecord {
+pub(super) struct CreoFc05CircleRecord<'a> {
     pub(super) id: String,
     pub(super) curve_id: u32,
     pub(super) center_row_frame: [f64; 2],
@@ -774,22 +774,38 @@ pub(super) struct CreoFc05CircleRecord {
     pub(super) point_count: usize,
     pub(super) max_residual: f64,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFc05CylinderCapPairRecord {
+pub(super) struct CreoFc05CylinderCapPairRecord<'a> {
     pub(super) id: String,
     pub(super) surface_id: u32,
     #[serde(flatten, serialize_with = "serialize_cap_edges")]
-    pub(super) cap_edges: Vec<crate::curve::Fc05CapEdge>,
+    pub(super) cap_edges: &'a [crate::curve::Fc05CapEdge],
     pub(super) center_row_frame: [f64; 2],
     pub(super) radius_mm: f64,
     pub(super) reference_direction_row_frame: [f64; 2],
     pub(super) parameter_sign: i8,
-    pub(super) cap_ordinates_row_frame: Vec<f64>,
+    pub(super) cap_ordinates_row_frame: &'a [f64],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
+}
+
+struct CapEdgeValues<'a, T> {
+    edges: &'a [crate::curve::Fc05CapEdge],
+    value: fn(&crate::curve::Fc05CapEdge) -> T,
+}
+
+impl<T: serde::Serialize> serde::Serialize for CapEdgeValues<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut values = serializer.serialize_seq(Some(self.edges.len()))?;
+        for edge in self.edges {
+            values.serialize_element(&(self.value)(edge))?;
+        }
+        values.end()
+    }
 }
 
 fn serialize_cap_edges<S: serde::Serializer>(
@@ -798,24 +814,9 @@ fn serialize_cap_edges<S: serde::Serializer>(
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
     let mut map = serializer.serialize_map(Some(3))?;
-    map.serialize_entry(
-        "curve_ids",
-        &edges.iter().map(|edge| edge.curve_id).collect::<Vec<_>>(),
-    )?;
-    map.serialize_entry(
-        "cap_plane_ids",
-        &edges
-            .iter()
-            .map(|edge| edge.cap_plane_id)
-            .collect::<Vec<_>>(),
-    )?;
-    map.serialize_entry(
-        "curve_cap_ordinates_row_frame",
-        &edges
-            .iter()
-            .map(|edge| edge.cap_ordinate_row_frame)
-            .collect::<Vec<_>>(),
-    )?;
+    map.serialize_entry("curve_ids", &CapEdgeValues { edges, value: |edge| edge.curve_id })?;
+    map.serialize_entry("cap_plane_ids", &CapEdgeValues { edges, value: |edge| edge.cap_plane_id })?;
+    map.serialize_entry("curve_cap_ordinates_row_frame", &CapEdgeValues { edges, value: |edge| edge.cap_ordinate_row_frame })?;
     map.end()
 }
 

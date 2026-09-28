@@ -15,6 +15,10 @@ use super::feature_history::link::surface_kind_for_geometry;
 use super::records::CreoSurfaceNamedParameterRecord;
 
 pub(super) fn source_section(scan: &ContainerScan, offset: usize) -> String {
+    source_section_ref(scan, offset).to_string()
+}
+
+pub(super) fn source_section_ref<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a str {
     scan.framing
         .sections
         .iter()
@@ -32,7 +36,6 @@ pub(super) fn source_section(scan: &ContainerScan, offset: usize) -> String {
             },
             |section| section.name(),
         )
-        .to_string()
 }
 
 pub(super) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
