@@ -6,8 +6,7 @@ use crate::decode::analytic::pcurve_geometry::{
 };
 use crate::decode::analytic::pcurves::{
     directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
-    oriented_native_pcurve_endpoints, planar_curve_pcurve, solve_pcurve_vertex_domains,
-    solve_pcurve_vertex_domains_with_authoritative_points, unique_oriented_native_pcurve,
+    oriented_native_pcurve_endpoints, planar_curve_pcurve, unique_oriented_native_pcurve,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -17,8 +16,180 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::BTreeMap;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 const EPS_LATITUDE_RADIUS: f64 = 1.0e-12;
+
+fn solve_pcurve_vertex_domains(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+) -> BTreeMap<u32, [f64; 3]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::solve_pcurve_vertex_domains(
+            ctx,
+            constraints,
+            fixed_points,
+            analytic_domains,
+            incident_curves,
+        )
+    })
+    .expect("service pcurve vertex domains")
+}
+
+fn solve_pcurve_vertex_domains_with_authoritative_points(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
+    authoritative_points: &BTreeMap<u32, [f64; 3]>,
+) -> BTreeMap<u32, [f64; 3]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::solve_pcurve_vertex_domains_with_authoritative_points(
+            ctx,
+            constraints,
+            fixed_points,
+            analytic_domains,
+            incident_curves,
+            authoritative_points,
+        )
+    })
+    .expect("service authoritative pcurve domains")
+}
+
+fn pcurve_domain_limit_error(
+    constraints: &[([u32; 2], [[f64; 3]; 2])],
+    fixed_points: &BTreeMap<u32, [f64; 3]>,
+    analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
+    limit: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::solve_pcurve_vertex_domains_with_authoritative_points(
+        &ctx,
+        constraints,
+        fixed_points,
+        analytic_domains,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
+    .expect_err("pcurve domain collection exceeds limit")
+}
+
+fn assert_pcurve_domain_refusal(error: CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_self_loop_node() {
+    let point = [1.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 1], [point, point])], &BTreeMap::new(), &BTreeMap::new(), 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_self_loop_point() {
+    let point = [1.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 1], [point, point])], &BTreeMap::new(), &BTreeMap::new(), 1),
+        "creo pcurve domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_two_vertex_node() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_two_vertex_points() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 1),
+        "creo pcurve domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_analytic_domain_node() {
+    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_analytic_domain_points() {
+    let domains = BTreeMap::from([(1, vec![[1.0, 0.0, 0.0]])]);
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[], &BTreeMap::new(), &domains, 1),
+        "creo analytic domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_fixed_domain_node() {
+    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 0),
+        "creo pcurve domain nodes",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_fixed_domain_point() {
+    let points = BTreeMap::from([(1, [1.0, 0.0, 0.0])]);
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[], &points, &BTreeMap::new(), 1),
+        "creo fixed domain points",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_retained_first_domain() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 6),
+        "creo retained first pcurve domain",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_retained_second_domain() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 2], [a, b])], &BTreeMap::new(), &BTreeMap::new(), 8),
+        "creo retained second pcurve domain",
+    );
+}
+
+#[test]
+fn pcurve_domain_solver_refuses_solved_vertex_node() {
+    let a = [1.0, 0.0, 0.0];
+    let b = [2.0, 0.0, 0.0];
+    let fixed = BTreeMap::from([(1, a), (2, b)]);
+    assert_pcurve_domain_refusal(
+        pcurve_domain_limit_error(&[([1, 2], [a, b])], &fixed, &BTreeMap::new(), 8),
+        "creo solved pcurve vertex nodes",
+    );
+}
 
 #[test]
 fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {

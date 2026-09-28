@@ -762,12 +762,13 @@ pub(in crate::decode) fn solve_topological_vertices(
     }
     diagnostics.analytic_domain_vertices = analytic_domains.len();
     let points = solve_pcurve_vertex_domains_with_authoritative_points(
+        ctx,
         &constraints,
         &fixed_points,
         &analytic_domains,
         &incident_curves,
         &authoritative_points,
-    );
+    )?;
     diagnostics.solved_vertices = points.len();
     Ok(SolvedTopologicalVertices {
         points,
