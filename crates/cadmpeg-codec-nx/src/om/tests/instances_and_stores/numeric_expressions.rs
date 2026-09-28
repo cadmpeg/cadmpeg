@@ -2,7 +2,6 @@ use crate::om::evaluate_constant_expression;
 use crate::om::expression_declaration_name;
 use crate::om::numeric_expressions;
 use crate::om::reference_value::{DirectReference, Tagged28};
-use crate::om::string_values;
 use crate::om::ExpressionUnit;
 
 fn references_for_test(bytes: &[u8], base_offset: usize) -> Vec<crate::om::LocatedReference<DirectReference>> {
@@ -196,7 +195,7 @@ fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
 #[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
-    let values = string_values(bytes, 100);
+    let values = crate::test_support::with_decode_context(|ctx| crate::om::string_values(ctx, bytes, 100)).unwrap();
     assert_eq!(values.len(), 2);
     assert_eq!(values[0].offset, 100);
     assert_eq!(values[0].value.as_str(), "SKETCH_001");
@@ -336,5 +335,32 @@ fn counted_references_refuse_retained_limit() {
 #[test]
 fn counted_references_refuse_work_limit() {
     let error = counted_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn printable_string_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = b"\x66\x32\x03\x03A\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::om::string_values(&ctx, bytes, 0).unwrap_err()
+}
+
+#[test]
+fn printable_strings_refuse_collection_limit() {
+    let error = printable_string_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn printable_strings_refuse_retained_limit() {
+    let error = printable_string_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn printable_strings_refuse_work_limit() {
+    let error = printable_string_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }

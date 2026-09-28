@@ -1066,31 +1066,27 @@ pub(in crate::native) fn feature_pattern_construction_strings(ctx: &cadmpeg_core
 ) -> Result<Vec<FeaturePatternConstructionString>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
-        .iter()
-        .flat_map(|payload| {
+    let mut strings = Vec::new();
+    for payload in payloads {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
-                return Vec::new();
+                continue;
             };
-            crate::om::string_values(joined.bytes(), 0)
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, value)| {
+            for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter().enumerate() {
                     let payload_offset = value.offset as u64;
-                    Some(FeaturePatternConstructionString {
+                    let Some(source_offset) = joined.source_offset(payload_offset) else { continue };
+                    strings.push(FeaturePatternConstructionString {
                         id: format!("{}-string-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         value: value.value.into_owned(),
                         payload_offset,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect()
-        })
-        .collect())
+                        source_offset,
+                    });
+            }
+    }
+    Ok(strings)
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
