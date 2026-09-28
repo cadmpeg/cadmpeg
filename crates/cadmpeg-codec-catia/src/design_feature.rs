@@ -944,13 +944,14 @@ fn transfer_native_operation(
         definition_chain_value_records,
         range_records,
     } = native_operation_definition_properties(
+        ctx,
         object,
         sources.object_records,
         sources.entities,
         sources.design_objects,
         sources.object_ids,
-    );
-    let definition = native_operation_definition(kind, &object.id);
+    )?;
+    let definition = native_operation_definition(ctx, kind, &object.id)?;
     let feature_id = FeatureId::from(neutral_history_id(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
@@ -994,8 +995,10 @@ fn transfer_native_operation(
 /// proves the family identity; it does not prove profile, axis, extent,
 /// result, edge group, pattern seed, pattern axis, pattern angle, pattern
 /// count, or operation-specific dependency roles.
-fn native_operation_definition(kind: NativeOperationClass, native_ref: &str) -> FeatureDefinition {
-    match kind {
+fn native_operation_definition(
+    ctx: &DecodeContext<'_>, kind: NativeOperationClass, native_ref: &str,
+) -> Result<FeatureDefinition, CodecError> {
+    Ok(match kind {
         NativeOperationClass::PrismEndLimitLength
         | NativeOperationClass::PrismThickThin1
         | NativeOperationClass::PrismThickThin2 => {
@@ -1016,9 +1019,12 @@ fn native_operation_definition(kind: NativeOperationClass, native_ref: &str) -> 
         }
         NativeOperationClass::SweepThickThin1 => {
             FeatureDefinition::Operation(FeatureOperation::Sweep {
-                shape: cadmpeg_ir::features::SweepShape::unresolved(Some(native_ref.to_string())),
+                shape: cadmpeg_ir::features::SweepShape::unresolved(Some(
+                    resource::copy_retained_str(ctx, native_ref,
+                        "catia_feature_sweep_shape_ref")?)),
                 path: Some(cadmpeg_ir::features::PathRef::Unresolved(
-                    native_ref.to_string(),
+                    resource::copy_retained_str(ctx, native_ref,
+                        "catia_feature_sweep_path_ref")?,
                 )),
                 orientation: None,
                 transition: None,
@@ -1038,7 +1044,7 @@ fn native_operation_definition(kind: NativeOperationClass, native_ref: &str) -> 
                 family: UnresolvedFamily::Fillet,
             })
         }
-    }
+    })
 }
 
 /// Exact source properties and records retained for one native operation.
@@ -1059,12 +1065,13 @@ struct NativeOperationDefinitionProperties {
 /// production assigns an operation role here. Supported two-definition roles
 /// are exposed separately through the typed-parameter transfer.
 fn native_operation_definition_properties(
+    ctx: &DecodeContext<'_>,
     object: &CatiaDesignObject,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> NativeOperationDefinitionProperties {
+) -> Result<NativeOperationDefinitionProperties, CodecError> {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
@@ -1073,26 +1080,22 @@ fn native_operation_definition_properties(
     let mut definition_chain_value_records = HashSet::new();
     let mut range_records = HashSet::new();
 
-    let owned_objects = design_objects
-        .values()
-        .filter(|candidate| {
-            candidate.parent == object.parent
-                && native_operation_owner_chain_reaches(
-                    candidate.id.as_str(),
-                    object.id.as_str(),
-                    design_objects,
-                    native_operation_object_ids,
-                )
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    let mut definition_values = owned_objects
+    let mut owned_objects = Vec::new();
+    for candidate in design_objects.values() {
+        if candidate.parent == object.parent
+            && native_operation_owner_chain_reaches(ctx, candidate.id.as_str(),
+                object.id.as_str(), design_objects, native_operation_object_ids)? {
+            resource::push(ctx, &mut owned_objects, *candidate,
+                "catia_feature_operation_owned_objects")?;
+        }
+    }
+    let mut definition_values = resource::collect_vec(ctx, owned_objects
         .iter()
         .flat_map(|owned| owned.definition_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter_map(|entity| entity.definition_value().map(|value| (entity, value)))
-        .collect::<Vec<_>>();
-    definition_values.sort_by(|(left, _), (right, _)| {
+        .filter_map(|entity| entity.definition_value().map(|value| (entity, value))),
+        "catia_feature_definition_values")?;
+    definition_values.sort_unstable_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
@@ -1100,35 +1103,34 @@ fn native_operation_definition_properties(
     });
     for (ordinal, (entity, value)) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
-        definition_value_records.insert(entity.object_record.clone());
-        let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_{ordinal}");
-        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
-        insert_schema_value_properties(
-            &mut properties,
-            &prefix.with_suffix("_definition"),
-            &value.definition,
-        );
-        insert_suffix_payload_properties(
-            &mut properties,
-            &prefix.with_suffix("_payload"),
-            &value.payload,
-        );
+        let record = resource::copy_retained_str(ctx, &entity.object_record,
+            "catia_feature_definition_record")?;
+        resource::insert_set(ctx, &mut definition_value_records, record,
+            "catia_feature_definition_records")?;
+        let prefix = property_prefix_args(ctx,
+            format_args!("catia_definition_value_{ordinal}"))?;
+        insert_property(ctx, &mut properties, prefix.as_str(), "_entity",
+            format_args!("{}", entity.id))?;
+        insert_schema_value_properties(ctx, &mut properties,
+            &property_prefix(ctx, prefix.as_str(), "_definition")?,
+            &value.definition)?;
+        insert_suffix_payload_properties(ctx, &mut properties,
+            &property_prefix(ctx, prefix.as_str(), "_payload")?,
+            &value.payload)?;
         if let Some(selection) = value.schema_selection.as_ref() {
-            insert_schema_selection_properties(
-                &mut properties,
-                &prefix.with_suffix("_schema_selection"),
-                selection,
-            );
+            insert_schema_selection_properties(ctx, &mut properties,
+                &property_prefix(ctx, prefix.as_str(), "_schema_selection")?,
+                selection)?;
         }
     }
 
-    let mut definition_chain_values = owned_objects
+    let mut definition_chain_values = resource::collect_vec(ctx, owned_objects
         .iter()
         .flat_map(|owned| owned.definition_chain_values.iter())
         .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
-        .filter_map(|entity| entity.definition_chain_value().map(|value| (entity, value)))
-        .collect::<Vec<_>>();
-    definition_chain_values.sort_by(|(left, _), (right, _)| {
+        .filter_map(|entity| entity.definition_chain_value().map(|value| (entity, value))),
+        "catia_feature_definition_chain_values")?;
+    definition_chain_values.sort_unstable_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
@@ -1136,23 +1138,26 @@ fn native_operation_definition_properties(
     });
     for (ordinal, (entity, value)) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
-        definition_chain_value_records.insert(entity.object_record.clone());
-        let prefix = cadmpeg_core::nonblank_literal!("catia_definition_chain_value_{ordinal}");
-        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
-        insert_schema_value_properties(
-            &mut properties,
-            &prefix.with_suffix("_selector"),
-            &value.selector,
-        );
-        insert_schema_value_properties(&mut properties, &prefix.with_suffix("_role"), &value.role);
-        insert_schema_selected_value_properties(
-            &mut properties,
-            &prefix.with_suffix("_value"),
-            &value.value,
-        );
+        let record = resource::copy_retained_str(ctx, &entity.object_record,
+            "catia_feature_chain_record")?;
+        resource::insert_set(ctx, &mut definition_chain_value_records, record,
+            "catia_feature_chain_records")?;
+        let prefix = property_prefix_args(ctx,
+            format_args!("catia_definition_chain_value_{ordinal}"))?;
+        insert_property(ctx, &mut properties, prefix.as_str(), "_entity",
+            format_args!("{}", entity.id))?;
+        insert_schema_value_properties(ctx, &mut properties,
+            &property_prefix(ctx, prefix.as_str(), "_selector")?,
+            &value.selector)?;
+        insert_schema_value_properties(ctx, &mut properties,
+            &property_prefix(ctx, prefix.as_str(), "_role")?,
+            &value.role)?;
+        insert_schema_selected_value_properties(ctx, &mut properties,
+            &property_prefix(ctx, prefix.as_str(), "_value")?,
+            &value.value)?;
     }
 
-    let mut range_intervals = owned_objects
+    let mut range_intervals = resource::collect_vec(ctx, owned_objects
         .iter()
         .flat_map(|owned| {
             owned.fields.iter().filter_map(|field_id| {
@@ -1165,9 +1170,8 @@ fn native_operation_definition_properties(
             let entity = entities.get(entity_id).copied()?;
             (entity.object_record == field.id).then_some(())?;
             entity.range_interval.as_ref().map(|range| (entity, range))
-        })
-        .collect::<Vec<_>>();
-    range_intervals.sort_by(|(left, _), (right, _)| {
+        }), "catia_feature_range_intervals")?;
+    range_intervals.sort_unstable_by(|(left, _), (right, _)| {
         left.byte_offset
             .cmp(&right.byte_offset)
             .then(left.ordinal.cmp(&right.ordinal))
@@ -1176,13 +1180,17 @@ fn native_operation_definition_properties(
     range_intervals.dedup_by(|(left, _), (right, _)| left.id == right.id);
     for (ordinal, (entity, range)) in range_intervals.into_iter().enumerate() {
         range_count += 1;
-        range_records.insert(entity.object_record.clone());
-        let prefix = cadmpeg_core::nonblank_literal!("catia_range_{ordinal}");
-        properties.insert(prefix.with_suffix("_entity"), entity.id.clone());
-        insert_range_interval_properties(&mut properties, &prefix, range);
+        let record = resource::copy_retained_str(ctx, &entity.object_record,
+            "catia_feature_range_record")?;
+        resource::insert_set(ctx, &mut range_records, record,
+            "catia_feature_range_records")?;
+        let prefix = property_prefix_args(ctx, format_args!("catia_range_{ordinal}"))?;
+        insert_property(ctx, &mut properties, prefix.as_str(), "_entity",
+            format_args!("{}", entity.id))?;
+        insert_range_interval_properties(ctx, &mut properties, &prefix, range)?;
     }
 
-    NativeOperationDefinitionProperties {
+    Ok(NativeOperationDefinitionProperties {
         source_properties: properties,
         definition_value_count,
         definition_chain_value_count,
@@ -1190,7 +1198,7 @@ fn native_operation_definition_properties(
         definition_value_records,
         definition_chain_value_records,
         range_records,
-    }
+    })
 }
 
 /// Return whether a design object belongs to one operation's exact structural
@@ -1198,118 +1206,144 @@ fn native_operation_definition_properties(
 /// outer operation. Missing links and non-reflexive cycles reject the whole
 /// chain so a partial owner path cannot invent feature properties.
 fn native_operation_owner_chain_reaches(
+    ctx: &DecodeContext<'_>,
     design_object_id: &str,
     operation_object_id: &str,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let mut current = Some(design_object_id);
-    let mut visited = HashSet::new();
+    let mut traversed = 0usize;
     while let Some(current_id) = current {
-        if !visited.insert(current_id) {
-            return false;
+        ctx.charge_work(1, "catia_feature_operation_owner_chain")?;
+        traversed = traversed.checked_add(1).ok_or_else(||
+            ctx.refuse_codec_limit("catia_feature_operation_owner_chain", u64::MAX, u64::MAX))?;
+        if traversed > design_objects.len() {
+            return Ok(false);
         }
         if current_id == operation_object_id {
-            return true;
+            return Ok(true);
         }
         if native_operation_object_ids.contains(current_id) {
-            return false;
+            return Ok(false);
         }
         let Some(object) = design_objects.get(current_id).copied() else {
-            return false;
+            return Ok(false);
         };
         current = object
             .owner_design_object
             .as_deref()
             .filter(|parent| *parent != current_id);
     }
-    false
+    Ok(false)
+}
+
+fn property_prefix(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    suffix: &str,
+) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+    property_prefix_args(ctx, format_args!("{prefix}{suffix}"))
+}
+
+fn property_prefix_args(
+    ctx: &DecodeContext<'_>, args: std::fmt::Arguments<'_>,
+) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+    let key = resource::format_retained(ctx, args,
+        "catia_feature_property_key")?;
+    cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("CATIA feature property key is blank"))
+}
+
+fn insert_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    prefix: &str,
+    suffix: &str,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    let key = property_prefix(ctx, prefix, suffix)?;
+    let value = resource::format_retained(ctx, value, "catia_feature_property_value")?;
+    resource::insert_btree_map(ctx, properties, key, value,
+        "catia_feature_property_entries")?;
+    Ok(())
 }
 
 fn insert_schema_value_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySchemaValue,
-) {
-    properties.insert(prefix.with_suffix("_entry"), value.entry.clone());
-    properties.insert(prefix.with_suffix("_ordinal"), value.ordinal.to_string());
-    properties.insert(prefix.with_suffix("_offset"), value.offset.to_string());
-    properties.insert(prefix.with_suffix("_value"), value.value.clone());
+) -> Result<(), CodecError> {
+    insert_property(ctx, properties, prefix.as_str(), "_entry", format_args!("{}", value.entry))?;
+    insert_property(ctx, properties, prefix.as_str(), "_ordinal", format_args!("{}", value.ordinal))?;
+    insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", value.offset))?;
+    insert_property(ctx, properties, prefix.as_str(), "_value", format_args!("{}", value.value))?;
+    Ok(())
 }
 
 fn insert_range_interval_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     range: &CatiaRangeInterval,
-) {
-    insert_schema_value_properties(properties, &prefix.with_suffix("_selector"), &range.range);
+) -> Result<(), CodecError> {
+    insert_schema_value_properties(ctx, properties,
+        &property_prefix(ctx, prefix.as_str(), "_selector")?, &range.range)?;
     match &range.interval.prefix {
         RangeIntervalPrefix::Compact { value, width } => {
-            properties.insert(prefix.with_suffix("_prefix_kind"), "compact".to_string());
-            properties.insert(prefix.with_suffix("_prefix_value"), value.to_string());
-            properties.insert(prefix.with_suffix("_prefix_width"), width.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_prefix_kind", format_args!("{}", "compact"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_prefix_value", format_args!("{}", value))?;
+            insert_property(ctx, properties, prefix.as_str(), "_prefix_width", format_args!("{}", width))?;
         }
         RangeIntervalPrefix::EscapedWord { word } => {
-            properties.insert(
-                prefix.with_suffix("_prefix_kind"),
-                "escaped_word".to_string(),
-            );
-            properties.insert(prefix.with_suffix("_prefix_word"), word.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_prefix_kind", format_args!("{}", "escaped_word"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_prefix_word", format_args!("{}", word))?;
         }
     }
     match &range.interval.slots {
         Some([lower, upper]) => {
-            properties.insert(prefix.with_suffix("_slots"), "two".to_string());
-            insert_range_slot_properties(properties, &prefix.with_suffix("_lower"), lower);
-            insert_range_slot_properties(properties, &prefix.with_suffix("_upper"), upper);
+            insert_property(ctx, properties, prefix.as_str(), "_slots", format_args!("{}", "two"))?;
+            insert_range_slot_properties(ctx, properties,
+                &property_prefix(ctx, prefix.as_str(), "_lower")?, lower)?;
+            insert_range_slot_properties(ctx, properties,
+                &property_prefix(ctx, prefix.as_str(), "_upper")?, upper)?;
         }
         None => {
-            properties.insert(prefix.with_suffix("_slots"), "none".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_slots", format_args!("{}", "none"))?;
         }
     }
     if let Some(nominal) = range.nominal.as_ref() {
-        properties.insert(prefix.with_suffix("_nominal_kind"), "finite".to_string());
-        properties.insert(
-            prefix.with_suffix("_nominal_framing"),
-            range_nominal_framing_name(nominal.framing).to_string(),
-        );
-        properties.insert(
-            prefix.with_suffix("_nominal_bits"),
-            format!("{:016x}", nominal.bits),
-        );
-        properties.insert(
-            prefix.with_suffix("_nominal_opcode_offset"),
-            nominal.evaluation_opcode_offset.to_string(),
-        );
+        insert_property(ctx, properties, prefix.as_str(), "_nominal_kind", format_args!("{}", "finite"))?;
+        insert_property(ctx, properties, prefix.as_str(), "_nominal_framing", format_args!("{}", range_nominal_framing_name(nominal.framing)))?;
+        insert_property(ctx, properties, prefix.as_str(), "_nominal_bits", format_args!("{:016x}", nominal.bits))?;
+        insert_property(ctx, properties, prefix.as_str(), "_nominal_opcode_offset", format_args!("{}", nominal.evaluation_opcode_offset))?;
     } else {
-        properties.insert(prefix.with_suffix("_nominal_kind"), "absent".to_string());
+        insert_property(ctx, properties, prefix.as_str(), "_nominal_kind", format_args!("{}", "absent"))?;
     }
-    properties.insert(
-        prefix.with_suffix("_incoming_payload_reference_count"),
-        range.incoming_references.len().to_string(),
-    );
-    properties.insert(
-        prefix.with_suffix("_incoming_storage_reference_count"),
-        range.incoming_storage_references.len().to_string(),
-    );
+    insert_property(ctx, properties, prefix.as_str(), "_incoming_payload_reference_count", format_args!("{}", range.incoming_references.len()))?;
+    insert_property(ctx, properties, prefix.as_str(), "_incoming_storage_reference_count", format_args!("{}", range.incoming_storage_references.len()))?;
+    Ok(())
 }
 
 fn insert_range_slot_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     slot: &RangeIntervalSlot,
-) {
+) -> Result<(), CodecError> {
     match slot {
         RangeIntervalSlot::Binary64 { bits, offset } => {
-            properties.insert(prefix.with_suffix("_kind"), "binary64".to_string());
-            properties.insert(prefix.with_suffix("_bits"), format!("{bits:016x}"));
-            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "binary64"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_bits", format_args!("{bits:016x}"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", offset))?;
         }
         RangeIntervalSlot::Unset { offset } => {
-            properties.insert(prefix.with_suffix("_kind"), "unset".to_string());
-            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "unset"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", offset))?;
         }
     }
+    Ok(())
 }
 
 fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str {
@@ -1322,172 +1356,160 @@ fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str
 }
 
 fn insert_suffix_payload_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     payload: &crate::native::CatiaEntitySuffixPayload,
-) {
+) -> Result<(), CodecError> {
     match payload {
         crate::native::CatiaEntitySuffixPayload::Evaluation {
             opcode_offset,
             evaluation,
             encoding,
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
-            properties.insert(
-                prefix.with_suffix("_opcode_offset"),
-                opcode_offset.to_string(),
-            );
-            properties.insert(
-                prefix.with_suffix("_encoding"),
-                evaluation_encoding_name(*encoding).to_string(),
-            );
-            insert_evaluation_properties(properties, prefix, evaluation);
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "evaluation"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_opcode_offset", format_args!("{}", opcode_offset))?;
+            insert_property(ctx, properties, prefix.as_str(), "_encoding", format_args!("{}", evaluation_encoding_name(*encoding)))?;
+            insert_evaluation_properties(ctx, properties, prefix, evaluation)?;
         }
         crate::native::CatiaEntitySuffixPayload::Atom { value } => {
-            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
-            properties.insert(prefix.with_suffix("_value"), value.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_value", format_args!("{}", value))?;
         }
         crate::native::CatiaEntitySuffixPayload::SchemaSelected {
             selector_offset,
             selector,
             value,
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "schema_selected".to_string());
-            properties.insert(
-                prefix.with_suffix("_selector_offset"),
-                selector_offset.to_string(),
-            );
-            properties.insert(prefix.with_suffix("_selector"), selector.to_string());
-            insert_selected_value_properties(properties, &prefix.with_suffix("_selected"), value);
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "schema_selected"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_selector_offset", format_args!("{}", selector_offset))?;
+            insert_property(ctx, properties, prefix.as_str(), "_selector", format_args!("{}", selector))?;
+            insert_selected_value_properties(ctx, properties,
+                &property_prefix(ctx, prefix.as_str(), "_selected")?, value)?;
         }
         crate::native::CatiaEntitySuffixPayload::ControlE8 => {
-            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "control_e8"))?;
         }
         crate::native::CatiaEntitySuffixPayload::ControlE9 => {
-            properties.insert(prefix.with_suffix("_kind"), "control_e9".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "control_e9"))?;
         }
         crate::native::CatiaEntitySuffixPayload::Separator37 => {
-            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "separator_37"))?;
         }
     }
+    Ok(())
 }
 
 fn insert_selected_value_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySuffixSelectedValue,
-) {
+) -> Result<(), CodecError> {
     match value {
         crate::native::CatiaEntitySuffixSelectedValue::Atom { value } => {
-            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
-            properties.insert(prefix.with_suffix("_value"), value.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_value", format_args!("{}", value))?;
         }
         crate::native::CatiaEntitySuffixSelectedValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
-            properties.insert(
-                prefix.with_suffix("_opcode_offset"),
-                opcode_offset.to_string(),
-            );
-            insert_evaluation_properties(properties, prefix, evaluation);
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "evaluation"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_opcode_offset", format_args!("{}", opcode_offset))?;
+            insert_evaluation_properties(ctx, properties, prefix, evaluation)?;
         }
         crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "control_e8"))?;
         }
         crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
-            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "separator_37"))?;
         }
         crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector {
             offset, ordinal, ..
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "schema_selector".to_string());
-            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
-            properties.insert(prefix.with_suffix("_ordinal"), ordinal.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "schema_selector"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", offset))?;
+            insert_property(ctx, properties, prefix.as_str(), "_ordinal", format_args!("{}", ordinal))?;
         }
     }
+    Ok(())
 }
 
 fn insert_schema_selection_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     selection: &crate::native::CatiaEntitySuffixSchemaSelection,
-) {
-    properties.insert(prefix.with_suffix("_offset"), selection.offset.to_string());
-    properties.insert(
-        prefix.with_suffix("_ordinal"),
-        selection.ordinal.to_string(),
-    );
-    properties.insert(prefix.with_suffix("_entry"), selection.entry.clone());
-    properties.insert(prefix.with_suffix("_name"), selection.name.clone());
-    insert_schema_selected_value_properties(
-        properties,
-        &prefix.with_suffix("_value"),
-        &selection.value,
-    );
+) -> Result<(), CodecError> {
+    insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", selection.offset))?;
+    insert_property(ctx, properties, prefix.as_str(), "_ordinal", format_args!("{}", selection.ordinal))?;
+    insert_property(ctx, properties, prefix.as_str(), "_entry", format_args!("{}", selection.entry))?;
+    insert_property(ctx, properties, prefix.as_str(), "_name", format_args!("{}", selection.name))?;
+    insert_schema_selected_value_properties(ctx, properties,
+        &property_prefix(ctx, prefix.as_str(), "_value")?,
+        &selection.value)?;
+    Ok(())
 }
 
 fn insert_schema_selected_value_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     value: &crate::native::CatiaEntitySuffixSchemaValue,
-) {
+) -> Result<(), CodecError> {
     match value {
         crate::native::CatiaEntitySuffixSchemaValue::Atom { value } => {
-            properties.insert(prefix.with_suffix("_kind"), "atom".to_string());
-            properties.insert(prefix.with_suffix("_atom"), value.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "atom"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_atom", format_args!("{}", value))?;
         }
         crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
             opcode_offset,
             evaluation,
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "evaluation".to_string());
-            properties.insert(
-                prefix.with_suffix("_opcode_offset"),
-                opcode_offset.to_string(),
-            );
-            insert_evaluation_properties(properties, prefix, evaluation);
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "evaluation"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_opcode_offset", format_args!("{}", opcode_offset))?;
+            insert_evaluation_properties(ctx, properties, prefix, evaluation)?;
         }
         crate::native::CatiaEntitySuffixSchemaValue::ControlE8 => {
-            properties.insert(prefix.with_suffix("_kind"), "control_e8".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "control_e8"))?;
         }
         crate::native::CatiaEntitySuffixSchemaValue::Separator37 => {
-            properties.insert(prefix.with_suffix("_kind"), "separator_37".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "separator_37"))?;
         }
         crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset,
             ordinal,
             resolution,
         } => {
-            properties.insert(prefix.with_suffix("_kind"), "schema_selector".to_string());
-            properties.insert(prefix.with_suffix("_offset"), offset.to_string());
-            properties.insert(prefix.with_suffix("_ordinal"), ordinal.to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_kind", format_args!("{}", "schema_selector"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_offset", format_args!("{}", offset))?;
+            insert_property(ctx, properties, prefix.as_str(), "_ordinal", format_args!("{}", ordinal))?;
             if let Some(class) = resolution {
-                properties.insert(prefix.with_suffix("_entry"), class.entry.clone());
-                properties.insert(prefix.with_suffix("_name"), class.name.clone());
+                insert_property(ctx, properties, prefix.as_str(), "_entry", format_args!("{}", class.entry))?;
+                insert_property(ctx, properties, prefix.as_str(), "_name", format_args!("{}", class.name))?;
             }
         }
     }
+    Ok(())
 }
 
 fn insert_evaluation_properties(
+    ctx: &DecodeContext<'_>,
     properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     prefix: &cadmpeg_core::text::NonBlankString,
     evaluation: &crate::native::CatiaEntityEvaluation,
-) {
+) -> Result<(), CodecError> {
     match evaluation {
         crate::native::CatiaEntityEvaluation::Unset => {
-            properties.insert(prefix.with_suffix("_evaluation"), "unset".to_string());
+            insert_property(ctx, properties, prefix.as_str(), "_evaluation", format_args!("{}", "unset"))?;
         }
         crate::native::CatiaEntityEvaluation::Scalar { bits } => {
-            properties.insert(prefix.with_suffix("_evaluation"), "scalar".to_string());
-            properties.insert(
-                prefix.with_suffix("_evaluation_bits"),
-                format!("{bits:016x}"),
-            );
+            insert_property(ctx, properties, prefix.as_str(), "_evaluation", format_args!("{}", "scalar"))?;
+            insert_property(ctx, properties, prefix.as_str(), "_evaluation_bits", format_args!("{bits:016x}"))?;
         }
     }
+    Ok(())
 }
 
 fn evaluation_encoding_name(
