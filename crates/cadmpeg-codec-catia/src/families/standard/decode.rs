@@ -5631,7 +5631,9 @@ fn attach_standard_topology(
             let unfiltered =
                 crate::resource::copy_slice(ctx, pairs, "catia_standard_unfiltered_endpoint_pairs")
                     .map_err(StandardTopologyError::Resource)?;
+            let mut limit_error = None;
             pairs.retain(|pair| {
+                if limit_error.is_some() { return true; }
                 let Some(start) = ir
                     .model
                     .points
@@ -5648,11 +5650,12 @@ fn attach_standard_topology(
                 else {
                     return false;
                 };
-                support.faces.iter().all(|&face| {
+                for &face in &support.faces {
                     let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
                         return false;
                     };
-                    standard_endpoint_pair_supports_topology(
+                    match standard_endpoint_pair_supports_topology(
+                        ctx,
                         &surface.geometry,
                         support,
                         start,
@@ -5662,9 +5665,20 @@ fn attach_standard_topology(
                             bindings[face].2,
                         ),
                         refusal,
-                    )
-                })
+                    ) {
+                        Ok(true) => {}
+                        Ok(false) => return false,
+                        Err(error) => {
+                            limit_error = Some(error);
+                            return true;
+                        }
+                    }
+                }
+                true
             });
+            if let Some(error) = limit_error {
+                return Err(StandardTopologyError::Resource(error));
+            }
             if pairs.is_empty() {
                 *pairs = unfiltered;
             }
@@ -6827,6 +6841,7 @@ fn emit_standard_topology(
             })
             .copied();
         let (curve, param_range) = build_standard_edge_curve(
+            ctx,
             ir,
             annotations,
             bindings,
@@ -6953,6 +6968,7 @@ fn emit_standard_topology(
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.model.curves[*index].geometry);
                 let pcurve_id = standard_pcurve_geometry(
+                    ctx,
                     &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
                     support,
                     start,
@@ -6963,7 +6979,7 @@ fn emit_standard_topology(
                     ),
                     edge_curve,
                     refusal,
-                )
+                )?
                 .map(|(geometry, range)| -> Result<_, cadmpeg_core::CodecError> {
                     let id = PcurveId::compose(
                         &cadmpeg_ir::identity_namespace!("catia", "standard", "pcurve"),
@@ -9221,13 +9237,14 @@ fn bind_standard_a5_owner_surfaces(
 /// the serialized circle carrier and face membership still make the pair
 /// admissible for topology solving.
 fn standard_endpoint_pair_supports_topology(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
     end: Point3,
     witness: Option<FinitePoint3>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let endpoint_is_supported = |point| match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {
             point_on_surface_if_supported(point, surface) != Some(false)
@@ -9235,10 +9252,10 @@ fn standard_endpoint_pair_supports_topology(
         _ => point_on_surface(point, surface),
     };
     if !endpoint_is_supported(start) || !endpoint_is_supported(end) {
-        return false;
+        return Ok(false);
     }
-    if standard_pcurve_geometry(surface, support, start, end, witness, None, refusal).is_some() {
-        return true;
+    if standard_pcurve_geometry(ctx, surface, support, start, end, witness, None, refusal)?.is_some() {
+        return Ok(true);
     }
     if matches!(
         surface,
@@ -9247,18 +9264,19 @@ fn standard_endpoint_pair_supports_topology(
         // A bounded model-space NURBS search may remain unknown inside the
         // control-net bound.  Topology retains that pair; a UV p-curve is
         // optional and is derived only from an admitted parameterization.
-        return true;
+        return Ok(true);
     }
-    matches!((surface, &support.geometry), (
+    Ok(matches!((surface, &support.geometry), (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)),
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) if {
         (start.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
             && (end.distance(center.get()) - radius.get()).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
-    })
+    }))
 }
 
 fn standard_pcurve_geometry(
+    ctx: &DecodeContext<'_>,
     surface: &SurfaceGeometry,
     support: &crate::families::standard::records::StandardCurveSupport,
     start: Point3,
@@ -9266,7 +9284,9 @@ fn standard_pcurve_geometry(
     witness: Option<FinitePoint3>,
     edge_curve: Option<&CurveGeometry>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(PcurveGeometry, [f64; 2])> {
+) -> Result<Option<(PcurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
+    let mut resource_error = None;
+    let result = (|| {
     if matches!(
         edge_curve,
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }))
@@ -9351,13 +9371,20 @@ fn standard_pcurve_geometry(
             let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
             ordered_range([range[0], unwrap_angle(range[1], range[0])])
         };
-        let geometry = rational_pcurve_arc(
+        let geometry = match rational_pcurve_arc(
+            ctx,
             [center_uv.u, center_uv.v],
             radius,
             range,
             refusal,
             "standard arc pcurve derived from its support",
-        )?;
+        ) {
+            Ok(geometry) => geometry?,
+            Err(error) => {
+                resource_error = Some(error);
+                return None;
+            }
+        };
         return Some((geometry, range));
     }
 
@@ -9393,6 +9420,11 @@ fn standard_pcurve_geometry(
         ),
         [0.0, 1.0],
     ))
+    })();
+    match resource_error {
+        Some(error) => Err(error),
+        None => Ok(result),
+    }
 }
 
 fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
@@ -10131,6 +10163,7 @@ fn standard_oriented_native_support_pcurves(
 
 #[allow(clippy::too_many_arguments)]
 fn build_standard_edge_curve(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -10229,52 +10262,35 @@ fn build_standard_edge_curve(
                     }
                 }
                 Some(axis) => {
-                    let candidates = [axis, axis.reversed()]
-                        .into_iter()
-                        .filter_map(|axis| {
-                            let ref_direction =
-                                cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
-                            let range = standard_circle_param_range(
-                                ir,
-                                bindings,
-                                surface_indices,
-                                brep,
-                                support,
-                                center,
-                                radius,
-                                *axis.as_raw(),
-                                ref_direction,
-                                start,
-                                end,
-                                refusal,
+                    let mut selected = None;
+                    let mut ambiguous = false;
+                    for candidate_axis in [axis, axis.reversed()] {
+                        let reference = cadmpeg_ir::geometry::derive_reference_direction(
+                            *candidate_axis.as_raw());
+                        let range = standard_circle_param_range(
+                            ctx, ir, bindings, surface_indices, brep, support, center, radius,
+                            *candidate_axis.as_raw(), reference, start, end, refusal,
+                        )?.or_else(|| native_support.and_then(|native| {
+                            native_support_circle_param_range(
+                                native, center, radius, *candidate_axis.as_raw(),
+                                reference, start, end,
                             )
-                            .or_else(|| {
-                                native_support.and_then(|native| {
-                                    native_support_circle_param_range(
-                                        native,
-                                        center,
-                                        radius,
-                                        *axis.as_raw(),
-                                        ref_direction,
-                                        start,
-                                        end,
-                                    )
-                                })
-                            })?;
-                            Some((
-                                axis,
-                                ref_direction,
-                                crate::nurbs::canonical_periodic_range(range)?,
-                            ))
-                        })
-                        .collect::<Vec<_>>();
-                    let (axis, ref_direction, param_range) = match candidates.as_slice() {
-                        [(axis, reference, range)] => (*axis, *reference, Some(*range)),
-                        _ => (
-                            axis,
-                            cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()),
-                            None,
-                        ),
+                        }));
+                        if let Some(range) = range.and_then(crate::nurbs::canonical_periodic_range) {
+                            if selected.is_some() {
+                                ambiguous = true;
+                            } else {
+                                selected = Some((candidate_axis, reference, range));
+                            }
+                        }
+                    }
+                    let (axis, ref_direction, param_range) = if !ambiguous {
+                        selected.map_or_else(
+                            || (axis, cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()), None),
+                            |(axis, reference, range)| (axis, reference, Some(range)),
+                        )
+                    } else {
+                        (axis, cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw()), None)
                     };
                     let Some(ref_direction) = UnitVector3::new(ref_direction) else {
                         return Ok((None, None));
@@ -11190,6 +11206,7 @@ fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool
 
 #[allow(clippy::too_many_arguments)]
 fn standard_circle_param_range(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -11202,26 +11219,18 @@ fn standard_circle_param_range(
     start: Point3,
     end: Point3,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<[f64; 2]> {
-    let mut ranges = support.faces.iter().filter_map(|face| {
-        let surface = face_surface(ir, bindings, surface_indices, *face)?;
-        let witness = crate::families::standard::records::standard_face_witness(
-            brep,
-            bindings.get(*face)?.2,
-        )?;
-        let (PcurveGeometry::Line(line_pcurve), _) = standard_pcurve_geometry(
-            &surface.geometry,
-            support,
-            start,
-            end,
-            Some(witness),
-            None,
-            refusal,
-        )?
-        else {
-            return None;
-        };
-        circle_parameter_range_from_surface_branch(
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let mut selected: Option<[f64; 2]> = None;
+    for face in &support.faces {
+        let Some(surface) = face_surface(ir, bindings, surface_indices, *face) else { continue };
+        let Some(binding) = bindings.get(*face) else { continue };
+        let Some(witness) = crate::families::standard::records::standard_face_witness(
+            brep, binding.2,
+        ) else { continue };
+        let Some((PcurveGeometry::Line(line_pcurve), _)) = standard_pcurve_geometry(
+            ctx, &surface.geometry, support, start, end, Some(witness), None, refusal,
+        )? else { continue };
+        let Some(range) = circle_parameter_range_from_surface_branch(
             &surface.geometry,
             center,
             radius,
@@ -11231,16 +11240,17 @@ fn standard_circle_param_range(
             end,
             *line_pcurve.origin(),
             (*line_pcurve.direction()).into(),
-        )
-    });
-    let range = ranges.next()?;
-    if ranges.any(|other| {
-        (other[0] - range[0]).abs() > EPS_STANDARD_DECODE_GEOMETRY
-            || (other[1] - range[1]).abs() > EPS_STANDARD_DECODE_GEOMETRY
-    }) {
-        return None;
+        ) else { continue };
+        if let Some(first) = selected {
+            if (range[0] - first[0]).abs() > EPS_STANDARD_DECODE_GEOMETRY
+                || (range[1] - first[1]).abs() > EPS_STANDARD_DECODE_GEOMETRY {
+                return Ok(None);
+            }
+        } else {
+            selected = Some(range);
+        }
     }
-    Some(range)
+    Ok(selected)
 }
 
 #[allow(clippy::too_many_arguments)]

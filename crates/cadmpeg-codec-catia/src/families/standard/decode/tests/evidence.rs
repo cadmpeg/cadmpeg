@@ -1094,6 +1094,7 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -1386,6 +1387,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bindings,
@@ -1455,6 +1457,7 @@ fn standard_line_edge_uses_distance_parameterization() {
     let (_, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -1495,6 +1498,7 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -1544,7 +1548,8 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     brep[27..31].copy_from_slice(&(-2.0f32).to_le_bytes());
     let axis = Vector3::new(0.0, 0.0, 1.0);
     let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
-    let range = standard_circle_param_range(
+    let range = crate::test_support::with_service_context(|ctx| standard_circle_param_range(
+        ctx,
         &ir,
         &bindings,
         &indices,
@@ -1557,7 +1562,8 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         Point3::new(2.0, 0.0, 3.0),
         Point3::new(0.0, 2.0, 3.0),
         &mut crate::nurbs::LaneRefusals::new(),
-    )
+    ))
+    .expect("service budget admits circle range")
     .expect("witnessed circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
@@ -1650,6 +1656,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
     let (_, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
