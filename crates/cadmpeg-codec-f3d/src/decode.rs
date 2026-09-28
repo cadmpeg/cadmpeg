@@ -3947,7 +3947,7 @@ fn project_mesh_bodies(
                 .filter_map(|body| body.tessellation_id.as_deref()),
         )?;
     }
-    report_unresolved_mesh_attributes(report, &unresolved);
+    report_unresolved_mesh_attributes(ctx, report, &unresolved)?;
     Ok(projection)
 }
 
@@ -4176,9 +4176,10 @@ fn mesh_attribute_channels(
 /// Report mesh attribute channels that the projector left unresolved, grouped by
 /// domain.
 fn report_unresolved_mesh_attributes(
+    ctx: &DecodeContext<'_>,
     report: &mut DecodeBody,
     unresolved: &std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
-) {
+) -> Result<(), CodecError> {
     use crate::paramesh::MeshAttributeDomain;
 
     for (domain, count) in unresolved {
@@ -4197,13 +4198,19 @@ fn report_unresolved_mesh_attributes(
                  vertex",
             ),
         };
-        report
-            .losses
-            .push(F3dLossCode::MeshAttributeNotTransferred.note(format!(
+        push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::MeshAttributeNotTransferred,
+            format_args!(
                 "{count} mesh attribute channel(s) addressing {addressing} were not transferred: \
              {reason}."
-            )));
+            ),
+            "collect F3D unresolved mesh attribute loss",
+            "retain F3D unresolved mesh attribute loss",
+        )?;
     }
+    Ok(())
 }
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.

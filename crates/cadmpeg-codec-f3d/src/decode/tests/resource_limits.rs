@@ -419,6 +419,42 @@ fn mesh_feature_scope_index_refuses_collection_limit() {
 }
 
 #[test]
+fn unresolved_mesh_attribute_loss_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let unresolved = std::collections::BTreeMap::from([(
+        crate::paramesh::MeshAttributeDomain::Vertex,
+        1,
+    )]);
+    let error = super::super::report_unresolved_mesh_attributes(&ctx, &mut report, &unresolved)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D unresolved mesh attribute loss"));
+}
+
+#[test]
+fn unresolved_mesh_attribute_loss_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let unresolved = std::collections::BTreeMap::from([(
+        crate::paramesh::MeshAttributeDomain::Vertex,
+        1,
+    )]);
+    let error = super::super::report_unresolved_mesh_attributes(&ctx, &mut report, &unresolved)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D unresolved mesh attribute loss"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
