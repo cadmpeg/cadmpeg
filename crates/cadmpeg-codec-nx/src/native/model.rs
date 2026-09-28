@@ -1409,7 +1409,7 @@ impl NativeModel {
         )?;
         let material_texture_assets = material_texture_assets(ctx, container)?;
         let material_texture_catalog_entries =
-            material_texture_catalog_entries(container, &material_texture_assets);
+            material_texture_catalog_entries(ctx, container, &material_texture_assets)?;
         let persistent_handles = persistent_handles(
             ctx,
             &object_references,
