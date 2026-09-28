@@ -16,6 +16,10 @@ impl<K: Eq + Hash, V> UniqueIndex<K, V> {
         Self { entries: HashMap::new() }
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub(super) fn insert(
         &mut self, ctx: &DecodeContext<'_>, key: K, value: V,
         operation: &'static str,
