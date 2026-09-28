@@ -3873,20 +3873,21 @@ pub(super) fn surface_offset_lineage(
 ) -> Option<(SurfaceId, f64)> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     surface_offset_lineage_with_index(&index, surface, depth)
+        .map(|(base, distance)| (base.clone(), distance))
 }
 
-fn surface_offset_lineage_with_index(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
+fn surface_offset_lineage_with_index<'a>(
+    index: &'a cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &'a SurfaceId,
     depth: usize,
-) -> Option<(SurfaceId, f64)> {
+) -> Option<(&'a SurfaceId, f64)> {
     (depth < 32).then_some(())?;
     index.surfaces(surface.as_str())?;
     let Some(procedural) = index.procedural_surface_for_carrier(surface.as_str()) else {
-        return Some((surface.clone(), 0.0));
+        return Some((surface, 0.0));
     };
     let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition() else {
-        return Some((surface.clone(), 0.0));
+        return Some((surface, 0.0));
     };
     let support = definition_payload.support();
     let distance = definition_payload.distance().get();
@@ -3894,25 +3895,25 @@ fn surface_offset_lineage_with_index(
     Some((base, accumulated + distance))
 }
 
-pub(super) fn blend_surface_definition_with_index(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+pub(super) fn blend_surface_definition_with_index<'a>(
+    index: &'a cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
-) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+) -> Option<([&'a SurfaceId; 2], &'a CurveId, f64, [bool; 2])> {
     let procedural = index.procedural_surface_for_surface(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
-fn blend_surface_definition_for_carrier_with_index(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
+fn blend_surface_definition_for_carrier_with_index<'a>(
+    index: &'a cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
-) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+) -> Option<([&'a SurfaceId; 2], &'a CurveId, f64, [bool; 2])> {
     let procedural = index.procedural_surface_for_carrier(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
 fn blend_surface_definition_from_procedural(
     procedural: &ProceduralSurface,
-) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+) -> Option<([&SurfaceId; 2], &CurveId, f64, [bool; 2])> {
     let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
         return None;
     };
@@ -3934,8 +3935,8 @@ fn blend_surface_definition_from_procedural(
     let radius = signed_radius.get().abs();
     (radius > 0.0).then(|| {
         (
-            [first.surface.clone(), second.surface.clone()],
-            spine.clone(),
+            [&first.surface, &second.surface],
+            spine,
             radius,
             [first.reversed, second.reversed],
         )
