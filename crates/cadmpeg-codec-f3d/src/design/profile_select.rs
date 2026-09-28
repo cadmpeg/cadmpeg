@@ -593,7 +593,8 @@ pub(crate) fn bind_extrude_profile_selections(
                     sketch,
                     curve_resolution.curve_identities,
                     curve_resolution.sketch_entities,
-                ) {
+                    resolution.ctx,
+                )? {
                     *profile = ProfileRef::Planar(
                         PlanarProfileRef::sketch_profiles(sketch_id.clone(), profiles)
                             .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
@@ -2499,14 +2500,14 @@ fn spatial_profile_member_entity<'a>(
     entities.next().is_none().then_some(entity)
 }
 
-fn sketch_profile_member_entity(
+fn sketch_profile_member_entity<'a>(
     stream: &str,
     owner_reference: u32,
     member: &DesignSketchProfileRegionMember,
     sketch: &cadmpeg_ir::sketches::Sketch,
     curve_identities: &[SketchCurveIdentity],
-    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+) -> Option<&'a cadmpeg_ir::sketches::SketchEntityId> {
     let mut curves = curve_identities.iter().filter(|curve| {
         native_stream(&curve.id) == Some(stream)
             && curve.owner_reference == Some(owner_reference)
@@ -2524,7 +2525,7 @@ fn sketch_profile_member_entity(
     if entities.next().is_some() {
         return None;
     }
-    Some(entity.id().clone())
+    Some(entity.id())
 }
 
 fn resolved_sketch_profile_regions(
@@ -2533,48 +2534,51 @@ fn resolved_sketch_profile_regions(
     sketch: &cadmpeg_ir::sketches::Sketch,
     curve_identities: &[SketchCurveIdentity],
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Option<Vec<u32>> {
-    let selection = profile.region_selection.as_ref()?;
-    let owner_reference = u32::try_from(profile.entity_id.suffix()).ok()?;
-    let mut resolved = Vec::with_capacity(selection.regions.len());
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let Some(selection) = profile.region_selection.as_ref() else { return Ok(None); };
+    let Ok(owner_reference) = u32::try_from(profile.entity_id.suffix()) else { return Ok(None); };
+    let mut resolved = Vec::new();
     for region in &selection.regions {
-        let first = sketch_profile_member_entity(
+        let Some(first_member) = region.members.first() else { return Ok(None); };
+        let Some(first) = sketch_profile_member_entity(
             stream,
             owner_reference,
-            region.members.first()?,
+            first_member,
             sketch,
             curve_identities,
             sketch_entities,
-        )?;
+        ) else { return Ok(None); };
         let mut matching_profiles = sketch
             .profiles
             .iter()
             .enumerate()
-            .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == first));
-        let (profile_index, selected_profile) = matching_profiles.next()?;
+            .filter(|(_, profile)| profile.iter().any(|use_| &use_.entity == first));
+        let Some((profile_index, selected_profile)) = matching_profiles.next() else { return Ok(None); };
         if matching_profiles.next().is_some() {
-            return None;
+            return Ok(None);
         }
         for member in &region.members[1..] {
-            let entity = sketch_profile_member_entity(
+            let Some(entity) = sketch_profile_member_entity(
                 stream,
                 owner_reference,
                 member,
                 sketch,
                 curve_identities,
                 sketch_entities,
-            )?;
-            if !selected_profile.iter().any(|use_| use_.entity == entity) {
-                return None;
+            ) else { return Ok(None); };
+            if !selected_profile.iter().any(|use_| &use_.entity == entity) {
+                return Ok(None);
             }
         }
-        let profile_index = u32::try_from(profile_index).ok()?;
+        let Ok(profile_index) = u32::try_from(profile_index) else { return Ok(None); };
         if resolved.contains(&profile_index) {
-            return None;
+            return Ok(None);
         }
-        resolved.push(profile_index);
+        push_profile_item(ctx, &mut resolved, profile_index,
+            "f3d selected planar sketch profile region")?;
     }
-    (!resolved.is_empty()).then_some(resolved)
+    Ok((!resolved.is_empty()).then_some(resolved))
 }
 
 fn coincident_spatial_profile_geometry(
@@ -2630,27 +2634,32 @@ fn resolved_spatial_sketch_profile_regions(
     profile: &DesignSketchProfileOperand,
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
     resolution: &SketchProfileResolution<'_>,
-) -> Option<Vec<u32>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<u32>>, CodecError> {
     let Some(selection) = profile.region_selection.as_ref() else {
         if spatial_sketch.profiles.is_empty() {
-            return None;
+            return Ok(None);
         }
-        return (0..spatial_sketch.profiles.len())
-            .map(u32::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .ok();
+        let mut profiles = Vec::new();
+        for index in 0..spatial_sketch.profiles.len() {
+            let Ok(index) = u32::try_from(index) else { return Ok(None); };
+            push_profile_item(ctx, &mut profiles, index,
+                "f3d all spatial sketch profile regions")?;
+        }
+        return Ok(Some(profiles));
     };
-    let owner_reference = u32::try_from(profile.entity_id.suffix()).ok()?;
-    let mut resolved = Vec::with_capacity(selection.regions.len());
+    let Ok(owner_reference) = u32::try_from(profile.entity_id.suffix()) else { return Ok(None); };
+    let mut resolved = Vec::new();
     for region in &selection.regions {
-        let first = spatial_profile_member_entity(
+        let Some(first_member) = region.members.first() else { return Ok(None); };
+        let Some(first) = spatial_profile_member_entity(
             stream,
             owner_reference,
-            region.members.first()?,
+            first_member,
             spatial_sketch,
             resolution.curve_identities,
             resolution.spatial_sketch_entities,
-        )?;
+        ) else { return Ok(None); };
         let mut matching_profiles =
             spatial_sketch
                 .profiles
@@ -2662,19 +2671,19 @@ fn resolved_spatial_sketch_profile_regions(
                         .iter()
                         .any(|use_| &use_.entity == first.id())
                 });
-        let (profile_index, selected_profile) = matching_profiles.next()?;
+        let Some((profile_index, selected_profile)) = matching_profiles.next() else { return Ok(None); };
         if matching_profiles.next().is_some() {
-            return None;
+            return Ok(None);
         }
         for member in &region.members[1..] {
-            let entity = spatial_profile_member_entity(
+            let Some(entity) = spatial_profile_member_entity(
                 stream,
                 owner_reference,
                 member,
                 spatial_sketch,
                 resolution.curve_identities,
                 resolution.spatial_sketch_entities,
-            )?;
+            ) else { return Ok(None); };
             if selected_profile
                 .boundary()
                 .iter()
@@ -2699,16 +2708,17 @@ fn resolved_spatial_sketch_profile_regions(
                     })
             });
             if !coincident {
-                return None;
+                return Ok(None);
             }
         }
-        let profile_index = u32::try_from(profile_index).ok()?;
+        let Ok(profile_index) = u32::try_from(profile_index) else { return Ok(None); };
         if resolved.contains(&profile_index) {
-            return None;
+            return Ok(None);
         }
-        resolved.push(profile_index);
+        push_profile_item(ctx, &mut resolved, profile_index,
+            "f3d selected spatial sketch profile region")?;
     }
-    (!resolved.is_empty()).then_some(resolved)
+    Ok((!resolved.is_empty()).then_some(resolved))
 }
 
 fn spatial_profile_containing_entity(
@@ -2788,7 +2798,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             .iter()
             .find(|sketch| sketch.id == spatial_sketch_id)
         {
-            resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution)
+            resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution, Some(ctx))?
                 .map_or_else(
                     || {
                         ProfileRef::spatial_sketch_selection(
