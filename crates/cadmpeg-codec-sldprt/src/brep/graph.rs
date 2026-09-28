@@ -4002,28 +4002,39 @@ fn derive_spherical_pcurves(
         let geometry = PcurveGeometry::Line(line);
         // Verify both frame axes and their opposite points before assigning a
         // derived support relation. Near-aligned frames still need a physical fit.
-        let fits = [
+        let mut fits = true;
+        for parameter in [
             0.0,
             std::f64::consts::FRAC_PI_2,
             std::f64::consts::PI,
             -std::f64::consts::FRAC_PI_2,
-        ]
-        .into_iter()
-        .all(|parameter| {
-            let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(&geometry, parameter) else {
-                return false;
+        ] {
+            let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::pcurve_uv(&geometry, parameter),
+            )? else {
+                fits = false;
+                break;
             };
-            let Ok(lifted) = surface_point(&surface.geometry, uv.u, uv.v) else {
-                return false;
+            let Some(lifted) = cadmpeg_ir::eval::finite_or_refusal(
+                surface_point(&surface.geometry, uv.u, uv.v),
+            )? else {
+                fits = false;
+                break;
             };
-            let Ok(curve_point) = cadmpeg_ir::eval::curve_point(
-                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
-                parameter,
-            ) else {
-                return false;
+            let Some(curve_point) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::curve_point(
+                    &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
+                    parameter,
+                ),
+            )? else {
+                fits = false;
+                break;
             };
-            lifted.distance(curve_point.get()) <= fit_tolerance
-        });
+            if lifted.distance(curve_point.get()) > fit_tolerance {
+                fits = false;
+                break;
+            }
+        }
         if !fits {
             continue;
         }
