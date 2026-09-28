@@ -70,11 +70,13 @@ enum PerpendicularRoundEdgeFailure {
 }
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> Vec<(u32, u32, usize)> {
-    tables
+) -> Result<Vec<(u32, u32, usize)>, cadmpeg_core::CodecError> {
+    let mut pairs = Vec::new();
+    for pair in tables
         .iter()
         .filter_map(|table| {
             let feature_id = table.feature_id;
@@ -97,7 +99,11 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
                 .then_some(())?;
             Some((rowless.entity_id, cylinder.entity_id, table.offset))
         })
-        .collect()
+    {
+        ctx.try_reserve_items(&mut pairs, 1, "creo rowless round cylinder pairs")?;
+        pairs.push(pair);
+    }
+    Ok(pairs)
 }
 
 pub(in super::super) fn transfer_active_datum_cylinders(
@@ -166,13 +172,13 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let round_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    let mut round_feature_ids = BTreeSet::new();
+    for row in scan.features.rows.iter().filter(|row| row.root_schema_class == Some(SchemaClass::Round)) {
+        if !round_feature_ids.contains(&row.feature_id) {
+            ctx.charge_collection_items(1, "creo constrained round feature ID nodes")?;
+            round_feature_ids.insert(row.feature_id);
+        }
+    }
     let mut transferred = 0;
     for feature_id in round_feature_ids {
         let named = agreed_feature_affected_ids(
@@ -284,19 +290,20 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let round_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    let mut round_feature_ids = BTreeSet::new();
+    for row in scan.features.rows.iter().filter(|row| row.root_schema_class == Some(SchemaClass::Round)) {
+        if !round_feature_ids.contains(&row.feature_id) {
+            ctx.charge_collection_items(1, "creo rowless round feature ID nodes")?;
+            round_feature_ids.insert(row.feature_id);
+        }
+    }
     let mut transferred = 0;
     for (rowless_id, sibling_id, offset) in rowless_round_cylinder_pairs(
+        ctx,
         &round_feature_ids,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    ) {
+    )? {
         let sibling = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, sibling_id);
         let Some(cylinder_surface) = exactly_one(
             ir.model
@@ -912,14 +919,16 @@ pub(in super::super) fn transfer_positional_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<PositionalCylinderTransferSummary, cadmpeg_core::CodecError> {
-    let round_feature_ids = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-        .map(|row| row.feature_id)
-        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
-        .collect::<BTreeSet<_>>();
+    let mut round_feature_ids = BTreeSet::new();
+    for row in scan.surfaces.rows.iter().filter(|row| {
+        row.kind == crate::surface::SurfaceKind::Cylinder
+            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
+    }) {
+        if !round_feature_ids.contains(&row.feature_id) {
+            ctx.charge_collection_items(1, "creo positional round feature ID nodes")?;
+            round_feature_ids.insert(row.feature_id);
+        }
+    }
     let mut constant_round_radii = BTreeMap::new();
     for feature_id in round_feature_ids {
         if let Some(radius) = round_constant_radius(ctx, scan, ir, source_carriers, feature_id)? {

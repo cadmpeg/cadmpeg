@@ -16,6 +16,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+mod orientations;
+
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),

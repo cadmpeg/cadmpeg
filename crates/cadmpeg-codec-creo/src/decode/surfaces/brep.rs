@@ -1824,7 +1824,7 @@ pub(in super::super) fn transfer_native_brep(
     let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let BrepSourceIndexes { planes, half_edges, incidence } =
         BrepSourceIndexes::from_scan(ctx, &carriers, scan)?;
-    let face_orientations = native_face_orientations(scan, ir);
+    let face_orientations = native_face_orientations(ctx, scan, ir)?;
     let solved_vertex_result = solve_topological_vertices(
         ctx,
         scan,

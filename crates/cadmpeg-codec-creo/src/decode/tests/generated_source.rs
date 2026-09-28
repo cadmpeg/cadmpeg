@@ -1503,34 +1503,41 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     )
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows,),
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::from([23]), std::slice::from_ref(&table), &rows,))
+            .expect("service pair admitted"),
         vec![(12, 13, 47)]
     );
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::new(), std::slice::from_ref(&table), &rows,)
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::new(), std::slice::from_ref(&table), &rows,))
+            .expect("service empty pair admitted")
             .is_empty()
     );
     rows[2].reversed = true;
     assert_eq!(
-        rowless_round_face_orientations(
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
+            ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
             &rows,
             &BTreeSet::from([12]),
-        ),
+        ))
+        .expect("service rowless orientation admitted"),
         BTreeMap::from([(12, true)])
     );
-    assert!(rowless_round_face_orientations(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
+        ctx,
         &BTreeSet::from([23]),
         std::slice::from_ref(&table),
         &rows,
         &BTreeSet::new(),
-    )
+    ))
+    .expect("service absent orientation admitted")
     .is_empty());
     let mut materialized_rowless = rows;
     materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), &[table], &materialized_rowless,)
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(ctx, &BTreeSet::from([23]), &[table], &materialized_rowless,))
+            .expect("service materialized row admitted")
             .is_empty()
     );
 }
