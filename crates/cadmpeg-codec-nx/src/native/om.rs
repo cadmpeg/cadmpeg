@@ -3951,12 +3951,32 @@ pub(super) fn data_block_control_forms(
                 }
             }
         };
+        let id = retained_om_number_id(
+            ctx, "nx:om-data-block-control-forms:form#",
+            cadmpeg_core::decode::u64_from_index(section_ordinal),
+            "retain NX control form id",
+        )?;
+        let data_block = retained_om_index_id(
+            ctx, "nx:om-data-blocks-", section_ordinal, ":block#", 0,
+            "retain NX control form block",
+        )?;
+        let source_offset = entry.file_span().map_or(0, |(offset, _)| offset)
+            .checked_add(cadmpeg_core::decode::u64_from_index(control.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX control form source offset", 0, 1))?;
+        ctx.charge_entities(1, "NX data block control form")?;
+        ctx.charge_collection_items(1, "NX data block control forms")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlForm>()),
+            "retain NX data block control form",
+        )?;
+        forms.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX data block control forms", 0, 1)
+        })?;
         forms.push(DataBlockControlForm {
-            id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
-            data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+            id,
+            data_block,
             kind,
-            source_offset: entry.file_span().map_or(0, |(offset, _)| offset)
-                + control.offset as u64,
+            source_offset,
         });
     }
     Ok(forms)
@@ -3965,6 +3985,27 @@ pub(super) fn data_block_control_forms(
 struct ScopedOmIndexId<'a> {
     id: String,
     _reservation: cadmpeg_core::decode::ScopedReservation<'a>,
+}
+
+fn retained_om_number_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    number: u64,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    use std::fmt::Write;
+
+    let length = prefix.len()
+        .checked_add(number.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "{prefix}{number}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
 }
 
 fn scoped_om_index_id<'a>(
@@ -4337,8 +4378,6 @@ pub(super) fn data_block_control_handle_pairs(
     ctx: &DecodeContext<'_>,
     references: &[DataBlockControlReference],
 ) -> Result<Vec<DataBlockControlHandlePair>, CodecError> {
-    use std::fmt::Write;
-
     let mut temporary = ctx.reserve_scoped(0, "NX control handle pair index")?;
     let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
     for reference in references {
@@ -4392,23 +4431,10 @@ pub(super) fn data_block_control_handle_pairs(
             }
             let run = &block_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
-                let id_length = "nx:om-data-block-control:handle-pair#".len()
-                    .checked_add(first.source_offset.checked_ilog10().map_or(1, |digits| digits as usize + 1))
-                    .ok_or_else(|| ctx.refuse_codec_limit("NX control handle pair id", 0, 1))?;
-                ctx.charge_work(
-                    cadmpeg_core::decode::u64_from_index(id_length),
-                    "NX control handle pair id",
-                )?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(id_length),
+                let id = retained_om_number_id(
+                    ctx, "nx:om-data-block-control:handle-pair#", first.source_offset,
                     "retain NX control handle pair id",
                 )?;
-                let mut id = String::new();
-                id.try_reserve_exact(id_length).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX control handle pair id", 0, 1)
-                })?;
-                write!(&mut id, "nx:om-data-block-control:handle-pair#{}", first.source_offset)
-                    .map_err(|_| ctx.refuse_codec_limit("format NX control handle pair id", 0, 1))?;
                 let data_block = copy_om_retained_text(ctx, data_block, "retain NX control handle pair block")?;
                 let first_reference = copy_om_retained_text(ctx, &first.id, "retain NX control handle first reference")?;
                 let second_reference = copy_om_retained_text(ctx, &second.id, "retain NX control handle second reference")?;
@@ -6306,6 +6332,58 @@ mod tests {
             Some("nx:om-data-blocks-2:block#496")
         );
         assert!(super::control_index_data_block(2, 700, 700).is_none());
+    }
+
+    fn control_form_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, file.as_slice())
+        }).expect("control form fixture");
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+            .expect("cached control form section");
+        let forms = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_forms(ctx, &container)
+        }).expect("control form projection");
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].id, "nx:om-data-block-control-forms:form#0");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::data_block_control_forms(&ctx, &container).unwrap_err()
+    }
+
+    #[test]
+    fn data_block_control_form_route_refuses_collection_limit() {
+        let error = control_form_route_refusal(|policy| policy.limits.max_collection_items = 4);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "NX data block control forms"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_form_route_refuses_retained_limit() {
+        let error = control_form_route_refusal(|policy| {
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)>()
+                    + std::mem::size_of::<Option<crate::om::control_word::ControlWord24>>()
+                    + std::mem::size_of::<crate::om::control_word::ControlWord24>(),
+            );
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX control form id"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_form_route_refuses_work_limit() {
+        let error = control_form_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "retain NX control form id"), "{error:?}");
     }
 
     fn control_reference_route_refusal(
