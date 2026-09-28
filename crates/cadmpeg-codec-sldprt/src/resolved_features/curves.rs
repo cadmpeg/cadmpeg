@@ -864,10 +864,9 @@ fn closed_cycle_marker_arc_geometry(
         {
             return None;
         }
-        let connecting_lines = entities
+        let mut connecting_lines = entities
             .iter()
-            .enumerate()
-            .filter(|(_, entity)| {
+            .filter(|entity| {
                 !entity.construction
                     && entity.sketch == target.sketch
                     && entity.endpoint_refs.len() == 2
@@ -908,10 +907,13 @@ fn closed_cycle_marker_arc_geometry(
                         }
                         _ => false,
                     }
-            })
-            .collect::<Vec<_>>();
-        if connecting_lines.len() != 2
-            || connecting_lines.iter().any(|(_, line)| {
+            });
+        let (Some(first_line), Some(second_line), None) =
+            (connecting_lines.next(), connecting_lines.next(), connecting_lines.next()) else {
+            return None;
+        };
+        let connecting_lines = [first_line, second_line];
+        if connecting_lines.iter().any(|line| {
                 let [first, second] = line.endpoint_refs.as_slice() else {
                     return true;
                 };
@@ -924,21 +926,18 @@ fn closed_cycle_marker_arc_geometry(
         {
             return None;
         }
-        let mut connected_targets = connecting_lines
-            .iter()
-            .flat_map(|(_, line)| line.endpoint_refs.iter())
-            .filter(|endpoint| target_endpoints.contains(&endpoint.as_str()))
-            .collect::<Vec<_>>();
-        connected_targets.sort_unstable();
-        connected_targets.dedup();
-        let mut connected_witnesses = connecting_lines
-            .iter()
-            .flat_map(|(_, line)| line.endpoint_refs.iter())
-            .filter(|endpoint| witness_endpoints.contains(&endpoint.as_str()))
-            .collect::<Vec<_>>();
-        connected_witnesses.sort_unstable();
-        connected_witnesses.dedup();
-        if connected_targets.len() != 2 || connected_witnesses.len() != 2 {
+        let both_connected = |endpoints: [&str; 2]| {
+            endpoints.iter().all(|endpoint| {
+                connecting_lines.iter().any(|line| {
+                    line.endpoint_refs.iter().any(|reference| reference.as_str() == *endpoint)
+                })
+            })
+        };
+        if target_endpoints[0] == target_endpoints[1]
+            || witness_endpoints[0] == witness_endpoints[1]
+            || !both_connected(target_endpoints)
+            || !both_connected(witness_endpoints)
+        {
             return None;
         }
         minor_arc_geometry(
