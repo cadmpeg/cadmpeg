@@ -556,3 +556,73 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
             && loss.message.contains("2 pcurve(s)")
     }));
 }
+
+fn unresolved_swift_source() -> Vec<u8> {
+    let mut source = crate::test_support::container::synthetic_sldprt();
+    source.extend(crate::test_support::container::make_block(
+        0x40,
+        "SWIFT/Schema",
+        b"PrizMetrik.GdtAnalysisSupport.GdtPart",
+    ));
+    source
+}
+
+#[test]
+fn unsupported_swift_loss_retains_exact_text() {
+    let source = unresolved_swift_source();
+    let scan = crate::container::scan_bytes(&source);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut losses = Vec::new();
+    super::super::append_swift_pmi_losses(&ctx, &scan, &mut losses).unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "1 SWIFT semantic annotation(s) have no neutral PMI definition: GdtAnalysisGraphUnresolved (1)."
+    );
+}
+
+#[test]
+fn unsupported_swift_loss_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let source = unresolved_swift_source();
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT unsupported SWIFT classes"));
+}
+
+#[test]
+fn unsupported_swift_loss_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let source = unresolved_swift_source();
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT unsupported SWIFT class"));
+}
+
+#[test]
+fn unsupported_swift_loss_refuses_scoped_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let source = unresolved_swift_source();
+    let scan = crate::container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        ("GdtAnalysisGraphUnresolved (1)".len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "format SLDPRT unsupported SWIFT classes"));
+}
