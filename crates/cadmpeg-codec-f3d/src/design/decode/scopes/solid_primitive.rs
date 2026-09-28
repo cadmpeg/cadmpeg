@@ -5,8 +5,6 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
@@ -22,6 +20,20 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::PositiveReal;
+
+fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
+    (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
+    let start = count_at.checked_add(4)?;
+    let end = start.checked_add(72)?;
+    bytes
+        .get(start..end)?
+        .chunks_exact(2)
+        .all(|unit| {
+            unit[1] == 0
+                && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+        })
+        .then_some(end)
+}
 
 pub(super) fn exact_solid_primitive(
     bytes: &[u8],
@@ -363,13 +375,8 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end = fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || bytes.get(
                     start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
                         ..start + shifted_cylinder_352::REFERENCE_COUNT,
@@ -411,13 +418,8 @@ fn exact_shifted_cylinder_primitive_prologue(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end = fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || !valid_sketch_transform(&transform)
                 || !cylinder_transform_preserves_projected_geometry(&transform)
             {
