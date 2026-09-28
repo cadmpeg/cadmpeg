@@ -9067,61 +9067,50 @@ fn containing_finjpl_segment(
     containing.next().is_none().then_some(segment.id.as_str())
 }
 
-fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
-    segments
-        .iter()
-        .flat_map(|segment| {
-            container::preview_images(&segment.data)
-                .into_iter()
-                .filter_map(move |preview| {
-                    Some((
-                        segment
-                            .byte_offset
-                            .checked_add(preview.range.start as u64)?,
-                        preview,
-                        segment,
-                    ))
-                })
-        })
-        .enumerate()
-        .map(
-            |(index, (byte_offset, preview, segment))| CatiaPreviewImage {
-                id: format!("catia:outer:preview#{index}"),
-                byte_offset,
+fn preview_views(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    segments: &[CatiaFinjplSegment],
+) -> Result<Vec<CatiaPreviewImage>, cadmpeg_core::CodecError> {
+    let mut views = Vec::new();
+    for segment in segments {
+        for preview in container::preview_images(ctx, &segment.data)? {
+            let Some(byte_offset) = segment.byte_offset.checked_add(preview.range.start as u64)
+            else { continue };
+            let id = crate::resource::format_retained(ctx,
+                format_args!("catia:outer:preview#{}", views.len()), "catia_native_preview_id")?;
+            let data = crate::resource::copy_retained_slice(ctx, &segment.data[preview.range.clone()],
+                "catia_native_preview_bytes")?;
+            crate::resource::push(ctx, &mut views, CatiaPreviewImage {
+                id, byte_offset,
                 byte_len: (preview.range.end - preview.range.start) as u64,
-                width: preview.width,
-                height: preview.height,
-                components: preview.components,
-                data: segment.data[preview.range].to_vec(),
-            },
-        )
-        .collect()
+                width: preview.width, height: preview.height, components: preview.components,
+                data,
+            }, "catia_native_preview_views")?;
+        }
+    }
+    Ok(views)
 }
 
-fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExternalReference> {
-    segments
-        .iter()
-        .flat_map(|segment| {
-            container::external_references(&segment.data)
-                .into_iter()
-                .filter_map(move |reference| {
-                    Some((
-                        segment.byte_offset.checked_add(reference.offset as u64)?,
-                        reference,
-                        segment,
-                    ))
-                })
-        })
-        .enumerate()
-        .map(
-            |(index, (byte_offset, reference, segment))| CatiaExternalReference {
-                id: format!("catia:outer:external-reference#{index}"),
-                byte_offset,
-                target: reference.target,
-                segment: segment.id.clone(),
-            },
-        )
-        .collect()
+fn external_reference_views(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    segments: &[CatiaFinjplSegment],
+) -> Result<Vec<CatiaExternalReference>, cadmpeg_core::CodecError> {
+    let mut views = Vec::new();
+    for segment in segments {
+        for reference in container::external_references(ctx, &segment.data)? {
+            let Some(byte_offset) = segment.byte_offset.checked_add(reference.offset as u64)
+            else { continue };
+            let id = crate::resource::format_retained(ctx,
+                format_args!("catia:outer:external-reference#{}", views.len()),
+                "catia_native_external_reference_id")?;
+            let segment_id = crate::resource::copy_retained_str(ctx, &segment.id,
+                "catia_native_external_reference_segment")?;
+            crate::resource::push(ctx, &mut views, CatiaExternalReference {
+                id, byte_offset, target: reference.target, segment: segment_id,
+            }, "catia_native_external_reference_views")?;
+        }
+    }
+    Ok(views)
 }
 
 fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
@@ -9267,19 +9256,22 @@ impl CatiaNative {
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
                 container::outer_container_declarations(bytes, outer)
             });
-        let finjpl_segments = container::finjpl_segments(&container::BodyExtent::whole(bytes))
-            .into_iter()
-            .enumerate()
-            .map(|(index, segment)| CatiaFinjplSegment {
-                id: format!("catia:outer:finjpl#{index}"),
+        let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
+        let mut finjpl_segments = Vec::new();
+        for (index, segment) in parsed_finjpl.into_iter().enumerate() {
+            let id = crate::resource::format_retained(ctx,
+                format_args!("catia:outer:finjpl#{index}"), "catia_native_finjpl_id")?;
+            let family = crate::resource::copy_retained_str(ctx, finjpl_family(segment.kind()),
+                "catia_native_finjpl_family")?;
+            let data = crate::resource::copy_retained_slice(ctx, &bytes[segment.range.clone()],
+                "catia_native_finjpl_bytes")?;
+            crate::resource::push(ctx, &mut finjpl_segments, CatiaFinjplSegment {
+                id,
                 byte_offset: segment.range.start as u64,
                 byte_len: (segment.range.end - segment.range.start) as u64,
-                type_word: segment.type_word,
-                family: finjpl_family(segment.kind()).to_string(),
-                name: segment.name,
-                data: bytes[segment.range].to_vec(),
-            })
-            .collect::<Vec<_>>();
+                type_word: segment.type_word, family, name: segment.name, data,
+            }, "catia_native_finjpl_segments")?;
+        }
         let mut parsed_catalogs = catalog::parse(ctx, bytes)?;
         let entity_runs = entity_table::parse_runs(ctx, bytes)?;
         let paired_object_graph_roots = entity_runs
@@ -9523,8 +9515,8 @@ impl CatiaNative {
             crate::resource::push(ctx, &mut value_blocks, value,
                 "catia_native_value_blocks")?;
         }
-        let preview_images = preview_views(&finjpl_segments);
-        let external_references = external_reference_views(&finjpl_segments);
+        let preview_images = preview_views(ctx, &finjpl_segments)?;
+        let external_references = external_reference_views(ctx, &finjpl_segments)?;
         let mut legacy_entity_runs = legacy_entity_runs(bytes);
         for run in &mut legacy_entity_runs {
             run.outer_container = outer_directory

@@ -27,6 +27,85 @@ fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
         .expect("service budget admits container summary")
 }
 
+fn finjpl_service(body: &super::BodyExtent<'_>) -> Vec<super::FinjplSegment> {
+    crate::test_support::with_service_context(|ctx| super::finjpl_segments(ctx, body))
+        .expect("service budget admits FINJPL segments")
+}
+
+fn preview_service(data: &[u8]) -> Vec<super::PreviewImage> {
+    crate::test_support::with_service_context(|ctx| super::preview_images(ctx, data))
+        .expect("service budget admits previews")
+}
+
+fn external_refs_service(data: &[u8]) -> Vec<super::ExternalReference> {
+    crate::test_support::with_service_context(|ctx| super::external_references(ctx, data))
+        .expect("service budget admits external references")
+}
+
+fn last_save_version_service(data: &[u8]) -> Option<super::LastSaveVersion> {
+    crate::test_support::with_service_context(|ctx| super::last_save_version(ctx, data))
+        .expect("service budget admits version")
+}
+
+#[test]
+fn finjpl_markers_refuse_collection_limit() {
+    let bytes = summary_preview_segment();
+    let body = super::BodyExtent::whole(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::finjpl_segments(ctx, &body)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_positions"));
+    assert_eq!(finjpl_service(&body).len(), 1);
+}
+
+#[test]
+fn finjpl_primary_name_refuses_retained_limit() {
+    let bytes = summary_preview_segment();
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::finjpl_primary_name(ctx, &bytes, 0, bytes.len())
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_finjpl_name"));
+    assert_eq!(finjpl_service(&super::BodyExtent::whole(&bytes))[0].name.as_deref(),
+        Some("CATSummaryInformation"));
+}
+
+#[test]
+fn preview_rows_refuse_collection_limit() {
+    let bytes = summary_preview_segment();
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::preview_images_in_segments(ctx, &bytes, &segments)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_preview_images"));
+    assert_eq!(preview_service(&bytes).len(), 1);
+}
+
+#[test]
+fn external_reference_target_refuses_retained_limit() {
+    let bytes = external_reference_segment("linked.CATPart");
+    let segments = finjpl_service(&super::BodyExtent::whole(&bytes));
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::external_references_in_segments(ctx, &bytes, &segments)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_external_reference_target"));
+    assert_eq!(external_refs_service(&bytes)[0].target, "linked.CATPart");
+}
+
+#[test]
+fn last_save_build_date_refuses_retained_limit() {
+    let bytes = summary_preview_segment();
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::parse_last_save_version(ctx, &bytes)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_last_save_build_date"));
+    assert_eq!(last_save_version_service(&bytes).expect("version").version, 5);
+}
+
 #[test]
 fn summary_attribute_refuses_collection_limit() {
     let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
@@ -773,9 +852,9 @@ fn detect_high_on_outer_magic() {
 #[test]
 fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let bytes = summary_preview_segment();
-    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
+    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
-    let previews = crate::container::preview_images(&bytes);
+    let previews = preview_service(&bytes);
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].width, 640);
     assert_eq!(previews[0].height, 288);
@@ -801,13 +880,13 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         .position(|value| value == [0xff, 0xd9])
         .unwrap();
     truncated.truncate(eoi + 1);
-    assert!(crate::container::preview_images(&truncated).is_empty());
+    assert!(preview_service(&truncated).is_empty());
 }
 
 #[test]
 fn summary_version_parser_requires_one_consistent_tuple() {
     let bytes = summary_preview_segment();
-    let version = crate::container::last_save_version(&bytes).unwrap();
+    let version = last_save_version_service(&bytes).unwrap();
     assert_eq!(version.version, 5);
     assert_eq!(version.release, 27);
     assert_eq!(version.service_pack, 2);
@@ -823,12 +902,12 @@ fn summary_version_parser_requires_one_consistent_tuple() {
     other[release + 9] = b'2';
     other[release + 10] = b'8';
     conflicting.extend_from_slice(&other);
-    assert!(crate::container::last_save_version(&conflicting).is_none());
+    assert!(last_save_version_service(&conflicting).is_none());
 
     let mut non_summary = summary_preview_segment();
     non_summary[8..12].copy_from_slice(&0x0101_0002u32.to_be_bytes());
-    assert!(crate::container::last_save_version(&non_summary).is_none());
-    assert!(crate::container::preview_images(&non_summary).is_empty());
+    assert!(last_save_version_service(&non_summary).is_none());
+    assert!(preview_service(&non_summary).is_empty());
     let native = crate::native::CatiaNative::decode(&non_summary);
     assert!(native.preview_images.is_empty());
 }
@@ -838,7 +917,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     let mut bytes = external_reference_segment("Support.CATPart");
     bytes.extend_from_slice(&external_reference_segment("Assembly.CATProduct"));
     bytes.extend_from_slice(&external_reference_segment("notes.txt"));
-    let references = crate::container::external_references(&bytes);
+    let references = external_refs_service(&bytes);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
@@ -890,11 +969,11 @@ fn summary_preview_requires_a_coherent_frame_header() {
 
     let mut zero_height = valid.clone();
     zero_height[frame + 5..frame + 7].copy_from_slice(&0u16.to_be_bytes());
-    assert!(crate::container::preview_images(&zero_height).is_empty());
+    assert!(preview_service(&zero_height).is_empty());
 
     let mut inconsistent_components = valid;
     inconsistent_components[frame + 9] = 2;
-    assert!(crate::container::preview_images(&inconsistent_components).is_empty());
+    assert!(preview_service(&inconsistent_components).is_empty());
     assert!(crate::native::CatiaNative::decode(&inconsistent_components)
         .preview_images
         .is_empty());
@@ -910,7 +989,7 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
 
     let mut malformed_prefix = valid.clone();
     malformed_prefix.splice(image_start..image_start, [0xff, 0xd8, 0xff, 0xd9]);
-    let previews = crate::container::preview_images(&malformed_prefix);
+    let previews = preview_service(&malformed_prefix);
     let [preview] = previews.as_slice() else {
         panic!("one complete preview after malformed SOI")
     };
@@ -925,7 +1004,7 @@ fn summary_preview_requires_one_complete_jpeg_candidate() {
     let image = valid[image_start..image_end].to_vec();
     let mut duplicate = valid;
     duplicate.extend(image);
-    assert!(crate::container::preview_images(&duplicate).is_empty());
+    assert!(preview_service(&duplicate).is_empty());
 }
 
 #[test]
@@ -999,7 +1078,7 @@ fn finjpl_parser_splits_segments_and_classifies_type_words() {
     use crate::container::FinjplKind;
 
     let bytes = finjpl_stream();
-    let segments = crate::container::finjpl_segments(&crate::container::BodyExtent::whole(&bytes));
+    let segments = finjpl_service(&crate::container::BodyExtent::whole(&bytes));
     assert_eq!(segments.len(), 2);
     assert_eq!(segments[0].kind(), FinjplKind::Storage);
     assert_eq!(segments[0].type_word, 0x0000_008e);

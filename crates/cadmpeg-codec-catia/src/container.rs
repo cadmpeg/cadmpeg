@@ -181,56 +181,69 @@ impl<'a> BodyExtent<'a> {
 }
 
 /// Split FINJPL segments within a bounded outer-body extent.
-#[must_use]
-pub(crate) fn finjpl_segments(body: &BodyExtent<'_>) -> Vec<FinjplSegment> {
+pub(crate) fn finjpl_segments(
+    ctx: &DecodeContext<'_>,
+    body: &BodyExtent<'_>,
+) -> Result<Vec<FinjplSegment>, CodecError> {
     let data = body.image;
     let body_start = body.range.start;
     let end = body.range.end;
     if body_start >= end {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let positions: Vec<usize> = memchr::memmem::find_iter(&data[body_start..end], FINJPL_MARKER)
-        .map(|relative| body_start + relative)
-        .collect();
-    positions
-        .iter()
-        .enumerate()
-        .filter_map(|(index, &pos)| {
-            let type_word = View::u32_be_at(data, pos + FINJPL_MARKER.len())?;
-            let segment_end = positions.get(index + 1).copied().unwrap_or(end);
-            Some(FinjplSegment {
-                range: pos..segment_end,
-                type_word,
-                name: finjpl_primary_name(data, pos, segment_end),
-            })
-        })
-        .collect()
+    let positions = crate::resource::collect_vec(
+        ctx,
+        memchr::memmem::find_iter(&data[body_start..end], FINJPL_MARKER)
+            .map(|relative| body_start + relative),
+        "catia_finjpl_positions",
+    )?;
+    let mut segments = Vec::new();
+    for (index, &pos) in positions.iter().enumerate() {
+        let Some(type_word) = View::u32_be_at(data, pos + FINJPL_MARKER.len()) else {
+            continue;
+        };
+        let segment_end = positions.get(index + 1).copied().unwrap_or(end);
+        let name = finjpl_primary_name(ctx, data, pos, segment_end)?;
+        crate::resource::push(ctx, &mut segments, FinjplSegment {
+            range: pos..segment_end, type_word, name,
+        }, "catia_finjpl_segments")?;
+    }
+    Ok(segments)
 }
 
-fn finjpl_primary_name(data: &[u8], pos: usize, end: usize) -> Option<String> {
-    let length = usize::try_from(View::u32_be_at(data, pos + 12)?).ok()?;
-    let start = pos.checked_add(17)?;
-    let name_end = start.checked_add(length)?;
+fn finjpl_primary_name(
+    ctx: &DecodeContext<'_>, data: &[u8], pos: usize, end: usize,
+) -> Result<Option<String>, CodecError> {
+    let Some(length) = View::u32_be_at(data, pos + 12).and_then(|value| usize::try_from(value).ok()) else {
+        return Ok(None);
+    };
+    let Some(start) = pos.checked_add(17) else { return Ok(None) };
+    let Some(name_end) = start.checked_add(length) else { return Ok(None) };
     if data.get(pos + 16) != Some(&0) || name_end > end {
-        return None;
+        return Ok(None);
     }
-    let value = data.get(start..name_end)?;
-    (!value.is_empty() && value.iter().all(|byte| matches!(byte, 0x20..=0x7e)))
-        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
+    let Some(value) = data.get(start..name_end) else { return Ok(None) };
+    if value.is_empty() || !value.iter().all(|byte| matches!(byte, 0x20..=0x7e)) {
+        return Ok(None);
+    }
+    let Some(value) = std::str::from_utf8(value).ok() else { return Ok(None) };
+    Ok(Some(crate::resource::copy_retained_str(ctx, value, "catia_finjpl_name")?))
 }
 
 /// Extract length-closed JPEG previews from `CATSummaryInformation` FINJPL
 /// segments. JPEG marker framing supplies both dimensions and the exact image
 /// boundary; incidental JPEG signatures outside this segment family are ignored.
-#[must_use]
-pub(crate) fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
-    let segments = finjpl_segments(&BodyExtent::whole(data));
-    preview_images_in_segments(data, &segments)
+pub(crate) fn preview_images(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<PreviewImage>, CodecError> {
+    let segments = finjpl_segments(ctx, &BodyExtent::whole(data))?;
+    preview_images_in_segments(ctx, data, &segments)
 }
 
-fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<PreviewImage> {
-    segments
-        .iter()
+fn preview_images_in_segments(
+    ctx: &DecodeContext<'_>, data: &[u8], segments: &[FinjplSegment],
+) -> Result<Vec<PreviewImage>, CodecError> {
+    crate::resource::collect_vec(ctx, segments.iter()
         .filter(|segment| segment.type_word == 0x0101_0003)
         .filter_map(|segment| {
             let bytes = &data[segment.range.clone()];
@@ -253,67 +266,68 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
                 height,
                 components,
             })
-        })
-        .collect()
+        }), "catia_preview_images")
 }
 
 /// Decode the unique `LastSaveVersion` tuple from summary-information segments.
 /// Repeated identical copies collapse to one value; conflicting copies reject
 /// the version instead of selecting by position.
-#[must_use]
 #[cfg(test)]
-fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
-    let segments = finjpl_segments(&BodyExtent::whole(data));
-    last_save_version_in_segments(data, &segments)
+fn last_save_version(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Option<LastSaveVersion>, CodecError> {
+    let segments = finjpl_segments(ctx, &BodyExtent::whole(data))?;
+    last_save_version_in_segments(ctx, data, &segments)
 }
 
 fn last_save_version_in_segments(
-    data: &[u8],
-    segments: &[FinjplSegment],
-) -> Option<LastSaveVersion> {
-    let mut versions = segments
-        .iter()
-        .filter(|segment| segment.type_word == 0x0101_0003)
-        .filter_map(|segment| parse_last_save_version(&data[segment.range.clone()]))
-        .collect::<Vec<_>>();
+    ctx: &DecodeContext<'_>, data: &[u8], segments: &[FinjplSegment],
+) -> Result<Option<LastSaveVersion>, CodecError> {
+    let mut versions = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.type_word == 0x0101_0003) {
+        if let Some(version) = parse_last_save_version(ctx, &data[segment.range.clone()])? {
+            crate::resource::push(ctx, &mut versions, version, "catia_last_save_versions")?;
+        }
+    }
     versions.dedup();
-    (versions.len() == 1).then(|| versions.remove(0))
+    Ok((versions.len() == 1).then(|| versions.remove(0)))
 }
 
 /// Enumerate exact `CATStorageProperty` external-document references from
 /// project-flags segments.
-#[must_use]
-pub(crate) fn external_references(data: &[u8]) -> Vec<ExternalReference> {
-    let segments = finjpl_segments(&BodyExtent::whole(data));
-    external_references_in_segments(data, &segments)
+pub(crate) fn external_references(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<ExternalReference>, CodecError> {
+    let segments = finjpl_segments(ctx, &BodyExtent::whole(data))?;
+    external_references_in_segments(ctx, data, &segments)
 }
 
 fn external_references_in_segments(
-    data: &[u8],
-    segments: &[FinjplSegment],
-) -> Vec<ExternalReference> {
+    ctx: &DecodeContext<'_>, data: &[u8], segments: &[FinjplSegment],
+) -> Result<Vec<ExternalReference>, CodecError> {
     const STORAGE: &[u8] = b"\x34\x12CATStorageProperty";
-    segments
-        .iter()
-        .filter(|segment| segment.kind() == FinjplKind::ProjectFlags)
-        .flat_map(|segment| {
-            let bytes = &data[segment.range.clone()];
-            bytes
-                .windows(STORAGE.len())
-                .enumerate()
-                .filter_map(move |(relative, value)| {
-                    (value == STORAGE).then_some(relative).and_then(|start| {
-                        parse_external_reference(bytes, start).map(|mut reference| {
-                            reference.offset += segment.range.start;
-                            reference
-                        })
-                    })
-                })
-        })
-        .collect()
+    let mut references = Vec::new();
+    for segment in segments.iter().filter(|segment| segment.kind() == FinjplKind::ProjectFlags) {
+        let bytes = &data[segment.range.clone()];
+        for (relative, value) in bytes.windows(STORAGE.len()).enumerate() {
+            if value == STORAGE {
+                if let Some((target_offset, target)) = parse_external_reference(bytes, relative) {
+                    let target = crate::resource::copy_retained_str(
+                        ctx, target, "catia_external_reference_target")?;
+                    let reference = ExternalReference {
+                        offset: target_offset + segment.range.start,
+                        target,
+                    };
+                    crate::resource::push(ctx, &mut references, reference,
+                        "catia_external_references")?;
+                }
+            }
+        }
+    }
+    Ok(references)
 }
 
-fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReference> {
+fn parse_external_reference(data: &[u8], start: usize) -> Option<(usize, &str)> {
     let mut at = start;
     (length_prefixed_ascii(data, &mut at)? == "CATStorageProperty").then_some(())?;
     (data.get(at..at + 6) == Some(&[0x80, 0x01, 0, 0, 0, 0])).then_some(())?;
@@ -330,64 +344,60 @@ fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReferen
     at += 6;
     let target_offset = at;
     let target = length_prefixed_ascii(data, &mut at)?;
-    (data.get(at) == Some(&0x9f) && is_catia_document_name(&target)).then_some(())?;
-    Some(ExternalReference {
-        offset: target_offset,
-        target,
-    })
+    (data.get(at) == Some(&0x9f) && is_catia_document_name(target)).then_some(())?;
+    Some((target_offset, target))
 }
 
 /// Tag byte plus one-byte length that precede a length-prefixed ASCII string.
 const LENGTH_PREFIXED_ASCII_HEADER: NonZeroU32 = NonZeroU32::MIN.saturating_add(1);
 
-fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
+fn length_prefixed_ascii<'a>(data: &'a [u8], at: &mut usize) -> Option<&'a str> {
     (data.get(*at) == Some(&0x34)).then_some(())?;
     let length = usize::from(*data.get(*at + 1)?);
     let start = (*at).checked_add(2)?;
     let end = start.checked_add(length)?;
     let value = data.get(start..end)?;
     *at = end;
-    value
-        .is_ascii()
-        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
+    value.is_ascii().then(|| std::str::from_utf8(value).ok()).flatten()
 }
 
 fn is_catia_document_name(value: &str) -> bool {
     [".catpart", ".catproduct", ".catshape", ".cgr"]
         .iter()
-        .any(|extension| value.to_ascii_lowercase().ends_with(extension))
+        .any(|extension| value.len() >= extension.len()
+            && value[value.len() - extension.len()..].eq_ignore_ascii_case(extension))
 }
 
-fn parse_last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
-    let version = tagged_ascii(data, b"<Version>", b"/<Version>")?
-        .parse()
-        .ok()?;
-    let release = tagged_ascii(data, b"<Release>", b"/<Release>")?
-        .parse()
-        .ok()?;
-    let service_pack = tagged_ascii(data, b"<ServicePack>", b"/<ServicePack>")?
-        .parse()
-        .ok()?;
-    let hot_fix = tagged_ascii(data, b"<HotFix>", b"/<HotFix>")?
-        .parse()
-        .ok()?;
-    let build_date = tagged_ascii(data, b"<BuildDate>", b"/<BuildDate>")?;
-    Some(LastSaveVersion {
+fn parse_last_save_version(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Option<LastSaveVersion>, CodecError> {
+    let parsed = (|| {
+        Some((
+            tagged_ascii(data, b"<Version>", b"/<Version>")?.parse().ok()?,
+            tagged_ascii(data, b"<Release>", b"/<Release>")?.parse().ok()?,
+            tagged_ascii(data, b"<ServicePack>", b"/<ServicePack>")?.parse().ok()?,
+            tagged_ascii(data, b"<HotFix>", b"/<HotFix>")?.parse().ok()?,
+            tagged_ascii(data, b"<BuildDate>", b"/<BuildDate>")?,
+        ))
+    })();
+    let Some((version, release, service_pack, hot_fix, build_date)) = parsed else {
+        return Ok(None);
+    };
+    let build_date = crate::resource::copy_retained_str(ctx, build_date, "catia_last_save_build_date")?;
+    Ok(Some(LastSaveVersion {
         version,
         release,
         service_pack,
         hot_fix,
         build_date,
-    })
+    }))
 }
 
-fn tagged_ascii(data: &[u8], open: &[u8], close: &[u8]) -> Option<String> {
+fn tagged_ascii<'a>(data: &'a [u8], open: &[u8], close: &[u8]) -> Option<&'a str> {
     let start = find(data, open)? + open.len();
     let relative_end = find(&data[start..], close)?;
     let value = data.get(start..start + relative_end)?;
-    value
-        .is_ascii()
-        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
+    value.is_ascii().then(|| std::str::from_utf8(value).ok()).flatten()
 }
 
 fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
@@ -463,8 +473,20 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 #[must_use]
 pub(crate) fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
     let body = outer_body_range(data)?;
-    let segments = finjpl_segments(&body);
-    e5_record_stream_in_segments(data, body.range(), &segments)
+    let mut markers = memchr::memmem::find_iter(body.bytes(), FINJPL_MARKER)
+        .map(|relative| body.range.start + relative);
+    let mut current = markers.next();
+    let candidates = std::iter::from_fn(|| {
+        while let Some(pos) = current {
+            current = markers.next();
+            let segment_end = current.unwrap_or(body.range.end);
+            if let Some(type_word) = View::u32_be_at(data, pos + FINJPL_MARKER.len()) {
+                return Some((pos..segment_end, type_word));
+            }
+        }
+        None
+    });
+    select_e5_record_stream(data, body.range(), candidates)
 }
 
 fn outer_body_range(data: &[u8]) -> Option<BodyExtent<'_>> {
@@ -505,36 +527,42 @@ fn e5_record_stream_in_segments(
     body: Range<usize>,
     segments: &[FinjplSegment],
 ) -> Option<Range<usize>> {
+    select_e5_record_stream(data, body, segments.iter().map(|segment| {
+        (segment.range.clone(), segment.type_word)
+    }))
+}
+
+fn select_e5_record_stream(
+    data: &[u8], body: Range<usize>,
+    candidates: impl Iterator<Item = (Range<usize>, u32)>,
+) -> Option<Range<usize>> {
     let preamble = outer_preamble_range(data)?;
     if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
-
-    let candidates = segments
-        .iter()
-        .filter(|segment| segment.range.start >= body.start && segment.range.end <= body.end)
-        .filter_map(|segment| {
-            let count = coherent_e5_record_count(&data[segment.range.clone()]);
-            (count >= 10).then_some((
-                count,
-                segment.type_word == 0x0000_008e,
-                segment.range.clone(),
-            ))
-        })
-        .collect::<Vec<_>>();
-    let best_count = candidates.iter().map(|(count, _, _)| *count).max()?;
-    let mut best = candidates
-        .into_iter()
-        .filter(|(count, _, _)| *count == best_count)
-        .collect::<Vec<_>>();
-    let preferred = best.iter().any(|(_, preferred, _)| *preferred);
-    if preferred {
-        best.retain(|(_, preferred, _)| *preferred);
+    let mut best: Option<(usize, bool, Range<usize>)> = None;
+    let mut tied = false;
+    for (range, type_word) in candidates {
+        if range.start < body.start || range.end > body.end {
+            continue;
+        }
+        let count = coherent_e5_record_count(&data[range.clone()]);
+        if count < 10 {
+            continue;
+        }
+        let preferred = type_word == 0x0000_008e;
+        match &best {
+            None => { best = Some((count, preferred, range)); tied = false; }
+            Some((best_count, best_preferred, _)) if count > *best_count
+                || (count == *best_count && preferred && !best_preferred) => {
+                best = Some((count, preferred, range)); tied = false;
+            }
+            Some((best_count, best_preferred, _)) if count == *best_count
+                && preferred == *best_preferred => tied = true,
+            _ => {}
+        }
     }
-    match best.as_slice() {
-        [(_, _, range)] => Some(range.clone()),
-        _ => None,
-    }
+    if tied { None } else { best.map(|(_, _, range)| range) }
 }
 
 fn coherent_e5_record_count(data: &[u8]) -> usize {
@@ -1383,10 +1411,13 @@ pub(crate) fn scan_bytes<'a>(
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
     let outer_body = outer_body_range(&data);
-    let finjpl_segments = outer_body.as_ref().map_or_else(Vec::new, finjpl_segments);
-    let previews = preview_images_in_segments(&data, &finjpl_segments);
-    let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
-    let external_references = external_references_in_segments(&data, &finjpl_segments);
+    let finjpl_segments = match outer_body.as_ref() {
+        Some(body) => finjpl_segments(ctx, body)?,
+        None => Vec::new(),
+    };
+    let previews = preview_images_in_segments(ctx, &data, &finjpl_segments)?;
+    let last_save_version = last_save_version_in_segments(ctx, &data, &finjpl_segments)?;
+    let external_references = external_references_in_segments(ctx, &data, &finjpl_segments)?;
     let outer_container_declarations = outer.as_ref().map_or_else(Vec::new, |directory| {
         outer_container_declarations(&data, directory)
     });
