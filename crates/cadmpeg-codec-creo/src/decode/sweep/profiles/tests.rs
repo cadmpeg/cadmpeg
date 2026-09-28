@@ -39,6 +39,44 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 }
 
 #[test]
+fn connected_profile_vertices_refuse_each_collection_boundary() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let sketch_id = SketchId::mint("creo:model:sketch#71").expect("identity grammar");
+    let entity_id =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#71:1").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(sketch(&sketch_id, &entity_id));
+    ir.model
+        .sketch_entities
+        .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let arena = DecodeArena::new();
+    for (limit, operation) in [
+        (0, "creo connected profile uses"),
+        (1, "creo connected profile vertices"),
+        (2, "creo connected profile vertices"),
+        (3, "creo connected profile rows"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::connected_sketch_profile_vertices(&ctx, &ir, &carriers, &sketch_id)
+            .expect_err("collection limit refuses profile vertices");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id)
+        })
+        .expect("service profile vertices"),
+        vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
+    );
+}
+
+#[test]
 fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     let sketch_id = SketchId::mint("creo:model:sketch#8").expect("identity grammar");
     let entity_id =
@@ -70,7 +108,8 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     assert_eq!(center.u, 25.4);
     assert_eq!(radius.get(), 50.8);
     assert_eq!(
-        super::connected_sketch_profile_vertices(&ir, &carriers, &sketch_id),
+        crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(ctx, &ir, &carriers, &sketch_id))
+            .expect("service profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
     let profiles =
@@ -121,11 +160,13 @@ fn profile_joins_reject_duplicate_sketch_ids() {
         .sketch_entities
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
 
-    assert!(super::connected_sketch_profile_vertices(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id
-    )
+    ))
+    .expect("service profile vertices")
     .is_empty());
     assert!(super::resolved_sketch_profiles(
         &ir,
@@ -148,11 +189,13 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
         line_entity(&entity_id, &sketch_id, [0.0, 1.0]),
     ]);
 
-    assert!(super::connected_sketch_profile_vertices(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::connected_sketch_profile_vertices(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id
-    )
+    ))
+    .expect("service profile vertices")
     .is_empty());
     assert!(super::resolved_sketch_profiles(
         &ir,
