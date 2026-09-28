@@ -836,16 +836,28 @@ pub(crate) fn project_marker_backed_sketches(
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
 
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let marker_owners = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        if !native_features.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT marker profile native features")?;
+            native_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT marker profile native features", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        native_features.insert(feature.id.as_str(), feature);
+    }
+    let mut marker_owners = HashSet::new();
+    for owner in lanes.iter().flat_map(|lane| &lane.sketch_entities)
         .filter_map(|marker| marker.feature_ref.as_deref())
-        .collect::<HashSet<_>>();
+    {
+        if !marker_owners.contains(owner) {
+            ctx.charge_collection_items(1, "index SLDPRT marker profile owners")?;
+            marker_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT marker profile owners", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        marker_owners.insert(owner);
+    }
     let feature_frames = sketch_feature_frames(ctx, features, histories, lanes)?;
     project_detached_legacy_config_sketches(
         features,
@@ -858,15 +870,19 @@ pub(crate) fn project_marker_backed_sketches(
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
-        let markers_by_id = lane
-            .sketch_entities
-            .iter()
-            .map(|marker| (marker.id(), marker))
-            .collect::<HashMap<_, _>>();
-        let mut objects = native_features
-            .values()
-            .filter(|feature| !metadata_ids.contains(&feature.id))
-            .filter_map(|feature| {
+        let mut markers_by_id = HashMap::new();
+        for marker in &lane.sketch_entities {
+            if !markers_by_id.contains_key(marker.id()) {
+                ctx.charge_collection_items(1, "index SLDPRT profile markers")?;
+                markers_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT profile markers", u64::MAX - 1, u64::MAX,
+                ))?;
+            }
+            markers_by_id.insert(marker.id(), marker);
+        }
+        let mut objects = Vec::new();
+        for feature in native_features.values().filter(|feature| !metadata_ids.contains(&feature.id)) {
+            let Some((start, feature)) = (|| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
                     .or_else(|| {
@@ -879,8 +895,12 @@ pub(crate) fn project_marker_backed_sketches(
                             .min()
                     })?;
                 Some((start, *feature))
-            })
-            .collect::<Vec<_>>();
+            })() else {
+                continue;
+            };
+            ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT marker profile objects")?;
+            objects.push((start, feature));
+        }
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
             let Some((feature_index, bound_sketch, block_definition)) =
@@ -891,29 +911,43 @@ pub(crate) fn project_marker_backed_sketches(
                     match feature.evaluation.definition() {
                         cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::Sketch { sketch, .. },
-                        ) => Some((index, sketch.id().cloned(), false)),
+                        ) => Some((index, sketch.id(), false)),
                         cadmpeg_ir::features::FeatureDefinition::Operation(
                             cadmpeg_ir::features::FeatureOperation::SketchBlockDefinition {
                                 sketch,
                             },
-                        ) => Some((index, sketch.clone(), true)),
+                        ) => Some((index, sketch.as_ref(), true)),
                         _ => None,
                     }
                 })
             else {
                 continue;
             };
+            let bound_sketch = match bound_sketch {
+                Some(id) => {
+                    let id_text = ctx.format_retained(
+                        format_args!("{}", id.as_str()),
+                        "copy SLDPRT bound marker sketch identity",
+                    )?;
+                    let Ok(id) = SketchId::mint(id_text) else {
+                        continue;
+                    };
+                    Some(id)
+                }
+                None => None,
+            };
             let end = objects
                 .get(object_index + 1)
                 .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
-            let object_markers = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                        && marker.offset() < end
-                })
-                .collect::<Vec<_>>();
+            let mut object_markers = Vec::new();
+            for marker in &lane.sketch_entities {
+                if marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
+                    && marker.offset() < end
+                {
+                    ctx.reserve_collection_vec(&mut object_markers, 1, "collect SLDPRT profile object markers")?;
+                    object_markers.push(marker);
+                }
+            }
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -946,16 +980,19 @@ pub(crate) fn project_marker_backed_sketches(
                 .id
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
-            let Ok(sketch_id) = SketchId::mint(format!(
-                "sldprt:model:sketch#markers:{lane_key}:{}",
-                native_feature.ordinal
-            )) else {
+            let sketch_text = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:sketch#markers:{lane_key}:{}",
+                    native_feature.ordinal
+                ),
+                "format SLDPRT marker profile sketch identity",
+            )?;
+            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                 continue;
             };
-            let markers = object_markers
-                .iter()
-                .copied()
-                .filter(|marker| {
+            let mut markers = Vec::new();
+            for marker in object_markers.iter().copied() {
+                if
                     matches!(
                         marker.kind(),
                         SketchInputKind::Point
@@ -972,8 +1009,11 @@ pub(crate) fn project_marker_backed_sketches(
                             )
                             && !terminal_relation_display_carrier(lane, marker)
                     })
-                })
-                .collect::<Vec<_>>();
+                {
+                    ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT profile geometry markers")?;
+                    markers.push(marker);
+                }
+            }
             if markers.is_empty() {
                 let has_unbound_marker = lane
                     .sketch_entities
@@ -986,10 +1026,31 @@ pub(crate) fn project_marker_backed_sketches(
                     && !block_definition
                 {
                     if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                        let id_text = ctx.format_retained(
+                            format_args!("{}", sketch_id.as_str()),
+                            "copy SLDPRT empty marker sketch identity",
+                        )?;
+                        let Ok(id) = SketchId::mint(id_text) else {
+                            continue;
+                        };
+                        let name = ctx.format_retained(
+                            format_args!("{}", native_feature.name),
+                            "copy SLDPRT empty marker sketch name",
+                        )?;
+                        let configuration = lane.configuration.as_deref()
+                            .map(|value| ctx.format_retained(
+                                format_args!("{value}"),
+                                "copy SLDPRT empty marker sketch configuration",
+                            ))
+                            .transpose()?;
+                        let native_ref = ctx.format_retained(
+                            format_args!("{}", lane.id),
+                            "copy SLDPRT empty marker sketch native reference",
+                        )?;
                         let sketch = Sketch {
-                            id: sketch_id.clone(),
-                            name: Some(native_feature.name.clone()),
-                            configuration: lane.configuration.clone(),
+                            id,
+                            name: Some(name),
+                            configuration,
                             visible: None,
                             placement: match frame {
                                 Some((origin, normal, u_axis)) => {
@@ -1003,8 +1064,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
                             },
                             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-                            native_ref: Some(lane.id.clone()),
+                            native_ref: Some(native_ref),
                         };
+                        ctx.reserve_collection_vec(sketches, 1, "append SLDPRT empty marker sketch")?;
                         sketches.push(sketch);
                     }
                     features[feature_index].evaluation.set_definition(
@@ -1045,10 +1107,31 @@ pub(crate) fn project_marker_backed_sketches(
             {
                 continue;
             }
+            let id_text = ctx.format_retained(
+                format_args!("{}", sketch_id.as_str()),
+                "copy SLDPRT marker sketch identity",
+            )?;
+            let Ok(sketch_copy) = SketchId::mint(id_text) else {
+                continue;
+            };
+            let name = ctx.format_retained(
+                format_args!("{}", native_feature.name),
+                "copy SLDPRT marker sketch name",
+            )?;
+            let configuration = lane.configuration.as_deref()
+                .map(|value| ctx.format_retained(
+                    format_args!("{value}"),
+                    "copy SLDPRT marker sketch configuration",
+                ))
+                .transpose()?;
+            let native_ref = ctx.format_retained(
+                format_args!("{}", lane.id),
+                "copy SLDPRT marker sketch native reference",
+            )?;
             let mut sketch = Sketch {
-                id: sketch_id.clone(),
-                name: Some(native_feature.name.clone()),
-                configuration: lane.configuration.clone(),
+                id: sketch_copy,
+                name: Some(name),
+                configuration,
                 visible: None,
                 placement: match frame {
                     Some((origin, normal, u_axis)) => {
@@ -1062,7 +1145,7 @@ pub(crate) fn project_marker_backed_sketches(
                     None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
                 },
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-                native_ref: Some(lane.id.clone()),
+                native_ref: Some(native_ref),
             };
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
@@ -1664,6 +1747,7 @@ pub(crate) fn project_marker_backed_sketches(
                     )
                 })();
                 if let Some(entity) = entity {
+                    ctx.reserve_collection_vec(&mut projected, 1, "collect SLDPRT projected marker entities")?;
                     projected.push(entity);
                 }
             }
@@ -1873,7 +1957,13 @@ pub(crate) fn project_marker_backed_sketches(
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
+            ctx.reserve_precharged_vec(
+                sketch_entities,
+                projected.len(),
+                "append SLDPRT projected marker entities",
+            )?;
             sketch_entities.extend(projected);
+            ctx.reserve_collection_vec(sketches, 1, "append SLDPRT marker sketch")?;
             sketches.push(sketch);
             features[feature_index]
                 .evaluation
@@ -3742,6 +3832,35 @@ mod detached_legacy_sketch_tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "collect SLDPRT sketch block history objects"));
+    }
+
+    #[test]
+    fn marker_profile_projection_refuses_collection_limit() {
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![feature()],
+        };
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let error = project_marker_backed_sketches(
+            &ctx,
+            &mut [],
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &[history],
+            &[],
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "index SLDPRT marker profile native features"));
     }
 
     #[test]
