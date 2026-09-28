@@ -332,54 +332,37 @@ fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize) -> Option<usize> 
     a8_inline_surface_tail(data, at, end)
 }
 
-fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
-    fn walk(
-        data: &[u8],
-        base: usize,
-        admit_a8: bool,
-        admit_b5: bool,
-        frames: &mut Vec<ObjectStreamFrame>,
-    ) {
-        let mut pos = 0usize;
-        while pos + 8 <= data.len() {
-            let Some(frame) = object_stream_frame(data, pos) else {
-                pos += 1;
+fn object_stream_frames(data: &[u8]) -> impl Iterator<Item = ObjectStreamFrame> + '_ {
+    let mut pos = 0usize;
+    let mut child_end = None::<usize>;
+    let mut resume = 0usize;
+    std::iter::from_fn(move || loop {
+        let limit = child_end.unwrap_or(data.len());
+        if pos.checked_add(8).is_none_or(|end| end > limit) {
+            if child_end.take().is_some() {
+                pos = resume;
                 continue;
-            };
-            match frame.family {
-                0xa8 if admit_a8 => {
-                    frames.push(ObjectStreamFrame {
-                        pos: base + frame.pos,
-                        payload: base + frame.payload,
-                        end: base + frame.end,
-                        ..frame
-                    });
-                    walk(
-                        &data[frame.payload..frame.end],
-                        base + frame.payload,
-                        false,
-                        admit_b5,
-                        frames,
-                    );
-                    pos = frame.end;
-                }
-                0xb5 if admit_b5 => {
-                    frames.push(ObjectStreamFrame {
-                        pos: base + frame.pos,
-                        payload: base + frame.payload,
-                        end: base + frame.end,
-                        ..frame
-                    });
-                    pos = frame.end;
-                }
-                _ => pos += 1,
             }
+            return None;
         }
-    }
-
-    let mut frames = Vec::new();
-    walk(data, 0, true, true, &mut frames);
-    frames
+        let Some(frame) = object_stream_frame(data, pos).filter(|frame| frame.end <= limit) else {
+            pos += 1;
+            continue;
+        };
+        match frame.family {
+            0xa8 if child_end.is_none() => {
+                child_end = Some(frame.end);
+                resume = frame.end;
+                pos = frame.payload;
+                return Some(frame);
+            }
+            0xb5 => {
+                pos = frame.end;
+                return Some(frame);
+            }
+            _ => pos += 1,
+        }
+    })
 }
 
 /// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
