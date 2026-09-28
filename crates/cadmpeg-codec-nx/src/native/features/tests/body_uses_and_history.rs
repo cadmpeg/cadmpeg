@@ -254,7 +254,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     let object_id_offset = block_bytes.len();
     block_bytes.push(reference.body.value() as u8);
     block_bytes.extend_from_slice(&discriminator);
-    let parsed_frames = crate::om::data_block_object_frames(&block_bytes);
+    let parsed_frames = crate::test_support::with_decode_context(|ctx| crate::om::data_block_object_frames(ctx, &block_bytes)).unwrap();
     assert_eq!(parsed_frames.len(), 1);
     assert_eq!(parsed_frames[0].offset, object_id_offset);
     let object_frame = DataBlockObjectFrame {
