@@ -1838,3 +1838,45 @@ fn tangent_profile_entity_id_refuses_limit() {
             if failure.operation == "f3d tangent profile entity id"
     ));
 }
+
+fn single_line_profile() -> (Vec<SketchEntity>, Vec<SketchEntityUse>) {
+    let sketch = SketchId::mint("synthetic:test:id#profile-limits").unwrap();
+    let id = SketchEntityId::mint("synthetic:test:id#profile-edge").unwrap();
+    let entity = SketchEntity::new(
+        id.clone(), sketch,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
+        }).unwrap(),
+    );
+    (vec![entity], vec![SketchEntityUse { entity: id, reversed: false }])
+}
+
+const PROFILE_LIMIT_TEST_TOLERANCE: f64 = 1.0e-6;
+
+#[test]
+fn line_profile_vertex_refuses_collection_limit() {
+    let (entities, profile) = single_line_profile();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::line_profile_vertices(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d line profile vertex"
+    ));
+}
+
+#[test]
+fn circular_arc_profile_segment_refuses_collection_limit() {
+    let (entities, profile) = single_line_profile();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::circular_arc_profile_segments(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d circular arc profile segment"
+    ));
+}
