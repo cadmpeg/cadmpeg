@@ -3998,12 +3998,55 @@ pub(super) fn field_definitions(
     })
 }
 
+/// Insert one distinct graph relation with caller-budget admission.
+fn add_object_record_relation(
+    ctx: &DecodeContext<'_>,
+    relations: &mut BTreeMap<usize, Vec<usize>>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    source: usize,
+    target: usize,
+) -> Result<(), CodecError> {
+    if !relations.contains_key(&source) {
+        ctx.charge_collection_items(1, "NX object record relation index")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, Vec<usize>)>() * 4))?;
+    }
+    let related = relations.entry(source).or_default();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(related.len()), "NX object record relation deduplication")?;
+    if !related.contains(&target) {
+        ctx.charge_collection_items(1, "NX object record relations")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
+        related.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX object record relations", 0, 1))?;
+        related.push(target);
+    }
+    Ok(())
+}
+
+fn object_record_relation_ids(
+    ctx: &DecodeContext<'_>,
+    relations: Option<&Vec<usize>>,
+    section_ordinal: usize,
+) -> Result<Vec<String>, CodecError> {
+    let related = relations.map_or(&[][..], Vec::as_slice);
+    let slots = related.len().checked_mul(std::mem::size_of::<String>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX object record relation IDs", 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(related.len()), "NX object record relation IDs")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slots), "NX object record relation IDs")?;
+    let mut ids = Vec::new();
+    ids.try_reserve_exact(related.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX object record relation IDs", 0, 1))?;
+    for &ordinal in related {
+        ids.push(retained_om_index_id(ctx, "nx:om-record-directory-", section_ordinal, ":entry#", cadmpeg_core::decode::u64_from_index(ordinal), "NX object record relation ID")?);
+    }
+    Ok(ids)
+}
+
 /// Catalog every externally bounded NX OM entity record.
 pub(super) fn object_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
-    let mut candidates = Vec::new();
+    let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
@@ -4011,101 +4054,94 @@ pub(super) fn object_records(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_offset = entry_offset + section.base_offset() as u64;
-        let record_bytes = records
-            .iter()
-            .map(|record| record.bytes)
-            .collect::<Vec<_>>();
+        let section_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(section.base_offset()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX object record section offset", 0, 1))?;
+        let record_bytes_len = records.len().checked_mul(std::mem::size_of::<&[u8]>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX object record byte views", 0, 1))?;
+        let _record_bytes_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(record_bytes_len), "NX object record byte views")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(records.len()), "NX object record byte views")?;
+        let mut record_bytes = Vec::new();
+        record_bytes.try_reserve_exact(records.len())
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX object record byte views", 0, 1))?;
+        for record in records.iter() {
+            record_bytes.push(record.bytes);
+        }
         let stable_identities = stable_object_record_identities(ctx, &entry.name, &record_bytes)?;
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
+        let mut dependency_guard = ctx.reserve_scoped(0, "NX object record dependency index")?;
+        let mut dependent_guard = ctx.reserve_scoped(0, "NX object record dependent index")?;
         for (source, record) in records.iter().enumerate() {
             for reference in record.references(ctx, records.len())? {
                 let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                     continue;
                 };
                 let target = usize::from(ordinal);
-                let outgoing = dependencies.entry(source).or_default();
-                if !outgoing.contains(&target) {
-                    outgoing.push(target);
-                }
-                let incoming = dependents.entry(target).or_default();
-                if !incoming.contains(&source) {
-                    incoming.push(source);
-                }
+                add_object_record_relation(ctx, &mut dependencies, &mut dependency_guard, source, target)?;
+                add_object_record_relation(ctx, &mut dependents, &mut dependent_guard, target, source)?;
             }
         }
-        for (record_ordinal, record) in records.iter().cloned().enumerate() {
-            let record_id =
-                |ordinal| format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}");
-            candidates.push((
-                section_ordinal,
-                record_ordinal,
+        for (record_ordinal, (record, stable_identity)) in records.iter().zip(stable_identities).enumerate() {
+            let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX object record source offset", 0, 1))?;
+            let object_id_offset = entry_offset.checked_add(record.object_id.1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX object record object ID offset", 0, 1))?;
+            let section_ordinal_u32 = u32::try_from(section_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX object record section ordinal", 0, 1))?;
+            let record_ordinal_u32 = u32::try_from(record_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX object record ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX object records")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectRecord>()), "NX object records")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX object records", 0, 1))?;
+            output.push(ObjectRecord {
+                id: retained_om_index_id(ctx, "nx:om-record-directory-", section_ordinal, ":entry#", cadmpeg_core::decode::u64_from_index(record_ordinal), "NX object record ID")?,
+                object_id: (record.object_id.0, object_id_offset),
+                section_ordinal: section_ordinal_u32,
+                record_ordinal: record_ordinal_u32,
                 section_offset,
-                entry_offset,
-                entry.name.clone(),
-                record,
-                stable_identities[record_ordinal].clone(),
-                dependencies
-                    .get(&record_ordinal)
-                    .into_iter()
-                    .flatten()
-                    .map(|ordinal| record_id(*ordinal))
-                    .collect::<Vec<_>>(),
-                dependents
-                    .get(&record_ordinal)
-                    .into_iter()
-                    .flatten()
-                    .map(|ordinal| record_id(*ordinal))
-                    .collect::<Vec<_>>(),
-            ));
+                byte_len: cadmpeg_core::decode::u64_from_index(record.bytes.len()),
+                sha256: crate::native::hex::Sha256Hex::digest(record.bytes),
+                stable_identity,
+                dependencies: object_record_relation_ids(ctx, dependencies.get(&record_ordinal), section_ordinal)?,
+                dependents: object_record_relation_ids(ctx, dependents.get(&record_ordinal), section_ordinal)?,
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX object record source entry")?,
+                source_offset,
+            });
         }
     }
 
-    let mut identity_counts = BTreeMap::<String, usize>::new();
-    for (_, _, _, _, source_entry, _, stable_identity, _, _) in &candidates {
-        let Some(stable_identity) = stable_identity else {
-            continue;
-        };
-        let identity = format!("{source_entry}\0{stable_identity}");
-        *identity_counts.entry(identity).or_default() += 1;
+    let mut identity_counts = BTreeMap::<(&str, &str), usize>::new();
+    let mut count_guard = ctx.reserve_scoped(0, "NX object record identity counts")?;
+    for record in &output {
+        let Some(identity) = record.stable_identity.as_deref() else { continue; };
+        let key = (record.source_entry.as_str(), identity);
+        if let Some(count) = identity_counts.get_mut(&key) {
+            *count = count.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX object record identity count", 0, 1))?;
+        } else {
+            ctx.charge_collection_items(1, "NX object record identity counts")?;
+            count_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<((&str, &str), usize)>() * 4))?;
+            identity_counts.insert(key, 1);
+        }
     }
-
-    Ok(candidates
-        .into_iter()
-        .map(
-            |(
-                section_ordinal,
-                record_ordinal,
-                section_offset,
-                entry_offset,
-                source_entry,
-                record,
-                stable_identity,
-                dependencies,
-                dependents,
-            )| {
-                let stable_identity = stable_identity.filter(|identity| {
-                    let key = format!("{source_entry}\0{identity}");
-                    identity_counts.get(&key) == Some(&1)
-                });
-                ObjectRecord {
-                    id: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                    object_id: (record.object_id.0, entry_offset + record.object_id.1),
-                    section_ordinal: section_ordinal as u32,
-                    record_ordinal: record_ordinal as u32,
-                    section_offset,
-                    byte_len: record.bytes.len() as u64,
-                    sha256: crate::native::hex::Sha256Hex::digest(record.bytes),
-                    stable_identity,
-                    dependencies,
-                    dependents,
-                    source_entry,
-                    source_offset: entry_offset + record.offset as u64,
-                }
-            },
-        )
-        .collect())
+    let flags_bytes = output.len().checked_mul(std::mem::size_of::<bool>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX object record identity flags", 0, 1))?;
+    let _flags_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(flags_bytes), "NX object record identity flags")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(output.len()), "NX object record identity flags")?;
+    let mut unique_flags = Vec::new();
+    unique_flags.try_reserve_exact(output.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX object record identity flags", 0, 1))?;
+    for record in &output {
+        let unique = record.stable_identity.as_deref()
+            .is_some_and(|identity| identity_counts.get(&(record.source_entry.as_str(), identity)) == Some(&1));
+        unique_flags.push(unique);
+    }
+    drop(identity_counts);
+    for (record, unique) in output.iter_mut().zip(unique_flags) {
+        if !unique { record.stable_identity = None; }
+    }
+    Ok(output)
 }
 
 /// Retain the complete counted `RMFastLoad` active-object membership table.
