@@ -198,13 +198,18 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             push_event(ctx, &mut census.events.reference_type_maps, map, "NX deltas reference type maps")?;
             continue;
         }
-        let complete_record = consume_shared_record(
+        let shared_record = consume_shared_record(
+            ctx,
             stream,
             offset,
             &census.records,
             intersection_schema_anchor_seen,
-        )
-        .or_else(|| consume_intersection_auxiliary(stream, offset))
+        )?;
+        let complete_record = if shared_record.is_some() {
+            shared_record
+        } else {
+            consume_intersection_auxiliary(ctx, stream, offset)?
+        }
         .or_else(|| consume_nurbs_auxiliary(stream, offset))
         .or_else(|| consume_type_141(stream, offset))
         .or_else(|| consume_type_45(stream, offset))

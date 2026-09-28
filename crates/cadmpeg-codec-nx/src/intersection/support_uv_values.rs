@@ -2,6 +2,8 @@
 //! Finite support-UV tuples with their exact packing marker.
 
 use super::{SupportUv, SupportUvLane};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
 
@@ -45,6 +47,40 @@ pub(crate) struct SupportUvValues {
     values: Vec<FiniteReal>,
 }
 impl SupportUvValues {
+    pub(crate) fn new_charged(
+        ctx: &DecodeContext<'_>,
+        packing: SupportUvPacking,
+        values: Vec<f64>,
+    ) -> Result<Option<Self>, CodecError> {
+        if u32::try_from(values.len()).is_err()
+            || values.len() < packing.width() * 2
+            || !values.len().is_multiple_of(packing.width())
+        {
+            return Ok(None);
+        }
+        let count = values.len();
+        let count_u64 = u64_from_index(count);
+        let operation = "NX finite support-UV values";
+        ctx.charge_collection_items(count_u64, operation)?;
+        let bytes = count_u64
+            .checked_mul(u64_from_index(std::mem::size_of::<FiniteReal>()))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut finite = Vec::new();
+        finite
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        for value in values {
+            let Some(value) = FiniteReal::new(value) else {
+                return Ok(None);
+            };
+            finite.push(value);
+        }
+        Ok(Some(Self {
+            packing,
+            values: finite,
+        }))
+    }
     pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
         u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
         if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {

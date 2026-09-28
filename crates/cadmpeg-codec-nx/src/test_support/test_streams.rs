@@ -1102,8 +1102,11 @@ pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
         .into_iter()
         .next()
         .expect("ext11 support UV");
-    let (_, support_uv_end) =
-        crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
+    let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_record_at(ctx, ext11, support_uv.pos)
+    })
+    .unwrap()
+    .expect("UV bounds");
     deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
     deltas
 }
