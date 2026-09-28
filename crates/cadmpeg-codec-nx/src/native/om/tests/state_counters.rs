@@ -270,6 +270,27 @@ fn native_operation_state_groups_refuse_retained_limit() {
 }
 
 #[test]
+fn native_operation_state_groups_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_om_record_area_with_state_groups_and_counter_map(),
+    )]);
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
+            .expect("feature-history container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = operation_state_groups(&ctx, &container)
+        .expect_err("group route exceeds zero collection items");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
 fn native_operation_state_groups_refuse_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
