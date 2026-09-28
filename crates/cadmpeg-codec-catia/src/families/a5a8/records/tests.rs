@@ -1489,7 +1489,7 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input limit");
-    let curves = crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream());
+    let curves = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &a5_guide_curve_stream()).expect("service decode"));
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].sites[0].point.get(), [0.0, 0.0, 0.0]);
@@ -1525,13 +1525,30 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
 fn guide_curve_parser_refuses_nonunit_site_direction() {
     let mut bytes = a5_guide_curve_stream();
     bytes[52..60].copy_from_slice(&le_f64(2.0));
-    assert!(crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty());
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &bytes).expect("service decode")).is_empty());
+}
+
+#[test]
+fn a5_guide_sites_refuse_collection_limit_before_materialization() {
+    let bytes = a5_guide_curve_stream();
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::a5a8::records::a5_guide_curves(ctx, &bytes)
+    });
+    assert!(matches!(limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_a5_guide_sites"));
+    let curves = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_guide_curves(ctx, &bytes)
+    })
+    .expect("service collection budget");
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].sites.len(), 2);
 }
 
 #[test]
 fn guide_curve_parser_accepts_frame_bounded_site_count() {
     let curves =
-        crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream_with_count(4097));
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &a5_guide_curve_stream_with_count(4097)).expect("service decode"));
     assert_eq!(curves.len(), 1);
     assert_eq!(crate::test_support::with_service_context(|ctx| curves[0].knots(ctx)).expect("service resource budget").len(), 4097);
     assert_eq!(curves[0].sites.len(), 4097);
@@ -1543,14 +1560,14 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
         let mut bytes = a5_guide_curve_stream();
         bytes[offset..offset + 8].copy_from_slice(&le_f64(f64::NAN));
         assert!(
-            crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty(),
+            crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &bytes).expect("service decode")).is_empty(),
             "offset {offset}"
         );
     }
 
     let mut repeated_knot = a5_guide_curve_stream();
     repeated_knot[20..28].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a5_guide_curves(&repeated_knot).is_empty());
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &repeated_knot).expect("service decode")).is_empty());
 }
 
 #[test]
@@ -1615,8 +1632,8 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
 
     let guide = a5_guide_curve_stream();
     let records = crate::wire::records::consolidated_records(&guide);
-    let one_shot = crate::families::a5a8::records::a5_guide_curves(&guide);
-    let indexed = crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records);
+    let one_shot = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves(ctx, &guide).expect("service decode"));
+    let indexed = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_guide_curves_from_records(ctx, &guide, &records).expect("service decode"));
     assert_eq!(one_shot.len(), indexed.len());
     for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
         assert_eq!(one_shot.pos, indexed.pos);

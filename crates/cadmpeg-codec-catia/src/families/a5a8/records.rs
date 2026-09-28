@@ -737,86 +737,94 @@ fn parse_a5_nurbs_curve(
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
 #[cfg(test)]
-fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
+#[cfg(test)]
+fn a5_guide_curves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<A5GuideCurve>, CodecError> {
     let records = consolidated_records(data);
-    a5_guide_curves_from_records(data, &records)
+    a5_guide_curves_from_records(ctx, data, &records)
 }
 
 pub(in crate::families) fn a5_guide_curves_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<A5GuideCurve> {
-    family_frames_from_records(records, ConsolidatedFamily::A, 0x39)
-        .into_iter()
-        .filter_map(|frame| parse_a5_guide_curve(data, frame))
-        .collect()
+    ctx: &DecodeContext<'_>, data: &[u8], records: &[ConsolidatedRecord],
+) -> Result<Vec<A5GuideCurve>, CodecError> {
+    let mut curves = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.family == ConsolidatedFamily::A && record.class == 0x39
+    }) {
+        let (Some(payload), Some(end)) = (record.payload(), record.range()) else { continue };
+        let frame = ConsolidatedFrame {
+            pos: record.byte_offset(), payload: payload.start, end: end.end,
+            header_token: record.header_token,
+        };
+        if let Some(curve) = parse_a5_guide_curve(ctx, data, frame)? {
+            crate::resource::push(ctx, &mut curves, curve, "catia_a5_guide_curves")?;
+        }
+    }
+    Ok(curves)
 }
 
-fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5GuideCurve> {
+fn parse_a5_guide_curve(
+    ctx: &DecodeContext<'_>, data: &[u8], frame: ConsolidatedFrame,
+) -> Result<Option<A5GuideCurve>, CodecError> {
     let mut at = frame.payload;
-    let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    let degree = compact_int(data, &mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || count < 2
-        || !(1..=9).contains(&degree)
+    let Some(count) = compact_int(data, &mut at).and_then(|value| usize::try_from(value).ok())
+        else { return Ok(None) };
+    let Some(degree) = compact_int(data, &mut at) else { return Ok(None) };
+    if compact_int(data, &mut at).and_then(|value| usize::try_from(value).ok()) != Some(count)
+        || count < 2 || !(1..=9).contains(&degree)
     {
-        return None;
+        return Ok(None);
     }
-    at = consume_array_marker(data, at)?;
-    let block_bytes = count.checked_mul(48)?;
-    let known_bytes = count
-        .checked_mul(8)?
-        .checked_add(block_bytes.checked_mul(3)?)?
-        .checked_add(48)?;
-    if at.checked_add(known_bytes)? > frame.end {
-        return None;
+    let Some(next) = consume_array_marker(data, at) else { return Ok(None) };
+    at = next;
+    let Some(block_bytes) = count.checked_mul(48) else { return Ok(None) };
+    let Some(known_bytes) = count.checked_mul(8)
+        .and_then(|bytes| block_bytes.checked_mul(3).and_then(|blocks| bytes.checked_add(blocks)))
+        .and_then(|bytes| bytes.checked_add(48)) else { return Ok(None) };
+    if at.checked_add(known_bytes).is_none_or(|last| last > frame.end) {
+        return Ok(None);
     }
-    let knots = f64_values(data, &mut at, count, frame.end)?;
-    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
-        return None;
+    let knot_start = at;
+    let Some(first_block) = at.checked_add(count * 8) else { return Ok(None) };
+    let Some(second_block) = first_block.checked_add(block_bytes) else { return Ok(None) };
+    let Some(third_block) = second_block.checked_add(block_bytes) else { return Ok(None) };
+    if third_block.checked_add(block_bytes).and_then(|last| last.checked_add(48)) != Some(frame.end) {
+        return Ok(None);
     }
-    if at
-        .checked_add(block_bytes.checked_mul(3)?)?
-        .checked_add(48)?
-        != frame.end
-    {
-        return None;
+    let mut previous = None;
+    for index in 0..count {
+        let Some(knot) = f64_le(data, knot_start + index * 8) else { return Ok(None) };
+        if previous.is_some_and(|value| value >= knot.get()) { return Ok(None) }
+        previous = Some(knot.get());
     }
-    let block = |start: usize| -> Option<Vec<[FiniteReal; 6]>> {
-        (0..count)
-            .map(|site| read_f64_array::<6>(data, start + site * 48))
-            .collect()
-    };
-    let positions = block(at)?;
-    let first_derivatives = block(at + block_bytes)?;
-    let second_derivatives = block(at + 2 * block_bytes)?;
-    let sites: Option<Vec<_>> = positions
-        .into_iter()
-        .zip(knots)
-        .zip(first_derivatives)
-        .zip(second_derivatives)
-        .map(|(((value, knot), first_derivative), second_derivative)| {
-            let direction = [
-                value[3].get() - value[0].get(),
-                value[4].get() - value[1].get(),
-                value[5].get() - value[2].get(),
-            ];
-            let length =
-                (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
-            ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT).then_some(GuideCurveSite {
-                knot,
-                first_derivative: first_derivative.into(),
-                second_derivative: second_derivative.into(),
-                point: [value[0], value[1], value[2]].into(),
-            })
-        })
-        .collect();
-    Some(A5GuideCurve {
-        pos: frame.pos,
-        header_token: frame.header_token,
-        degree,
-        sites: sites?,
-    })
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a5_guide_sites")?;
+    for index in 0..count {
+        let offset = index * 48;
+        let (Some(value), Some(first_derivative), Some(second_derivative), Some(knot)) = (
+            read_f64_array::<6>(data, first_block + offset),
+            read_f64_array::<6>(data, second_block + offset),
+            read_f64_array::<6>(data, third_block + offset),
+            f64_le(data, knot_start + index * 8),
+        ) else { return Ok(None) };
+        let direction = [
+            value[3].get() - value[0].get(),
+            value[4].get() - value[1].get(),
+            value[5].get() - value[2].get(),
+        ];
+        let length = (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
+        if !((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT) { return Ok(None) }
+        sites.push(GuideCurveSite {
+            knot,
+            first_derivative: first_derivative.into(),
+            second_derivative: second_derivative.into(),
+            point: [value[0], value[1], value[2]].into(),
+        });
+    }
+    Ok(Some(A5GuideCurve {
+        pos: frame.pos, header_token: frame.header_token, degree, sites,
+    }))
 }
 
 /// One knot of a common-form degree-5 rolling-ball jet.
@@ -1880,19 +1888,6 @@ fn consume_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     } else {
         Some(at + 1)
     }
-}
-
-/// Read `count` finite little-endian `f64` values that end at or before `end`.
-fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<Vec<FiniteReal>> {
-    if at.checked_add(count.checked_mul(8)?)? > end {
-        return None;
-    }
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(f64_le(bytes, *at)?);
-        *at += 8;
-    }
-    Some(values)
 }
 
 fn a5_int(byte: u8) -> Option<u32> {
