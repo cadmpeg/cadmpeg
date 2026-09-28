@@ -121,6 +121,20 @@ impl Identity {
         self
     }
 
+    /// Append an admitted key tail after fallibly reserving string capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when the enlarged identity cannot reserve storage.
+    pub fn try_with_key_tail(
+        mut self,
+        tail: &IdentityKeyTail,
+    ) -> Result<Self, std::collections::TryReserveError> {
+        self.0.try_reserve(tail.as_str().len())?;
+        self.0.push_str(tail.as_str());
+        Ok(self)
+    }
+
     /// Consume the identity into its string.
     #[must_use]
     pub fn into_string(self) -> String {

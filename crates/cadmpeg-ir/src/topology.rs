@@ -307,6 +307,9 @@ impl Shell {
         wire_edges: Vec<EdgeId>,
         free_vertices: Vec<VertexId>,
     ) -> Result<Self, BodySelectionError> {
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
         let members = ShellMembers {
             faces,
             wire_edges,
@@ -315,7 +318,7 @@ impl Shell {
         Ok(Self {
             id,
             region,
-            members: NonEmptyMembers::try_from(Vec::<ShellMember>::from(members))?.into(),
+            members,
         })
     }
 
@@ -752,6 +755,46 @@ impl LoopRing {
         {
             return Err(LoopRingError(
                 "loop ring vertex-use after must name a coedge in the ring".into(),
+            ));
+        }
+        Ok(Self {
+            coedges,
+            vertex_uses,
+        })
+    }
+
+    /// Build a checked ring while charging its distinct-member index to a decode context.
+    pub fn new_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        coedges: Vec<CoedgeId>,
+        vertex_uses: Vec<AnchoredVertexUse>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        if coedges.is_empty() {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "loop ring must contain a coedge",
+            ));
+        }
+        let count = u64::try_from(coedges.len()).map_err(|_| {
+            ctx.refuse_codec_limit("index loop ring coedges", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_collection_items(count, "index loop ring coedges")?;
+        let mut members = HashSet::new();
+        members.try_reserve(coedges.len()).map_err(|_| {
+            ctx.refuse_codec_limit("index loop ring coedges", u64::MAX - 1, u64::MAX)
+        })?;
+        for coedge in &coedges {
+            if !members.insert(coedge) {
+                return Err(cadmpeg_core::CodecError::malformed(
+                    "loop ring coedges must be distinct",
+                ));
+            }
+        }
+        if vertex_uses
+            .iter()
+            .any(|vertex_use| !members.contains(&vertex_use.after))
+        {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "loop ring vertex-use after must name a coedge in the ring",
             ));
         }
         Ok(Self {

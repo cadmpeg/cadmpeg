@@ -131,6 +131,37 @@ fn decoded_brep_header_copy_refuses_retained_limit() {
 }
 
 #[test]
+fn merged_brep_site_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let body = triangle_body();
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &body),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &body),
+    ));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &source,
+        &mut options,
+        "qualify SLDPRT identity",
+    );
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "qualify SLDPRT identity"
+    ));
+}
+
+#[test]
 fn geometry_material_appearance_refuses_collection_limit() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [80, 90, 100]);
     let limit = collection_refusal_at(&source, "admit SLDPRT material appearance");
