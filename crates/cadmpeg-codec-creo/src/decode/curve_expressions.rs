@@ -886,6 +886,7 @@ pub(super) fn transfer_curve_expression_features(
                 },
             )?;
             source_carriers.admit_procedural_curve(
+                ctx,
                 ir,
                 curve_id,
                 ProceduralCurve::new(procedural_id, procedural_definition),

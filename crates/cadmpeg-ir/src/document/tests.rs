@@ -398,6 +398,116 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
 }
 
 #[test]
+fn admitted_procedural_surface_refuses_owner_copy_and_arena_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let owner = SurfaceId::mint("test:model:surface#1").unwrap();
+    let construction = ProceduralSurfaceId::mint("test:model:surface-construction#1").unwrap();
+    let mut base = CadIr::empty();
+    base.model.surfaces.push(Surface {
+        id: owner.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let procedural = ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut byte_policy = DecodePolicy::service();
+    byte_policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
+    let mut refused = base.clone();
+    let error = refused.model.add_procedural_surface_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("owner identity exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural surface owner identity"), "{error:?}");
+    assert_eq!(refused, base);
+    let mut item_policy = DecodePolicy::service();
+    item_policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &item_policy).unwrap();
+    let error = refused.model.add_procedural_surface_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("procedural arena exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural surface arena"), "{error:?}");
+    assert_eq!(refused, base);
+    let mut cached = base.clone();
+    cached.model.surfaces[0].geometry = SurfaceGeometry::Solved(
+        SolvedSurfaceGeometry::Unknown {
+            record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
+        },
+    );
+    let mut cache_policy = DecodePolicy::service();
+    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
+    let error = cached.model.add_procedural_surface_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("solved cache record exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural surface solved cache"), "{error:?}");
+    assert!(cached.model.procedural_surfaces.is_empty());
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    refused.model.add_procedural_surface_admitted(&ctx, &owner, procedural.clone()).unwrap();
+    base.model.add_procedural_surface(owner, procedural).unwrap();
+    assert_eq!(refused, base);
+}
+
+#[test]
+fn admitted_procedural_curve_refuses_owner_copy_and_arena_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let owner = CurveId::mint("test:model:curve#1").unwrap();
+    let construction = ProceduralCurveId::mint("test:model:curve-construction#1").unwrap();
+    let mut base = CadIr::empty();
+    base.model.curves.push(Curve {
+        id: owner.clone(),
+        geometry: CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    let procedural = ProceduralCurve::new(construction, ProceduralCurveDefinition::Exact { cache: None });
+    let arena = DecodeArena::new();
+    let mut byte_policy = DecodePolicy::service();
+    byte_policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy).unwrap();
+    let mut refused = base.clone();
+    let error = refused.model.add_procedural_curve_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("owner identity exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural curve owner identity"), "{error:?}");
+    assert_eq!(refused, base);
+    let mut item_policy = DecodePolicy::service();
+    item_policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &item_policy).unwrap();
+    let error = refused.model.add_procedural_curve_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("procedural arena exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural curve arena"), "{error:?}");
+    assert_eq!(refused, base);
+    let mut cached = base.clone();
+    cached.model.curves[0].geometry = CurveGeometry::Solved(
+        crate::geometry::SolvedCurveGeometry::Unknown {
+            record: Some(crate::ids::UnknownId::mint("test:model:unknown#1").unwrap()),
+        },
+    );
+    let mut cache_policy = DecodePolicy::service();
+    cache_policy.limits.max_retained_bytes = procedural.id.as_str().len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cache_policy).unwrap();
+    let error = cached.model.add_procedural_curve_admitted(&ctx, &owner, procedural.clone())
+        .expect_err("solved cache record exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.operation == "procedural curve solved cache"), "{error:?}");
+    assert!(cached.model.procedural_curves.is_empty());
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    refused.model.add_procedural_curve_admitted(&ctx, &owner, procedural.clone()).unwrap();
+    base.model.add_procedural_curve(owner, procedural).unwrap();
+    assert_eq!(refused, base);
+}
+
+#[test]
 fn current_json_without_parameters_defaults_to_empty() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut value = serde_json::to_value(&ir).unwrap();

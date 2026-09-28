@@ -893,6 +893,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             source_carriers.admit_procedural_surface(
+                ctx,
                 ir,
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(

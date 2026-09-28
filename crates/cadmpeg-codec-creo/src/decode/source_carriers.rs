@@ -609,6 +609,7 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_procedural_surface(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: SurfaceId,
         mut procedural: ProceduralSurface,
@@ -617,13 +618,13 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_surface(owner, procedural)
-            .map_err(CodecError::malformed)?;
+            .add_procedural_surface_admitted(ctx, &owner, procedural)?;
         Ok(())
     }
 
     pub(super) fn admit_procedural_curve(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         owner: CurveId,
         mut procedural: ProceduralCurve,
@@ -632,8 +633,7 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
         }
         ir.model
-            .add_procedural_curve(owner, procedural)
-            .map_err(CodecError::malformed)?;
+            .add_procedural_curve_admitted(ctx, &owner, procedural)?;
         Ok(())
     }
 
@@ -1829,8 +1829,8 @@ mod tests {
             ),
             None,
         );
-        source_carriers
-            .admit_procedural_surface(&mut ir, surface_id, procedural)
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_procedural_surface(ctx, &mut ir, surface_id, procedural))
             .expect("procedural attachment");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
@@ -1850,8 +1850,9 @@ mod tests {
     fn procedural_surface_without_owner_is_malformed_at_attachment() {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = source_carriers
+        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
             .admit_procedural_surface(
+                ctx,
                 &mut ir,
                 SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
                 ProceduralSurface::new(
@@ -1869,10 +1870,69 @@ mod tests {
                     ),
                     None,
                 ),
-            )
+            ))
             .expect_err("missing owner must refuse attachment");
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(ir.model.procedural_surfaces.is_empty());
+    }
+
+    #[test]
+    fn procedural_surface_attachment_refuses_arena_growth() {
+        let owner = SurfaceId::mint("creo:visibgeom:surface#1").unwrap();
+        let procedural = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("creo:visibgeom:construction#1").unwrap(),
+            ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
+            None,
+        );
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: owner.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = SourceUnitCarriers::default()
+            .admit_procedural_surface(&ctx, &mut ir, owner.clone(), procedural.clone())
+            .expect_err("procedural surface arena exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "procedural surface arena"), "{error:?}");
+        assert!(ir.model.procedural_surfaces.is_empty());
+        crate::decode::with_test_decode_ctx(|ctx| SourceUnitCarriers::default()
+            .admit_procedural_surface(ctx, &mut ir, owner, procedural))
+            .unwrap();
+        assert_eq!(ir.model.procedural_surfaces.len(), 1);
+    }
+
+    #[test]
+    fn procedural_curve_attachment_refuses_arena_growth() {
+        let owner = CurveId::mint("creo:visibgeom:curve#1").unwrap();
+        let procedural = ProceduralCurve::new(
+            ProceduralCurveId::mint("creo:visibgeom:construction#1").unwrap(),
+            ProceduralCurveDefinition::Exact { cache: None },
+        );
+        let mut ir = CadIr::empty();
+        ir.model.curves.push(Curve {
+            id: owner.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = SourceUnitCarriers::default()
+            .admit_procedural_curve(&ctx, &mut ir, owner.clone(), procedural.clone())
+            .expect_err("procedural curve arena exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "procedural curve arena"), "{error:?}");
+        assert!(ir.model.procedural_curves.is_empty());
+        crate::decode::with_test_decode_ctx(|ctx| SourceUnitCarriers::default()
+            .admit_procedural_curve(ctx, &mut ir, owner, procedural))
+            .unwrap();
+        assert_eq!(ir.model.procedural_curves.len(), 1);
     }
 
     #[test]
@@ -1890,8 +1950,9 @@ mod tests {
                 },
             ))
             .expect("curve admission");
-        source_carriers
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
             .admit_procedural_curve(
+                ctx,
                 &mut ir,
                 curve_id,
                 ProceduralCurve::new(
@@ -1912,7 +1973,7 @@ mod tests {
                         .expect("valid helix"),
                     ),
                 ),
-            )
+            ))
             .expect("helix attachment");
         let ProceduralCurveDefinition::Helix(helix) = ir.model.procedural_curves[0].definition()
         else {
