@@ -289,11 +289,11 @@ fn a5_owner_binding_refuses_before_carrier_row_growth() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+    assert!(!crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a5_surfaces_from_records(ctx,
         &bytes,
         &records,
         &mut crate::nurbs::LaneRefusals::new(),
-    )
+    ).expect("service decode"))
     .is_empty());
     assert!(!crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
         .collect::<Vec<_>>()

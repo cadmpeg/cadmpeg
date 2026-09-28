@@ -8321,20 +8321,21 @@ fn consolidated_owner_packets(
 }
 
 fn consolidated_edge_runs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<CatiaConsolidatedEdgeRun> {
+) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
     let pcurve_ids = pcurves
         .iter()
         .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
         .collect::<HashMap<_, _>>();
     let resolved =
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            bytes, records, refusal,
-        )
+            ctx, bytes, records, refusal,
+        )?
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -8342,7 +8343,7 @@ fn consolidated_edge_runs(
         .iter()
         .map(|node| (node.byte_offset, node))
         .collect::<HashMap<_, _>>();
-    crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+    Ok(crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
         bytes, records,
     )
     .into_iter()
@@ -8379,7 +8380,31 @@ fn consolidated_edge_runs(
                 .map(|points| points.map(|point| point_coordinates(&point))),
         })
     })
-    .collect()
+    .collect())
+}
+
+#[cfg(test)]
+mod consolidated_edge_run_limit_tests {
+    #[test]
+    fn native_edge_runs_propagate_a5_surface_limit() {
+        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::consolidated_edge_runs(
+                ctx, &bytes, &records, &[], &[], &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        assert!(matches!(limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == "catia_a5_distinct_knots"));
+        let runs = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_edge_runs(
+                ctx, &bytes, &records, &[], &[], &mut crate::nurbs::LaneRefusals::new(),
+            )
+        })
+        .expect("service collection budget");
+        assert!(runs.is_empty());
+    }
 }
 
 fn consolidated_edge_nodes(
@@ -9175,12 +9200,13 @@ impl CatiaNative {
         let consolidated_edge_nodes =
             consolidated_edge_nodes(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_edge_runs = consolidated_edge_runs(
+            ctx,
             bytes,
             consolidated_records,
             &consolidated_pcurves,
             &consolidated_edge_nodes,
             refusal,
-        );
+        )?;
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         Ok(Self {

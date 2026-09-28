@@ -1229,18 +1229,19 @@ fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeG
 #[cfg(test)]
 fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    resolve_consolidated_edge_blocks_from_records(
-        data,
-        &records,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        resolve_consolidated_edge_blocks_from_records(
+            ctx, data, &records, &mut crate::nurbs::LaneRefusals::new(),
+        ).expect("service decode")
+    })
 }
 
 pub(crate) fn resolve_consolidated_edge_blocks_from_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<ResolvedConsolidatedEdgeBlock> {
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let points = object_stream_vertices_from_records(data, records);
     let embedded = b2_embedded_cylinders_from_records(data, records);
     let standalone = b2_cylinders_from_records(data, records);
@@ -1249,7 +1250,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     let spheres = b2_spheres_from_records(data, records);
     let tori = b2_tori_from_records(data, records);
     let planes = b2_plane_carriers_from_records(data, records);
-    let surfaces = a5_surfaces_from_records(data, records, refusal);
+    let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
@@ -1259,7 +1260,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         planes: &planes,
         nurbs_surfaces: &surfaces,
     };
-    consolidated_edge_blocks_from_records(data, records)
+    Ok(consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|block| {
             let mut supports = std::array::from_fn(|side| {
@@ -1456,7 +1457,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 endpoint_loci,
             }
         })
-        .collect()
+        .collect())
 }
 
 fn point_sequences_agree(first: &[Point3], second: &[Point3]) -> bool {
