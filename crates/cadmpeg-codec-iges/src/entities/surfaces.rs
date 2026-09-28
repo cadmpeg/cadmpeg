@@ -346,10 +346,12 @@ fn equal_arc_length_parameterization(
     // A normalized parameter is an arc-length parameter only for a constant-
     // speed carrier. The test is deliberately structural; numerical sampling
     // cannot prove the Form 0 correspondence.
-    let first_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(first_sequence), ctx)?;
-    let second_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?;
-    let first = ir.model.curves.iter().find(|curve| curve.id == first_id).map(|curve| &curve.geometry);
-    let second = ir.model.curves.iter().find(|curve| curve.id == second_id).map(|curve| &curve.geometry);
+    let mut first_storage = [0_u8; 64];
+    let mut second_storage = [0_u8; 64];
+    let first_id = crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
+    let second_id = crate::ids::directory_lookup_key("iges:model:curve#D", second_sequence, &mut second_storage);
+    let first = ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == first_id).map(|curve| &curve.geometry);
+    let second = ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == second_id).map(|curve| &curve.geometry);
     let Some((first, second)) = first.zip(second)
     else {
         return Ok(false);
@@ -1406,11 +1408,19 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed ruled surfaces require transformed child-carrier projection"))?;
             continue;
         }
-        let first_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(first_sequence), ctx)?;
-        let second_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?;
+        let mut first_storage = [0_u8; 64];
+        let mut second_storage = [0_u8; 64];
+        let first_id = crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
+        let second_id = crate::ids::directory_lookup_key("iges:model:curve#D", second_sequence, &mut second_storage);
         let rails = (
-            bounded_nurbs(ir, &first_id, ctx, &composite_index),
-            bounded_nurbs(ir, &second_id, ctx, &composite_index),
+            match ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == first_id) {
+                Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
+                None => Ok(None),
+            },
+            match ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == second_id) {
+                Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
+                None => Ok(None),
+            },
         );
         let rails = match rails {
             (Ok(first), Ok(second)) => (first, second),
