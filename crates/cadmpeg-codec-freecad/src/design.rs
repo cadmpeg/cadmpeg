@@ -2018,15 +2018,19 @@ fn parse_constraints(
         let resolve = |entity, position| {
             if type_code == Some(9) {
                 match entity {
-                    -1 => return resolve_operand(-1, 0, entities),
-                    -2 => return resolve_operand(-2, 0, entities),
+                    -1 => return resolve_operand(ctx, -1, 0, entities),
+                    -2 => return resolve_operand(ctx, -2, 0, entities),
                     _ => {}
                 }
             }
-            resolve_operand(entity, position, entities)
+            resolve_operand(ctx, entity, position, entities)
         };
         let mut resolved = collection_vec(ctx, operands.len(), "fcstd resolved constraint operands")?;
-        resolved.extend(operands.iter().filter_map(|(entity, position)| resolve(*entity, *position)));
+        for (entity, position) in &operands {
+            if let Some(locus) = resolve(*entity, *position)? {
+                resolved.push(locus);
+            }
+        }
         let all_resolved = resolved.len() == operands.len();
         if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
@@ -2168,13 +2172,13 @@ fn parse_constraints(
                 _ => None,
             }
         };
-        let midpoint =
-            || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
         let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
             .ok_or_else(|| CodecError::malformed("empty native constraint kind"))?;
         let mut native_operands = Vec::new();
-        for (entity, position) in operands.iter()
-            .filter(|(entity, position)| *entity < 0 || resolve(*entity, *position).is_none()) {
+        for (entity, position) in &operands {
+            if *entity >= 0 && resolve(*entity, *position)?.is_some() {
+                continue;
+            }
             let native_kind = cadmpeg_core::text::NonBlankString::new(retained_format(
                 ctx, format_args!("position:{position}"), "fcstd native operand position kind",
             )?)
@@ -2189,17 +2193,20 @@ fn parse_constraints(
                 native_ref: None,
             });
         }
-        let definition = (type_code == Some(15) && all_resolved)
+        let mut definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()
-            .or_else(grouped_geometry)
-            .or_else(midpoint)
-            .or_else(|| {
-                type_code.and_then(|type_code| {
-                    neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
-                })
-            })
-            .unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
+            .or_else(grouped_geometry);
+        if definition.is_none() {
+            definition = type_code.map(|kind| midpoint_constraint(ctx, kind, &operands, entities))
+                .transpose()?.flatten();
+        }
+        if definition.is_none() {
+            definition = type_code.and_then(|type_code| {
+                neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
+            });
+        }
+        let definition = definition.unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
                 native_kind,
                 native_state: None,
                 native_flags: None,
@@ -2236,22 +2243,27 @@ fn parse_constraints(
 }
 
 fn midpoint_constraint(
+    ctx: &DecodeContext<'_>,
     kind: i64,
     operands: &[(i64, i64)],
     entities: &[SketchEntity],
-) -> Option<SketchConstraintDefinitionInput> {
+) -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
     if kind != 1 || operands.len() != 2 {
-        return None;
+        return Ok(None);
     }
     for (midpoint_index, point_index) in [(0, 1), (1, 0)] {
         let (entity, position) = operands[midpoint_index];
         if position != 3 {
             continue;
         }
-        let midpoint = resolve_operand(entity, position, entities)?;
-        let bounded = entities
+        let Some(midpoint) = resolve_operand(ctx, entity, position, entities)? else {
+            return Ok(None);
+        };
+        let Some(bounded) = entities
             .iter()
-            .find(|candidate| candidate.id() == locus_entity(&midpoint))?;
+            .find(|candidate| candidate.id() == locus_entity(&midpoint)) else {
+            return Ok(None);
+        };
         if !matches!(
             *bounded.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -2259,29 +2271,38 @@ fn midpoint_constraint(
             continue;
         }
         let (entity, position) = operands[point_index];
-        let point = resolve_operand(entity, position, entities)?;
-        let point_entity = entities
+        let Some(point) = resolve_operand(ctx, entity, position, entities)? else {
+            return Ok(None);
+        };
+        let Some(point_entity) = entities
             .iter()
-            .find(|candidate| candidate.id() == locus_entity(&point))?;
+            .find(|candidate| candidate.id() == locus_entity(&point)) else {
+            return Ok(None);
+        };
         if !matches!(
             *point_entity.geometry.definition(),
             SketchGeometryDefinition::Point { .. }
         ) {
             continue;
         }
-        return Some(SketchConstraintDefinitionInput::Midpoint {
+        return Ok(Some(SketchConstraintDefinitionInput::Midpoint {
             point,
-            entity: bounded.id().clone(),
-        });
+            entity: cadmpeg_ir::sketches::SketchEntityId::mint(retained_string(
+                ctx, bounded.id().as_str(), "fcstd midpoint line identity",
+            )?).map_err(CodecError::malformed)?,
+        }));
     }
-    None
+    Ok(None)
 }
 
 fn bool_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<bool> {
-    match node.attribute(name)?.to_ascii_lowercase().as_str() {
-        "1" | "true" => Some(true),
-        "0" | "false" => Some(false),
-        _ => None,
+    let value = node.attribute(name)?;
+    if value == "1" || value.eq_ignore_ascii_case("true") {
+        Some(true)
+    } else if value == "0" || value.eq_ignore_ascii_case("false") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -2815,12 +2836,20 @@ fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
     node.attribute(name)?.parse().ok()
 }
 
-fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Option<SketchLocus> {
+fn resolve_operand(
+    ctx: &DecodeContext<'_>,
+    entity: i64,
+    position: i64,
+    entities: &[SketchEntity],
+) -> Result<Option<SketchLocus>, CodecError> {
     let reference = |suffix: &str| {
         entities
             .iter()
             .find(|candidate| candidate.id().as_str().ends_with(suffix))
-            .map(|candidate| SketchLocus::Entity(candidate.id().clone()))
+            .map(|candidate| retained_string(ctx, candidate.id().as_str(), "fcstd resolved operand identity")
+                .and_then(|id| SketchEntityId::mint(id).map_err(CodecError::malformed))
+                .map(SketchLocus::Entity))
+            .transpose()
     };
     match (entity, position) {
         (-1, 0) => return reference(":reference-horizontal-axis"),
@@ -2830,32 +2859,46 @@ fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Opt
         _ => {}
     }
     if entity <= -3 {
-        let external_index = usize::try_from(-entity - 3).ok()?;
+        let Some(external_index) = entity.checked_neg().and_then(|value| value.checked_sub(3))
+            .and_then(|value| usize::try_from(value).ok()) else { return Ok(None); };
         let suffix = format!(":external:{external_index}");
-        let entity = entities
+        let Some(entity) = entities
             .iter()
-            .find(|candidate| candidate.id().as_str().ends_with(&suffix))?;
-        return sketch_locus(entity, position);
+            .find(|candidate| candidate.id().as_str().ends_with(&suffix)) else {
+            return Ok(None);
+        };
+        return sketch_locus(ctx, entity, position);
     }
-    sketch_locus(entities.get(usize::try_from(entity).ok()?)?, position)
+    let Some(entity) = usize::try_from(entity).ok().and_then(|index| entities.get(index)) else {
+        return Ok(None);
+    };
+    sketch_locus(ctx, entity, position)
 }
 
-fn sketch_locus(entity: &SketchEntity, position: i64) -> Option<SketchLocus> {
-    let id = entity.id().clone();
+fn sketch_locus(
+    ctx: &DecodeContext<'_>,
+    entity: &SketchEntity,
+    position: i64,
+) -> Result<Option<SketchLocus>, CodecError> {
+    if !matches!(position, 0..=3) {
+        return Ok(None);
+    }
+    let id = SketchEntityId::mint(retained_string(
+        ctx, entity.id().as_str(), "fcstd resolved operand identity",
+    )?).map_err(CodecError::malformed)?;
     if matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Point { .. }
-    ) && matches!(position, 0..=3)
-    {
-        return Some(SketchLocus::Entity(id));
+    ) {
+        return Ok(Some(SketchLocus::Entity(id)));
     }
-    Some(match position {
+    Ok(Some(match position {
         0 => SketchLocus::Entity(id),
         1 => SketchLocus::Start(id),
         2 => SketchLocus::End(id),
         3 => SketchLocus::Center(id),
-        _ => return None,
-    })
+        _ => return Ok(None),
+    }))
 }
 
 fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
