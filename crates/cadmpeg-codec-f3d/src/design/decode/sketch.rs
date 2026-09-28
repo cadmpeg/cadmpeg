@@ -2979,6 +2979,7 @@ fn decode_sketch_curve_identities_from_stream(
         );
         let parsed_geometry = if let Some(curve_class) = curve_class {
             decode_sketch_curve_geometry(
+                ctx,
                 payload,
                 geometry_shift,
                 record_index,
@@ -3114,25 +3115,35 @@ fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
     })
 }
 
-fn charged_surface_values(
+fn charged_sketch_scalar_values(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: usize,
     count: usize,
-) -> Result<Vec<f64>, CodecError> {
-    ctx.charge_collection_items(count as u64, "f3d sketch surface scalar values")?;
+    operation: &'static str,
+) -> Result<Option<Vec<f64>>, CodecError> {
+    let Some(byte_len) = count.checked_mul(8) else {
+        return Ok(None);
+    };
+    let Some(end) = offset.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    if payload.get(offset..end).is_none() {
+        return Ok(None);
+    }
+    ctx.charge_collection_items(count as u64, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit("f3d sketch surface scalar allocation", 0, count as u64)
+        ctx.refuse_codec_limit("f3d sketch scalar allocation", 0, count as u64)
     })?;
     for index in 0..count {
         let at = offset + index * 8;
         let value = View::f64_le_at(payload, at).ok_or_else(|| {
-            CodecError::Malformed("F3D sketch surface scalar range changed".into())
+            CodecError::Malformed("F3D sketch scalar range changed".into())
         })?;
         values.push(value);
     }
-    Ok(values)
+    Ok(Some(values))
 }
 
 fn parse_sketch_surface(
@@ -3143,9 +3154,15 @@ fn parse_sketch_surface(
     let Some(frame) = parse_sketch_surface_frame(payload) else {
         return Ok(None);
     };
-    let coordinates = charged_surface_values(ctx, payload, 131, frame.coordinate_count)?;
-    let u_knots = charged_surface_values(ctx, payload, frame.u_knots_at, frame.u_knot_count)?;
-    let v_knots = charged_surface_values(ctx, payload, frame.v_knots_at, frame.v_knot_count)?;
+    let Some(coordinates) = charged_sketch_scalar_values(ctx, payload, 131, frame.coordinate_count, "f3d sketch surface scalar values")? else {
+        return Ok(None);
+    };
+    let Some(u_knots) = charged_sketch_scalar_values(ctx, payload, frame.u_knots_at, frame.u_knot_count, "f3d sketch surface scalar values")? else {
+        return Ok(None);
+    };
+    let Some(v_knots) = charged_sketch_scalar_values(ctx, payload, frame.v_knots_at, frame.v_knot_count, "f3d sketch surface scalar values")? else {
+        return Ok(None);
+    };
     let point_count = frame.coordinate_count / 3;
     ctx.charge_collection_items(point_count as u64, "f3d sketch surface scaled points")?;
     let mut points = Vec::new();
@@ -3493,6 +3510,7 @@ struct DecodedSketchCurveGeometry {
 }
 
 fn decode_sketch_curve_geometry(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     geometry_shift: usize,
     record_index: u32,
@@ -3522,10 +3540,10 @@ fn decode_sketch_curve_geometry(
             }
         }
         SketchCurveClass::Nurbs => {
-            let legacy = decode_legacy_sketch_nurbs(geometry_payload, record_at).transpose()?;
+            let legacy = decode_legacy_sketch_nurbs(ctx, geometry_payload, record_at).transpose()?;
             let geometry = match legacy {
                 Some(geometry) => Some(geometry),
-                None => decode_sketch_nurbs(geometry_payload, record_at).transpose()?,
+                None => decode_sketch_nurbs(ctx, geometry_payload, record_at).transpose()?,
             };
             geometry.map(|(geometry, _)| (geometry, 133))
         }
@@ -3655,6 +3673,7 @@ fn decode_text_frame_line(
 }
 
 fn decode_sketch_nurbs(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
@@ -3678,7 +3697,11 @@ fn decode_sketch_nurbs(
     {
         return None;
     }
-    let knots = f64s_at(payload, base + 114, knot_count)?;
+    let knots = match charged_sketch_scalar_values(ctx, payload, base + 114, knot_count, "f3d sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let weights_at = base + 114 + knot_count * 8;
     let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
     if usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()? != weight_count
@@ -3687,7 +3710,11 @@ fn decode_sketch_nurbs(
     {
         return None;
     }
-    let weights = f64s_at(payload, weights_at + 12, weight_count)?;
+    let weights = match charged_sketch_scalar_values(ctx, payload, weights_at + 12, weight_count, "f3d sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
     if usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()? != point_count
@@ -3699,8 +3726,13 @@ fn decode_sketch_nurbs(
     {
         return None;
     }
-    let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    let coordinates = match charged_sketch_scalar_values(ctx, payload, points_at + 12, point_count.checked_mul(3)?, "f3d sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let geometry = match admit_source_sketch_nurbs(
+        ctx,
         degree,
         fit_tolerance,
         knots,
@@ -3724,6 +3756,7 @@ fn decode_sketch_nurbs(
 }
 
 fn decode_legacy_sketch_nurbs(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
@@ -3764,7 +3797,11 @@ fn decode_legacy_sketch_nurbs(
     {
         return None;
     }
-    let knots = f64s_at(payload, base + 114, knot_count)?;
+    let knots = match charged_sketch_scalar_values(ctx, payload, base + 114, knot_count, "f3d legacy sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let weights_at = base + 114 + knot_count * 8;
     let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
     let weight_capacity = usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()?;
@@ -3774,7 +3811,11 @@ fn decode_legacy_sketch_nurbs(
     {
         return None;
     }
-    let weights = f64s_at(payload, weights_at + 12, weight_count)?;
+    let weights = match charged_sketch_scalar_values(ctx, payload, weights_at + 12, weight_count, "f3d legacy sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
     let point_capacity = usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()?;
@@ -3788,8 +3829,13 @@ fn decode_legacy_sketch_nurbs(
     {
         return None;
     }
-    let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    let coordinates = match charged_sketch_scalar_values(ctx, payload, points_at + 12, point_count.checked_mul(3)?, "f3d legacy sketch NURBS scalar values") {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let geometry = match admit_source_sketch_nurbs(
+        ctx,
         degree,
         fit_tolerance,
         knots,
@@ -3813,6 +3859,7 @@ fn decode_legacy_sketch_nurbs(
 }
 
 fn admit_source_sketch_nurbs(
+    ctx: &DecodeContext<'_>,
     degree: u32,
     fit_tolerance_cm: f64,
     knots: Vec<f64>,
@@ -3829,7 +3876,12 @@ fn admit_source_sketch_nurbs(
             "F3D sketch NURBS at byte {record_at} fit tolerance overflows millimetres"
         )));
     };
-    let mut control_points = Vec::with_capacity(coordinates.len() / 3);
+    let point_count = coordinates.len() / 3;
+    ctx.charge_collection_items(point_count as u64, "f3d sketch NURBS control points")?;
+    let mut control_points = Vec::new();
+    control_points.try_reserve_exact(point_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch NURBS control point allocation", 0, point_count as u64)
+    })?;
     for point in coordinates.chunks_exact(3) {
         let Some(source) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);

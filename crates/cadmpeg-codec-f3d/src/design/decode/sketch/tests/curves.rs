@@ -1,12 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::{
-    decode_circular_arc, decode_line, decode_sketch_curve_geometry, SketchCurveClass,
+    decode_circular_arc, decode_line, SketchCurveClass,
     CURRENT_SKETCH_NURBS_TYPE, SKETCH_CIRCULAR_TYPES, SKETCH_LINE_TYPES,
     SKETCH_TEXT_FRAME_LINE_TYPE_GUID,
 };
 use crate::records::sketch_geometry::SketchCurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
+
+fn tested_decode_sketch_curve_geometry(
+    payload: &[u8],
+    geometry_shift: usize,
+    record_index: u32,
+    class: SketchCurveClass,
+    record_at: usize,
+) -> Result<Option<crate::design::decode::sketch::DecodedSketchCurveGeometry>, cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_curve_geometry(
+            ctx, payload, geometry_shift, record_index, class, record_at,
+        )
+    })
+}
 
 #[test]
 fn line_components_refuse_unrepresentable_scaled_endpoints() {
@@ -59,7 +73,7 @@ fn typed_line_source_reports_scaled_start_overflow_at_record() {
         0.0,
         1.0,
     ]);
-    match decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 17) {
+    match tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 17) {
         Err(cadmpeg_core::CodecError::Malformed(message)) => {
             assert!(message.contains("byte 17"));
         }
@@ -109,7 +123,7 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         .expect("arc parse")
         .is_some());
 
-    let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
+    let line = tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
         .expect("line admission")
         .expect("typed line payload");
     assert_eq!(line.geometry_offset, 133);
@@ -124,7 +138,7 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         .unwrap()
     );
 
-    let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular, 0)
+    let circular = tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular, 0)
         .expect("arc admission")
         .expect("typed circular payload");
     assert!(matches!(circular.geometry, SketchCurveGeometry::Arc { .. }));
@@ -143,7 +157,7 @@ fn typed_line_accepts_the_referenced_compact_planar_form() {
     payload.extend_from_slice(&37u32.to_le_bytes());
     payload.extend_from_slice(&[0; 6]);
 
-    let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
+    let parsed = tested_decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
         .expect("line admission")
         .expect("typed referenced compact line");
     assert_eq!(parsed.geometry_offset, 144);

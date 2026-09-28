@@ -670,6 +670,24 @@ fn text_frame_line_decodes_after_point_references() {
     ));
 }
 
+fn tested_decode_sketch_nurbs(
+    payload: &[u8],
+    record_at: usize,
+) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_nurbs(ctx, payload, record_at)
+    })
+}
+
+fn tested_decode_legacy_sketch_nurbs(
+    payload: &[u8],
+    record_at: usize,
+) -> Option<Result<(SketchCurveGeometry, usize), cadmpeg_core::CodecError>> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_legacy_sketch_nurbs(ctx, payload, record_at)
+    })
+}
+
 fn modern_sketch_nurbs_payload() -> Vec<u8> {
     let base = 133;
     let mut bytes = vec![0; base + 114];
@@ -696,16 +714,48 @@ fn modern_sketch_nurbs_payload() -> Vec<u8> {
 }
 
 #[test]
+fn modern_sketch_nurbs_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = modern_sketch_nurbs_payload();
+    let weights_at = 133 + 114 + 4 * 8;
+    bytes[weights_at..weights_at + 4].copy_from_slice(&2u32.to_le_bytes());
+    bytes[weights_at + 4..weights_at + 8].copy_from_slice(&2u32.to_le_bytes());
+    let points_at = weights_at + 12;
+    bytes.splice(
+        points_at..points_at,
+        [1.0f64, 1.0].into_iter().flat_map(f64::to_le_bytes),
+    );
+    for (limit, operation) in [
+        (3, "f3d sketch NURBS scalar values"),
+        (5, "f3d sketch NURBS scalar values"),
+        (11, "f3d sketch NURBS scalar values"),
+        (13, "f3d sketch NURBS control points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::design::decode::sketch::decode_sketch_nurbs(&ctx, &bytes, 17)
+            .transpose()
+            .expect_err("collection limit must refuse modern NURBS");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
+    }
+}
+
+#[test]
 fn modern_sketch_nurbs_reports_fit_tolerance_scale_overflow_at_source() {
     let mut bytes = modern_sketch_nurbs_payload();
     assert!(
-        crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+        tested_decode_sketch_nurbs(&bytes, 17)
             .transpose()
             .unwrap()
             .is_some()
     );
     bytes[133 + 94..133 + 102].copy_from_slice(&1.0e308f64.to_le_bytes());
-    let error = crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+    let error = tested_decode_sketch_nurbs(&bytes, 17)
         .transpose()
         .unwrap_err();
     assert!(error
@@ -717,21 +767,20 @@ fn modern_sketch_nurbs_reports_fit_tolerance_scale_overflow_at_source() {
 fn modern_sketch_nurbs_reports_control_point_scale_overflow_at_source() {
     let mut bytes = modern_sketch_nurbs_payload();
     assert!(
-        crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+        tested_decode_sketch_nurbs(&bytes, 17)
             .transpose()
             .unwrap()
             .is_some()
     );
     let first_coordinate = 133 + 114 + 4 * 8 + 12 + 12;
     bytes[first_coordinate..first_coordinate + 8].copy_from_slice(&1.0e308f64.to_le_bytes());
-    let error = crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+    let error = tested_decode_sketch_nurbs(&bytes, 17)
         .transpose()
         .unwrap_err();
     assert!(error.to_string().contains("byte 17 overflows millimetres"));
 }
 
-#[test]
-fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
+fn legacy_sketch_nurbs_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
     lp_ascii(&mut bytes, "256");
     bytes.extend_from_slice(&1200u32.to_le_bytes());
@@ -780,7 +829,37 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         }
     }
 
-    let (geometry, end) = crate::design::decode::sketch::decode_legacy_sketch_nurbs(&bytes, 0)
+    bytes
+}
+
+#[test]
+fn legacy_sketch_nurbs_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = legacy_sketch_nurbs_payload();
+    for (limit, operation) in [
+        (5, "f3d legacy sketch NURBS scalar values"),
+        (8, "f3d legacy sketch NURBS scalar values"),
+        (17, "f3d legacy sketch NURBS scalar values"),
+        (20, "f3d sketch NURBS control points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::design::decode::sketch::decode_legacy_sketch_nurbs(&ctx, &bytes, 0)
+            .transpose()
+            .expect_err("collection limit must refuse legacy NURBS");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
+    }
+}
+
+#[test]
+fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
+    let mut bytes = legacy_sketch_nurbs_payload();
+    let (geometry, end) = tested_decode_legacy_sketch_nurbs(&bytes, 0)
         .transpose()
         .expect("valid source scaling")
         .expect("legacy NURBS");
@@ -800,7 +879,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     let mut invalid = bytes.clone();
     invalid[133 + 114..133 + 122].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(
-        crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid, 0)
+        tested_decode_legacy_sketch_nurbs(&invalid, 0)
             .transpose()
             .unwrap()
             .is_none()
@@ -812,7 +891,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         let mut invalid = bytes.clone();
         invalid[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         assert!(
-            crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid, 17)
+            tested_decode_legacy_sketch_nurbs(&invalid, 17)
                 .transpose()
                 .unwrap_err()
                 .to_string()
