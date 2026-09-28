@@ -6,6 +6,7 @@ use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_guid_end;
 use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
@@ -20,20 +21,6 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::PositiveReal;
-
-fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
-    (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
-    let start = count_at.checked_add(4)?;
-    let end = start.checked_add(72)?;
-    bytes
-        .get(start..end)?
-        .chunks_exact(2)
-        .all(|unit| {
-            unit[1] == 0
-                && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
-        })
-        .then_some(end)
-}
 
 pub(super) fn exact_solid_primitive(
     bytes: &[u8],

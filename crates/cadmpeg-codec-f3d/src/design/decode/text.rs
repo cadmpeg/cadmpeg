@@ -78,6 +78,40 @@ pub(in crate::design::decode) fn design_record_id_charged(
     Ok(id)
 }
 
+/// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
+pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
+    (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
+    let start = count_at.checked_add(4)?;
+    let end = start.checked_add(72)?;
+    bytes
+        .get(start..end)?
+        .chunks_exact(2)
+        .all(|unit| {
+            unit[1] == 0
+                && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+        })
+        .then_some(end)
+}
+
+/// Match an ASCII literal encoded as a counted UTF-16LE field without copying it.
+pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
+    bytes: &[u8],
+    count_at: usize,
+    expected: &str,
+) -> Option<usize> {
+    if !expected.is_ascii() || usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected.len() {
+        return None;
+    }
+    let start = count_at.checked_add(4)?;
+    let end = start.checked_add(expected.len().checked_mul(2)?)?;
+    bytes
+        .get(start..end)?
+        .chunks_exact(2)
+        .zip(expected.bytes())
+        .all(|(unit, expected_byte)| unit == [expected_byte, 0])
+        .then_some(end)
+}
+
 pub(super) fn lp_utf16_bounded_charged(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -182,7 +216,30 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{class_tag_from_view, lp_ascii_filtered_view};
+    use super::{class_tag_from_view, fixed_utf16_ascii_eq, lp_ascii_filtered_view};
+
+    #[test]
+    fn fixed_utf16_ascii_match_agrees_with_decoded_text() {
+        for (value, expected) in [
+            ("Thicken", "Thicken"),
+            ("Thicken", "Shell"),
+            ("Shell", "Shell"),
+            ("Thickén", "Thicken"),
+        ] {
+            let mut bytes = u32::try_from(value.encode_utf16().count())
+                .unwrap()
+                .to_le_bytes()
+                .to_vec();
+            for unit in value.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            let decoded = crate::bytes::lp_utf16_bounded(&bytes, 0, expected.len()..=expected.len())
+                .and_then(|(text, end)| (text == expected).then_some(end));
+            assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), decoded);
+            bytes.pop();
+            assert_eq!(fixed_utf16_ascii_eq(&bytes, 0, expected), None);
+        }
+    }
 
     #[test]
     fn borrowed_ascii_reader_matches_owned_reader() {
