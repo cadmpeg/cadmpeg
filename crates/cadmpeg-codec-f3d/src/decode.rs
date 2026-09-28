@@ -4562,6 +4562,7 @@ fn extend_related_design_records(
         .collect::<std::collections::HashSet<_>>();
     native.design_edge_identity_operands =
         crate::design::decode::operands::decode_edge_identity_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
