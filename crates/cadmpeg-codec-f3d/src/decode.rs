@@ -2294,7 +2294,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.construction_recipes =
             crate::design::decode::parameters::decode_recipes(ctx, scan)?;
         self.native.persistent_references =
-            crate::design::decode::sketch::decode_persistent_references(scan)?;
+            crate::design::decode::sketch::decode_persistent_references(ctx, scan)?;
         self.native.lost_edge_references =
             crate::design::decode::sketch::decode_lost_edge_references(scan)?;
         self.native.design_material_assignments =

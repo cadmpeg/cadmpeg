@@ -729,6 +729,7 @@ fn parse_sketch_placement_candidates(
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub(crate) fn decode_persistent_references(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -739,7 +740,33 @@ pub(crate) fn decode_persistent_references(
         .filter(|(_, entry)| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        for &(name, kind) in &[
+        decode_persistent_references_from_stream(ctx, entry_ordinal, &entry.name, bytes, &mut out)?;
+    }
+    finish_persistent_references(ctx, out)
+}
+
+fn finish_persistent_references(
+    ctx: &DecodeContext<'_>,
+    mut out: Vec<(usize, PersistentReference)>,
+) -> Result<Vec<PersistentReference>, CodecError> {
+    out.sort_by_key(|(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset));
+    ctx.charge_collection_items(out.len() as u64, "f3d persistent reference output")?;
+    let mut references = Vec::new();
+    references.try_reserve_exact(out.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d persistent reference output allocation", 0, out.len() as u64)
+    })?;
+    references.extend(out.into_iter().map(|(_, reference)| reference));
+    Ok(references)
+}
+
+fn decode_persistent_references_from_stream(
+    ctx: &DecodeContext<'_>,
+    entry_ordinal: usize,
+    entry_name: &str,
+    bytes: &[u8],
+    out: &mut Vec<(usize, PersistentReference)>,
+) -> Result<(), CodecError> {
+    for &(name, kind) in &[
             (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
             (
                 b"crv_primary_id".as_slice(),
@@ -779,10 +806,21 @@ pub(crate) fn decode_persistent_references(
                 let Some(value) = View::u64_le_at(bytes, value_offset) else {
                     continue;
                 };
+                ctx.charge_collection_items(1, "f3d persistent reference index")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d persistent reference index allocation", 0, 1)
+                })?;
                 out.push((
                     entry_ordinal,
                     PersistentReference {
-                        id: ids::native_persistent_reference_id(&entry.name, offset),
+                        id: design_record_id_charged(
+                            ctx,
+                            entry_name,
+                            ":persistent-reference#",
+                            offset as u64,
+                            "f3d persistent reference ID",
+                            "f3d persistent reference ID allocation",
+                        )?,
                         byte_offset: offset as u64,
                         value_offset: (value_offset - offset) as u32,
                         kind,
@@ -791,9 +829,7 @@ pub(crate) fn decode_persistent_references(
                 ));
             }
         }
-    }
-    out.sort_by_key(|(entry_ordinal, reference)| (*entry_ordinal, reference.byte_offset));
-    Ok(out.into_iter().map(|(_, reference)| reference).collect())
+    Ok(())
 }
 
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design

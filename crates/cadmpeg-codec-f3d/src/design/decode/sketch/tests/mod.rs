@@ -9,6 +9,7 @@
 mod curves;
 mod index;
 mod placement;
+mod persistent;
 mod points;
 mod relation_classes;
 mod relations;
