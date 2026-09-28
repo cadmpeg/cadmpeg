@@ -21,7 +21,7 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::{FeatureRelationTable, VariableType};
 use crate::feature::schema::SchemaClass;
 
-use super::coverage::{source_section, source_section_ref, surface_family, surface_variant};
+use super::coverage::{source_section_ref, surface_family, surface_variant};
 use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
 use super::feature_history::round::replayed_torus_minor_radius;
@@ -46,17 +46,17 @@ use super::sketch::equations_scalar::resolved_section_scalar_values;
 use super::sketch::radii::resolved_section_radii;
 use super::sketch_ids::{
     binary_flag_value, feature_definition_has_sketch_design, feature_definition_record_id,
-    feature_sketch_record_id_in_scan, sketch_table_headers,
+    sketch_table_headers,
 };
 
 #[derive(Serialize)]
-pub(super) struct CreoSketchRecord {
+pub(super) struct CreoSketchRecord<'a> {
     pub(super) id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
     pub(super) source_section: String,
     pub(super) offset: usize,
-    section_3d: Option<CreoSketchSection3d>,
+    section_3d: Option<CreoSketchSection3d<'a>>,
     table_headers: Vec<CreoSketchTableHeader>,
     section_points: Vec<CreoSketchSectionPoint>,
     solved_external_ids: Vec<u32>,
@@ -73,7 +73,7 @@ pub(super) struct CreoSketchRecord {
     trim_entities: Vec<CreoSketchTrimEntity>,
     trim_vertices: Vec<CreoSketchTrimVertex>,
     order_rows: Vec<CreoSketchOrderRow>,
-    saved_entities: Vec<CreoSketchSavedEntity>,
+    saved_entities: Vec<CreoSketchSavedEntity<'a>>,
     dimensions: Vec<CreoSketchDimension>,
     relations: Vec<CreoSketchRelation>,
     skamps: Vec<CreoSketchSkamp>,
@@ -3787,21 +3787,27 @@ mod curve_expression_projection_limit_tests {
     }
 }
 
-pub(super) fn sketch_records(
+pub(super) fn sketch_records<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-) -> Result<Vec<CreoSketchRecord>, cadmpeg_core::CodecError> {
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoSketchRecord<'a>>, cadmpeg_core::CodecError> {
     let mut records = Vec::new();
     for definition in &scan.features.definitions {
         if !feature_definition_has_sketch_design(ctx, definition)? {
             continue;
         }
-        ctx.try_reserve_items(&mut records, 1, "creo sketch records")?;
-        records.push(CreoSketchRecord {
-                id: feature_sketch_record_id_in_scan(scan, definition),
+        let id = if scan.features.definitions.iter().filter(|candidate| candidate.identity.id() == definition.identity.id()).count() != 1
+            || (definition.identity.schema_id().is_none() && definition.identity.owner_feature_id().is_none()) {
+            ctx.format_retained(format_args!("creo:featdefs:sketch#offset:{}", definition.offset), "creo sketch record id")?
+        } else {
+            ctx.format_retained(format_args!("creo:featdefs:sketch#{}", definition.identity.id()), "creo sketch record id")?
+        };
+        let source_section = ctx.copy_retained_text(source_section_ref(scan, definition.offset), "creo sketch source section")?;
+        let record = CreoSketchRecord {
+                id,
                 definition_id: definition.identity.id(),
                 owner_feature_id: definition.identity.owner_feature_id(),
-                source_section: source_section(scan, definition.offset),
+                source_section,
                 offset: definition.offset,
                 section_3d: definition
                     .section_3d
@@ -3809,7 +3815,7 @@ pub(super) fn sketch_records(
                     .map(|section| CreoSketchSection3d {
                         sketch_plane_entity_id: section.sketch_plane_entity_id,
                         sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
-                        reference_planes: section.reference_planes.clone(),
+                        reference_planes: &section.reference_planes,
                         reference_plane_datum_geometry_id: section
                             .reference_plane_datum_geometry_id,
                         orientation: CreoSketchSectionOrientation {
@@ -3821,30 +3827,28 @@ pub(super) fn sketch_records(
                                 .reference_flip
                                 .map(binary_flag_value),
                         },
-                        dimension_ids: section.dimension_ids.clone(),
+                        dimension_ids: &section.dimension_ids,
                         offset: section.offset,
                     }),
                 table_headers: sketch_table_headers(ctx, definition)?,
                 section_points: sketch_section_point_records(ctx, definition)?,
-                solved_external_ids: definition
-                    .trim_entities
-                    .as_ref()
-                    .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
+                solved_external_ids: crate::decode::collect_items(ctx,
+                    definition.trim_entities.iter().flat_map(|table| table.solved_external_ids.iter().copied()),
+                    "creo native sketch solved external IDs")?,
                 variables: {
                     let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
                     let resolved_radii = resolved_section_radii(ctx, definition)?;
                     let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-                    definition
+                    crate::decode::project_items(ctx, definition
                         .variables
                         .iter()
-                        .flat_map(|table| &table.rows)
-                        .map(|row| CreoSketchVariable {
+                        .flat_map(|table| &table.rows), "creo native sketch variables", |row| Ok(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
                             key: row.key,
                             value: row.value,
-                            value_body: row.value_body.clone(),
+                            value_body: ctx.copy_retained(&row.value_body, "creo native sketch variable value body")?,
                             guess: row.guess,
-                            guess_body: row.guess_body.clone(),
+                            guess_body: ctx.copy_retained(&row.guess_body, "creo native sketch variable guess body")?,
                             known: row.known,
                             homogeneity: row.homogeneity,
                             uvar_id: row.uvar_id,
@@ -3859,10 +3863,9 @@ pub(super) fn sketch_records(
                                 _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                             },
                             offset: row.offset,
-                        })
-                        .collect()
+                        }))?
                 },
-                equations: crate::feature::definitions::equation_table(
+                equations: crate::decode::collect_items(ctx, crate::feature::definitions::equation_table(
                     ctx,
                     &definition.body,
                     0,
@@ -3880,12 +3883,11 @@ pub(super) fn sketch_records(
                     body: equation.body,
                     offset: equation.offset,
                 })
-                .collect(),
-                segments: definition
+                , "creo native sketch equations")?,
+                segments: crate::decode::project_items(ctx, definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.ordinary())
-                    .map(|segment| CreoSketchSegment {
+                    .flat_map(|table| table.rows.ordinary()), "creo native sketch segments", |segment| Ok(CreoSketchSegment {
                         external_id: segment.external_id,
                         kind: match segment.kind {
                             crate::feature::definitions::FeatureSegmentKind::Line(_) => "line",
@@ -3899,11 +3901,10 @@ pub(super) fn sketch_records(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
-                        body: segment.body.clone(),
+                        body: ctx.copy_retained(&segment.body, "creo native sketch segment body")?,
                         offset: segment.offset,
-                    })
-                    .collect(),
-                circle_segments: definition
+                    }))?,
+                circle_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.circles())
@@ -3913,8 +3914,8 @@ pub(super) fn sketch_records(
                         radius_dimension_id: segment.radius_ref,
                         offset: segment.offset,
                     })
-                    .collect(),
-                point_segments: definition
+                    , "creo native sketch circle segments")?,
+                point_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.points())
@@ -3923,8 +3924,8 @@ pub(super) fn sketch_records(
                         point_id: segment.point_id,
                         offset: segment.offset,
                     })
-                    .collect(),
-                centered_line_segments: definition
+                    , "creo native sketch point segments")?,
+                centered_line_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.centered_lines())
@@ -3933,8 +3934,8 @@ pub(super) fn sketch_records(
                         center_id: segment.center_id,
                         offset: segment.offset,
                     })
-                    .collect(),
-                reference_line_segments: definition
+                    , "creo native sketch centered line segments")?,
+                reference_line_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.reference_lines())
@@ -3945,8 +3946,8 @@ pub(super) fn sketch_records(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         offset: segment.offset,
                     })
-                    .collect(),
-                bounded_curve_segments: definition
+                    , "creo native sketch reference line segments")?,
+                bounded_curve_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.bounded_curves())
@@ -3961,8 +3962,8 @@ pub(super) fn sketch_records(
                         secondary_radius_dimension_id: segment.radius2_ref,
                         offset: segment.offset,
                     })
-                    .collect(),
-                conic_segments: definition
+                    , "creo native sketch bounded curve segments")?,
+                conic_segments: crate::decode::collect_items(ctx, definition
                     .segments
                     .iter()
                     .flat_map(|table| table.rows.conics())
@@ -3973,12 +3974,11 @@ pub(super) fn sketch_records(
                         second_coefficient_ref: segment.second_coefficient_ref,
                         offset: segment.offset,
                     })
-                    .collect(),
-                opaque_segments: definition
+                    , "creo native sketch conic segments")?,
+                opaque_segments: crate::decode::project_items(ctx, definition
                     .segments
                     .iter()
-                    .flat_map(|table| table.rows.opaque())
-                    .map(|segment| CreoSketchOpaqueSegment {
+                    .flat_map(|table| table.rows.opaque()), "creo native sketch opaque segments", |segment| Ok(CreoSketchOpaqueSegment {
                         external_id: segment.external_id,
                         kind: segment.kind,
                         point_ids: segment.point_ids,
@@ -3988,11 +3988,10 @@ pub(super) fn sketch_records(
                         vertical_horizontal_constraint: segment.vertical_horizontal,
                         radius_dimension_id: segment.radius_ref,
                         secondary_radius_dimension_id: segment.radius2_ref,
-                        body: segment.body.clone(),
+                        body: ctx.copy_retained(&segment.body, "creo native sketch opaque segment body")?,
                         offset: segment.offset,
-                    })
-                    .collect(),
-                trim_entities: definition
+                    }))?,
+                trim_entities: crate::decode::collect_items(ctx, definition
                     .trim_entities
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4007,22 +4006,20 @@ pub(super) fn sketch_records(
                         },
                         offset: entity.offset,
                     })
-                    .collect(),
-                trim_vertices: definition
+                    , "creo native sketch trim entities")?,
+                trim_vertices: crate::decode::project_items(ctx, definition
                     .trim_vertices
                     .iter()
-                    .flat_map(|table| &table.rows)
-                    .map(|vertex| CreoSketchTrimVertex {
+                    .flat_map(|table| &table.rows), "creo native sketch trim vertices", |vertex| Ok(CreoSketchTrimVertex {
                         vertex_id: vertex.vertex_id,
-                        entities: vertex.entities.clone(),
+                        entities: crate::decode::collect_items(ctx, vertex.entities.iter().copied(), "creo native sketch trim vertex entities")?,
                         section_coordinates: vertex.section_coordinates.map(|point| {
                             let point = point.get();
                             [point.u, point.v]
                         }),
                         offset: vertex.offset,
-                    })
-                    .collect(),
-                order_rows: definition
+                    }))?,
+                order_rows: crate::decode::collect_items(ctx, definition
                     .order_table
                     .iter()
                     .flat_map(|table| &table.rows)
@@ -4032,8 +4029,8 @@ pub(super) fn sketch_records(
                         bitmask: row.bitmask,
                         offset: row.offset,
                     })
-                    .collect(),
-                saved_entities: definition
+                    , "creo native sketch order rows")?,
+                saved_entities: crate::decode::collect_items(ctx, definition
                     .saved_section
                     .iter()
                     .flat_map(|section| &section.entities)
@@ -4041,10 +4038,10 @@ pub(super) fn sketch_records(
                         crate::feature::definitions::FeatureSavedEntity::Line(line) => {
                             CreoSketchSavedEntity::Line {
                                 entity_id: line.entity_id,
-                                references: line.references.clone(),
-                                attributes: line.attributes.clone(),
+                                references: &line.references,
+                                attributes: &line.attributes,
                                 endpoints: line.endpoints,
-                                body: line.body.clone(),
+                                body: &line.body,
                                 offset: line.offset,
                             }
                         }
@@ -4055,7 +4052,7 @@ pub(super) fn sketch_records(
                                 radius: arc.radius,
                                 endpoints: arc.endpoints,
                                 parameters: arc.parameters,
-                                body: arc.body.clone(),
+                                body: &arc.body,
                                 offset: arc.offset,
                             }
                         }
@@ -4064,7 +4061,7 @@ pub(super) fn sketch_records(
                                 entity_id: circle.entity_id,
                                 center: circle.center,
                                 radius: circle.radius,
-                                body: circle.body.clone(),
+                                body: &circle.body,
                                 offset: circle.offset,
                             }
                         }
@@ -4077,7 +4074,7 @@ pub(super) fn sketch_records(
                                 local_system: conic
                                     .local_system
                                     .map(cadmpeg_ir::units::FiniteVector::get),
-                                body: conic.body.clone(),
+                                body: &conic.body,
                                 offset: conic.offset,
                             }
                         }
@@ -4085,13 +4082,13 @@ pub(super) fn sketch_records(
                             CreoSketchSavedEntity::Spline {
                                 entity_id: spline.entity_id,
                                 declared_point_count: spline.declared_point_count,
-                                interpolation_points: spline.interpolation_points.clone(),
-                                interpolation_points_body: spline.interpolation_points_body.clone(),
+                                interpolation_points: &spline.interpolation_points,
+                                interpolation_points_body: &spline.interpolation_points_body,
                                 endpoint_tangents: crate::decode::native_records::SplineTangents(
-                                    spline.endpoint_tangents.clone(),
+                                    spline.endpoint_tangents.as_ref(),
                                 ),
                                 parameters: crate::decode::native_records::SplineParameters(
-                                    spline.parameters.clone(),
+                                    spline.parameters.as_ref(),
                                 ),
                                 offset: spline.offset,
                             }
@@ -4099,21 +4096,24 @@ pub(super) fn sketch_records(
                         crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) => {
                             CreoSketchSavedEntity::Dummy {
                                 entity_id: dummy.entity_id,
-                                body: dummy.body.clone(),
+                                body: &dummy.body,
                                 offset: dummy.offset,
                             }
                         }
                     })
-                    .collect(),
-                dimensions: definition
+                    , "creo native sketch saved entities")?,
+                dimensions: crate::decode::project_items(ctx, definition
                     .dimensions
                     .iter()
-                    .flat_map(|table| &table.rows)
-                    .map(|dimension| CreoSketchDimension {
+                    .flat_map(|table| &table.rows), "creo native sketch dimensions", |dimension| Ok(CreoSketchDimension {
                         external_id: dimension.external_id,
                         dimension_type: dimension.dimension_type,
-                        value: dimension.value.clone(),
-                        value_body: dimension.value_body.clone(),
+                        value: match &dimension.value {
+                            crate::feature::definitions::DimensionValue::Resolved(value) => crate::feature::definitions::DimensionValue::Resolved(*value),
+                            crate::feature::definitions::DimensionValue::UnresolvedToken(token) => crate::feature::definitions::DimensionValue::UnresolvedToken(ctx.copy_retained(token, "creo native sketch dimension unresolved token")?),
+                            crate::feature::definitions::DimensionValue::Undefined => crate::feature::definitions::DimensionValue::Undefined,
+                        },
+                        value_body: ctx.copy_retained(&dimension.value_body, "creo native sketch dimension value body")?,
                         unit: match dimension.unit() {
                             crate::feature::definitions::DimensionUnit::Radians => "radians",
                             crate::feature::definitions::DimensionUnit::Millimeters => {
@@ -4125,12 +4125,12 @@ pub(super) fn sketch_records(
                         },
                         direction_byte: dimension.direction_byte,
                         auxiliary_value: dimension.auxiliary_value,
-                        auxiliary_body: dimension.auxiliary_body.clone(),
-                        references: dimension.references.as_ref().map(|table| {
-                            CreoSketchDimensionReferenceTable {
+                        auxiliary_body: ctx.copy_retained(&dimension.auxiliary_body, "creo native sketch dimension auxiliary body")?,
+                        references: dimension.references.as_ref().map(|table| -> Result<CreoSketchDimensionReferenceTable, CodecError> {
+                            Ok(CreoSketchDimensionReferenceTable {
                                 declared_count: table.declared_count,
                                 entity_ref: table.entity_ref,
-                                rows: table
+                                rows: crate::decode::collect_items(ctx, table
                                     .rows
                                     .iter()
                                     .map(|reference| CreoSketchDimensionReference {
@@ -4139,50 +4139,45 @@ pub(super) fn sketch_records(
                                         point: reference.point,
                                         offset: reference.offset,
                                     })
-                                    .collect(),
+                                    , "creo native sketch dimension references")?,
                                 offset: table.offset,
-                            }
-                        }),
+                            })
+                        }).transpose()?,
                         offset: dimension.offset,
-                    })
-                    .collect(),
-                relations: definition
+                    }))?,
+                relations: crate::decode::project_items(ctx, definition
                     .relations
                     .iter()
-                    .flat_map(|table| &table.rows)
-                    .map(|relation| CreoSketchRelation {
+                    .flat_map(|table| &table.rows), "creo native sketch relations", |relation| Ok(CreoSketchRelation {
                         relation_id: relation.relation_id,
                         used: relation.used,
-                        operands: relation.operands.clone(),
+                        operands: ctx.copy_retained(&relation.operands, "creo native sketch relation operands")?,
                         operand_vectors: relation.operand_vectors,
                         sign: relation.sign,
                         dimension_id: relation.dimension_id,
                         relation_type: relation.relation_type,
-                        body: relation.body.clone(),
+                        body: ctx.copy_retained(&relation.body, "creo native sketch relation body")?,
                         offset: relation.offset,
-                    })
-                    .collect(),
-                skamps: definition
+                    }))?,
+                skamps: crate::decode::project_items(ctx, definition
                     .relations
                     .iter()
-                    .flat_map(FeatureRelationTable::skamps)
-                    .map(|skamp| CreoSketchSkamp {
+                    .flat_map(FeatureRelationTable::skamps), "creo native sketch skamps", |skamp| Ok(CreoSketchSkamp {
                         id: skamp.id,
                         kind: skamp.kind,
                         flags: skamp.flags,
                         status: skamp.status,
-                        items: skamp
+                        items: crate::decode::collect_items(ctx, skamp
                             .items
                             .iter()
                             .map(|item| CreoSketchSkampItem {
                                 entity_id: item.entity_id,
                                 sense: item.sense,
                             })
-                            .collect(),
+                            , "creo native sketch skamp items")?,
                         offset: skamp.offset,
-                    })
-                    .collect(),
-                relation_triples: definition
+                    }))?,
+                relation_triples: crate::decode::collect_items(ctx, definition
                     .relations
                     .iter()
                     .flat_map(FeatureRelationTable::triples)
@@ -4192,10 +4187,161 @@ pub(super) fn sketch_records(
                         skamp: triple.skamp_id,
                         offset: triple.offset,
                     })
-                    .collect(),
-        });
+                    , "creo native sketch relation triples")?,
+        };
+        ctx.try_reserve_items(&mut records, 1, "creo sketch records")?;
+        records.push(record);
     }
     Ok(records)
+}
+
+#[cfg(test)]
+mod sketch_projection_limit_tests {
+    use super::sketch_records;
+    use crate::feature::definitions::{
+        DefinitionIdentity, FeatureDefinition, FeatureSavedDummy, FeatureSavedEntity,
+        FeatureSavedSection, FeatureSection3d, FeatureSectionOrientation,
+        FeatureSectionReferencePlane, FeatureVariableRow, FeatureVariableTable, ReferencePlanes,
+        ScalarLane, VariableType,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn definition() -> FeatureDefinition {
+        FeatureDefinition {
+            identity: DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(7), owner_feature_id: None },
+            body: Vec::new(), parameter_frames: Vec::new(), outlines: Vec::new(),
+            variables: None, segments: None, trim_entities: None, trim_vertices: None,
+            order_table: None, section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(2), sketch_plane_flip: None,
+                reference_planes: ReferencePlanes::Named(vec![3]),
+                reference_plane_datum_geometry_id: None,
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: vec![4], offset: 2,
+            }),
+            dimensions: None, relations: None, saved_section: None, offset: 1,
+        }
+    }
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.features.definitions.push(definition());
+        scan
+    }
+
+    #[test]
+    fn sketch_record_id_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match sketch_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("native sketch ID exceeds retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch record id"), "{error:?}");
+    }
+
+    #[test]
+    fn sketch_source_section_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:featdefs:sketch#7".len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match sketch_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("source section exceeds retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch source section"), "{error:?}");
+    }
+
+    #[test]
+    fn sketch_record_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match sketch_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("one sketch projection exceeds collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo sketch records"), "{error:?}");
+    }
+
+    #[test]
+    fn sketch_saved_entity_refuses_collection_limit() {
+        let mut scan = scan();
+        let definition = &mut scan.features.definitions[0];
+        definition.section_3d = None;
+        definition.saved_section = Some(FeatureSavedSection {
+            entities: vec![FeatureSavedEntity::Dummy(FeatureSavedDummy { entity_id: Some(8), body: vec![0xe3], offset: 3 })],
+            offset: 2,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match sketch_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("saved entity follows the table header"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native sketch saved entities"), "{error:?}");
+    }
+
+    #[test]
+    fn borrowed_sketch_section_frames_preserve_json() {
+        let mut scan = scan();
+        scan.features.definitions[0].section_3d.as_mut().expect("section frame").reference_planes =
+            ReferencePlanes::Positional(vec![FeatureSectionReferencePlane {
+                plane_entity_id: 3, reference_type: Some(2), external_reference_id: None,
+                segment_id: None, sub_index: None, reference_flip: None,
+            }]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
+        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        assert_eq!(value["section_3d"]["reference_plane_entity_ids"], serde_json::json!([3]));
+        assert_eq!(value["section_3d"]["reference_plane_rows"][0]["reference_type"], 2);
+        assert_eq!(value["section_3d"]["dimension_ids"], serde_json::json!([4]));
+        assert!(value["section_3d"]["reference_planes"].is_null());
+    }
+
+    #[test]
+    fn sketch_variable_body_refuses_retained_limit() {
+        let mut scan = scan();
+        scan.features.definitions[0].section_3d = None;
+        scan.features.definitions[0].variables = Some(FeatureVariableTable {
+            declared_count: 1, entity_ref: None, rows: vec![FeatureVariableRow {
+                variable_type: VariableType::Parameter, key: 1, value: ScalarLane::Value(2.0),
+                value_body: vec![0xf9], guess: ScalarLane::Undefined, guess_body: vec![0xe3],
+                known: None, homogeneity: None, uvar_id: None, offset: 3,
+            }], offset: 2,
+        });
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records = sketch_records(&ctx, &scan).expect("service profile admits one variable");
+        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        assert_eq!(value["variables"][0]["value_body"], serde_json::json!([249]));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = ("creo:featdefs:sketch#7".len() + "unknown".len()) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match sketch_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("variable body exceeds retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native sketch variable value body"), "{error:?}");
+    }
 }
 
 pub(super) fn sketch_section_point_records(
