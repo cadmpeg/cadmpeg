@@ -4,7 +4,9 @@
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::hash::Hash;
 
 #[derive(Clone, Copy)]
 pub(super) enum NativeAdmission<'ctx, 'arena> {
@@ -19,6 +21,50 @@ impl<'ctx, 'arena> NativeAdmission<'ctx, 'arena> {
             Self::Decode(ctx) => Some(ctx),
         }
     }
+}
+
+pub(super) fn collect_index_set<T: Eq + Hash>(
+    admission: NativeAdmission<'_, '_>,
+    count: usize,
+    items: impl Iterator<Item = T>,
+    operation: &'static str,
+) -> Result<HashSet<T>, NativeConvertError> {
+    let Some(ctx) = admission.context() else {
+        return Ok(items.collect());
+    };
+    ctx.charge_collection_items(
+        u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+        operation,
+    )?;
+    let mut result = HashSet::new();
+    result
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    result.extend(items);
+    Ok(result)
+}
+
+pub(super) fn collect_index_map<K: Eq + Hash, V>(
+    admission: NativeAdmission<'_, '_>,
+    count: usize,
+    items: impl Iterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, NativeConvertError> {
+    let Some(ctx) = admission.context() else {
+        return Ok(items.collect());
+    };
+    ctx.charge_collection_items(
+        u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+        operation,
+    )?;
+    let mut result = HashMap::new();
+    result
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    result.extend(items);
+    Ok(result)
 }
 
 struct FormattedByteCount(usize);
