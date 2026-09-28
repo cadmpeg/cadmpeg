@@ -871,6 +871,7 @@ pub(super) fn transfer_curve_expression_features(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve_id.clone(),

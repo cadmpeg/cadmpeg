@@ -499,6 +499,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -652,6 +653,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -820,6 +822,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,

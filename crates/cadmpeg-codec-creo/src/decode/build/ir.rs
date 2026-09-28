@@ -244,6 +244,7 @@ fn transfer_reference_lines(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id,
@@ -324,6 +325,7 @@ fn transfer_reference_circles(
                 )
             })?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id,
@@ -398,6 +400,7 @@ fn transfer_reference_ellipses(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id,
@@ -537,6 +540,7 @@ fn transfer_datum_plane_surfaces(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -620,6 +624,7 @@ fn transfer_placed_plane_surfaces_into_ir(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,

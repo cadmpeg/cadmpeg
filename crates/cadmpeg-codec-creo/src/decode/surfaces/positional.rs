@@ -120,6 +120,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -250,6 +251,7 @@ pub(in super::super) fn transfer_positional_tori(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -372,6 +374,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id: curve_id.clone(),
@@ -395,6 +398,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id: surface_id.clone(),
@@ -605,6 +609,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id: curve_id.clone(),
@@ -628,6 +633,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id: surface_id.clone(),

@@ -198,6 +198,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -284,6 +285,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -331,6 +333,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id,

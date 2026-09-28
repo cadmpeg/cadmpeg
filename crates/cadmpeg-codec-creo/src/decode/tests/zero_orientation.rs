@@ -501,8 +501,8 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    source_carriers
-        .admit_surface(
+    crate::decode::with_test_decode_ctx(|ctx| source_carriers
+        .admit_surface(ctx,
             &mut ir,
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#31").expect("identity grammar"),
@@ -517,7 +517,7 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                 )),
                 source_object: None,
             },
-        )
+        ))
         .expect("millimeter admission");
     let Some(SolvedSurfaceGeometry::Cylinder(admitted)) = ir.model.surfaces[0].geometry.solved()
     else {

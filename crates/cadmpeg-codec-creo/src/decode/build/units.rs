@@ -1401,15 +1401,16 @@ mod tests {
         )
         .expect("finite NURBS fixture");
         let mut ir = CadIr::empty();
-        let error = crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)))
+        let error = crate::decode::with_test_decode_ctx(|ctx| crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)))
             .admit_curve(
+                ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Curve {
                     id: curve_id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                     source_object: None,
                 },
-            )
+            ))
             .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::NotImplemented(_)));
         assert!(ir.model.curves.is_empty());
@@ -1525,8 +1526,8 @@ mod tests {
             crate::decode::source_carriers::SourceUnitCarriers::new(Some(positive(25.4)));
         let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
             .expect("identity grammar");
-        source_carriers
-            .admit_surface(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_surface(ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Surface {
                     id: surface_id.clone(),
@@ -1535,7 +1536,7 @@ mod tests {
                     ),
                     source_object: None,
                 },
-            )
+            ))
             .expect("surface admission");
         let mut surface_definition = cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -1567,8 +1568,8 @@ mod tests {
             .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
-        source_carriers
-            .admit_curve(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx,
                 &mut ir,
                 cadmpeg_ir::geometry::Curve {
                     id: curve_id.clone(),
@@ -1577,7 +1578,7 @@ mod tests {
                     ),
                     source_object: None,
                 },
-            )
+            ))
             .expect("curve admission");
         let mut curve_definition = cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(

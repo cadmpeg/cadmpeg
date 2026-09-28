@@ -317,6 +317,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve_id,
@@ -609,6 +610,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -678,6 +680,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -795,6 +798,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 );
                 ctx.charge_entities(1, "admit Creo model curves")?;
                 source_carriers.admit_curve(
+                    ctx,
                     ir,
                     Curve {
                         id: curve_id.clone(),
@@ -850,6 +854,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id: surface_id.clone(),

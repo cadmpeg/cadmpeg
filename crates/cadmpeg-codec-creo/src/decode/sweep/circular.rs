@@ -279,6 +279,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id: cap_surface.clone(),
@@ -288,6 +289,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve_id.clone(),
@@ -405,6 +407,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let mut side_loops = Vec::new();
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id: side_surface.clone(),
