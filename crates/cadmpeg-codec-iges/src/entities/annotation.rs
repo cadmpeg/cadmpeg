@@ -82,10 +82,8 @@ fn sectioned_area_curves_coplanar(
         if active.contains(&curve_id) {
             return Ok(false);
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(curve_id.as_str().len()), "iges section active curve id")?;
-        }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut active, curve_id.clone(), "iges section active curves")?;
+        let active_id = crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges section active curve id")?;
+        crate::decode_resource::insert_optional_btree_set(ctx, &mut active, active_id, "iges section active curves")?;
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };
