@@ -34,6 +34,17 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::IgesCodec;
 
 #[test]
+fn composite_degradation_reasons_render_at_the_admitted_loss_boundary() {
+    use super::{CompositeCurveError, CompositeRefusal, DegreeElevationError};
+
+    assert_eq!(CompositeRefusal::NoChildCarrier.to_string(), "a child has no bounded line or NURBS carrier");
+    assert_eq!(CompositeRefusal::Child(CompositeCurveError::EmptyChildList).to_string(), "a child states no curve carrier: the composite states no child curve");
+    assert_eq!(CompositeRefusal::JoinedCarrier(CompositeCurveError::EmptyChildList).to_string(), "the joined children state no curve carrier: the composite states no child curve");
+    assert_eq!(CompositeRefusal::Elevation(CompositeCurveError::Elevation(DegreeElevationError::SpansDoNotJoin)).to_string(), "a child does not raise to the composite degree: the elevated Bezier spans do not join");
+    assert_eq!(CompositeRefusal::Other(CompositeCurveError::EmptyChildList).to_string(), "the composite states no child curve");
+}
+
+#[test]
 fn composite_index_refuses_each_collection_before_insertion() {
     let decoded = IgesCodec.decode(&mut Cursor::new(explicit_tetrahedron_solid_file()), &DecodeOptions::default()).unwrap();
     let ir = decoded.ir();
