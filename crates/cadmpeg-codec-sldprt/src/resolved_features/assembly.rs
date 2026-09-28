@@ -65,7 +65,7 @@ pub(crate) fn supplemental_config_lanes(
     let mut lanes = Vec::new();
     for source in scan.sections() {
         let Some(section) = source.name() else { continue; };
-        if legacy_feature_input_section(section) && legacy_sketch_object_stream(source.payload()) {
+        if legacy_feature_input_section(section) && legacy_sketch_object_stream(ctx, source.payload())? {
             let lane = feature_input_lane(ctx, source, section, "config-objects", annotations)?;
             ctx.reserve_collection_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
             lanes.push(lane);
@@ -83,8 +83,8 @@ fn feature_input_lane(
 ) -> Result<FeatureInputLane, cadmpeg_core::CodecError> {
     let parent = format!("sldprt:feature-input:{family}#{}", source.ordinal());
     let payload = source.payload();
-    let classes = class_declarations(payload, &parent);
-    let names = object_names(payload, &parent);
+    let classes = class_declarations(ctx, payload, &parent)?;
+    let names = object_names(ctx, payload, &parent)?;
     let scalars = named_scalars(payload, &parent, &names);
     let relation_bindings = relation_bindings(&parent, &classes, &scalars);
     let references = reference_cells(&scalars, &classes);
@@ -160,12 +160,15 @@ fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
-fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
-    let classes = class_declarations(payload, "legacy-sketch-probe");
-    classes.iter().any(|class| class.name == "sgSketch")
+fn legacy_sketch_object_stream(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let classes = class_declarations(ctx, payload, "legacy-sketch-probe")?;
+    Ok(classes.iter().any(|class| class.name == "sgSketch")
         && classes
             .iter()
-            .any(|class| class.role() == FeatureInputClassRole::SketchEntity)
+            .any(|class| class.role() == FeatureInputClassRole::SketchEntity))
 }
 
 #[cfg(test)]

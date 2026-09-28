@@ -1251,8 +1251,14 @@ fn resolved_feature_payload(
     renames: &[crate::history::write::features::FeatureInputRename],
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let expected_classes =
-        crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
+        crate::resolved_features::names::class_declarations(&ctx, &lane.native_payload, &lane.id)?;
     if lane.classes != expected_classes {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited class declarations",
@@ -1262,7 +1268,7 @@ fn resolved_feature_payload(
     // Every field of an object-name record, the value included, states the
     // payload bytes at `offset`.
     let expected_names =
-        crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
+        crate::resolved_features::names::object_names(&ctx, &lane.native_payload, &lane.id)?;
     if lane.names.len() != expected_names.len()
         || lane
             .names

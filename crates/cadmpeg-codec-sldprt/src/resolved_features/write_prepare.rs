@@ -1436,8 +1436,14 @@ fn source_less_lanes(
     }
     let mut lanes = assemble_source_less_lanes(objects);
     for lane in &mut lanes {
-        lane.classes = class_declarations(&lane.native_payload, &lane.id);
-        lane.names = object_names(&lane.native_payload, &lane.id);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )?;
+        lane.classes = class_declarations(&ctx, &lane.native_payload, &lane.id)?;
+        lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
         lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
         lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars);
         lane.references = reference_cells(&lane.scalars, &lane.classes);

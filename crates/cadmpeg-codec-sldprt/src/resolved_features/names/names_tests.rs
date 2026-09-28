@@ -23,7 +23,11 @@ fn object_names_follow_the_lane_name_class_token() {
     }
     payload.resize(payload.len() + 12, 0);
 
-    let names = object_names(&payload, "lane");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("test context");
+    let names = object_names(&ctx, &payload, "lane").unwrap();
     assert_eq!(
         names
             .iter()

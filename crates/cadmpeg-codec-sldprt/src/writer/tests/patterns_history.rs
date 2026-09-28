@@ -22,6 +22,15 @@ use crate::SldprtCodec;
 
 const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 
+fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::FeatureInputName> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("test context");
+    crate::resolved_features::names::object_names(&ctx, payload, parent)
+        .expect("service profile admits names")
+}
+
 #[test]
 fn semantic_writer_round_trips_all_pattern_forms() {
     use cadmpeg_ir::features::{
@@ -1654,7 +1663,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     )
     .unwrap();
 
-    let written = crate::resolved_features::names::object_names(&payload, &lane.id);
+    let written = decoded_object_names(&payload, &lane.id);
     assert_eq!(written[1].value, "Depth");
     assert_eq!(written[0].value, lane.names[0].value);
     assert_eq!(written[2].value, lane.names[2].value);
@@ -1941,7 +1950,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
     let payload =
         crate::writer::resolved_feature_payload(lane, &native.feature_histories, &renames).unwrap();
 
-    let written = crate::resolved_features::names::object_names(&payload, &lane.id);
+    let written = decoded_object_names(&payload, &lane.id);
     assert_eq!(
         written
             .iter()

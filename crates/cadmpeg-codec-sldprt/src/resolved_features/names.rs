@@ -3,8 +3,43 @@
 use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::records::ObjectId;
 use crate::records::{FeatureInputClass, FeatureInputName, FeatureInputOperandKind};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
+
+fn retained_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut retained = String::new();
+    ctx.reserve_retained_string(&mut retained, text.len(), operation)?;
+    retained.push_str(text);
+    Ok(retained)
+}
+
+fn record_id(
+    ctx: &DecodeContext<'_>,
+    family: &'static str,
+    lane_key: &str,
+    offset: usize,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let digits = if offset == 0 { 1 } else { offset.ilog10() as usize + 1 };
+    let length = "sldprt:feature-input:".len()
+        .checked_add(family.len())
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(lane_key.len()))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(digits))
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT feature input record ID", u64::MAX - 1, u64::MAX))?;
+    let mut id = String::new();
+    ctx.reserve_retained_string(&mut id, length, "retain SLDPRT feature input record ID")?;
+    std::fmt::Write::write_fmt(
+        &mut id,
+        format_args!("sldprt:feature-input:{family}#{lane_key}:{offset}"),
+    )
+    .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT feature input record ID"))?;
+    Ok(id)
+}
 
 pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString {
     match kind {
@@ -20,24 +55,44 @@ pub(super) fn operand_kind_name(kind: FeatureInputOperandKind) -> NonBlankString
     }
 }
 
-pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
+pub(crate) fn object_names(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    parent: &str,
+) -> Result<Vec<FeatureInputName>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    payload_names(payload)
-        .enumerate()
-        .filter_map(|(ordinal, (offset, object_id, units))| {
-            let value = std::char::decode_utf16(utf16_units(units))
-                .collect::<Result<String, _>>()
-                .ok()?;
-            Some(FeatureInputName {
-                id: format!("sldprt:feature-input:name#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                object_id,
-                value,
-            })
-        })
-        .collect()
+    let mut names = Vec::new();
+    for (ordinal, (offset, object_id, units)) in payload_names(payload).enumerate() {
+        let mut length = 0usize;
+        let mut valid = true;
+        for character in std::char::decode_utf16(utf16_units(units)) {
+            let Ok(character) = character else { valid = false; break; };
+            let Some(next) = length.checked_add(character.len_utf8()) else {
+                return Err(ctx.refuse_codec_limit("retain SLDPRT feature input name", u64::MAX - 1, u64::MAX));
+            };
+            length = next;
+        }
+        if !valid { continue; }
+        let mut value = String::new();
+        ctx.reserve_retained_string(&mut value, length, "retain SLDPRT feature input name")?;
+        for character in std::char::decode_utf16(utf16_units(units)) {
+            let Ok(character) = character else { valid = false; break; };
+            value.push(character);
+        }
+        if !valid { continue; }
+        let id = record_id(ctx, "name", lane_key, offset)?;
+        let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
+        ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT feature input names")?;
+        names.push(FeatureInputName {
+            id,
+            parent,
+            ordinal: ordinal as u32,
+            offset: offset as u64,
+            object_id,
+            value,
+        });
+    }
+    Ok(names)
 }
 
 fn decimal_matches(text: &str, value: usize) -> bool {
@@ -207,18 +262,27 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
         })
 }
 
-pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInputClass> {
+pub(crate) fn class_declarations(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    parent: &str,
+) -> Result<Vec<FeatureInputClass>, cadmpeg_core::CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    payload_classes(payload)
-        .enumerate()
-        .map(|(ordinal, (offset, name))| FeatureInputClass {
-            id: format!("sldprt:feature-input:class#{lane_key}:{offset}"),
-            parent: parent.to_string(),
+    let mut classes = Vec::new();
+    for (ordinal, (offset, name)) in payload_classes(payload).enumerate() {
+        let id = record_id(ctx, "class", lane_key, offset)?;
+        let parent = retained_text(ctx, parent, "retain SLDPRT feature input class parent")?;
+        let name = retained_text(ctx, name, "retain SLDPRT feature input class name")?;
+        ctx.reserve_collection_vec(&mut classes, 1, "collect SLDPRT feature input classes")?;
+        classes.push(FeatureInputClass {
+            id,
+            parent,
             ordinal: ordinal as u32,
             offset: offset as u64,
-            name: name.to_string(),
-        })
-        .collect()
+            name,
+        });
+    }
+    Ok(classes)
 }
 
 pub(super) fn configuration(section: &str) -> Option<String> {

@@ -6,6 +6,14 @@ use super::named_scalars;
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureInputOperandKind;
 
+fn decoded_names(payload: &[u8]) -> Vec<crate::records::FeatureInputName> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("test context");
+    object_names(&ctx, payload, "lane").expect("service profile admits names")
+}
+
 #[test]
 fn scalar_trailer_is_relative_to_variable_length_name() {
     let mut payload = Vec::new();
@@ -26,7 +34,7 @@ fn scalar_trailer_is_relative_to_variable_length_name() {
             .copy_from_slice(&index.to_le_bytes());
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
-    let names = object_names(&payload, "lane");
+    let names = decoded_names(&payload);
     let scalars = named_scalars(&payload, "lane", &names);
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
@@ -58,7 +66,7 @@ fn compact_scalar_header_ends_at_the_value() {
     payload[trailer + 45..trailer + 47].copy_from_slice(&9u16.to_le_bytes());
     payload[trailer + 47..trailer + 51].fill(0xff);
 
-    let names = object_names(&payload, "lane");
+    let names = decoded_names(&payload);
     let scalars = named_scalars(&payload, "lane", &names);
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
@@ -100,7 +108,7 @@ fn value_only_scalar_header_ends_at_the_value() {
     payload.resize(trailer + 24, 0);
     payload[trailer + 3..trailer + 7].copy_from_slice(&132u32.to_le_bytes());
 
-    let names = object_names(&payload, "lane");
+    let names = decoded_names(&payload);
     let scalars = named_scalars(&payload, "lane", &names);
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
@@ -130,7 +138,7 @@ fn legacy_scalar_layout_carries_shifted_role_and_operand() {
     payload[trailer + 38..trailer + 40].copy_from_slice(&0u16.to_le_bytes());
     payload[trailer + 40..trailer + 44].fill(0xff);
 
-    let names = object_names(&payload, "lane");
+    let names = decoded_names(&payload);
     let scalars = named_scalars(&payload, "lane", &names);
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
@@ -170,7 +178,7 @@ fn shifted_value_only_scalar_carries_standard_operand_cells() {
         payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
     }
 
-    let names = object_names(&payload, "lane");
+    let names = decoded_names(&payload);
     let scalars = named_scalars(&payload, "lane", &names);
     let [scalar] = scalars.as_slice() else {
         panic!("expected one scalar");
