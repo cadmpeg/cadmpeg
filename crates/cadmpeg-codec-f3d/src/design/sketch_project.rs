@@ -18,7 +18,8 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation},
 };
-use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_core::decode::{index_from_u32, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -28,19 +29,41 @@ const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1.0e-12;
 
-fn spatial_geometry_owners(
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-) -> HashSet<(String, u32)> {
-    curves
-        .iter()
-        .filter(|curve| sketch_curve_is_spatial(curve))
-        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
-        .chain(points.iter().filter_map(|point| {
-            (point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH)
-                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
-        }))
-        .collect()
+fn spatial_geometry_owners<'a>(
+    ctx: Option<&DecodeContext<'_>>,
+    points: &'a [SketchPoint],
+    curves: &'a [SketchCurveIdentity],
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+    let mut owners = HashSet::new();
+    for curve in curves.iter().filter(|curve| sketch_curve_is_spatial(curve)) {
+        let (Some(scope), Some(owner)) = (native_stream(&curve.id), curve.owner_reference) else {
+            continue;
+        };
+        if !owners.contains(&(scope, owner)) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d spatial geometry owner")?;
+                owners.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d spatial geometry owner allocation", 0, 1)
+                })?;
+            }
+            owners.insert((scope, owner));
+        }
+    }
+    for point in points.iter().filter(|point| point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH) {
+        let (Some(scope), Some(owner)) = (native_stream(&point.id), point.owner_reference) else {
+            continue;
+        };
+        if !owners.contains(&(scope, owner)) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d spatial geometry owner")?;
+                owners.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d spatial geometry owner allocation", 0, 1)
+                })?;
+            }
+            owners.insert((scope, owner));
+        }
+    }
+    Ok(owners)
 }
 
 fn sketch_text_horizontal_alignment(
@@ -65,73 +88,79 @@ fn sketch_text_vertical_alignment(
     })
 }
 
-fn text_frame_curve_records(
-    relations: &[SketchRelation],
-    curves: &[SketchCurveIdentity],
-    texts: &[SketchText],
-) -> HashSet<(String, u32)> {
-    let curve_owners = curves
-        .iter()
-        .filter_map(|curve| {
-            Some((
-                (native_stream(&curve.id)?.to_owned(), curve.record_index),
-                curve.owner_reference?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let text_owners = texts
-        .iter()
-        .filter_map(|text| {
-            Some((
-                (native_stream(&text.id)?.to_owned(), text.record_index),
-                text.owner_reference,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    relations
-        .iter()
-        .filter_map(|relation| {
-            let pattern = relation.definition.pattern();
-            let Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
-                text_reference,
-            }) = pattern
-            else {
-                return None;
-            };
-            let scope = native_stream(&relation.id)?.to_owned();
-            if relation.sole_constraint_kind().is_none()
-                || relation
-                    .members()
-                    .first()
-                    .map(|member| member.reference.record_index())
-                    != Some(*text_reference)
-                || !relation
-                    .auxiliary_references()
-                    .values()
-                    .copied()
-                    .eq([*text_reference])
-                || relation.members().len() < 2
-                || relation.return_member_indices() != relation.member_indices()[1..]
-                || text_owners.get(&(scope.clone(), *text_reference))
-                    != Some(&relation.owner_reference)
-            {
-                return None;
+fn text_frame_curve_records<'a>(
+    ctx: Option<&DecodeContext<'_>>,
+    relations: &'a [SketchRelation],
+    curves: &'a [SketchCurveIdentity],
+    texts: &'a [SketchText],
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+    let mut curve_owners = HashMap::new();
+    for curve in curves {
+        let (Some(scope), Some(owner)) = (native_stream(&curve.id), curve.owner_reference) else {
+            continue;
+        };
+        let key = (scope, curve.record_index);
+        if !curve_owners.contains_key(&key) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d text frame curve owner")?;
+                curve_owners.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d text frame curve owner allocation", 0, 1)
+                })?;
             }
-            if !relation.return_members().iter().all(|member| {
-                curve_owners.get(&(scope.clone(), member.reference.record_index()))
-                    == Some(&relation.owner_reference)
-            }) {
-                return None;
+        }
+        curve_owners.insert(key, owner);
+    }
+    let mut text_owners = HashMap::new();
+    for text in texts {
+        let Some(scope) = native_stream(&text.id) else { continue; };
+        let key = (scope, text.record_index);
+        if !text_owners.contains_key(&key) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d text frame text owner")?;
+                text_owners.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d text frame text owner allocation", 0, 1)
+                })?;
             }
-            Some(
-                relation
-                    .return_member_indices()
-                    .into_iter()
-                    .map(move |record_index| (scope.clone(), record_index)),
-            )
-        })
-        .flatten()
-        .collect()
+        }
+        text_owners.insert(key, text.owner_reference);
+    }
+    let mut frame_curves = HashSet::new();
+    for relation in relations {
+        let Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+            text_reference,
+        }) = relation.definition.pattern() else { continue; };
+        let Some(scope) = native_stream(&relation.id) else { continue; };
+        if relation.sole_constraint_kind().is_none()
+            || relation.members().first().map(|member| member.reference.record_index())
+                != Some(*text_reference)
+            || !relation.auxiliary_references().values().copied().eq([*text_reference])
+            || relation.members().len() < 2
+            || !relation.return_members().iter().map(|member| member.reference.record_index())
+                .eq(relation.members().iter().skip(1).map(|member| member.reference.record_index()))
+            || text_owners.get(&(scope, *text_reference)) != Some(&relation.owner_reference)
+        {
+            continue;
+        }
+        if !relation.return_members().iter().all(|member| {
+            curve_owners.get(&(scope, member.reference.record_index()))
+                == Some(&relation.owner_reference)
+        }) {
+            continue;
+        }
+        for member in relation.return_members().iter() {
+            let key = (scope, member.reference.record_index());
+            if !frame_curves.contains(&key) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d text frame curve record")?;
+                    frame_curves.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d text frame curve record allocation", 0, 1)
+                    })?;
+                }
+                frame_curves.insert(key);
+            }
+        }
+    }
+    Ok(frame_curves)
 }
 
 /// Project placed Design sketches and their exact planar point/curve records.
@@ -153,7 +182,7 @@ pub(crate) fn project_sketch_design(
     use cadmpeg_ir::scalar::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
-    let text_frame_curves = text_frame_curve_records(relations, curves, texts);
+    let text_frame_curves = text_frame_curve_records(ctx, relations, curves, texts)?;
     let placements_by_suffix = placements
         .iter()
         .filter_map(|placement| {
@@ -166,13 +195,13 @@ pub(crate) fn project_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let spatial_owners = spatial_geometry_owners(points, curves);
+    let spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
     let mut sketches = placements
         .iter()
         .filter(|placement| {
             !u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
                 native_stream(&placement.id)
-                    .is_some_and(|scope| spatial_owners.contains(&(scope.to_owned(), owner)))
+                    .is_some_and(|scope| spatial_owners.contains(&(scope, owner)))
             })
         })
         .filter_map(|placement| {
@@ -214,7 +243,7 @@ pub(crate) fn project_sketch_design(
         .filter_map(|point| {
             let owner = point.owner_reference?;
             let scope = native_stream(&point.id)?;
-            if spatial_owners.contains(&(scope.to_owned(), owner)) {
+            if spatial_owners.contains(&(scope, owner)) {
                 return None;
             }
             let placement = placements_by_suffix.get(&(scope, owner))?;
@@ -242,7 +271,7 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&curve.id) else {
             continue;
         };
-        if spatial_owners.contains(&(scope.to_owned(), owner)) {
+        if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
@@ -344,7 +373,7 @@ pub(crate) fn project_sketch_design(
                 sketch,
                 geometry,
             )
-            .with_construction(text_frame_curves.contains(&(scope.to_owned(), curve.record_index)))
+            .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
             .with_native_ref(Some(curve.id.clone())),
         );
     }
@@ -396,6 +425,7 @@ pub(crate) fn project_sketch_design(
 
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_design(
+    ctx: Option<&DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -426,13 +456,21 @@ pub(crate) fn project_spatial_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut spatial_owners = spatial_geometry_owners(points, curves);
-    spatial_owners.extend(surfaces.iter().filter_map(|surface| {
-        Some((
-            native_stream(&surface.id)?.to_owned(),
-            surface.owner_reference?,
-        ))
-    }));
+    let mut spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
+    for surface in surfaces {
+        let (Some(scope), Some(owner)) = (native_stream(&surface.id), surface.owner_reference) else {
+            continue;
+        };
+        if !spatial_owners.contains(&(scope, owner)) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d spatial surface owner")?;
+                spatial_owners.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d spatial surface owner allocation", 0, 1)
+                })?;
+            }
+            spatial_owners.insert((scope, owner));
+        }
+    }
     let curves_by_record = curves
         .iter()
         .filter_map(|curve| Some(((native_stream(&curve.id)?, curve.record_index), curve)))
@@ -538,7 +576,7 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(owner) = curve.owner_reference else {
             continue;
         };
-        if !spatial_owners.contains(&(scope.to_owned(), owner)) {
+        if !spatial_owners.contains(&(scope, owner)) {
             continue;
         }
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
@@ -658,7 +696,7 @@ pub(crate) fn project_spatial_sketch_design(
     entities.extend(points.iter().filter_map(|point| {
         let scope = native_stream(&point.id)?;
         let owner = point.owner_reference?;
-        if !spatial_owners.contains(&(scope.to_owned(), owner)) {
+        if !spatial_owners.contains(&(scope, owner)) {
             return None;
         }
         let placement = placements_by_suffix.get(&(scope, owner))?;

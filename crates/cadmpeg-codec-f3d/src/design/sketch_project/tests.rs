@@ -1164,6 +1164,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
     let (sketches, entities) = project_spatial_sketch_design(
+        None,
         &[placement.clone()],
         &points,
         &curves,
@@ -1296,12 +1297,178 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
         project_sketch_design(None, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION)
             .expect("sketch lanes pair");
     let (spatial, spatial_entities) =
-        project_spatial_sketch_design(&placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
+        project_spatial_sketch_design(None, &placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION)
             .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());
     assert_eq!(spatial.len(), 1);
     assert_eq!(spatial_entities.len(), 1);
+}
+
+fn owner_limit_curve(spatial: bool) -> SketchCurveIdentity {
+    SketchCurveIdentity {
+        id: "f3d:BulkStream.dat:curve#10".into(),
+        record_index: 10,
+        owner_reference: Some(42),
+        class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap(),
+        byte_offset: 10,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(10).unwrap(),
+        secondary_id: 0,
+        geometry: spatial.then(|| {
+            SketchCurveGeometry::line(
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0).unit().unwrap(),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap()
+        }),
+    }
+}
+
+#[test]
+fn spatial_geometry_owner_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let curve = owner_limit_curve(true);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::spatial_geometry_owners(Some(&ctx), &[], &[curve]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial geometry owner"
+    ));
+}
+
+fn owner_limit_text() -> SketchText {
+    SketchText {
+        id: "f3d:BulkStream.dat:text#20".into(),
+        record_index: 20,
+        owner_reference: 42,
+        class_tag: crate::records::references::DesignClassTag::try_from("376".to_owned()).unwrap(),
+        class_version: 0,
+        byte_offset: 20,
+        entity_genesis: None,
+        persistent_id: None,
+        base_id: None,
+        text: "A".into(),
+        font_family: "Arial".into(),
+        font_weight: 400,
+        height: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).unwrap(),
+        layout: crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+            width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(1.0).unwrap(),
+            alignment: None,
+            first_reference: None,
+            second_reference: None,
+            placement: None,
+        },
+        raw_bytes: Vec::new(),
+    }
+}
+
+#[test]
+fn text_frame_owner_indices_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let curve = owner_limit_curve(false);
+    let text = owner_limit_text();
+    for (curves, texts, operation) in [
+        (std::slice::from_ref(&curve), &[][..], "f3d text frame curve owner"),
+        (&[][..], std::slice::from_ref(&text), "f3d text frame text owner"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::text_frame_curve_records(Some(&ctx), &[], curves, texts),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "operation {operation}");
+    }
+}
+
+#[test]
+fn spatial_surface_owner_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let surface = SketchSurface {
+        id: "f3d:BulkStream.dat:surface#2".into(),
+        record_index: 2,
+        owner_reference: Some(42),
+        class_tag: crate::records::references::DesignClassTag::try_from("306".to_owned()).unwrap(),
+        byte_offset: 0,
+        entity_genesis: None,
+        persistent_id: std::num::NonZeroU64::new(2).unwrap(),
+        geometry: crate::records::sketch_geometry::SketchSurfaceGeometry::from_parts(
+            1, 1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        ).unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        project_spatial_sketch_design(Some(&ctx), &[], &[], &[], &[surface], &[], 1.0e-6),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial surface owner"
+    ));
+}
+
+#[test]
+fn text_frame_curve_records_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let curve = owner_limit_curve(false);
+    let text = owner_limit_text();
+    let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+        id: "f3d:BulkStream.dat:relation#30".into(),
+        record_index: 30,
+        class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned()).unwrap(),
+        byte_offset: 30,
+        state_offset: 0,
+        owner_reference: 42,
+        owner_entity_id: Some(cadmpeg_core::text::NonBlankString::new("Sketch_42").unwrap()),
+        auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
+            crate::records::identity::Located { value: 20, offset: 0 },
+        ]),
+        rectangular_counted_reference_count: None,
+        members: vec![SketchRelationMember::from_index(20), SketchRelationMember::from_index(10)]
+            .try_into().unwrap(),
+        owner_reference_offset: 0,
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(
+            0x100_0000_0000,
+            Some(crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
+                text_reference: 20,
+            }),
+        ).unwrap(),
+        entity_genesis: None,
+        return_members: vec![SketchRelationReturnMember::from_index(10)].try_into().unwrap(),
+        raw_bytes: vec![0; 160],
+    }).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::text_frame_curve_records(Some(&ctx), &[relation], &[curve], &[text]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d text frame curve record"
+    ));
 }
 
 #[test]
