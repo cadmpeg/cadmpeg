@@ -1454,11 +1454,11 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(topology.coedge_pcurves[0].carrier, None);
     assert_eq!(topology.vertex_points[0].carrier, 28);
     assert_eq!(
-        bodies_intersecting(&topology, &BTreeSet::from([20])).unwrap(),
+        bodies_intersecting(None, &topology, &BTreeSet::from([20])).unwrap().unwrap(),
         BTreeSet::from([1])
     );
     assert_eq!(
-        bodies_intersecting(&topology, &BTreeSet::from([28])).unwrap(),
+        bodies_intersecting(None, &topology, &BTreeSet::from([28])).unwrap().unwrap(),
         BTreeSet::from([1])
     );
     assert_eq!(

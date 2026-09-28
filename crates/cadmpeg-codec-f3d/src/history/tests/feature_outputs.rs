@@ -224,7 +224,7 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    let error = bound_output_error(6, u64::MAX);
+    let error = bound_output_error(9, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D feature output bodies"));
 }

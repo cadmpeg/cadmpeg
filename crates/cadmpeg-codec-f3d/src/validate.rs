@@ -5833,11 +5833,12 @@ fn validate_body_recipe_operands<'a>(
         &native.design_parameter_scopes,
     );
     history::bind_body_recipe_operand_history_candidates(
+        decode,
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
         &native.asm_histories,
-    );
+    )?;
     let expected_operands = expected_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))
