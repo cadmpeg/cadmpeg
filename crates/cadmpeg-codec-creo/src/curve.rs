@@ -1011,7 +1011,7 @@ pub(crate) fn expression_records_with_model_name(
             cursor = line_end + 1;
         }
         if lines.len() == index_from_u32(count) {
-            let prohibited_constructs = curve_equation_prohibited_constructs(&lines);
+            let prohibited_constructs = curve_equation_prohibited_constructs(ctx, &lines)?;
             let mut solve_program = curve_expression_solve_program(&lines);
             let mut evaluation = evaluate_expression_program_details(
                 ctx,
@@ -1094,7 +1094,10 @@ fn synchronize_solve_blocks(
     }
 }
 
-fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
+fn curve_equation_prohibited_constructs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    lines: &[CurveExpressionLine],
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     const PROHIBITED_FUNCTIONS: &[&str] =
         &["abs", "ceil", "floor", "extract", "if", "itos", "search"];
     let mut prohibited = BTreeSet::new();
@@ -1104,8 +1107,12 @@ fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<St
             continue;
         }
         for keyword in ["if", "else", "endif"] {
-            if starts_relation_keyword(source, keyword) {
-                prohibited.insert(keyword.to_string());
+            if starts_relation_keyword(source, keyword) && !prohibited.contains(keyword) {
+                ctx.charge_collection_items(1, "creo prohibited construct nodes")?;
+                prohibited.insert(ctx.copy_retained_text(
+                    keyword,
+                    "creo prohibited construct names",
+                )?);
             }
         }
         let bytes = source.as_bytes();
@@ -1136,15 +1143,31 @@ fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<St
                     && PROHIBITED_FUNCTIONS
                         .iter()
                         .any(|candidate| name.eq_ignore_ascii_case(candidate))
+                    && !prohibited
+                        .iter()
+                        .any(|known: &String| known.eq_ignore_ascii_case(name))
                 {
-                    prohibited.insert(name.to_ascii_lowercase());
+                    ctx.charge_collection_items(1, "creo prohibited construct nodes")?;
+                    let mut name = ctx.copy_retained_text(
+                        name,
+                        "creo prohibited construct names",
+                    )?;
+                    name.make_ascii_lowercase();
+                    prohibited.insert(name);
                 }
                 continue;
             }
             cursor += 1;
         }
     }
-    prohibited.into_iter().collect()
+    let mut ordered = Vec::new();
+    ctx.try_reserve_items(
+        &mut ordered,
+        prohibited.len(),
+        "creo prohibited construct records",
+    )?;
+    ordered.extend(prohibited);
+    Ok(ordered)
 }
 
 #[derive(Default)]
