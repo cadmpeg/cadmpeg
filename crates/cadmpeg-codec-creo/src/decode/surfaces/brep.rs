@@ -678,17 +678,32 @@ fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
     ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
-fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellSpec> {
-    let mut faces = Vec::new();
-    let mut curves = BTreeSet::new();
+fn merge_body_components(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    components: Vec<NeutralShellSpec>,
+) -> Result<Vec<NeutralShellSpec>, cadmpeg_core::CodecError> {
+    let mut components = components.into_iter();
+    let Some(mut first) = components.next() else {
+        return Ok(Vec::new());
+    };
     for component in components {
-        faces.extend(component.faces);
-        curves.extend(component.wire_curves);
+        ctx.try_reserve_items(
+            &mut first.faces,
+            component.faces.len(),
+            "creo B-rep merged component faces",
+        )?;
+        first.faces.extend(component.faces);
+        for curve_id in component.wire_curves {
+            if !first.wire_curves.contains(&curve_id) {
+                ctx.charge_collection_items(1, "creo B-rep merged component wire nodes")?;
+                first.wire_curves.insert(curve_id);
+            }
+        }
     }
-    vec![NeutralShellSpec {
-        faces,
-        wire_curves: curves,
-    }]
+    let mut merged = Vec::new();
+    ctx.try_reserve_items(&mut merged, 1, "creo B-rep merged component records")?;
+    merged.push(first);
+    Ok(merged)
 }
 
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
@@ -1439,6 +1454,92 @@ impl BrepEligibleFaceIndexes {
     }
 }
 
+struct BrepBodyIndexes {
+    neutral_edge_curves: BTreeSet<u32>,
+    body_components: Vec<NeutralShellSpec>,
+}
+
+impl BrepBodyIndexes {
+    fn from_components(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &ContainerScan,
+        admitted_components: &[&crate::topology::FaceComponent],
+        admitted_edge_curves: &BTreeSet<u32>,
+        eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
+        eligible_face_ids: &BTreeSet<u32>,
+        curve_faces: &BTreeMap<u32, [u32; 2]>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut neutral_edge_curves = BTreeSet::new();
+        for curve_id in admitted_components
+            .iter()
+            .flat_map(|component| component.curve_ids.iter().copied())
+            .filter(|curve_id| admitted_edge_curves.contains(curve_id))
+            .filter(|curve_id| {
+                !matches!(scan.framing.layout, crate::container::Layout::LegacyAscii(_))
+                    || curve_faces.get(curve_id).is_some_and(|faces| {
+                        faces.iter().any(|face| eligible_face_ids.contains(face))
+                    })
+            })
+        {
+            if !neutral_edge_curves.contains(&curve_id) {
+                ctx.charge_collection_items(1, "creo B-rep neutral edge curve nodes")?;
+                neutral_edge_curves.insert(curve_id);
+            }
+        }
+        let mut body_components = Vec::new();
+        for component in admitted_components {
+            let mut faces = Vec::new();
+            for face_id in component
+                .face_ids
+                .iter()
+                .copied()
+                .filter(|face_id| eligible_faces.contains_key(face_id))
+            {
+                ctx.try_reserve_items(&mut faces, 1, "creo B-rep component face IDs")?;
+                faces.push(face_id);
+            }
+            let mut curves = BTreeSet::new();
+            for curve_id in component
+                .curve_ids
+                .iter()
+                .copied()
+                .filter(|curve_id| neutral_edge_curves.contains(curve_id))
+            {
+                if !curves.contains(&curve_id) {
+                    ctx.charge_collection_items(1, "creo B-rep component wire nodes")?;
+                    curves.insert(curve_id);
+                }
+            }
+            ctx.try_reserve_items(&mut body_components, 1, "creo B-rep component records")?;
+            body_components.push(NeutralShellSpec {
+                faces,
+                wire_curves: curves,
+            });
+        }
+        Ok(Self { neutral_edge_curves, body_components })
+    }
+}
+
+fn used_brep_vertices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    neutral_edge_curves: &BTreeSet<u32>,
+    edge_vertices: &BTreeMap<u32, [u32; 2]>,
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut used_vertices = BTreeSet::new();
+    for vertex_id in neutral_edge_curves
+        .iter()
+        .filter_map(|curve_id| edge_vertices.get(curve_id))
+        .flatten()
+        .copied()
+    {
+        if !used_vertices.contains(&vertex_id) {
+            ctx.charge_collection_items(1, "creo B-rep used vertex nodes")?;
+            used_vertices.insert(vertex_id);
+        }
+    }
+    Ok(used_vertices)
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -1706,6 +1807,7 @@ pub(in super::super) fn transfer_native_brep(
             diagnostics.reject_face(ctx, FaceAdmissionRejection::LoopOrdering, face_id)?;
             continue;
         };
+        ctx.charge_collection_items(1, "creo B-rep eligible face nodes")?;
         eligible_faces.insert(face_id, ordered);
     }
     diagnostics.admitted_face_count = eligible_faces.len();
@@ -1718,40 +1820,16 @@ pub(in super::super) fn transfer_native_brep(
         eligible_face_ids,
     } = BrepEligibleFaceIndexes::from_faces(ctx, &eligible_faces, &scan.curves.topology_rows)?;
     let admitted_components = admitted_face_components(ctx, scan, &eligible_face_ids)?;
-    let neutral_edge_curves = admitted_components
-        .iter()
-        .flat_map(|component| component.curve_ids.iter().copied())
-        .filter(|curve_id| admitted_edge_curves.contains(curve_id))
-        .filter(|curve_id| {
-            !matches!(
-                scan.framing.layout,
-                crate::container::Layout::LegacyAscii(_)
-            ) || curve_faces
-                .get(curve_id)
-                .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
-        })
-        .collect::<BTreeSet<_>>();
-    let body_components = admitted_components
-        .iter()
-        .map(|component| {
-            let faces = component
-                .face_ids
-                .iter()
-                .copied()
-                .filter(|face_id| eligible_faces.contains_key(face_id))
-                .collect::<Vec<_>>();
-            let curves = component
-                .curve_ids
-                .iter()
-                .copied()
-                .filter(|curve_id| neutral_edge_curves.contains(curve_id))
-                .collect::<BTreeSet<_>>();
-            NeutralShellSpec {
-                faces,
-                wire_curves: curves,
-            }
-        })
-        .collect::<Vec<_>>();
+    let BrepBodyIndexes { neutral_edge_curves, body_components } =
+        BrepBodyIndexes::from_components(
+            ctx,
+            scan,
+            &admitted_components,
+            &admitted_edge_curves,
+            &eligible_faces,
+            &eligible_face_ids,
+            &curve_faces,
+        )?;
     let selected_body_count = crate::topology::selected_body_count(
         scan.framing.declared_body_count,
         scan.framing.first_quilt_ptr,
@@ -1765,7 +1843,7 @@ pub(in super::super) fn transfer_native_brep(
         scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
     let body_components =
         if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
-            merge_body_components(body_components)
+            merge_body_components(ctx, body_components)?
         } else {
             body_components
         };
@@ -1824,12 +1902,8 @@ pub(in super::super) fn transfer_native_brep(
         .map(|component| component.faces.len())
         .sum();
 
-    let used_vertices = neutral_edge_curves
-        .iter()
-        .filter_map(|curve| edge_vertices.get(curve))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
+    let used_vertices = used_brep_vertices(ctx, &neutral_edge_curves, &edge_vertices)?;
+
     for vertex_id in used_vertices {
         let vertex = VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, vertex_id);
         if ir.model.vertices.iter().any(|item| item.id == vertex) {
