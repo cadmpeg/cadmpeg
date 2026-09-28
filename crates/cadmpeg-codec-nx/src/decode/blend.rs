@@ -22,8 +22,10 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
-    homogeneous_spans, positive_controls, HomogeneousBezierSpan,
+    homogeneous_spans_with_charge, positive_controls, HomogeneousBezierSpan,
 };
+#[cfg(test)]
+use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -2643,18 +2645,17 @@ pub(super) fn closest_pcurve_parameters(
     else {
         return Ok(None);
     };
-    Ok((|| {
-        let candidates = if degree != 1 || nurbs.weights().is_some() {
-            let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-            closest_parameter_candidates(
-                stationary_rational_distance_candidates(
-                    &homogeneous,
-                    search_seed,
-                    &geometry_budget,
-                )?,
-                search_seed,
-            )?
-        } else {
+    let candidates = if degree != 1 || nurbs.weights().is_some() {
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let Some(candidates) = stationary_rational_distance_candidates(
+            &homogeneous,
+            search_seed,
+            &geometry_budget,
+        )? else {
+            return Ok(None);
+        };
+        closest_parameter_candidates(candidates, search_seed)
+    } else {
             let candidates = nurbs
                 .control_points()
                 .windows(2)
@@ -2688,15 +2689,11 @@ pub(super) fn closest_pcurve_parameters(
                     ))
                 })
                 .collect::<Vec<_>>();
-            closest_parameter_candidates(candidates, search_seed)?
-        };
-        Some(lift_periodic_parameters(
-            candidates,
-            domain,
-            nurbs.periodic(),
-            seed,
-        ))
-    })())
+        closest_parameter_candidates(candidates, search_seed)
+    };
+    Ok(candidates.map(|candidates| {
+        lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)
+    }))
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -2767,23 +2764,44 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
     homogeneous: &HomogeneousCurveSpans<DIMENSION>,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<Vec<(f64, f64)>> {
+) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates = Vec::new();
     for span in &homogeneous.spans {
-        let derivative = rational_squared_distance_derivative(&span.controls)?;
-        let roots = scalar_bezier_roots_with_budget(
+        let Some(derivative) = rational_squared_distance_derivative(&span.controls) else {
+            return Ok(None);
+        };
+        let Some(roots) = scalar_bezier_roots_with_budget(
             ScalarBezierSpan {
                 domain: span.domain,
                 controls: derivative,
             },
             geometry_budget,
-        )?;
-        let mut parameters = vec![span.domain[0], span.domain[1]];
+        ) else {
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+        };
+        let root_count = match &roots {
+            ScalarBezierRoots::Constant => usize::from(seed.is_some()),
+            ScalarBezierRoots::Isolated(roots) => roots.len(),
+        };
+        let parameter_count = root_count.checked_add(2).ok_or_else(|| {
+            cadmpeg_core::decode::ResourceLimit {
+                dimension: cadmpeg_core::decode::ResourceDimension::Codec("nx stationary parameters"),
+                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                limit: 0,
+                used: 0,
+                additional: cadmpeg_core::decode::u64_from_index(root_count),
+                operation: "nx stationary parameters",
+            }
+        })?;
+        let mut parameters = Vec::new();
+        let _reservation = geometry_budget.reserve_vec(&mut parameters, parameter_count, "nx stationary parameters")?;
+        parameters.extend([span.domain[0], span.domain[1]]);
         match roots {
             ScalarBezierRoots::Constant => parameters
                 .extend(seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))),
             ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
         }
+        let _candidate_reservation = geometry_budget.reserve_vec(&mut candidates, parameter_count, "nx stationary candidates")?;
         candidates.extend(parameters.into_iter().map(|parameter| {
             let distance = homogeneous_residual_distance(&span.controls, parameter, span.domain);
             (
@@ -2796,7 +2814,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
             )
         }));
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 fn rational_squared_distance_derivative<const DIMENSION: usize>(
@@ -4399,6 +4417,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
             control.z - point.z,
         ));
     }
+    geometry_budget.charge_collection_items(count, "nx spine positive controls")?;
     let Some(controls) = positive_controls(
         &residuals,
         (!weights.is_empty()).then_some(weights.as_slice()),
@@ -4406,7 +4425,9 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return Ok(None);
     };
-    let Some(spans) = homogeneous_spans(degree, curve.knots(), controls)? else {
+    let Some(spans) = homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+        geometry_budget.charge_collection_items(count, operation)
+    })? else {
         return Ok(None);
     };
     let homogeneous = HomogeneousCurveSpans {
@@ -4414,7 +4435,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
         coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
     };
     let Some(candidates) =
-        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)
+        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
