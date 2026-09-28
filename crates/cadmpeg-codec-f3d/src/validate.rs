@@ -960,7 +960,7 @@ fn validate_loaded(
     validate_canvas_images(&ctx, &mut findings);
     validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
-    validate_component_occurrences(&ctx, &mut findings);
+    validate_component_occurrences(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
@@ -3958,15 +3958,43 @@ fn valid_vertex_recipe(
         })
 }
 
-fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
+    struct LowerAscii<'a>(&'a str);
+    impl std::fmt::Display for LowerAscii<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for character in self.0.chars() {
+                write!(formatter, "{}", character.to_ascii_lowercase())?;
+            }
+            Ok(())
+        }
+    }
     let mut identities = HashSet::new();
     let mut record_indices = HashSet::new();
     for occurrence in &ctx.native.design_component_occurrences {
         let stream = design_stream(&occurrence.id);
-        let valid = identities.insert((
-            stream,
-            occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
-        )) && record_indices.insert((stream, occurrence.record_index))
+        let key = match ctx.decode {
+            Some(decode) => crate::container::format_retained(
+                decode,
+                "retain F3D occurrence GUID index key",
+                format_args!("{}", LowerAscii(occurrence.occurrence_guid.as_str())),
+            )?,
+            None => occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
+        };
+        let unique_identity = ctx.insert_unique(
+            &mut identities,
+            (stream, key),
+            "index F3D occurrence GUIDs",
+        )?;
+        let unique_record = if unique_identity {
+            ctx.insert_unique(
+                &mut record_indices,
+                (stream, occurrence.record_index),
+                "index F3D occurrence record indices",
+            )?
+        } else {
+            false
+        };
+        let valid = unique_identity && unique_record
             && match occurrence.placement() {
                 records::feature::assembly_features::DesignComponentOccurrencePlacement::Base => true,
                 records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
@@ -3978,14 +4006,15 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
         // identity; a different carrier-local component-record reference
         // does not contradict it.
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design component occurrence has an invalid fixed frame".into(),
-                entity: Some(occurrence.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design component occurrence has an invalid fixed frame",
+                Some(ctx.copy_entity(&occurrence.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 fn valid_component_pattern_occurrences(
