@@ -932,7 +932,7 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some(evaluation) =
-                legacy_relation_evaluation(relation, &parameters_by_name, candidates)
+                legacy_relation_evaluation(ctx, relation, &parameters_by_name, candidates)?
             else {
                 continue;
             };
@@ -979,62 +979,75 @@ struct LegacyRelationEvaluation<'a> {
 // typed, same-run packet for every input. This is the complete local binding
 // rule; unresolved selector namespaces never participate in the join.
 fn legacy_relation_evaluation<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     relation: &'a crate::native::CatiaLegacyRelation,
     parameters_by_name: &HashMap<String, Vec<ParameterId>>,
     candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
-) -> Option<LegacyRelationEvaluation<'a>> {
+) -> Result<Option<LegacyRelationEvaluation<'a>>, cadmpeg_core::CodecError> {
     let (source_type, expression) = match relation.output.as_ref() {
-        Some(output) if relation.result_type == "VoidType" => (
-            output.value_type.as_str(),
-            legacy_output_assignment_expression(&relation.expression, &output.parameter)?,
-        ),
+        Some(output) if relation.result_type == "VoidType" => {
+            let Some(expression) = legacy_output_assignment_expression(&relation.expression,
+                &output.parameter) else { return Ok(None) };
+            (output.value_type.as_str(), expression)
+        }
         None if relation.result_type != "VoidType" => {
             (relation.result_type.as_str(), relation.expression.as_str())
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let symbols = (!relation.inputs.is_empty())
-        .then(|| crate::native::relation_symbols(&relation.expression));
+    let symbols = if relation.inputs.is_empty() { None } else {
+        Some(crate::native::relation_symbols(ctx, &relation.expression)?)
+    };
     let mut bindings = BTreeMap::new();
-    let mut dependencies = Vec::with_capacity(relation.inputs.len());
+    let mut dependencies = Vec::new();
     for input in &relation.inputs {
-        let symbols = symbols.as_ref()?;
+        let Some(symbols) = symbols.as_ref() else { return Ok(None) };
         if !symbols
             .iter()
             .any(|(_, symbol)| legacy_symbol_matches_input(symbol, &input.parameter))
         {
-            return None;
+            return Ok(None);
         }
         let [parameter_id] = parameters_by_name
             .get(&input.parameter)
             .map(Vec::as_slice)
             .unwrap_or_default()
         else {
-            return None;
+            return Ok(None);
         };
         if dependencies.contains(parameter_id) {
-            return None;
+            return Ok(None);
         }
-        let candidate = candidates.get(parameter_id)?;
+        let Some(candidate) = candidates.get(parameter_id) else { return Ok(None) };
         if canonical_parameter_type(&input.value_type) != Some(candidate.parameter_type) {
-            return None;
+            return Ok(None);
         }
-        let value = candidate.parameter.value.as_ref()?;
-        bindings.insert(
-            input.parameter.as_str(),
-            EvaluatedFormulaValue::from_parameter_value(value),
-        );
-        dependencies.push(parameter_id.clone());
+        let Some(value) = candidate.parameter.value.as_ref() else { return Ok(None) };
+        let evaluated = match value {
+            ParameterValue::String(value) => EvaluatedFormulaValue::String(
+                EvaluatedFormulaString::known(crate::resource::copy_retained_str(ctx, value,
+                    "catia_legacy_formula_binding_string")?)),
+            _ => EvaluatedFormulaValue::from_parameter_value(value),
+        };
+        crate::resource::insert_btree_map(ctx, &mut bindings, input.parameter.as_str(),
+            evaluated, "catia_legacy_formula_bindings")?;
+        let dependency = crate::resource::copy_id(ctx, parameter_id.as_str(),
+            ParameterId::try_from, "catia_legacy_formula_dependency_id")?;
+        crate::resource::push(ctx, &mut dependencies, dependency,
+            "catia_legacy_formula_dependencies")?;
     }
-    let evaluated = evaluate_formula_expression(expression, &bindings)?;
-    evaluated
-        .satisfies_source_type(canonical_parameter_type(source_type)?)
-        .then_some(LegacyRelationEvaluation {
+    let Some(evaluated) = evaluate_formula_expression(expression, &bindings) else {
+        return Ok(None);
+    };
+    let Some(source_type_kind) = canonical_parameter_type(source_type) else {
+        return Ok(None);
+    };
+    Ok(evaluated.satisfies_source_type(source_type_kind).then_some(LegacyRelationEvaluation {
             source_type,
             expression,
             evaluated,
             dependencies,
-        })
+        }))
 }
 
 fn legacy_symbol_matches_input(symbol: &str, input: &str) -> bool {

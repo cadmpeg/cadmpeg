@@ -244,17 +244,20 @@ impl CatiaNative {
                         .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.iter().any(|entity| {
                         entity.reference_signature
-                            != entity_table::parse_reference_signature(entity.value_payload()).map(
+                            != entity_table::parse_reference_signature(entity.value_payload()).and_then(
                                 |production| {
-                                    reference_signature(
-                                        production,
-                                        &graph.id,
-                                        &CatiaEntityReferenceIndex {
-                                            entities: &entities_by_graph_identity,
-                                            classes: &entity_classes_by_graph_identity,
-                                            terminal_nulls: &terminal_nulls_by_graph,
-                                        },
-                                    )
+                                    crate::test_support::with_service_context(|ctx| {
+                                        reference_signature(
+                                            ctx,
+                                            production,
+                                            &graph.id,
+                                            &CatiaEntityReferenceIndex {
+                                                entities: &entities_by_graph_identity,
+                                                classes: &entity_classes_by_graph_identity,
+                                                terminal_nulls: &terminal_nulls_by_graph,
+                                            },
+                                        )
+                                    }).ok()
                                 },
                             )
                     })
@@ -324,7 +327,8 @@ impl CatiaNative {
                             .find(|record| record.id == entity.object_record);
                         entity.object_production
                             != object.and_then(|object| {
-                                object_production(
+                                crate::test_support::with_service_context(|ctx| object_production(
+                                    ctx,
                                     entity,
                                     object,
                                     &CatiaEntityReferenceIndex {
@@ -335,7 +339,7 @@ impl CatiaNative {
                                     &relation_expressions,
                                     &relation_expression_entities,
                                     &parameter_bindings,
-                                )
+                                )).ok().flatten()
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
