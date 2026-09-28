@@ -2307,26 +2307,26 @@ fn validate_gui_techdraw_list(
 ) -> Result<(), CodecError> {
     let mut roots = property.children().filter(roxmltree::Node::is_element);
     let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             &format!("requires exactly one {list_tag} value"),
         ));
     };
     if !root.has_tag_name(list_tag) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             &format!("requires a leading {list_tag} value"),
         ));
     }
     let count = root
         .attribute("count")
-        .ok_or_else(|| gui_techdraw_error(property_name, &format!("{list_tag} has no count")))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, &format!("{list_tag} has no count")))?
         .parse::<usize>()
         .map_err(|_| {
-            gui_techdraw_error(property_name, &format!("{list_tag} has an invalid count"))
+            gui_techdraw_error(ctx, property_name, &format!("{list_tag} has an invalid count"))
         })?;
     if root.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             &format!("{list_tag} count does not match its records"),
         ));
@@ -2335,7 +2335,7 @@ fn validate_gui_techdraw_list(
         if !record.has_tag_name(record_tag)
             || record.attribute("type") != Some(format!("TechDraw::{record_tag}").as_str())
         {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 &format!("{list_tag} has an invalid record type"),
             ));
@@ -2363,7 +2363,7 @@ fn validate_gui_geom_format_record(
 ) -> Result<(), CodecError> {
     let fields = gui_record_fields(ctx, record, "FCStd GUI GeomFormat fields")?;
     if !(5..=6).contains(&fields.len()) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "GeomFormat has an invalid field sequence",
         ));
@@ -2374,13 +2374,13 @@ fn validate_gui_geom_format_record(
             .zip(["GeomIndex", "Style", "Weight", "Color", "Visible"])
     {
         if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "GeomFormat has a nested or out-of-order field",
             ));
         }
         if field.attribute("value").is_none() {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "GeomFormat field has no value",
             ));
@@ -2390,39 +2390,39 @@ fn validate_gui_geom_format_record(
         if !(line_number.has_tag_name("LineNumber") || line_number.has_tag_name("ISOLineNumber"))
             || line_number.children().any(|node| node.is_element())
         {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "GeomFormat has an invalid line-number field",
             ));
         }
-        parse_gui_techdraw_integer(*line_number, property_name)?;
+        parse_gui_techdraw_integer(ctx, *line_number, property_name)?;
     }
-    parse_gui_techdraw_integer(fields[0], property_name)?;
-    parse_gui_techdraw_integer(fields[1], property_name)?;
+    parse_gui_techdraw_integer(ctx, fields[0], property_name)?;
+    parse_gui_techdraw_integer(ctx, fields[1], property_name)?;
     let weight = fields[2]
         .attribute("value")
         .and_then(|value| value.parse::<f64>().ok())
-        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat has an invalid weight"))?;
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "GeomFormat has an invalid weight"))?;
     if !weight.is_finite() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "GeomFormat has a non-finite weight",
         ));
     }
     let Some(color) = fields[3].attribute("value") else {
-        return Err(gui_techdraw_error(property_name, "GeomFormat has no color"));
+        return Err(gui_techdraw_error(ctx, property_name, "GeomFormat has no color"));
     };
     if !(color.len() == 7 || color.len() == 9)
         || !color.starts_with('#')
         || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
     {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "GeomFormat has an invalid color",
         ));
     }
     if parse_bool(fields[4].attribute("value").unwrap_or_default()).is_none() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "GeomFormat has an invalid visibility",
         ));
@@ -2456,14 +2456,14 @@ fn validate_gui_center_line_record(
         "GeometryType",
     ];
     if fields.len() < prefix.len() + 10 + 1 {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CenterLine has an incomplete field sequence",
         ));
     }
     for (field, expected_tag) in fields.iter().take(prefix.len()).zip(prefix) {
         if !field.has_tag_name(expected_tag) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CenterLine has an out-of-order field",
             ));
@@ -2471,69 +2471,69 @@ fn validate_gui_center_line_record(
     }
     for index in [2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 15, 16] {
         if fields[index].children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CenterLine has a nested field",
             ));
         }
     }
-    validate_gui_techdraw_point(fields[0], property_name)?;
-    validate_gui_techdraw_point(fields[1], property_name)?;
-    let mode = parse_gui_techdraw_integer_value(fields[2], property_name, "Mode")?;
+    validate_gui_techdraw_point(ctx, fields[0], property_name)?;
+    validate_gui_techdraw_point(ctx, fields[1], property_name)?;
+    let mode = parse_gui_techdraw_integer_value(ctx, fields[2], property_name, "Mode")?;
     if !(0..=2).contains(&mode) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CenterLine has an unsupported Mode",
         ));
     }
     for field in fields.iter().skip(3).take(4) {
-        parse_gui_techdraw_finite(*field, property_name)?;
+        parse_gui_techdraw_finite(ctx, *field, property_name)?;
     }
-    let line_type = parse_gui_techdraw_integer_value(fields[7], property_name, "Type")?;
+    let line_type = parse_gui_techdraw_integer_value(ctx, fields[7], property_name, "Type")?;
     if !(0..=2).contains(&line_type) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CenterLine has an unsupported Type",
         ));
     }
-    validate_gui_techdraw_boolean(fields[8], property_name)?;
-    validate_gui_center_line_string_collection(
+    validate_gui_techdraw_boolean(ctx, fields[8], property_name)?;
+    validate_gui_center_line_string_collection(ctx,
         fields[9],
         property_name,
         "Faces",
         "FaceCount",
         "Face",
     )?;
-    validate_gui_center_line_string_collection(
+    validate_gui_center_line_string_collection(ctx,
         fields[10],
         property_name,
         "Edges",
         "EdgeCount",
         "Edge",
     )?;
-    validate_gui_center_line_string_collection(
+    validate_gui_center_line_string_collection(ctx,
         fields[11],
         property_name,
         "CLPoints",
         "CLPointCount",
         "CLPoint",
     )?;
-    parse_gui_techdraw_integer_named(fields[12], property_name, "Style")?;
-    parse_gui_techdraw_finite(fields[13], property_name)?;
-    validate_gui_techdraw_color(fields[14], property_name)?;
-    validate_gui_techdraw_boolean(fields[15], property_name)?;
-    let geometry_type = TechDrawGeometryType::try_from(parse_gui_techdraw_integer_value(
+    parse_gui_techdraw_integer_named(ctx, fields[12], property_name, "Style")?;
+    parse_gui_techdraw_finite(ctx, fields[13], property_name)?;
+    validate_gui_techdraw_color(ctx, fields[14], property_name)?;
+    validate_gui_techdraw_boolean(ctx, fields[15], property_name)?;
+    let geometry_type = TechDrawGeometryType::try_from(parse_gui_techdraw_integer_value(ctx,
         fields[16],
         property_name,
         "GeometryType",
     )?)
     .map_err(|()| {
-        gui_techdraw_error(
+        gui_techdraw_error(ctx,
             property_name,
             "TechDraw geometry has an unsupported GeometryType",
         )
     })?;
-    validate_gui_techdraw_geometry_branch(
+    validate_gui_techdraw_geometry_branch(ctx,
         &fields,
         prefix.len(),
         property_name,
@@ -2544,6 +2544,7 @@ fn validate_gui_center_line_record(
 }
 
 fn validate_gui_center_line_string_collection(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
     container_tag: &str,
@@ -2551,20 +2552,20 @@ fn validate_gui_center_line_string_collection(
     item_tag: &str,
 ) -> Result<(), CodecError> {
     if !field.has_tag_name(container_tag) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CenterLine has an invalid collection field",
         ));
     }
     let count = field
         .attribute(count_attribute)
-        .ok_or_else(|| gui_techdraw_error(property_name, "CenterLine collection has no count"))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "CenterLine collection has no count"))?
         .parse::<usize>()
         .map_err(|_| {
-            gui_techdraw_error(property_name, "CenterLine collection has an invalid count")
+            gui_techdraw_error(ctx, property_name, "CenterLine collection has an invalid count")
         })?;
     if field.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CenterLine collection count does not match its records",
         ));
@@ -2574,7 +2575,7 @@ fn validate_gui_center_line_string_collection(
             || item.attribute("value").is_none()
             || item.children().any(|node| node.is_element())
         {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CenterLine collection has an invalid item",
             ));
@@ -2590,7 +2591,7 @@ fn validate_gui_cosmetic_edge_record(
 ) -> Result<(), CodecError> {
     let fields = gui_record_fields(ctx, record, "FCStd GUI CosmeticEdge fields")?;
     if fields.len() < 16 {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CosmeticEdge has an incomplete field sequence",
         ));
@@ -2598,41 +2599,41 @@ fn validate_gui_cosmetic_edge_record(
     let format_fields = ["Style", "Weight", "Color", "Visible", "GeometryType"];
     for (field, expected_tag) in fields.iter().take(format_fields.len()).zip(format_fields) {
         if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CosmeticEdge has a nested or out-of-order format field",
             ));
         }
         if field.attribute("value").is_none() {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CosmeticEdge format field has no value",
             ));
         }
     }
-    parse_gui_techdraw_integer_named(fields[0], property_name, "Style")?;
-    parse_gui_techdraw_finite(fields[1], property_name)?;
-    validate_gui_techdraw_color(fields[2], property_name)?;
-    validate_gui_techdraw_boolean(fields[3], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[0], property_name, "Style")?;
+    parse_gui_techdraw_finite(ctx, fields[1], property_name)?;
+    validate_gui_techdraw_color(ctx, fields[2], property_name)?;
+    validate_gui_techdraw_boolean(ctx, fields[3], property_name)?;
     let geometry_type = TechDrawGeometryType::try_from(
         fields[4]
             .attribute("value")
             .ok_or_else(|| {
-                gui_techdraw_error(property_name, "CosmeticEdge GeometryType has no value")
+                gui_techdraw_error(ctx, property_name, "CosmeticEdge GeometryType has no value")
             })?
             .parse::<i64>()
             .map_err(|_| {
-                gui_techdraw_error(property_name, "CosmeticEdge GeometryType is not an integer")
+                gui_techdraw_error(ctx, property_name, "CosmeticEdge GeometryType is not an integer")
             })?,
     )
     .map_err(|()| {
-        gui_techdraw_error(
+        gui_techdraw_error(ctx,
             property_name,
             "TechDraw geometry has an unsupported GeometryType",
         )
     })?;
 
-    validate_gui_techdraw_geometry_branch(
+    validate_gui_techdraw_geometry_branch(ctx,
         &fields,
         format_fields.len(),
         property_name,
@@ -2674,6 +2675,7 @@ impl TryFrom<i64> for TechDrawGeometryType {
 }
 
 fn validate_gui_techdraw_geometry_branch(
+    ctx: &DecodeContext<'_>,
     fields: &[roxmltree::Node<'_, '_>],
     base_start: usize,
     property_name: &str,
@@ -2681,12 +2683,12 @@ fn validate_gui_techdraw_geometry_branch(
     allow_iso_line_number: bool,
 ) -> Result<(), CodecError> {
     if fields.len() < base_start + 10 {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw geometry has no complete BaseGeom sequence",
         ));
     }
-    validate_gui_techdraw_base_geom(
+    validate_gui_techdraw_base_geom(ctx,
         &fields[base_start..base_start + 10],
         property_name,
         expected_geometry_type,
@@ -2699,7 +2701,7 @@ fn validate_gui_techdraw_geometry_branch(
     };
     let required_fields = cursor + branch_field_count;
     if fields.len() != required_fields && fields.len() != required_fields + 1 {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw geometry has an invalid branch field sequence",
         ));
@@ -2708,22 +2710,22 @@ fn validate_gui_techdraw_geometry_branch(
     match expected_geometry_type {
         TechDrawGeometryType::Circle => {
             if !fields[cursor].has_tag_name("Center") {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw circle has an invalid center field",
                 ));
             }
-            validate_gui_techdraw_point(fields[cursor], property_name)?;
+            validate_gui_techdraw_point(ctx, fields[cursor], property_name)?;
             cursor += 1;
             if !fields[cursor].has_tag_name("Radius") {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw circle has an invalid radius field",
                 ));
             }
-            parse_gui_techdraw_finite(fields[cursor], property_name)?;
+            parse_gui_techdraw_finite(ctx, fields[cursor], property_name)?;
             if fields[cursor].children().any(|node| node.is_element()) {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw circle has a nested radius field",
                 ));
@@ -2732,22 +2734,22 @@ fn validate_gui_techdraw_geometry_branch(
         }
         TechDrawGeometryType::ArcOfCircle => {
             if !fields[cursor].has_tag_name("Center") {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw arc has an invalid center field",
                 ));
             }
-            validate_gui_techdraw_point(fields[cursor], property_name)?;
+            validate_gui_techdraw_point(ctx, fields[cursor], property_name)?;
             cursor += 1;
             if !fields[cursor].has_tag_name("Radius") {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw arc has an invalid radius field",
                 ));
             }
-            parse_gui_techdraw_finite(fields[cursor], property_name)?;
+            parse_gui_techdraw_finite(ctx, fields[cursor], property_name)?;
             if fields[cursor].children().any(|node| node.is_element()) {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw arc has a nested radius field",
                 ));
@@ -2755,24 +2757,24 @@ fn validate_gui_techdraw_geometry_branch(
             cursor += 1;
             for expected_tag in ["Start", "End", "Middle"] {
                 if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
+                    return Err(gui_techdraw_error(ctx,
                         property_name,
                         "TechDraw arc has an out-of-order point field",
                     ));
                 }
-                validate_gui_techdraw_point(fields[cursor], property_name)?;
+                validate_gui_techdraw_point(ctx, fields[cursor], property_name)?;
                 cursor += 1;
             }
             for expected_tag in ["StartAngle", "EndAngle"] {
                 if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
+                    return Err(gui_techdraw_error(ctx,
                         property_name,
                         "TechDraw arc has an out-of-order angle field",
                     ));
                 }
-                parse_gui_techdraw_finite(fields[cursor], property_name)?;
+                parse_gui_techdraw_finite(ctx, fields[cursor], property_name)?;
                 if fields[cursor].children().any(|node| node.is_element()) {
-                    return Err(gui_techdraw_error(
+                    return Err(gui_techdraw_error(ctx,
                         property_name,
                         "TechDraw arc has a nested angle field",
                     ));
@@ -2781,23 +2783,23 @@ fn validate_gui_techdraw_geometry_branch(
             }
             for expected_tag in ["Clockwise", "Large"] {
                 if !fields[cursor].has_tag_name(expected_tag) {
-                    return Err(gui_techdraw_error(
+                    return Err(gui_techdraw_error(ctx,
                         property_name,
                         "TechDraw arc has an out-of-order Boolean field",
                     ));
                 }
-                validate_gui_techdraw_boolean(fields[cursor], property_name)?;
+                validate_gui_techdraw_boolean(ctx, fields[cursor], property_name)?;
                 cursor += 1;
             }
         }
         TechDrawGeometryType::Generic => {
             if !fields[cursor].has_tag_name("Points") {
-                return Err(gui_techdraw_error(
+                return Err(gui_techdraw_error(ctx,
                     property_name,
                     "TechDraw generic geometry has no Points field",
                 ));
             }
-            validate_gui_techdraw_points(fields[cursor], property_name)?;
+            validate_gui_techdraw_points(ctx, fields[cursor], property_name)?;
             cursor += 1;
         }
     }
@@ -2806,14 +2808,14 @@ fn validate_gui_techdraw_geometry_branch(
         let line_number = fields[cursor].has_tag_name("LineNumber")
             || (allow_iso_line_number && fields[cursor].has_tag_name("ISOLineNumber"));
         if cursor + 1 != fields.len() || !line_number {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "TechDraw geometry has an invalid trailing field",
             ));
         }
-        parse_gui_techdraw_integer_named(fields[cursor], property_name, "LineNumber")?;
+        parse_gui_techdraw_integer_named(ctx, fields[cursor], property_name, "LineNumber")?;
         if fields[cursor].children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "TechDraw geometry line number is nested",
             ));
@@ -2823,6 +2825,7 @@ fn validate_gui_techdraw_geometry_branch(
 }
 
 fn validate_gui_techdraw_base_geom(
+    ctx: &DecodeContext<'_>,
     fields: &[roxmltree::Node<'_, '_>],
     property_name: &str,
     expected_geometry_type: TechDrawGeometryType,
@@ -2839,67 +2842,69 @@ fn validate_gui_techdraw_base_geom(
         "SourceIndex",
         "CosmeticTag",
     ];
-    let geometry_type_value = gui_techdraw_base_geom_value(fields[0], expected[0], property_name)?;
+    let geometry_type_value = gui_techdraw_base_geom_value(ctx, fields[0], expected[0], property_name)?;
     for (field, expected_tag) in fields.iter().zip(expected).skip(1) {
-        gui_techdraw_base_geom_value(*field, expected_tag, property_name)?;
+        gui_techdraw_base_geom_value(ctx, *field, expected_tag, property_name)?;
     }
     let geometry_type = geometry_type_value
         .parse::<i64>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw GeomType is not an integer"))?;
+        .map_err(|_| gui_techdraw_error(ctx, property_name, "TechDraw GeomType is not an integer"))?;
     if geometry_type != expected_geometry_type.as_i64() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw GeometryType and GeomType disagree",
         ));
     }
     for index in [1, 2, 5, 7, 8] {
-        parse_gui_techdraw_integer_named(fields[index], property_name, expected[index])?;
+        parse_gui_techdraw_integer_named(ctx, fields[index], property_name, expected[index])?;
     }
     for index in [3, 4, 6] {
-        validate_gui_techdraw_boolean(fields[index], property_name)?;
+        validate_gui_techdraw_boolean(ctx, fields[index], property_name)?;
     }
     Ok(())
 }
 
 fn gui_techdraw_base_geom_value<'a>(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'a, '_>,
     expected_tag: &str,
     property_name: &str,
 ) -> Result<&'a str, CodecError> {
     if !field.has_tag_name(expected_tag) || field.children().any(|node| node.is_element()) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw BaseGeom has a nested or out-of-order field",
         ));
     }
     field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw BaseGeom field has no value"))
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw BaseGeom field has no value"))
 }
 
 fn validate_gui_techdraw_points(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = field
         .attribute("PointsCount")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Points has no count"))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw Points has no count"))?
         .parse::<usize>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw Points has an invalid count"))?;
+        .map_err(|_| gui_techdraw_error(ctx, property_name, "TechDraw Points has an invalid count"))?;
     if field.children().filter(roxmltree::Node::is_element).count() != count {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw Points count does not match its records",
         ));
     }
     for point in field.children().filter(roxmltree::Node::is_element) {
         if !point.has_tag_name("Point") || point.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "TechDraw Points has an invalid point record",
             ));
         }
-        validate_gui_techdraw_point(point, property_name)?;
+        validate_gui_techdraw_point(ctx, point, property_name)?;
     }
     Ok(())
 }
@@ -2911,7 +2916,7 @@ fn validate_gui_cosmetic_vertex_record(
 ) -> Result<(), CodecError> {
     let fields = gui_record_fields(ctx, record, "FCStd GUI CosmeticVertex fields")?;
     if !(15..=16).contains(&fields.len()) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CosmeticVertex has an invalid field sequence",
         ));
@@ -2931,7 +2936,7 @@ fn validate_gui_cosmetic_vertex_record(
             break;
         }
         if field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CosmeticVertex has a nested field",
             ));
@@ -2942,14 +2947,14 @@ fn validate_gui_cosmetic_vertex_record(
         .zip(base_fields)
         .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
     {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CosmeticVertex has an out-of-order field",
         ));
     }
     let mut cursor = base_fields.len();
     if fields[cursor].has_tag_name("VertexTag") {
-        validate_gui_techdraw_uuid(fields[cursor], property_name, "VertexTag")?;
+        validate_gui_techdraw_uuid(ctx, fields[cursor], property_name, "VertexTag")?;
         cursor += 1;
     }
     let tail_fields = [
@@ -2967,48 +2972,49 @@ fn validate_gui_cosmetic_vertex_record(
             .zip(tail_fields)
             .any(|(field, expected_tag)| !field.has_tag_name(expected_tag))
     {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CosmeticVertex has an out-of-order field",
         ));
     }
     for field in &fields {
         if field.children().any(|node| node.is_element()) {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "CosmeticVertex has a nested field",
             ));
         }
     }
-    validate_gui_techdraw_point(fields[0], property_name)?;
-    parse_gui_techdraw_integer_named(fields[1], property_name, "Extract")?;
-    validate_gui_techdraw_boolean(fields[2], property_name)?;
-    parse_gui_techdraw_integer_named(fields[3], property_name, "Ref3D")?;
-    validate_gui_techdraw_boolean(fields[4], property_name)?;
-    validate_gui_techdraw_boolean(fields[5], property_name)?;
-    parse_gui_techdraw_integer_named(fields[6], property_name, "CosmeticLink")?;
+    validate_gui_techdraw_point(ctx, fields[0], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[1], property_name, "Extract")?;
+    validate_gui_techdraw_boolean(ctx, fields[2], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[3], property_name, "Ref3D")?;
+    validate_gui_techdraw_boolean(ctx, fields[4], property_name)?;
+    validate_gui_techdraw_boolean(ctx, fields[5], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[6], property_name, "CosmeticLink")?;
     if fields[7].attribute("value").is_none() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "CosmeticVertex CosmeticTag has no value",
         ));
     }
-    validate_gui_techdraw_point(fields[cursor], property_name)?;
-    parse_gui_techdraw_integer_named(fields[cursor + 1], property_name, "LinkGeom")?;
-    validate_gui_techdraw_color(fields[cursor + 2], property_name)?;
-    parse_gui_techdraw_finite(fields[cursor + 3], property_name)?;
-    parse_gui_techdraw_integer_named(fields[cursor + 4], property_name, "Style")?;
-    validate_gui_techdraw_boolean(fields[cursor + 5], property_name)?;
-    validate_gui_techdraw_uuid(fields[cursor + 6], property_name, "Tag")?;
+    validate_gui_techdraw_point(ctx, fields[cursor], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[cursor + 1], property_name, "LinkGeom")?;
+    validate_gui_techdraw_color(ctx, fields[cursor + 2], property_name)?;
+    parse_gui_techdraw_finite(ctx, fields[cursor + 3], property_name)?;
+    parse_gui_techdraw_integer_named(ctx, fields[cursor + 4], property_name, "Style")?;
+    validate_gui_techdraw_boolean(ctx, fields[cursor + 5], property_name)?;
+    validate_gui_techdraw_uuid(ctx, fields[cursor + 6], property_name, "Tag")?;
     Ok(())
 }
 
 fn validate_gui_techdraw_point(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     if field.children().any(|node| node.is_element()) {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw point has a nested field",
         ));
@@ -3016,11 +3022,11 @@ fn validate_gui_techdraw_point(
     for attribute in ["X", "Y", "Z"] {
         let value = field
             .attribute(attribute)
-            .ok_or_else(|| gui_techdraw_error(property_name, "point has no coordinate"))?
+            .ok_or_else(|| gui_techdraw_error(ctx, property_name, "point has no coordinate"))?
             .parse::<f64>()
-            .map_err(|_| gui_techdraw_error(property_name, "point has an invalid coordinate"))?;
+            .map_err(|_| gui_techdraw_error(ctx, property_name, "point has an invalid coordinate"))?;
         if !value.is_finite() {
-            return Err(gui_techdraw_error(
+            return Err(gui_techdraw_error(ctx,
                 property_name,
                 "point has a non-finite coordinate",
             ));
@@ -3030,14 +3036,15 @@ fn validate_gui_techdraw_point(
 }
 
 fn validate_gui_techdraw_boolean(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     let value = field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Boolean has no value"))?;
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw Boolean has no value"))?;
     if parse_bool(value).is_none() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw has an invalid Boolean",
         ));
@@ -3046,17 +3053,18 @@ fn validate_gui_techdraw_boolean(
 }
 
 fn validate_gui_techdraw_color(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     let color = field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw color has no value"))?;
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw color has no value"))?;
     if !(color.len() == 7 || color.len() == 9)
         || !color.starts_with('#')
         || !color.bytes().skip(1).all(|byte| byte.is_ascii_hexdigit())
     {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw has an invalid color",
         ));
@@ -3065,16 +3073,17 @@ fn validate_gui_techdraw_color(
 }
 
 fn parse_gui_techdraw_finite(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     let value = field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw scalar has no value"))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw scalar has no value"))?
         .parse::<f64>()
-        .map_err(|_| gui_techdraw_error(property_name, "TechDraw scalar is invalid"))?;
+        .map_err(|_| gui_techdraw_error(ctx, property_name, "TechDraw scalar is invalid"))?;
     if !value.is_finite() {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             "TechDraw scalar is non-finite",
         ));
@@ -3083,24 +3092,26 @@ fn parse_gui_techdraw_finite(
 }
 
 fn parse_gui_techdraw_integer_named(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
     field_name: &str,
 ) -> Result<(), CodecError> {
-    parse_gui_techdraw_integer_value(field, property_name, field_name).map(|_| ())
+    parse_gui_techdraw_integer_value(ctx, field, property_name, field_name).map(|_| ())
 }
 
 fn parse_gui_techdraw_integer_value(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
     field_name: &str,
 ) -> Result<i64, CodecError> {
     field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw integer has no value"))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "TechDraw integer has no value"))?
         .parse::<i64>()
         .map_err(|_| {
-            gui_techdraw_error(
+            gui_techdraw_error(ctx,
                 property_name,
                 &format!("TechDraw {field_name} integer is invalid"),
             )
@@ -3108,13 +3119,14 @@ fn parse_gui_techdraw_integer_value(
 }
 
 fn validate_gui_techdraw_uuid(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
     field_name: &str,
 ) -> Result<(), CodecError> {
     let value = field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "CosmeticVertex tag has no value"))?;
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "CosmeticVertex tag has no value"))?;
     let bytes = value.as_bytes();
     let valid = bytes.len() == 36
         && [8, 13, 18, 23].iter().all(|&index| bytes[index] == b'-')
@@ -3124,7 +3136,7 @@ fn validate_gui_techdraw_uuid(
             .filter(|(index, _)| ![8, 13, 18, 23].contains(index))
             .all(|(_, byte)| byte.is_ascii_hexdigit());
     if !valid {
-        return Err(gui_techdraw_error(
+        return Err(gui_techdraw_error(ctx,
             property_name,
             &format!("CosmeticVertex {field_name} is not a UUID"),
         ));
@@ -3133,20 +3145,22 @@ fn validate_gui_techdraw_uuid(
 }
 
 fn parse_gui_techdraw_integer(
+    ctx: &DecodeContext<'_>,
     field: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
     field
         .attribute("value")
-        .ok_or_else(|| gui_techdraw_error(property_name, "GeomFormat field has no value"))?
+        .ok_or_else(|| gui_techdraw_error(ctx, property_name, "GeomFormat field has no value"))?
         .parse::<i64>()
         .map(|_| ())
-        .map_err(|_| gui_techdraw_error(property_name, "GeomFormat has an invalid integer"))
+        .map_err(|_| gui_techdraw_error(ctx, property_name, "GeomFormat has an invalid integer"))
 }
 
-fn gui_techdraw_error(property_name: &str, detail: &str) -> CodecError {
-    let message = format!("GUI property {property_name} {detail}");
-    CodecError::Malformed(message)
+fn gui_techdraw_error(ctx: &DecodeContext<'_>, property_name: &str, detail: &str) -> CodecError {
+    crate::resource::malformed_charged(ctx,
+        format_args!("GUI property {property_name} {detail}"),
+        "FCStd GUI TechDraw diagnostic")
 }
 
 fn validate_visual_layer_list(
