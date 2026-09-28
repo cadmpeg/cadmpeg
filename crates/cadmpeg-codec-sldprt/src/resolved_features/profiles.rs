@@ -1068,7 +1068,7 @@ pub(crate) fn project_marker_backed_sketches(
                 continue;
             };
             let encoded_rectangle =
-                indexed_rectangle_from_line_cycle(&lane.native_payload, &object_markers);
+                indexed_rectangle_from_line_cycle(ctx, &lane.native_payload, &object_markers)?;
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
             for marker in markers.iter().copied() {
