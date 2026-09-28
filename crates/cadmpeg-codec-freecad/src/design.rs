@@ -3964,6 +3964,20 @@ fn part_construction_geometry_definition(
     } else {
         None
     };
+    if kind == "Part::Face" {
+        let Some(sources) = property(properties, "Sources") else { return Ok(None); };
+        if sources.links().is_empty() {
+            return Ok(None);
+        }
+        let Some(face_maker_class) = face_maker_class else { return Ok(None); };
+        let Some(face_maker) = FaceMaker::new(face_maker_class) else { return Ok(None); };
+        return Ok(Some(FeatureDefinition::Operation(FeatureOperation::FaceFromShapes {
+            sources: BodySelection::Native(retained_string(
+                ctx, &sources.id, "fcstd face source selection",
+            )?),
+            face_maker,
+        })));
+    }
     Ok((|| {
     let point = |x: &str, y: &str, z: &str| {
         Some(cadmpeg_ir::features::FinitePoint3::from_coordinates(
@@ -4060,18 +4074,6 @@ fn part_construction_geometry_definition(
                 )?)?,
             },
         )),
-        "Part::Face" => {
-            let sources = property(properties, "Sources")?;
-            if sources.links().is_empty() {
-                return None;
-            }
-            Some(FeatureDefinition::Operation(
-                FeatureOperation::FaceFromShapes {
-                    sources: BodySelection::Native(sources.id.clone()),
-                    face_maker: FaceMaker::new(face_maker_class?)?,
-                },
-            ))
-        }
         _ => None,
     }
     })())
