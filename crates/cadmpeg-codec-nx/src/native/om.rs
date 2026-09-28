@@ -175,40 +175,49 @@ pub(super) fn om_record_areas(
 ) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError> {
     let links = segment_om_links(ctx, container)?;
     let sections = container.om_sections(ctx)?;
-    Ok(links
-        .into_iter()
-        .filter_map(|link| {
-            let section = sections
-                .iter()
-                .find(|(entry, section)| {
-                    entry
-                        .file_span()
-                        .map_or(section.offset as u64, |(offset, _)| {
-                            offset + section.offset as u64
-                        })
-                        == link.location.section_offset()
-                })?
-                .1
-                .clone();
-            let header = section.record_area_header()?;
-            let bytes = section.record_area?.bytes;
-            let entry_offset = link
-                .location
-                .section_offset()
-                .checked_sub(section.offset as u64)?;
+    let mut areas = Vec::new();
+    for link in links {
+        let Some((_, section)) = sections.iter().find(|(entry, section)| {
+            entry.file_span().map_or(section.offset as u64, |(offset, _)| {
+                offset + section.offset as u64
+            }) == link.location.section_offset()
+        }) else { continue; };
+        let Some(header) = section.record_area_header() else { continue; };
+        let Some(area) = section.record_area else { continue; };
+        let bytes = area.bytes;
+        let Some(entry_offset) = link.location.section_offset().checked_sub(section.offset as u64) else { continue; };
+        let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(header.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX OM record area source offset", 0, 1))?;
             let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            Some(OmRecordArea {
-                id: format!("nx:om-record-areas:area#{section_key}-{}", header.offset),
-                section_link: link.id,
-                schema_role: link.schema_role,
-                control_words: header.control_words,
-                product_version: header.product.value.into_owned(),
-                byte_len: bytes.len() as u64,
-                sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                source_offset: entry_offset + header.offset as u64,
-            })
-        })
-        .collect())
+        let prefix = "nx:om-record-areas:area#";
+        let digits = header.offset.checked_ilog10().map_or(1, |count| count as usize + 1);
+        let id_len = prefix.len().checked_add(section_key.len())
+            .and_then(|length| length.checked_add(1))
+            .and_then(|length| length.checked_add(digits))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX OM record area id", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id_len), "NX OM record area id")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX OM record area id")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX OM record area id", 0, 1))?;
+        write!(&mut id, "{prefix}{section_key}-{}", header.offset)
+            .map_err(|_| ctx.refuse_codec_limit("write NX OM record area id", 0, 1))?;
+        ctx.charge_collection_items(1, "NX OM record areas")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmRecordArea>()), "retain NX OM record area")?;
+        areas.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX OM record areas", 0, 1))?;
+        areas.push(OmRecordArea {
+            id,
+            section_link: link.id,
+            schema_role: link.schema_role,
+            control_words: header.control_words,
+            product_version: header.product.value.try_into_owned_for_decode(ctx)?,
+            byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
+            sha256: crate::native::hex::Sha256Hex::digest(bytes),
+            source_offset,
+        });
+    }
+    Ok(areas)
 }
 
 /// Decode complete rows from audit-trail record areas.
@@ -8399,6 +8408,7 @@ mod tests {
     mod material_and_external_records;
     mod expression_admission;
     mod material_catalog_admission;
+    mod record_area_admission;
 }
 
 #[cfg(test)]
