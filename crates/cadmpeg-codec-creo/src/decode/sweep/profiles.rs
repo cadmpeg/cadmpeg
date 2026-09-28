@@ -589,10 +589,20 @@ pub(in super::super) fn resolved_sketch_profiles(
             })) else {
                 return Ok(None);
             };
-            let Some(row) = ProfileEntity::new(
-                source_carriers.sketch_geometry(entity).clone(),
-                entity_use.reversed,
-            ) else {
+            let source_geometry = source_carriers.sketch_geometry(entity);
+            let source_geometry = match source_geometry.definition() {
+                SketchGeometryDefinition::Nurbs { curve } => {
+                    let operation = "creo resolved profile NURBS copy";
+                    let items = curve.knots().len().checked_add(curve.pole_rows().count())
+                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                    SketchGeometry::nurbs(ctx.try_collection(items, operation, || curve.try_clone())?)
+                }
+                SketchGeometryDefinition::Line { .. }
+                | SketchGeometryDefinition::Arc { .. }
+                | SketchGeometryDefinition::Circle { .. } => source_geometry.clone(),
+                _ => return Ok(None),
+            };
+            let Some(row) = ProfileEntity::new(source_geometry, entity_use.reversed) else {
                 return Ok(None);
             };
             ctx.try_reserve_items(&mut geometries, 1, "creo resolved profile entities")?;

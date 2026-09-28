@@ -127,6 +127,48 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
 }
 
 #[test]
+fn resolved_nurbs_profile_refuses_source_geometry_copy_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let sketch_id = SketchId::mint("creo:model:sketch#74").expect("identity grammar");
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1")
+        .expect("identity grammar");
+    let nurbs = PcurveNurbs::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0), Point2::new(0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("closed source NURBS");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(sketch(&sketch_id, &entity_id));
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        SketchGeometry::nurbs(nurbs),
+    ));
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 8;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1)
+        .expect_err("nine knot and pole values exceed the limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo resolved profile NURBS copy"), "{error:?}");
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
+    })
+    .expect("service allocation")
+    .expect("closed source profile");
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].len(), 1);
+    assert_eq!(profiles[0][0].start(), profiles[0][0].end());
+}
+
+#[test]
 fn resolved_profile_refuses_entity_and_row_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

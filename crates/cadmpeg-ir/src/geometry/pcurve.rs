@@ -1805,6 +1805,33 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy admitted knots and pole rows with fallible vector reservations.
+    ///
+    /// The caller charges both collection lengths before calling this method.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let knots = self.knots.try_clone()?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                PcurveNurbsPoles::Polynomial { points: copied }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                PcurveNurbsPoles::Rational { points: copied }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
     /// Build from admitted knots and finite pole rows without copying either lane.
     ///
     /// The caller owns allocation admission for both inputs.
