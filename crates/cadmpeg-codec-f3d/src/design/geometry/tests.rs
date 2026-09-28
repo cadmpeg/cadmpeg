@@ -1895,3 +1895,39 @@ fn certified_profile_tubes_refuse_collection_limit() {
             if failure.operation == "f3d certified profile tubes"
     ));
 }
+
+fn split_limit_line() -> SketchGeometry {
+    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0), end: Point2::new(2.0, 0.0),
+    }).unwrap()
+}
+
+#[test]
+fn arrangement_split_endpoints_refuse_collection_limit() {
+    let line = split_limit_line();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::arrangement_split_parameters(&line, [0.0, 1.0], &[],
+            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d arrangement split endpoints"
+    ));
+}
+
+#[test]
+fn arrangement_split_parameter_refuses_collection_limit() {
+    let line = split_limit_line();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::arrangement_split_parameters(&line, [0.0, 1.0],
+            &[Point2::new(1.0, 0.0)], PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d arrangement split parameter"
+    ));
+}

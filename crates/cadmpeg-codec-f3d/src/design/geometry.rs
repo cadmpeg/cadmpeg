@@ -966,10 +966,14 @@ fn arrangement_split_parameters(
 ) -> Result<Option<Vec<f64>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
+    let mut parameters = Vec::new();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(2, "f3d arrangement split endpoints")?;
+        parameters.try_reserve(2).map_err(|_| {
+            ctx.refuse_codec_limit("f3d arrangement split endpoints allocation", 0, 2)
+        })?;
     }
-    let mut parameters = vec![range[0], range[1]];
+    parameters.extend(range);
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
             if point_distance(start.get(), end.get()) <= tolerance {
@@ -988,6 +992,9 @@ fn arrangement_split_parameters(
                 {
                     if let Some(ctx) = ctx {
                         ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                        parameters.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d arrangement split parameter allocation", 0, 1)
+                        })?;
                     }
                     parameters.push(parameter);
                 }
@@ -1003,6 +1010,9 @@ fn arrangement_split_parameters(
                     if parameter > 0.0 && parameter < 1.0 {
                         if let Some(ctx) = ctx {
                             ctx.charge_collection_items(1, "f3d arrangement split parameter")?;
+                            parameters.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("f3d arrangement split parameter allocation", 0, 1)
+                            })?;
                         }
                         parameters.push(range[0] + parameter * (range[1] - range[0]));
                     }
