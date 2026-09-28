@@ -237,6 +237,49 @@ fn external_reference_extraction_refuses_record_collection_limit() {
     ));
 }
 
+fn native_external_record_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_records(&ctx, &container)
+}
+
+#[test]
+fn native_external_record_route_preserves_indexed_record() {
+    let records = native_external_record_result(|_| {}).expect("native indexed record");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].record_id, 6);
+}
+
+#[test]
+fn native_external_record_route_refuses_collection_limit() {
+    let error = native_external_record_result(|policy| policy.limits.max_collection_items = 10)
+        .expect_err("native record exceeds the parsed collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference records"), "{error:?}");
+}
+
+#[test]
+fn native_external_record_route_refuses_retained_limit() {
+    let error = native_external_record_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("indexed record exceeds the retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
