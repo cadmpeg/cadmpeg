@@ -973,20 +973,21 @@ fn offset_support_control_hull_excludes_point(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
     point: Point3,
-    allowance: f64,
-    visited: &mut BTreeSet<SurfaceId>,
+    mut allowance: f64,
 ) -> bool {
-    if !allowance.is_finite() || allowance < 0.0 || !visited.insert(surface.clone()) {
-        return false;
-    }
-    let excluded =
-        index
-            .surfaces(surface.as_str())
-            .is_some_and(|carrier| match &carrier.geometry {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                    if positive_weights(nurbs) =>
-                {
-                    let (minimum, maximum) = (0..nurbs.u_count()).flat_map(|u| (0..nurbs.v_count()).filter_map(move |v| nurbs.pole(u, v))).fold(
+    let mut current = surface;
+    for _ in &index.ir().model.surfaces {
+        if !allowance.is_finite() || allowance < 0.0 {
+            return false;
+        }
+        let Some(carrier) = index.surfaces(current.as_str()) else {
+            return false;
+        };
+        match &carrier.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if positive_weights(nurbs) => {
+                let (minimum, maximum) = (0..nurbs.u_count())
+                    .flat_map(|u| (0..nurbs.v_count()).filter_map(move |v| nurbs.pole(u, v)))
+                    .fold(
                         (
                             Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
                             Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
@@ -1006,38 +1007,30 @@ fn offset_support_control_hull_excludes_point(
                             )
                         },
                     );
-                    point.x < minimum.x - allowance
-                        || point.x > maximum.x + allowance
-                        || point.y < minimum.y - allowance
-                        || point.y > maximum.y + allowance
-                        || point.z < minimum.z - allowance
-                        || point.z > maximum.z + allowance
+                return point.x < minimum.x - allowance
+                    || point.x > maximum.x + allowance
+                    || point.y < minimum.y - allowance
+                    || point.y > maximum.y + allowance
+                    || point.z < minimum.z - allowance
+                    || point.z > maximum.z + allowance;
+            }
+            SurfaceGeometry::Procedural { construction, .. } => {
+                let Some(procedural) = index.procedural_surfaces(construction.as_str()) else {
+                    return false;
+                };
+                let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition() else {
+                    return false;
+                };
+                if definition.linear_support_extension() {
+                    return false;
                 }
-                SurfaceGeometry::Procedural { construction, .. } => index
-                    .procedural_surfaces(construction.as_str())
-                    .and_then(|procedural| match procedural.definition() {
-                        ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                            let support = definition_payload.support();
-                            let distance = definition_payload.distance().get();
-                            let linear_extension = definition_payload.linear_support_extension();
-                            Some((support, distance, linear_extension))
-                        }
-                        _ => None,
-                    })
-                    .is_some_and(|(support, distance, linear_extension)| {
-                        if linear_extension {
-                            return false;
-                        }
-                        let allowance = allowance + distance.abs();
-                        allowance.is_finite()
-                            && offset_support_control_hull_excludes_point(
-                                index, support, point, allowance, visited,
-                            )
-                    }),
-                SurfaceGeometry::Solved(_) => false,
-            });
-    visited.remove(surface);
-    excluded
+                allowance += definition.distance().get().abs();
+                current = definition.support();
+            }
+            SurfaceGeometry::Solved(_) => return false,
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -1128,7 +1121,6 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
                 support,
                 point,
                 tolerance + distance.abs(),
-                &mut BTreeSet::new(),
             )
         })
     {
@@ -2031,73 +2023,46 @@ pub(super) fn surface_parameter_periods_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> [Option<f64>; 2] {
-    surface_parameter_periods_inner(index, surface, &mut BTreeSet::new())
-}
-
-fn surface_parameter_periods_inner(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
-    visiting: &mut BTreeSet<SurfaceId>,
-) -> [Option<f64>; 2] {
-    if !visiting.insert(surface.clone()) {
-        return [None, None];
+    let mut current = surface;
+    for _ in &index.ir().model.surfaces {
+        let Some(carrier) = index.surfaces(current.as_str()) else {
+            return [None, None];
+        };
+        match &carrier.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_))
+            | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
+                return [Some(std::f64::consts::TAU), None];
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+                return [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)];
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                let period = |periodic: bool, knots: &[f64], degree: u32, count: usize| {
+                    periodic.then(|| {
+                        let degree = usize::try_from(degree).ok()?;
+                        let period = knots.get(count)? - knots.get(degree)?;
+                        (period.is_finite() && period > 0.0).then_some(period)
+                    })?
+                };
+                return [
+                    period(nurbs.u_periodic(), nurbs.u_knots(), nurbs.u_degree(), nurbs.u_count()),
+                    period(nurbs.v_periodic(), nurbs.v_knots(), nurbs.v_degree(), nurbs.v_count()),
+                ];
+            }
+            SurfaceGeometry::Procedural { construction, .. } => {
+                let Some(procedural) = index.procedural_surfaces(construction.as_str()) else {
+                    return [None, None];
+                };
+                let ProceduralSurfaceDefinition::Offset(definition) = procedural.definition() else {
+                    return [None, None];
+                };
+                current = definition.support();
+            }
+            SurfaceGeometry::Solved(_) => return [None, None],
+        }
     }
-    let Some(carrier) = index.surfaces(surface.as_str()) else {
-        visiting.remove(surface);
-        return [None, None];
-    };
-    let periods = match &carrier.geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-            [Some(std::f64::consts::TAU), None]
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-            [Some(std::f64::consts::TAU), None]
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
-            [Some(std::f64::consts::TAU), None]
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
-            [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let period = |periodic: bool, knots: &[f64], degree: u32, count: usize| {
-                periodic.then(|| {
-                    let degree = usize::try_from(degree).ok()?;
-                    let period = knots.get(count)? - knots.get(degree)?;
-                    (period.is_finite() && period > 0.0).then_some(period)
-                })?
-            };
-            [
-                period(
-                    nurbs.u_periodic(),
-                    nurbs.u_knots(),
-                    nurbs.u_degree(),
-                    nurbs.u_count(),
-                ),
-                period(
-                    nurbs.v_periodic(),
-                    nurbs.v_knots(),
-                    nurbs.v_degree(),
-                    nurbs.v_count(),
-                ),
-            ]
-        }
-        SurfaceGeometry::Procedural { construction, .. } => index
-            .procedural_surfaces(construction.as_str())
-            .and_then(|procedural| match procedural.definition() {
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    let support = definition_payload.support();
-                    {
-                        Some(surface_parameter_periods_inner(index, support, visiting))
-                    }
-                }
-                _ => None,
-            })
-            .unwrap_or([None, None]),
-        SurfaceGeometry::Solved(_) => [None, None],
-    };
-    visiting.remove(surface);
-    periods
+    [None, None]
 }
 
 // Newton correction carries its chart, scale, and shared work slice together
@@ -2638,7 +2603,6 @@ mod tests {
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::NonNegativeLength;
-    use std::collections::BTreeSet;
 
     #[test]
     fn coarse_surface_search_samples_a_wide_finite_nurbs_domain() {
@@ -2828,14 +2792,12 @@ mod tests {
             &support,
             Point3::new(100.0, 0.5, 0.0),
             1.1,
-            &mut BTreeSet::new(),
         ));
         assert!(!offset_support_control_hull_excludes_point(
             &index,
             &support,
             Point3::new(2.0, 0.5, 0.0),
             1.1,
-            &mut BTreeSet::new(),
         ));
     }
 
@@ -2918,7 +2880,6 @@ mod tests {
             &offset,
             target,
             fit_tolerance,
-            &mut BTreeSet::new(),
         ));
         let parameters = offset_surface_parameters_with_tolerance(
             &ir,
