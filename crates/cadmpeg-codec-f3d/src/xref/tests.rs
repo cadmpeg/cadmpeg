@@ -65,6 +65,32 @@ fn redirections_reference_collection_refuses_limit() {
 }
 
 #[test]
+fn redirections_design_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let bytes = redirections_json("root.f3d", &[]);
+    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref record ID"));
+}
+
+#[test]
+fn redirections_reference_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2 * "f3d:xref:design#0".len() as u64;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D xref record ID"));
+}
+
+#[test]
 fn xref_occurrence_projection_refuses_collection_limit() {
     let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
     let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
