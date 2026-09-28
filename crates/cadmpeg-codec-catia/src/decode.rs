@@ -75,12 +75,12 @@ fn decode_over_routes(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
-    let matched = crate::dialect::classify(&scan);
+    let matched = crate::dialect::classify(ctx, &scan)?;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
         let report = build_container_report(&scan);
-        return decode_result(&scan, &matched, ir, report, annotations, unknowns);
+        return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
     let applicable = resource::collect_vec(
@@ -3696,7 +3696,7 @@ fn finish_decode(
         )?;
     }
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
-    decode_result(scan, matched, ir, report, annotations, unknowns)
+    decode_result(ctx, scan, matched, ir, report, annotations, unknowns)
 }
 
 /// Modeling scope of a part's decoded object graphs.
@@ -3763,6 +3763,7 @@ fn modeling_graph_scope(
 /// the sealed wrapper stamps it onto the report. This function merges the
 /// container-level notes and charges dialect loss from that same match.
 fn decode_result(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     matched: &DialectMatch,
     mut ir: CadIr,
@@ -3770,9 +3771,11 @@ fn decode_result(
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
 ) -> Result<Decoded, CodecError> {
-    ir.source = Some(crate::assemble::source_meta(scan, matched));
-    body.notes = crate::container::notes(scan);
-    body.losses.extend(crate::dialect::dialect_loss(matched));
+    ir.source = Some(crate::assemble::source_meta(ctx, scan, matched)?);
+    body.notes = crate::container::notes(ctx, scan)?;
+    if let Some(loss) = crate::dialect::dialect_loss(ctx, matched)? {
+        resource::push(ctx, &mut body.losses, loss, "catia_decode_dialect_loss")?;
+    }
     let mut source_fidelity = SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(Decoded {

@@ -1449,7 +1449,22 @@ pub(crate) fn scan_bytes<'a>(
 
 /// Build a [`ContainerSummary`] enumerating the outer and inner directories'
 /// streams and the identified variant.
-pub(crate) fn summarize(scan: &ContainerScan) -> ContainerSummary {
+pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<ContainerSummary, CodecError> {
+    struct ExtentFlags<'a>(&'a [Extent]);
+    impl std::fmt::Display for ExtentFlags<'_> {
+        fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for (index, extent) in self.0.iter().enumerate() {
+                if index != 0 {
+                    out.write_str(",")?;
+                }
+                write!(out, "0x{:08x}", extent.flags)?;
+            }
+            Ok(())
+        }
+    }
     let mut entries = Vec::new();
 
     for (directory, dir) in [
@@ -1459,62 +1474,59 @@ pub(crate) fn summarize(scan: &ContainerScan) -> ContainerSummary {
         let Some(dir) = dir else { continue };
         for d in &dir.descriptors {
             let mut attributes = BTreeMap::new();
-            attributes.insert("directory".to_string(), directory.to_string());
-            attributes.insert("desc_offset".to_string(), d.desc_offset.to_string());
-            attributes.insert("extent_count".to_string(), d.extents.len().to_string());
-            attributes.insert(
-                "extent_flags".to_string(),
-                d.extents
-                    .iter()
-                    .map(|extent| format!("0x{:08x}", extent.flags))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
+            crate::resource::string_attribute(ctx, &mut attributes, "directory",
+                format_args!("{directory}"), "catia_summary_attribute")?;
+            crate::resource::string_attribute(ctx, &mut attributes, "desc_offset",
+                format_args!("{}", d.desc_offset), "catia_summary_attribute")?;
+            crate::resource::string_attribute(ctx, &mut attributes, "extent_count",
+                format_args!("{}", d.extents.len()), "catia_summary_attribute")?;
+            crate::resource::string_attribute(ctx, &mut attributes, "extent_flags",
+                format_args!("{}", ExtentFlags(&d.extents)), "catia_summary_attribute")?;
             if directory == "outer" {
                 if let Some(declaration) = scan
                     .outer_container_declarations
                     .iter()
                     .find(|declaration| declaration.stream_name == d.name)
                 {
-                    attributes.insert(
-                        "container_class".to_string(),
-                        declaration.class_name.clone(),
-                    );
-                    attributes.insert(
-                        "container_base_class".to_string(),
-                        declaration.base_class.clone(),
-                    );
-                    attributes.insert(
-                        "container_ordinal".to_string(),
-                        declaration.ordinal.to_string(),
-                    );
-                    attributes.insert(
-                        "container_data_offset".to_string(),
-                        declaration.data_offset.to_string(),
-                    );
+                    crate::resource::string_attribute(ctx, &mut attributes, "container_class",
+                        format_args!("{}", declaration.class_name), "catia_summary_attribute")?;
+                    crate::resource::string_attribute(ctx, &mut attributes, "container_base_class",
+                        format_args!("{}", declaration.base_class), "catia_summary_attribute")?;
+                    crate::resource::string_attribute(ctx, &mut attributes, "container_ordinal",
+                        format_args!("{}", declaration.ordinal), "catia_summary_attribute")?;
+                    crate::resource::string_attribute(ctx, &mut attributes, "container_data_offset",
+                        format_args!("{}", declaration.data_offset), "catia_summary_attribute")?;
                 }
             }
             let phys = d.logical_length();
-            entries.push(ContainerEntry {
-                name: if d.name.is_empty() {
-                    format!("{directory}-stream@{}", d.desc_offset)
-                } else {
-                    d.name.clone()
-                },
+            let name = if d.name.is_empty() {
+                crate::resource::format_retained(ctx,
+                    format_args!("{directory}-stream@{}", d.desc_offset), "catia_summary_entry_name")?
+            } else {
+                crate::resource::copy_retained_str(ctx, &d.name, "catia_summary_entry_name")?
+            };
+            crate::resource::push(ctx, &mut entries, ContainerEntry {
+                name,
                 role: ContainerRole::Stream,
                 storage: EntryStorage::verbatim(VerbatimLabel::None, phys),
                 attributes,
-            });
+            }, "catia_summary_entries")?;
         }
     }
     for (index, preview) in scan.previews.iter().enumerate() {
         let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), preview.range.start.to_string());
-        attributes.insert("width".to_string(), preview.width.to_string());
-        attributes.insert("height".to_string(), preview.height.to_string());
-        attributes.insert("components".to_string(), preview.components.to_string());
-        entries.push(ContainerEntry {
-            name: format!("CATPreview#{index}"),
+        crate::resource::string_attribute(ctx, &mut attributes, "file_offset",
+            format_args!("{}", preview.range.start), "catia_summary_attribute")?;
+        crate::resource::string_attribute(ctx, &mut attributes, "width",
+            format_args!("{}", preview.width), "catia_summary_attribute")?;
+        crate::resource::string_attribute(ctx, &mut attributes, "height",
+            format_args!("{}", preview.height), "catia_summary_attribute")?;
+        crate::resource::string_attribute(ctx, &mut attributes, "components",
+            format_args!("{}", preview.components), "catia_summary_attribute")?;
+        let name = crate::resource::format_retained(ctx,
+            format_args!("CATPreview#{index}"), "catia_summary_entry_name")?;
+        crate::resource::push(ctx, &mut entries, ContainerEntry {
+            name,
             role: ContainerRole::Preview,
             storage: EntryStorage::Compressed {
                 method: CompressionMethod::Jpeg,
@@ -1522,128 +1534,162 @@ pub(crate) fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 expanded: None,
             },
             attributes,
-        });
+        }, "catia_summary_entries")?;
     }
     for reference in &scan.external_references {
         let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), reference.offset.to_string());
+        crate::resource::string_attribute(ctx, &mut attributes, "file_offset",
+            format_args!("{}", reference.offset), "catia_summary_attribute")?;
         let storage = EntryStorage::framed_by(
             VerbatimLabel::None,
             reference.target.as_str().into(),
             LENGTH_PREFIXED_ASCII_HEADER,
         );
-        entries.push(ContainerEntry {
-            name: reference.target.clone(),
+        let name = crate::resource::copy_retained_str(ctx, &reference.target,
+            "catia_summary_entry_name")?;
+        crate::resource::push(ctx, &mut entries, ContainerEntry {
+            name,
             role: ContainerRole::ExternalReference,
             storage,
             attributes,
-        });
+        }, "catia_summary_entries")?;
     }
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), segment.range.start.to_string());
-        attributes.insert(
-            "type_word".to_string(),
-            format!("0x{:08x}", segment.type_word),
-        );
-        attributes.insert(
-            "family".to_string(),
-            match segment.kind() {
+        crate::resource::string_attribute(ctx, &mut attributes, "file_offset",
+            format_args!("{}", segment.range.start), "catia_summary_attribute")?;
+        crate::resource::string_attribute(ctx, &mut attributes, "type_word",
+            format_args!("0x{:08x}", segment.type_word), "catia_summary_attribute")?;
+        let family = match segment.kind() {
                 FinjplKind::Storage => "storage",
                 FinjplKind::ProjectFlags => "project-flags",
                 FinjplKind::Other => "other",
-            }
-            .to_string(),
-        );
-        entries.push(ContainerEntry {
-            name: segment
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("FINJPL#{index}")),
+            };
+        crate::resource::string_attribute(ctx, &mut attributes, "family",
+            format_args!("{family}"), "catia_summary_attribute")?;
+        let name = match &segment.name {
+            Some(name) => crate::resource::copy_retained_str(ctx, name, "catia_summary_entry_name")?,
+            None => crate::resource::format_retained(ctx,
+                format_args!("FINJPL#{index}"), "catia_summary_entry_name")?,
+        };
+        crate::resource::push(ctx, &mut entries, ContainerEntry {
+            name,
             role: ContainerRole::FinjplSegment,
             storage: EntryStorage::verbatim(
                 VerbatimLabel::None,
                 (segment.range.end - segment.range.start) as u64,
             ),
             attributes,
-        });
+        }, "catia_summary_entries")?;
     }
 
-    let notes = notes(scan);
+    let notes = notes(ctx, scan)?;
 
-    let matched = crate::dialect::classify(scan);
-    let losses = crate::dialect::dialect_loss(&matched).into_iter().collect();
-    ContainerSummary::classified(
+    let matched = crate::dialect::classify(ctx, scan)?;
+    let mut losses = Vec::new();
+    if let Some(loss) = crate::dialect::dialect_loss(ctx, &matched)? {
+        crate::resource::push(ctx, &mut losses, loss, "catia_summary_losses")?;
+    }
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
         cadmpeg_ir::ContainerKind::V5Cfv2,
         entries,
         losses,
         notes,
-    )
+    ))
 }
 
 /// Build the diagnostic notes shared by inspection and decode reports.
-pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
-    let mut notes = vec![format!(
-        "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
-        scan.outer_dir_offset,
-        scan.outer_dir_length,
-        scan.outer_dir_offset as u64 + scan.outer_dir_length as u64,
-        scan.data.len(),
-        scan.variant.description(),
-    )];
+pub(crate) fn notes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<String>, CodecError> {
+    let mut notes = Vec::new();
+    let outer = crate::resource::format_retained(
+        ctx,
+        format_args!(
+            "outer V5_CFV2 container: directory offset {} + length {} = {} (file size {}); variant: {}",
+            scan.outer_dir_offset,
+            scan.outer_dir_length,
+            u64::from(scan.outer_dir_offset) + u64::from(scan.outer_dir_length),
+            scan.data.len(),
+            scan.variant.description(),
+        ),
+        "catia_container_note",
+    )?;
+    crate::resource::push(ctx, &mut notes, outer, "catia_container_notes")?;
 
     if let Some(dir) = &scan.outer {
-        notes.push(format!(
-            "outer CATIA_V5 CB0001 directory with {} stream(s)",
-            dir.descriptors.len()
-        ));
+        let note = crate::resource::format_retained(
+            ctx,
+            format_args!("outer CATIA_V5 CB0001 directory with {} stream(s)", dir.descriptors.len()),
+            "catia_container_note",
+        )?;
+        crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
 
     match &scan.inner {
-        Some(dir) => notes.push(format!(
-            "nested V5_CFV2 at file offset {} with a CATIA_V5 CB0001 directory of {} stream(s)",
-            dir.inner,
-            dir.descriptors.len()
-        )),
-        None => notes.push(
-            "no nested V5_CFV2 sub-container (outer-preamble record families only)".to_string(),
-        ),
+        Some(dir) => {
+            let note = crate::resource::format_retained(
+                ctx,
+                format_args!(
+                    "nested V5_CFV2 at file offset {} with a CATIA_V5 CB0001 directory of {} stream(s)",
+                    dir.inner, dir.descriptors.len(),
+                ),
+                "catia_container_note",
+            )?;
+            crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
+        }
+        None => {
+            let note = crate::resource::copy_retained_str(
+                ctx,
+                "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+                "catia_container_note",
+            )?;
+            crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
+        }
     }
 
     if scan.brep.is_some() {
-        notes.push(format!(
-            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
-             containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
-            scan.census.fbb_runs,
-            scan.census.fbb_face_rows,
-            scan.census.vertex_markers,
-            scan.census.edge_delimiters
-        ));
+        let note = crate::resource::format_retained(
+            ctx,
+            format_args!(
+                "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
+                 containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
+                scan.census.fbb_runs, scan.census.fbb_face_rows,
+                scan.census.vertex_markers, scan.census.edge_delimiters,
+            ),
+            "catia_container_note",
+        )?;
+        crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
     if scan.census.a9_records > 0 || scan.census.e5_markers > 0 {
-        notes.push(format!(
-            "record-family census: {} a9 03, {} e5 0d 03",
-            scan.census.a9_records, scan.census.e5_markers
-        ));
+        let note = crate::resource::format_retained(
+            ctx,
+            format_args!("record-family census: {} a9 03, {} e5 0d 03",
+                scan.census.a9_records, scan.census.e5_markers),
+            "catia_container_note",
+        )?;
+        crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
     if let Some(version) = &scan.last_save_version {
-        notes.push(format!(
-            "last saved by CATIA V{}R{} SP{} HF{} ({})",
-            version.version,
-            version.release,
-            version.service_pack,
-            version.hot_fix,
-            version.build_date
-        ));
+        let note = crate::resource::format_retained(
+            ctx,
+            format_args!("last saved by CATIA V{}R{} SP{} HF{} ({})",
+                version.version, version.release, version.service_pack,
+                version.hot_fix, version.build_date),
+            "catia_container_note",
+        )?;
+        crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
-    notes.push(
+    let note = crate::resource::copy_retained_str(
+        ctx,
         "container-level enumeration; `decode` applies the identified storage family's \
-         standard, freeform, E5, zero-entity, or metadata-fallback route"
-            .to_string(),
-    );
-
-    notes
+         standard, freeform, E5, zero-entity, or metadata-fallback route",
+        "catia_container_note",
+    )?;
+    crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
+    Ok(notes)
 }
 
 #[cfg(test)]
