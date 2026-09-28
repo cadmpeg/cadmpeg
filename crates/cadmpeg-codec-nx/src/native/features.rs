@@ -7054,15 +7054,17 @@ pub(super) fn feature_extrude_profile_references(ctx: &cadmpeg_core::decode::Dec
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut refusal: Option<CodecError> = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) =
-                crate::om::extrude_profile::extrude_profile_references(record.payload_view())
-                    .and_then(|field| field.relocate(entry_offset))
-            else {
-                return;
+            if refusal.is_some() { return; }
+            let decoded = match crate::om::extrude_profile::extrude_profile_references(ctx, record.payload_view()) {
+                Ok(Some(field)) => field,
+                Ok(None) => return,
+                Err(error) => { refusal = Some(error); return; }
             };
+            let Some(decoded) = decoded.relocate(entry_offset) else { return; };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.extend(decoded.references().enumerate().map(|(ordinal, (token, source_offset, witness_source_offset))| {
@@ -7081,6 +7083,7 @@ pub(super) fn feature_extrude_profile_references(ctx: &cadmpeg_core::decode::Dec
             }));
         },
     )?;
+    if let Some(error) = refusal { return Err(error); }
     Ok(references)
 }
 
