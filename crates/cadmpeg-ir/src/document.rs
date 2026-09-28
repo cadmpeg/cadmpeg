@@ -1138,11 +1138,21 @@ impl Model {
                     "surface {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            SurfaceGeometry::Solved(geometry) => {
-                surface.geometry = SurfaceGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: Some(geometry.clone()),
-                };
+            SurfaceGeometry::Solved(_) => {
+                let previous = std::mem::replace(
+                    &mut surface.geometry,
+                    SurfaceGeometry::Procedural {
+                        construction: procedural.id.clone(),
+                        cache: None,
+                    },
+                );
+                if let (
+                    SurfaceGeometry::Solved(geometry),
+                    SurfaceGeometry::Procedural { cache, .. },
+                ) = (previous, &mut surface.geometry)
+                {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_surfaces.push(procedural);
@@ -1201,11 +1211,19 @@ impl Model {
                     "curve {owner} is already owned by procedural construction {construction}"
                 )));
             }
-            CurveGeometry::Solved(geometry) => {
-                curve.geometry = CurveGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: Some(geometry.clone()),
-                };
+            CurveGeometry::Solved(_) => {
+                let previous = std::mem::replace(
+                    &mut curve.geometry,
+                    CurveGeometry::Procedural {
+                        construction: procedural.id.clone(),
+                        cache: None,
+                    },
+                );
+                if let (CurveGeometry::Solved(geometry), CurveGeometry::Procedural { cache, .. }) =
+                    (previous, &mut curve.geometry)
+                {
+                    *cache = Some(geometry);
+                }
             }
         }
         self.procedural_curves.push(procedural);

@@ -2927,7 +2927,8 @@ fn legacy_mesh(
             }
         })?;
     Tessellation::new(
-        id,
+        cadmpeg_ir::tessellation::TessellationId::mint(id)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )

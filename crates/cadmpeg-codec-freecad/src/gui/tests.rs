@@ -32,7 +32,12 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
     });
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
     super::transfer_primitive_appearance(
+        &ctx,
         &ir,
         &mut plan,
         &mut losses,
@@ -48,7 +53,8 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
                 17,
             ),
         },
-    );
+    )
+    .expect("primitive appearance transfer");
     assert_eq!(plan.appearances.len(), 1);
     assert!(plan.appearances[0].properties.is_empty());
     assert!(!plan.bindings.is_empty());
@@ -125,11 +131,16 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
     let mut plan = super::AppearancePlan::default();
     let mut losses = Vec::new();
     let prefixes = [String::from("shape:")];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
     for style in [
         super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
         super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
         super::transfer_primitive_appearance(
+            &ctx,
             &ir,
             &mut plan,
             &mut losses,
@@ -145,7 +156,8 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
                     17,
                 ),
             },
-        );
+        )
+        .expect("primitive appearance transfer");
     }
     assert_eq!(plan.appearances.len(), 2);
     assert!(plan
@@ -207,7 +219,7 @@ fn complete_codec_admits_provider_names_with_source_identity_encoding() {
         .find(|provider| provider.name.is_empty())
         .expect("unnamed provider");
     assert_eq!(unnamed.id, "fcstd:native:gui-view-provider#%EMPTY");
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -287,7 +299,7 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
     assert_eq!(presentation.states()[1].assets.len(), 1);
     assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
 
@@ -614,7 +626,7 @@ fn keeps_registered_non_presentation_properties_native() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -818,7 +830,7 @@ Co 1001000 +2 0 *
         assert!(properties.iter().any(|property| {
             property.name == mismatched_property && property.side_entries == [mismatched_property]
         }));
-        assert!(crate::validate_native(result.ir()).is_empty());
+        assert!(crate::test_support::validate_native(result.ir()).is_empty());
     }
 }
 
@@ -877,7 +889,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
             .len(),
         1
     );
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -1141,7 +1153,7 @@ fn validates_sketcher_visual_layer_list_with_the_producer_type_token() {
         .find(|span| span.classification.owner() == Some(property.id.as_str()))
         .expect("visual layer span");
     assert_eq!(span.classification.as_str(), "typed");
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     for value in [
         br#"<VisualLayerList count="1"><VisualLayer visible="maybe" linePattern="1" lineWidth="1"/></VisualLayerList>"#.as_slice(),
@@ -1222,7 +1234,7 @@ fn validates_dynamic_gui_property_registry_and_side_lists() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let bad_float_list = [0_u32.to_le_bytes().as_slice(), &[0xff]].concat();
     let error = FcstdCodec
@@ -1651,7 +1663,7 @@ fn validates_the_complete_loaded_dynamic_gui_registry() {
     assert!(properties.iter().all(|property| {
         crate::gui::has_registered_property_grammar(&property.name, &property.type_name)
     }));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 
     let logical = namespace
         .arena_as::<crate::native::LogicalSpan>("logical_ledger")
@@ -1767,7 +1779,7 @@ fn retains_unregistered_gui_side_entries_as_opaque_archive_members() {
         .expect("state span");
     assert_eq!(span.classification.as_str(), "named_opaque");
     assert_eq!(span.classification.owner(), Some(entry.id.as_str()));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 #[test]
@@ -1802,7 +1814,7 @@ fn does_not_treat_gui_external_links_as_archive_members() {
         .expect("entries")
         .iter()
         .all(|entry| entry.name != "External.FCStd"));
-    assert!(crate::validate_native(result.ir()).is_empty());
+    assert!(crate::test_support::validate_native(result.ir()).is_empty());
 }
 
 /// A GUI property whose key is blank names nothing, so its value cannot be

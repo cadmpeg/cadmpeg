@@ -222,7 +222,7 @@ fn parser_recovers_an_out_of_range_schema_object_identifier_component() {
     );
     assert_eq!(exchange.header()[2].name, "FILE_SCHEMA");
     assert_eq!(
-        exchange.schema_identifiers(),
+        exchange.schema_identifiers().collect::<Vec<_>>(),
         ["AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"]
     );
 }

@@ -209,7 +209,7 @@ fn retain_jt_tessellation_id(
     offset: u64,
     object_id: u32,
     path: Option<&str>,
-) -> Result<String, CodecError> {
+) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
     let operation = "nx JT tessellation identity";
     let digits = |mut value: u64| {
         let mut count = 1usize;
@@ -242,7 +242,8 @@ fn retain_jt_tessellation_id(
         id.push_str("-path-");
         id.push_str(path);
     }
-    Ok(id)
+    cadmpeg_ir::tessellation::TessellationId::mint(id)
+        .map_err(|error| CodecError::malformed(format_args!("display-jt tessellation: {error}")))
 }
 
 fn display_jt_text_size(
@@ -6502,6 +6503,9 @@ fn display_jt_tessellation_rows(
                         shape_element.object_id,
                         (path.node_path.len() != 1).then_some(node_path.as_str()),
                     )
+                    .map_err(|error| {
+                        *refusal = Some(error);
+                    })
                     .ok()?,
                     match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices,

@@ -369,7 +369,7 @@ fn decimal_len(number: u64) -> usize {
     if number == 0 {
         1
     } else {
-        usize::try_from(u64::from(number.ilog10()) + 1).unwrap_or(usize::MAX)
+        cadmpeg_core::decode::index_from_u32(number.ilog10() + 1)
     }
 }
 

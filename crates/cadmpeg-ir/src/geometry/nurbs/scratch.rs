@@ -28,7 +28,7 @@ pub(crate) fn reserve_exact<T>(
 
 /// Describe a refused evaluator reserve without a decode session.
 pub(crate) fn allocation_failed(additional: usize, operation: &'static str) -> ResourceLimit {
-    let requested = u64::try_from(additional).unwrap_or(u64::MAX);
+    let requested = cadmpeg_core::decode::u64_from_index(additional);
     ResourceLimit {
         dimension: ResourceDimension::Codec(operation),
         reason: ResourceFailure::AllocationFailed,

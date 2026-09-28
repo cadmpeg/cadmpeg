@@ -10,9 +10,27 @@ pub(crate) mod scratch;
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn copy_decode_grid<T: Copy>(
+    rows: &[Vec<T>],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    super::charge_decode_copy::<Vec<T>>(rows.len(), ctx, operation)?;
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(rows.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(rows.len())))?;
+    for row in rows {
+        copied.push(super::copy_decode_slice(row, ctx, operation)?);
+    }
+    Ok(copied)
+}
 
 /// Knot values that are finite and non-decreasing.
 ///
@@ -28,7 +46,7 @@ impl KnotVector {
     /// # Errors
     ///
     /// Refuses a non-finite knot, then a decreasing pair.
-    pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
+    pub fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
         Ok(Self(knots))
     }
@@ -40,6 +58,11 @@ impl KnotVector {
             return Err(NurbsError::Structure("knots must be non-decreasing".into()));
         }
         Ok(Self(knots))
+    }
+
+    /// Move the admitted knot storage into its owner without copying it.
+    pub fn into_values(self) -> Vec<f64> {
+        self.0
     }
 
     /// Borrow the knot values.
@@ -182,6 +205,16 @@ pub(super) fn non_finite_control_point() -> NurbsError {
 pub trait PoleValue<T>: Copy {
     /// The admitted value, absent when a raw value is not finite.
     fn admit(self) -> Option<T>;
+
+    /// Admit a curve pole lane, retaining its storage when the poles are admitted.
+    fn admit_curve_poles(poles: NurbsPoles3<Self>) -> Result<NurbsPoles3<T>, NurbsError> {
+        poles.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
+
+    /// Admit a surface pole grid, retaining its rows when the poles are admitted.
+    fn admit_surface_poles(grid: NurbsPoleGrid<Self>) -> Result<NurbsPoleGrid<T>, NurbsError> {
+        grid.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
 }
 
 impl PoleValue<FinitePoint3> for Point3 {
@@ -193,6 +226,18 @@ impl PoleValue<FinitePoint3> for Point3 {
 impl PoleValue<FinitePoint3> for FinitePoint3 {
     fn admit(self) -> Option<FinitePoint3> {
         Some(self)
+    }
+
+    fn admit_curve_poles(
+        poles: NurbsPoles3<Self>,
+    ) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        Ok(poles)
+    }
+
+    fn admit_surface_poles(
+        grid: NurbsPoleGrid<Self>,
+    ) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        Ok(grid)
     }
 }
 
@@ -248,7 +293,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_curve_poles(self)
     }
 }
 
@@ -490,7 +535,7 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        P::admit_surface_poles(self)
     }
 }
 
@@ -1035,6 +1080,40 @@ fn require_surface_shape<P, U: KnotValue, V: KnotValue>(
 }
 
 impl NurbsSurface {
+    /// Copy the admitted lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        super::charge_decode_copy::<f64>(self.u_knots.len(), ctx, operation)?;
+        let u_knots = self.u_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len()))
+        })?;
+        super::charge_decode_copy::<f64>(self.v_knots.len(), ctx, operation)?;
+        let v_knots = self.v_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len()))
+        })?;
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: copy_decode_grid(rows, ctx, operation)?,
+            },
+            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: copy_decode_grid(rows, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1376,52 +1455,23 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
-    /// Copy the admitted knots and poles under a decode caller's resource policy.
+    /// Copy the admitted lanes through the decode collection budget.
     pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        fn admit_copy<T: Copy>(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            values: &[T],
-            operation: &'static str,
-        ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-            let count = u64::try_from(values.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            let element_size = u64::try_from(std::mem::size_of::<T>())
-                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            let bytes = count
-                .checked_mul(element_size)
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            ctx.charge_collection_items(count, operation)?;
-            ctx.charge_retained(bytes, operation)?;
-            let mut copy = Vec::new();
-            copy.try_reserve_exact(values.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
-            copy.extend_from_slice(values);
-            Ok(copy)
-        }
-
-        let knot_count = u64::try_from(self.knots.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let knot_element_size = u64::try_from(std::mem::size_of::<f64>())
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let knot_bytes = knot_count
-            .checked_mul(knot_element_size)
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        ctx.charge_collection_items(knot_count, operation)?;
-        ctx.charge_retained(knot_bytes, operation)?;
+    ) -> Result<Self, CodecError> {
+        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
         let knots = self
             .knots
             .try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, knot_count))?;
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
         let poles = match &self.poles {
             NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
-                points: admit_copy(ctx, points, operation)?,
+                points: super::copy_decode_slice(points, ctx, operation)?,
             },
             NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
-                points: admit_copy(ctx, points, operation)?,
+                points: super::copy_decode_slice(points, ctx, operation)?,
             },
         };
         Ok(Self {
@@ -1467,6 +1517,11 @@ impl NurbsCurve {
     /// Full knot vector.
     pub fn knots(&self) -> &KnotVector {
         &self.knots
+    }
+
+    /// Move the curve lanes to a caller that will rebuild a checked curve.
+    pub fn into_parts(self) -> (u32, KnotVector, NurbsPoles3<FinitePoint3>, bool) {
+        (self.degree, self.knots, self.poles, self.periodic)
     }
 
     /// Atomically edit knot values and preserve their invariants.

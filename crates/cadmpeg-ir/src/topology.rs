@@ -14,6 +14,8 @@ use crate::ids::{
 use crate::math::Point3;
 use crate::scalar::UnitBinary32;
 use crate::transform::Transform;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -765,15 +767,14 @@ impl LoopRing {
 
     /// Build a ring with duplicate-check storage charged to a decode caller.
     pub fn try_new_for_decode(
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         coedges: Vec<CoedgeId>,
         vertex_uses: Vec<AnchoredVertexUse>,
-    ) -> Result<Result<Self, LoopRingError>, cadmpeg_core::CodecError> {
+    ) -> Result<Result<Self, LoopRingError>, CodecError> {
         if coedges.is_empty() {
             return Ok(Err(LoopRingError("loop ring must contain a coedge".into())));
         }
-        let count = u64::try_from(coedges.len())
-            .map_err(|_| ctx.refuse_codec_limit("loop ring members", u64::MAX, u64::MAX))?;
+        let count = u64_from_index(coedges.len());
         ctx.charge_collection_items(count, "loop ring members")?;
         let mut members = HashSet::new();
         members
@@ -1786,6 +1787,21 @@ mod tests {
     }
 
     #[test]
+    fn shell_admission_reuses_owned_member_storage() {
+        let faces = vec![super::FaceId::mint("test:model:face#1").unwrap()];
+        let storage = faces.as_ptr();
+        let shell = super::Shell::new(
+            super::ShellId::mint("test:model:shell#1").unwrap(),
+            super::RegionId::mint("test:model:region#1").unwrap(),
+            faces,
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(shell.faces().as_ptr(), storage);
+    }
+
+    #[test]
     fn shell_topology_edits_admit_the_whole_replacement_and_keep_old_values_on_failure() {
         let mut shell = super::Shell::with_face(
             super::ShellId::mint("test:model:shell#1").unwrap(),
@@ -1853,6 +1869,30 @@ mod tests {
         let before = ring.clone();
         assert!(ring.try_push(first).is_err());
         assert_eq!(ring, before);
+    }
+
+    #[test]
+    fn admitted_loop_ring_refuses_validation_index_before_allocation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let coedge = super::CoedgeId::mint("test:model:coedge#0").unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refused = LoopRing::try_new_for_decode(&ctx, vec![coedge.clone()], Vec::new());
+        assert!(matches!(refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "loop ring members"
+                    && limit.additional == 1
+        ));
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let ring = LoopRing::try_new_for_decode(&ctx, vec![coedge.clone()], Vec::new())
+            .unwrap()
+            .unwrap();
+        assert_eq!(ring.coedges(), &[coedge]);
     }
 
     #[test]

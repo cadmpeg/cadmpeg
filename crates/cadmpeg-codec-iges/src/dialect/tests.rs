@@ -16,10 +16,37 @@ use crate::test_support::{detect_and_decode, global_with_version_flag, only_matc
 use crate::version::VersionFlag;
 use crate::IgesCodec;
 use crate::IgesVersion;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_ir::codec::Codec;
 use std::io::Cursor;
+
+#[test]
+fn unverified_dialect_loss_refuses_message_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let global = resolved_global("1");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        dialect_loss(&global, &ctx),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "iges dialect loss message"
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let loss = dialect_loss(&global, &ctx).unwrap().unwrap();
+    assert_eq!(loss.code, IgesLossCode::SourceDialectUnverified.kind());
+    assert!(loss
+        .message
+        .contains("IGES Global version flag 1 names effective specification version"));
+}
 
 #[test]
 fn representation_version_products_and_registry_rows_are_closed_bidirectionally(
@@ -99,7 +126,11 @@ fn global_charges_dialect_unverified(global: &crate::global::ResolvedGlobal) -> 
     let expected = IgesLossCode::SourceDialectUnverified
         .note(String::new())
         .code;
-    dialect_loss(global).is_some_and(|note| note.code == expected)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    dialect_loss(global, &ctx)
+        .unwrap()
+        .is_some_and(|note| note.code == expected)
 }
 
 /// One matrix row: a field-23 declaration and what each representation must

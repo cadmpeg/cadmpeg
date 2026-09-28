@@ -14,6 +14,7 @@
 mod binary;
 mod card;
 mod compressed;
+mod decode_resource;
 mod dialect;
 mod directory;
 mod entities;
