@@ -72,38 +72,40 @@ pub(in super::super) fn resolved_revolution_axis(
 }
 
 pub(in super::super) fn full_turn_revolution_carrier_axis(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     extent: Option<&RevolveExtent>,
-) -> Option<RevolutionAxis> {
+) -> Result<Option<RevolutionAxis>, CodecError> {
     let Some(RevolveExtent::OneSided {
         termination: AngularTermination::Angle { angle },
     }) = extent
     else {
-        return None;
+        return Ok(None);
     };
     let angle = angle.get();
 
     if (angle.abs() - std::f64::consts::TAU).abs() > EPS_FULL_TURN {
-        return None;
+        return Ok(None);
     }
 
     let rows = scan
         .surfaces
         .rows
         .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (!rows.is_empty()).then_some(())?;
+        .filter(|row| row.feature_id == feature_id);
     let mut axes = Vec::new();
     let mut plane_normals = Vec::new();
     let mut sphere_centers = Vec::new();
+    let mut saw_row = false;
     for row in rows {
-        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
-            .then_some(())?;
-        let surfaces = ir
+        saw_row = true;
+        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+            return Ok(None);
+        }
+        let mut surfaces = ir
             .model
             .surfaces
             .iter()
@@ -113,36 +115,43 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
                     "creo:visibgeom:surface#",
                     row.id,
                 )
-            })
-            .collect::<Vec<_>>();
-        let [surface] = surfaces.as_slice() else {
-            return None;
+            });
+        let Some(surface) = surfaces.next().filter(|_| surfaces.next().is_none()) else {
+            return Ok(None);
         };
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
+                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
+                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
+                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
+                ctx.try_reserve_items(&mut plane_normals, 1, "creo full-turn revolution plane normals")?;
                 plane_normals.push(*plane_surface.frame().axis());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
+                ctx.try_reserve_items(&mut sphere_centers, 1, "creo full-turn revolution sphere centers")?;
                 sphere_centers.push(center);
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
+    if !saw_row {
+        return Ok(None);
+    }
     let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
-        return None;
+        return Ok(None);
     };
     let mut direction = unit_length(*first_direction);
     if direction
@@ -170,19 +179,24 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .fold(1.0, f64::max);
     for (candidate_origin, candidate_direction) in rest {
         let candidate_direction = unit_length(*candidate_direction);
-        ((dot(direction, candidate_direction).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT)
-            .then_some(())?;
+        if !((dot(direction, candidate_direction).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT) {
+            return Ok(None);
+        }
         let displacement = [
             candidate_origin.x - origin[0],
             candidate_origin.y - origin[1],
             candidate_origin.z - origin[2],
         ];
         let radial = cross(displacement, direction);
-        (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
+        if !(dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale) {
+            return Ok(None);
+        }
     }
     for normal in plane_normals {
         let normal = unit_length(normal);
-        ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
+        if !((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT) {
+            return Ok(None);
+        }
     }
     for center in sphere_centers {
         let displacement = [
@@ -191,13 +205,106 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             center.z - origin[2],
         ];
         let radial = cross(displacement, direction);
-        (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
+        if !(dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale) {
+            return Ok(None);
+        }
     }
-    Some(RevolutionAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin))?,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction))?,
+    Ok(cadmpeg_ir::features::FinitePoint3::new(Point3::from(origin)).zip(
+        cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(direction)),
+    ).map(|(origin, direction)| RevolutionAxis {
+        origin,
+        direction,
         reference: None,
-    })
+    }))
+}
+
+#[cfg(test)]
+mod full_turn_carrier_allocation_tests {
+    use super::full_turn_revolution_carrier_axis;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    enum ExtraCarrier { None, Plane, Sphere }
+
+    fn fixture(extra: ExtraCarrier) -> (crate::container::ContainerScan<'static>, CadIr, RevolveExtent) {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut ir = CadIr::empty();
+        let mut add = |id, kind, geometry| {
+            scan.surfaces.rows.push(crate::surface::SurfaceRow {
+                id, kind, feature_id: 7, reversed: false,
+                boundary_type: crate::surface::BoundaryType::Code00,
+                next_surface: 0, offset: id as usize,
+            });
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
+                geometry: SurfaceGeometry::Solved(geometry), source_object: None,
+            });
+        };
+        add(31, crate::surface::SurfaceKind::Cylinder,
+            SolvedSurfaceGeometry::Cylinder(cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(2.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0), 1.0,
+            ).expect("cylinder fixture")));
+        match extra {
+            ExtraCarrier::None => {}
+            ExtraCarrier::Plane => add(32, crate::surface::SurfaceKind::Plane,
+                SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ).expect("plane fixture"))),
+            ExtraCarrier::Sphere => add(32, crate::surface::SurfaceKind::TorusOrSphere,
+                SolvedSurfaceGeometry::Sphere(cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    Point3::new(2.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0), 1.0,
+                ).expect("sphere fixture"))),
+        }
+        let extent = RevolveExtent::OneSided {
+            termination: AngularTermination::Angle {
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                    .expect("full-turn extent"),
+            },
+        };
+        (scan, ir, extent)
+    }
+
+    fn assert_limit(extra: ExtraCarrier, limit: u64, operation: &'static str) {
+        let (scan, ir, extent) = fixture(extra);
+        let source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        assert!(full_turn_revolution_carrier_axis(&ctx, &scan, &ir, &source_carriers, 7, Some(&extent))
+            .expect("service profile admits carrier evidence").is_some());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match full_turn_revolution_carrier_axis(&ctx, &scan, &ir, &source_carriers, 7, Some(&extent)) {
+            Err(error) => error, Ok(_) => panic!("one more carrier item exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == operation), "{error:?}");
+    }
+
+    #[test]
+    fn full_turn_carrier_axes_refuse_collection_limit() {
+        assert_limit(ExtraCarrier::None, 0, "creo full-turn revolution carrier axes");
+    }
+
+    #[test]
+    fn full_turn_carrier_plane_normals_refuse_collection_limit() {
+        assert_limit(ExtraCarrier::Plane, 1, "creo full-turn revolution plane normals");
+    }
+
+    #[test]
+    fn full_turn_carrier_sphere_centers_refuse_collection_limit() {
+        assert_limit(ExtraCarrier::Sphere, 1, "creo full-turn revolution sphere centers");
+    }
 }
 
 pub(in super::super) fn revolution_axis_for_transfer(
@@ -213,11 +320,11 @@ pub(in super::super) fn revolution_axis_for_transfer(
     extent: Option<&RevolveExtent>,
 ) -> Result<Option<RevolutionAxis>, cadmpeg_core::CodecError> {
     let (definition, transform) = section;
-    Ok(
-        resolved_revolution_axis(ctx, definition, transform)?.or_else(|| {
-            full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
-        }),
-    )
+    if let Some(axis) = resolved_revolution_axis(ctx, definition, transform)? {
+        Ok(Some(axis))
+    } else {
+        full_turn_revolution_carrier_axis(ctx, scan, ir, source_carriers, feature_id, extent)
+    }
 }
 
 pub(super) fn feature_revolution_axis_for_transfer(
@@ -251,9 +358,11 @@ pub(super) fn feature_revolution_axis_for_transfer(
         )?,
         None => None,
     };
-    Ok(axis.or_else(|| {
-        full_turn_revolution_carrier_axis(scan, ir, source_carriers, feature_id, extent)
-    }))
+    if let Some(axis) = axis {
+        Ok(Some(axis))
+    } else {
+        full_turn_revolution_carrier_axis(ctx, scan, ir, source_carriers, feature_id, extent)
+    }
 }
 
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {

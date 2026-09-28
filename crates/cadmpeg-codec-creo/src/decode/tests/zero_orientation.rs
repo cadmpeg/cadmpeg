@@ -530,8 +530,8 @@ fn full_turn_axis_reads_source_carrier_after_millimeter_admission() {
                 .expect("full turn"),
         },
     };
-    let axis = full_turn_revolution_carrier_axis(&scan, &ir, &source_carriers, 7, Some(&full_turn))
-        .expect("source carrier axis");
+    let axis = crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(ctx, &scan, &ir, &source_carriers, 7, Some(&full_turn)))
+        .expect("axis lookup is admitted").expect("source carrier axis");
     assert_eq!(axis.origin.get().x, 2.0);
 }
 
@@ -605,13 +605,11 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
 
     assert_eq!(
-        full_turn_revolution_carrier_axis(
-            &scan,
-            &ir,
+        crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
+            ctx, &scan, &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-            7,
-            Some(&full_turn)
-        ),
+            7, Some(&full_turn)
+        )).expect("axis lookup is admitted"),
         Some(RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
                 .expect("finite point fixture"),
@@ -672,13 +670,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).expect("valid test fixture"),
         },
     };
-    assert!(full_turn_revolution_carrier_axis(
-        &scan,
-        &ir,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
+        ctx, &scan, &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&partial)
-    )
+    )).expect("partial-turn lookup is admitted")
     .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
@@ -701,13 +698,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         )
         .expect("valid ConeSurface fixture");
     }
-    assert!(full_turn_revolution_carrier_axis(
-        &scan,
-        &ir,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
+        ctx, &scan, &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&full_turn)
-    )
+    )).expect("conflicting-axis lookup is admitted")
     .is_none());
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) =
         &mut ir.model.surfaces[1].geometry
@@ -748,13 +744,12 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         radius,
     )
     .expect("valid SphereSurface fixture");
-    assert!(full_turn_revolution_carrier_axis(
-        &scan,
-        &ir,
+    assert!(crate::decode::with_test_decode_ctx(|ctx| full_turn_revolution_carrier_axis(
+        ctx, &scan, &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&full_turn)
-    )
+    )).expect("conflicting-center lookup is admitted")
     .is_none());
 }
 
