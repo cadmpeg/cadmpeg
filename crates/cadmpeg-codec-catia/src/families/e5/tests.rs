@@ -118,6 +118,28 @@ fn e5_circle_plane_and_edge_results_refuse_before_growth() {
 }
 
 #[test]
+fn e5_carrier_id_creation_refuses_retained_limit() {
+    let file = e5_catpart();
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..16_384 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match CatiaCodec.decode(&mut Cursor::new(&file), &DecodeOptions {
+            policy, ..DecodeOptions::default()
+        }) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => break,
+            Err(error) => panic!("unexpected E5 decode refusal: {error}"),
+        }
+    }
+    for operation in ["catia_e5_payload_id", "catia_e5_surface_id"] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     e5_test_context!(ctx);
     let mut bytes = Vec::new();
