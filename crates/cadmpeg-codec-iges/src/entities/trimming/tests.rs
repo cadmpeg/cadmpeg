@@ -90,6 +90,13 @@ fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn trimmed_topology_identity_copies_refuse_before_retaining_text() {
+    let bytes = bounded_plane_file();
+    assert_trimming_retained_refusal(&bytes, "iges trimming identity copy");
+    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+}
+
+#[test]
 fn trimming_projection_refuses_counted_boundary_vectors() {
     for (bytes, operation) in [
         (bounded_plane_file(), "iges Type141 boundary segments"),
