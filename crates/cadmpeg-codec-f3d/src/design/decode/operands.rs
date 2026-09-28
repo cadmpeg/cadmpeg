@@ -1144,36 +1144,42 @@ pub(crate) fn decode_face_source_groups(
             };
             let Some(source_members) = source_reference_offsets
                 .into_iter()
-                .map(|(offset, source_record_index)| {
-                    let source_byte_offset = records.first_at_or_after(
+                .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
+                    let Some(source_byte_offset) = records.first_at_or_after(
                         carrier_byte_offset.saturating_add(indexed_header::LEN),
                         source_record_index,
-                    )?;
-                    let (source_class_tag, _) =
-                        lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
-                    let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
-                    let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
-                    Some(crate::records::identity::Located {
-                        offset: u64::try_from(offset).ok()?,
+                    ) else { return Ok(None); };
+                    let Some((source_class_tag, _)) =
+                        lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
+                    let Some(member) = parse_extrude_identity_member(ctx, bytes, source_byte_offset).transpose()? else { return Ok(None); };
+                    let Ok(source_byte_offset_u64) = u64::try_from(source_byte_offset) else { return Ok(None); };
+                    let Ok(offset) = u64::try_from(offset) else { return Ok(None); };
+                    let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(source_class_tag) else { return Ok(None); };
+                    let (Ok(asset_id), Ok(context_id)) = (member.asset_id.try_into(), member.context_id.try_into()) else { return Ok(None); };
+                    let Some(persistent_identity) = DesignConstructionPersistentIdentity::try_new(crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
+                        local_id: member.local_id,
+                        local_id_offset: member.local_id_offset,
+                        asset_id,
+                        asset_id_offset: member.asset_id_offset,
+                        context_id,
+                        context_id_offset: member.context_id_offset,
+                        tail_slot_present: member.tail_slot_present,
+                        tail_slot_offset: member.tail_slot_offset,
+                        next_record_index: member.next_record_index,
+                        next_byte_offset: member.next_byte_offset,
+                    }).ok() else { return Ok(None); };
+                    Ok(Some(crate::records::identity::Located {
+                        offset,
                         value: DesignFaceSourceMember {
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
-                            class_tag: crate::design::decode::text::class_tag_from_view(source_class_tag).ok()?,
-                            persistent_identity: DesignConstructionPersistentIdentity::try_new(crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
-                                local_id: member.local_id,
-                                local_id_offset: member.local_id_offset,
-                                asset_id: member.asset_id.try_into().ok()?,
-                                asset_id_offset: member.asset_id_offset,
-                                context_id: member.context_id.try_into().ok()?,
-                                context_id_offset: member.context_id_offset,
-                                tail_slot_present: member.tail_slot_present,
-                                tail_slot_offset: member.tail_slot_offset,
-                                next_record_index: member.next_record_index,
-                                next_byte_offset: member.next_byte_offset,
-                            }).ok()?,
+                            class_tag,
+                            persistent_identity,
                         },
-                    })
+                    }))
                 })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -2990,12 +2996,16 @@ pub(crate) fn decode_construction_operand_identities(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         if let Some(mut identity) =
-            parse_construction_operand_identity(bytes, group, wrapper_header)
+            parse_construction_operand_identity(ctx, bytes, group, wrapper_header).transpose()?
         {
-            identity.id = ids::native_design_construction_operand_identity_id(
-                &entry.name,
-                wrapper_header.byte_offset,
-            );
+            identity.id = design_record_id_charged(
+                ctx, &entry.name, ":design-construction-operand-identity#", wrapper_header.byte_offset,
+                "f3d construction operand identity ID", "f3d construction operand identity ID allocation",
+            )?;
+            ctx.charge_collection_items(1, "f3d construction operand identity output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d construction operand identity output allocation", 0, 1)
+            })?;
             out.push(identity);
         }
     }
@@ -3119,10 +3129,11 @@ pub(crate) fn bind_lost_edge_groups(
 }
 
 fn parse_construction_operand_identity(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
-) -> Option<DesignConstructionOperandIdentity> {
+) -> Option<Result<DesignConstructionOperandIdentity, CodecError>> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
@@ -3148,8 +3159,21 @@ fn parse_construction_operand_identity(
         {
             break;
         }
-        if !seen.insert((current_record_index, current_at)) {
+        if seen.contains(&(current_record_index, current_at)) {
             return None;
+        }
+        if let Err(error) = ctx.charge_collection_items(1, "f3d construction identity wrapper visited keys") {
+            return Some(Err(error));
+        }
+        if seen.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d construction identity wrapper visited allocation", 0, 1)));
+        }
+        seen.insert((current_record_index, current_at));
+        if let Err(error) = ctx.charge_collection_items(1, "f3d construction identity wrappers") {
+            return Some(Err(error));
+        }
+        if wrappers.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d construction identity wrapper allocation", 0, 1)));
         }
         wrappers.push(
             crate::records::topology::construction::DesignIdentityWrapper {
@@ -3161,6 +3185,9 @@ fn parse_construction_operand_identity(
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered_view(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
+        if next_class_tag.len() != 3 {
+            return None;
+        }
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
         current_class_tag = crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?;
         chain_started = true;
@@ -3180,8 +3207,8 @@ fn parse_construction_operand_identity(
     if !chain_started {
         return None;
     }
-    let persistent_identity = parse_extrude_identity_member(bytes, current_at).and_then(|member| {
-        DesignConstructionPersistentIdentity::try_new(
+    let persistent_identity = match parse_extrude_identity_member(ctx, bytes, current_at) {
+        Some(Ok(member)) => DesignConstructionPersistentIdentity::try_new(
             crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                 local_id: member.local_id,
                 local_id_offset: member.local_id_offset,
@@ -3195,8 +3222,10 @@ fn parse_construction_operand_identity(
                 next_byte_offset: member.next_byte_offset,
             },
         )
-        .ok()
-    });
+        .ok(),
+        Some(Err(error)) => return Some(Err(error)),
+        None => None,
+    };
     DesignConstructionOperandIdentity::try_new(
         crate::records::topology::construction::DesignConstructionOperandIdentityDraft {
             id: String::new(),
@@ -3210,6 +3239,7 @@ fn parse_construction_operand_identity(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 fn parse_construction_tracking_path(
@@ -3434,10 +3464,15 @@ pub(crate) fn decode_extrude_selection_members(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut member) = parse_extrude_selection_member(bytes, group, ordinal, header)
-            {
-                member.id =
-                    ids::native_design_extrude_selection_member_id(&entry.name, header.byte_offset);
+            if let Some(mut member) = parse_extrude_selection_member(ctx, bytes, group, ordinal, header).transpose()? {
+                member.id = design_record_id_charged(
+                    ctx, &entry.name, ":design-extrude-selection-member#", header.byte_offset,
+                    "f3d extrude selection member ID", "f3d extrude selection member ID allocation",
+                )?;
+                ctx.charge_collection_items(1, "f3d extrude selection member output")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d extrude selection member output allocation", 0, 1)
+                })?;
                 out.push(member);
             }
         }
@@ -4401,13 +4436,17 @@ pub(crate) fn bind_extrude_selection_identities(
 }
 
 fn parse_extrude_selection_member(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignExtrudeSelectionGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignExtrudeSelectionMember> {
+) -> Option<Result<DesignExtrudeSelectionMember, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let member = parse_extrude_identity_member(bytes, start)?;
+    let member = match parse_extrude_identity_member(ctx, bytes, start)? {
+        Ok(member) => member,
+        Err(error) => return Some(Err(error)),
+    };
     DesignExtrudeSelectionMember::try_new(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
             id: String::new(),
@@ -4432,6 +4471,7 @@ fn parse_extrude_selection_member(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 struct ParsedExtrudeIdentityMember {
@@ -4448,9 +4488,10 @@ struct ParsedExtrudeIdentityMember {
 }
 
 fn parse_extrude_identity_member(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
-) -> Option<ParsedExtrudeIdentityMember> {
+) -> Option<Result<ParsedExtrudeIdentityMember, CodecError>> {
     if bytes.get(start + extrude_member::ZERO_RUN_10..start + extrude_member::LOCAL_IDENTITY)?
         != [0; 10]
     {
@@ -4458,8 +4499,16 @@ fn parse_extrude_identity_member(
     }
     let local_id = View::u64_le_at(bytes, start + extrude_member::LOCAL_IDENTITY)?;
     let (asset_id, after_asset_id) =
-        lp_utf16_bounded(bytes, start + extrude_member::ASSET_UUID_LENGTH, 1..=256)?;
-    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+        match lp_utf16_bounded_charged(ctx, bytes, start + extrude_member::ASSET_UUID_LENGTH, 1..=256) {
+            Ok(Some(value)) => value,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let tail_slot_offset = after_context_id.checked_add(4)?;
     let tail_slot_present = match bytes.get(tail_slot_offset)? {
         0 => false,
@@ -4500,7 +4549,7 @@ fn parse_extrude_identity_member(
     } else {
         return None;
     };
-    Some(ParsedExtrudeIdentityMember {
+    Some(Ok(ParsedExtrudeIdentityMember {
         local_id,
         local_id_offset: u64::try_from(start + extrude_member::LOCAL_IDENTITY).ok()?,
         asset_id,
@@ -4511,7 +4560,7 @@ fn parse_extrude_identity_member(
         tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
         next_record_index,
         next_byte_offset,
-    })
+    }))
 }
 
 struct ParsedEdgeIdentityMember {

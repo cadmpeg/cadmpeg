@@ -864,19 +864,9 @@ native_record_id!(
     "design-dimension-locus-group"
 );
 native_record_id!(
-    /// The native design-extrude-selection-member record key.
-    native_design_extrude_selection_member_id,
-    "design-extrude-selection-member"
-);
-native_record_id!(
     /// The native design-construction-operand-group record key.
     native_design_construction_operand_group_id,
     "design-construction-operand-group"
-);
-native_record_id!(
-    /// The native design-construction-operand-identity record key.
-    native_design_construction_operand_identity_id,
-    "design-construction-operand-identity"
 );
 native_record_id!(
     /// The native design-entity-selection-operand record key.

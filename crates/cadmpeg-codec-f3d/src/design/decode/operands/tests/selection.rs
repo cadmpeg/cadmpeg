@@ -396,8 +396,26 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut bytes, *b"301", 900);
 
-    let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
-        .expect("identity chain");
+    for (limit, operation) in [
+        (0, "f3d construction identity wrapper visited keys"),
+        (1, "f3d construction identity wrappers"),
+    ] {
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &limited_arena, &limited_policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_construction_operand_identity(&limited_ctx, &bytes, &group, &wrapper_header),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+    }
+
+    let identity = parse_construction_operand_identity(&ctx, &bytes, &group, &wrapper_header)
+        .expect("identity chain").unwrap();
     assert_eq!(
         identity
             .wrappers()
@@ -429,8 +447,8 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     expanded_bytes.extend_from_slice(&900u32.to_le_bytes());
     expanded_bytes.extend_from_slice(&[0; 6]);
     indexed_header(&mut expanded_bytes, *b"301", 900);
-    let expanded = parse_construction_operand_identity(&expanded_bytes, &group, &wrapper_header)
-        .expect("identity chain with expanded tail reference");
+    let expanded = parse_construction_operand_identity(&ctx, &expanded_bytes, &group, &wrapper_header)
+        .expect("identity chain with expanded tail reference").unwrap();
     let persistent = expanded
         .persistent_identity()
         .expect("expanded persistent identity leaf");
@@ -792,8 +810,23 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     member_bytes.extend_from_slice(&[0; 5]);
     indexed_header(&mut member_bytes, *b"290", 201);
 
-    let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
-        .expect("fixed Extrude selection member");
+    for retained_limit in [35, 71] {
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_retained_bytes = retained_limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &limited_arena, &limited_policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_extrude_selection_member(&limited_ctx, &member_bytes, &group, 0, &member_record),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+
+    let mut member = parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
+        .expect("fixed Extrude selection member").unwrap();
     assert_eq!(member.local_id, 586);
     assert_eq!(member.next_byte_offset(), 190);
     assert_eq!(member.next_record_index, 201);
@@ -801,14 +834,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert_eq!(member.tail_slot_offset, 185);
 
     member_bytes[185] = 1;
-    let member_with_slot = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
-        .expect("Extrude selection member with present tail slot");
+    let member_with_slot = parse_extrude_selection_member(&ctx, &member_bytes, &group, 0, &member_record)
+        .expect("Extrude selection member with present tail slot").unwrap();
     assert!(member_with_slot.tail_slot_present);
     assert_eq!(member_with_slot.tail_slot_offset, 185);
 
     let terminal_member =
-        parse_extrude_selection_member(&member_bytes[..190], &group, 0, &member_record)
-            .expect("terminal fixed Extrude selection member");
+        parse_extrude_selection_member(&ctx, &member_bytes[..190], &group, 0, &member_record)
+            .expect("terminal fixed Extrude selection member").unwrap();
     assert_eq!(terminal_member.next_byte_offset(), 190);
     assert_eq!(terminal_member.next_record_index, 0);
 
