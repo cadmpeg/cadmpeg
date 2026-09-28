@@ -20,9 +20,28 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1.0e-9;
 const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
+
+fn insert_constraint_index<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !index.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate native keys keep the last record.
+    let _ = index.insert(key, value);
+    Ok(())
+}
 
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.
@@ -41,84 +60,79 @@ pub(crate) fn project_sketch_constraints(
         SketchNativeOperand,
     };
 
-    let planar_sketches = entities
-        .iter()
-        .map(|entity| entity.sketch.clone())
-        .collect::<HashSet<_>>();
-    let sketches = placements
-        .iter()
-        .filter_map(|placement| {
-            let id = neutral_sketch_id(placement);
-            if !planar_sketches.contains(&id) {
-                return None;
-            }
-            Some((
-                (
-                    native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_id.suffix()).ok()?,
-                ),
-                id,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let record_keys_by_native_ref = points
-        .iter()
-        .filter_map(|point| {
-            Some((
-                point.id.as_str(),
-                (native_stream(&point.id)?, point.record_index),
-            ))
-        })
-        .chain(curves.iter().filter_map(|curve| {
-            Some((
-                curve.id.as_str(),
-                (native_stream(&curve.id)?, curve.record_index),
-            ))
-        }))
-        .chain(texts.iter().filter_map(|text| {
-            Some((
-                text.id.as_str(),
-                (native_stream(&text.id)?, text.record_index),
-            ))
-        }))
-        .collect::<HashMap<_, _>>();
-    let projected = entities
-        .iter()
-        .filter_map(|entity| {
-            entity
-                .native_ref
-                .as_deref()
-                .and_then(|native_ref| record_keys_by_native_ref.get(native_ref).copied())
-                .map(|key| (key, entity))
-        })
-        .collect::<HashMap<_, _>>();
-    let point_native_refs = points
-        .iter()
-        .filter_map(|point| {
-            Some((
-                (native_stream(&point.id)?, point.record_index),
-                point.id.as_str(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let curve_native_refs = curves
-        .iter()
-        .filter_map(|curve| {
-            Some((
-                (native_stream(&curve.id)?, curve.record_index),
-                curve.id.as_str(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let text_native_refs = texts
-        .iter()
-        .filter_map(|text| {
-            Some((
-                (native_stream(&text.id)?, text.record_index),
-                text.id.as_str(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches = HashMap::new();
+    for placement in placements {
+        let id = neutral_sketch_id(placement);
+        if let Some(ctx) = ctx {
+            let work = u64::try_from(entities.len())
+                .map_err(|_| ctx.refuse_codec_limit("f3d planar sketch admission scan", 0, 1))?;
+            ctx.charge_work(work, "f3d planar sketch admission scan")?;
+        }
+        if !entities.iter().any(|entity| entity.sketch == id) {
+            continue;
+        }
+        let (Some(scope), Ok(entity_id)) = (
+            native_stream(&placement.id),
+            u32::try_from(placement.entity_id.suffix()),
+        ) else { continue; };
+        insert_constraint_index(ctx, &mut sketches, (scope, entity_id), id,
+            "f3d sketch constraint placement index")?;
+    }
+    let mut record_keys_by_native_ref = HashMap::new();
+    for point in points {
+        if let Some(scope) = native_stream(&point.id) {
+            insert_constraint_index(ctx, &mut record_keys_by_native_ref,
+                point.id.as_str(), (scope, point.record_index),
+                "f3d sketch constraint native record key")?;
+        }
+    }
+    for curve in curves {
+        if let Some(scope) = native_stream(&curve.id) {
+            insert_constraint_index(ctx, &mut record_keys_by_native_ref,
+                curve.id.as_str(), (scope, curve.record_index),
+                "f3d sketch constraint native record key")?;
+        }
+    }
+    for text in texts {
+        if let Some(scope) = native_stream(&text.id) {
+            insert_constraint_index(ctx, &mut record_keys_by_native_ref,
+                text.id.as_str(), (scope, text.record_index),
+                "f3d sketch constraint native record key")?;
+        }
+    }
+    let mut projected = HashMap::new();
+    for entity in entities {
+        if let Some(key) = entity.native_ref.as_deref()
+            .and_then(|native_ref| record_keys_by_native_ref.get(native_ref).copied())
+        {
+            insert_constraint_index(ctx, &mut projected, key, entity,
+                "f3d sketch constraint projected entity index")?;
+        }
+    }
+    let mut point_native_refs = HashMap::new();
+    for point in points {
+        if let Some(scope) = native_stream(&point.id) {
+            insert_constraint_index(ctx, &mut point_native_refs,
+                (scope, point.record_index), point.id.as_str(),
+                "f3d sketch constraint point reference index")?;
+        }
+    }
+    let mut curve_native_refs = HashMap::new();
+    for curve in curves {
+        if let Some(scope) = native_stream(&curve.id) {
+            insert_constraint_index(ctx, &mut curve_native_refs,
+                (scope, curve.record_index), curve.id.as_str(),
+                "f3d sketch constraint curve reference index")?;
+        }
+    }
+    let mut text_native_refs = HashMap::new();
+    for text in texts {
+        if let Some(scope) = native_stream(&text.id) {
+            insert_constraint_index(ctx, &mut text_native_refs,
+                (scope, text.record_index), text.id.as_str(),
+                "f3d sketch constraint text reference index")?;
+        }
+    }
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
                           record_index: u32| {
@@ -1004,6 +1018,8 @@ mod tests {
         exact_circular_pattern, exact_rectangular_pattern, exact_text_relation, scalar_close,
         translated_sketch_geometry_matches, RectangularPatternDistanceForm,
     };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
     use crate::records::{
         parameters::DesignParameter,
         sketch_relations::{
@@ -1017,6 +1033,30 @@ mod tests {
         SketchId,
     };
     use cadmpeg_test_support::wire;
+
+    #[test]
+    fn constraint_index_refuses_each_collection_growth() {
+        for operation in [
+            "f3d sketch constraint placement index",
+            "f3d sketch constraint native record key",
+            "f3d sketch constraint projected entity index",
+            "f3d sketch constraint point reference index",
+            "f3d sketch constraint curve reference index",
+            "f3d sketch constraint text reference index",
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = std::collections::HashMap::new();
+            assert!(matches!(
+                super::insert_constraint_index(Some(&ctx), &mut index, "input-key", 1, operation),
+                Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
+            ));
+            assert!(index.is_empty());
+        }
+    }
+
     #[test]
     fn rectangular_pattern_instances_require_exact_translated_geometry() {
         let source = SketchGeometry::try_from(SketchGeometryDefinition::Line {
