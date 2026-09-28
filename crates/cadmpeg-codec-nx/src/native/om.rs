@@ -4484,6 +4484,36 @@ fn retained_om_index_id(
     Ok(id)
 }
 
+fn retained_om_three_number_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    first: usize,
+    middle: &'static str,
+    second: usize,
+    suffix: &'static str,
+    third: usize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    use std::fmt::Write;
+
+    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let length = prefix.len()
+        .checked_add(digits(first))
+        .and_then(|length| length.checked_add(middle.len()))
+        .and_then(|length| length.checked_add(digits(second)))
+        .and_then(|length| length.checked_add(suffix.len()))
+        .and_then(|length| length.checked_add(digits(third)))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "{prefix}{first}{middle}{second}{suffix}{third}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
 fn copy_om_retained_text(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -5362,19 +5392,29 @@ pub(super) fn string_values(
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (record_ordinal, record) in records.iter().enumerate() {
             for (value_ordinal, value) in record.string_values(ctx)?.into_iter().enumerate() {
-                let record_id =
-                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                let record_id = retained_om_index_id(
+                    ctx, "nx:om-record-directory-", section_ordinal, ":entry#",
+                    cadmpeg_core::decode::u64_from_index(record_ordinal), "NX string value record id",
+                )?;
+                let value_ordinal = u32::try_from(value_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX string value ordinal", 0, 1))?;
+                let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
+                let text = copy_om_retained_text(ctx, value.value.as_str(), "NX string value text")?;
+                let text = PrintableString::new(text)
+                    .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
+                ctx.charge_collection_items(1, "NX native string values")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<StringValue>()), "retain NX native string value")?;
+                output.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX native string values", 0, 1))?;
                 output.push(StringValue {
-                    id: format!(
-                        "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
-                        value.offset
-                    ),
+                    id: retained_om_three_number_id(ctx, "nx:om-string-values-", section_ordinal, "-", record_ordinal, ":value#", value.offset, "NX string value id")?,
                     record: record_id,
                     object_id: record.object_id.0,
-                    ordinal: value_ordinal as u32,
-                    value: value.value.into_owned(),
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + value.offset as u64,
+                    ordinal: value_ordinal,
+                    value: text,
+                    source_entry: copy_om_retained_text(ctx, &entry.name, "NX string value source entry")?,
+                    source_offset,
                 });
             }
         }
@@ -5401,29 +5441,38 @@ pub(super) fn object_references(
                 .into_iter()
                 .enumerate()
             {
-                let record_id =
-                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                let record_id = retained_om_index_id(
+                    ctx, "nx:om-record-directory-", section_ordinal, ":entry#",
+                    cadmpeg_core::decode::u64_from_index(record_ordinal), "NX object reference record id",
+                )?;
+                let reference_ordinal = u32::try_from(reference_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX object reference ordinal", 0, 1))?;
+                let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX object reference source offset", 0, 1))?;
+                let reference_value = match reference.value {
+                    RecordReference::Direct(value) => RecordReference::Direct(value),
+                    RecordReference::RecordOrdinal16 { ordinal, .. } => {
+                        RecordReference::RecordOrdinal16 {
+                            ordinal,
+                            target: retained_om_index_id(
+                                ctx, "nx:om-record-directory-", section_ordinal,
+                                ":entry#", u64::from(ordinal), "NX object reference target record",
+                            )?,
+                        }
+                    }
+                };
+                ctx.charge_collection_items(1, "NX native object references")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectReference>()), "retain NX native object reference")?;
+                output.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX native object references", 0, 1))?;
                 output.push(ObjectReference {
-                    id: format!(
-                        "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
-                        reference.offset
-                    ),
+                    id: retained_om_three_number_id(ctx, "nx:om-references-", section_ordinal, "-", record_ordinal, ":reference#", reference.offset, "NX object reference id")?,
                     record: record_id,
                     object_id: record.object_id.0,
-                    ordinal: reference_ordinal as u32,
-                    reference: match reference.value {
-                        RecordReference::Direct(value) => RecordReference::Direct(value),
-                        RecordReference::RecordOrdinal16 { ordinal, .. } => {
-                            RecordReference::RecordOrdinal16 {
-                                ordinal,
-                                target: format!(
-                                    "nx:om-record-directory-{section_ordinal}:entry#{ordinal}"
-                                ),
-                            }
-                        }
-                    },
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + reference.offset as u64,
+                    ordinal: reference_ordinal,
+                    reference: reference_value,
+                    source_entry: copy_om_retained_text(ctx, &entry.name, "NX object reference source entry")?,
+                    source_offset,
                 });
             }
         }
