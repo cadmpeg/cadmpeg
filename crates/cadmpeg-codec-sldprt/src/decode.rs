@@ -2325,11 +2325,7 @@ fn try_decode_brep(
         }
         let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
         ctx.reserve_collection_vec(&mut decoded_sites, 1, "collect decoded SLDPRT sites")?;
-        decoded_sites.push((
-            copy_retained_string(ctx, site, "retain SLDPRT decoded site key")?,
-            first,
-            decoded,
-        ));
+        decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
         return Ok(None);
