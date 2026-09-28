@@ -3750,7 +3750,7 @@ fn merge_standard_limit_curves_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(ctx, data, records)? {
         for second_limit in [false, true] {
             let Some(geometry) = crate::families::a5a8::records::rolling_ball_limit_curve(
                 ctx,

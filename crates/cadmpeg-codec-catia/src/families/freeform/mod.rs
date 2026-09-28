@@ -492,8 +492,15 @@ pub(super) fn try_decode_freeform_surfaces(
             );
         let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
         let b2_spatial_circle_count = b2_spatial_circles.len();
-        if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
-            && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
+        let no_a8_jets = if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
+            match crate::families::a5a8::records::a8_freeform_curves(ctx, &scan.data) {
+                Ok(jets) => jets.is_empty(),
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            false
+        };
+        if no_a8_jets
             && b2_nurbs_curves.is_empty()
             && a5_nurbs_curves.is_empty()
             && b2_spatial_circles.is_empty()
@@ -1514,7 +1521,9 @@ pub(super) fn append_freeform_surface_pools(
         });
     }
 
-    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(
+        admission.context(), data, records,
+    )? {
         for second_limit in [false, true] {
             let Some(curve) = crate::families::a5a8::records::rolling_ball_limit_curve(
                 admission.context(),
@@ -3081,8 +3090,10 @@ fn append_a8_rolling_ball_pools(
     data: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
-        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+    for jet in crate::families::a5a8::records::a8_freeform_curves(admission.context(), data)? {
+        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(
+            admission.context(), &jet,
+        )?
         else {
             continue;
         };
@@ -3120,7 +3131,7 @@ fn append_a8_rolling_ball_pools(
             format!(
                 "object_id:{:08x}:multiplicities:{:?}",
                 jet.object_id,
-                jet.multiplicities()
+                jet.multiplicities(admission.context())?
             ),
             Exactness::ByteExact,
         );

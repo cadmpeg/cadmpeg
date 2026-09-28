@@ -31,6 +31,18 @@ use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+fn parsed_a5_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5FreeformCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_freeform_curves(ctx, data).expect("service decode")
+    })
+}
+
+fn parsed_a8_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8FreeformCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_freeform_curves(ctx, data).expect("service decode")
+    })
+}
+
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
@@ -1295,7 +1307,7 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     for header_token in [5, 9, 13, 29, 17] {
         let mut bytes = a5_freeform_curve_stream();
         bytes[7] = header_token;
-        let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
+        let curves = parsed_a5_freeform_curves(&bytes);
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[0].header_token, u32::from(header_token));
         assert_eq!(crate::test_support::with_service_context(|ctx| curves[0].knots(ctx)).expect("service resource budget"), vec![0.0, 1.0]);
@@ -1304,11 +1316,33 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 
     let mut wrong_degree = a5_freeform_curve_stream();
     wrong_degree[9] = 17;
-    assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
+    assert!(parsed_a5_freeform_curves(&wrong_degree).is_empty());
 
     let mut invalid_header_token = a5_freeform_curve_stream();
     invalid_header_token[7] = 18;
-    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
+    assert!(parsed_a5_freeform_curves(&invalid_header_token).is_empty());
+}
+
+#[test]
+fn a5_freeform_sites_refuse_collection_limit_before_materialization() {
+    assert_a5_freeform_collection_refusal(1, "catia_a5_freeform_sites");
+}
+
+#[test]
+fn a5_freeform_curves_refuse_collection_limit_before_retention() {
+    assert_a5_freeform_collection_refusal(2, "catia_a5_freeform_curves");
+}
+
+fn assert_a5_freeform_collection_refusal(limit: u64, operation: &'static str) {
+    let bytes = a5_freeform_curve_stream();
+    let result = crate::test_support::with_collection_limit(limit, |ctx| {
+        crate::families::a5a8::records::a5_freeform_curves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == operation
+    ));
+    assert_eq!(parsed_a5_freeform_curves(&bytes).len(), 1);
 }
 
 #[test]
@@ -1320,7 +1354,7 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+    let [curve] = parsed_a5_freeform_curves(&bytes)
         .try_into()
         .expect("one compact-marker rolling-ball jet");
     assert_eq!(curve.header_token, 17);
@@ -1328,7 +1362,7 @@ fn a5_curve_parser_accepts_compact_array_marker_values() {
 
     let mut invalid_marker = bytes;
     invalid_marker[12] = 0x12;
-    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_marker).is_empty());
+    assert!(parsed_a5_freeform_curves(&invalid_marker).is_empty());
 }
 
 #[test]
@@ -1338,7 +1372,7 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
     let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+    let [curve] = parsed_a5_freeform_curves(&bytes)
         .try_into()
         .expect("one rolling-ball jet");
     assert_eq!(crate::test_support::with_service_context(|ctx| curve.knots(ctx)).expect("service resource budget"), [0.0, 1.0]);
@@ -1347,7 +1381,7 @@ fn a5_curve_parser_accepts_frame_bounded_continuation() {
 
 #[test]
 fn a5_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = crate::families::a5a8::records::a5_freeform_curves(
+    let curves = parsed_a5_freeform_curves(
         &a5_freeform_curve_stream_with_count(4097),
     );
     assert_eq!(curves.len(), 1);
@@ -1361,7 +1395,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
             .expect("fixture fits input limit");
-    let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
+    let [jet] = parsed_a5_freeform_curves(&a5_freeform_curve_stream())
         .try_into()
         .expect("one rolling-ball jet");
     for second_limit in [false, true] {
@@ -1398,7 +1432,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
 
 #[test]
 fn a5_rolling_ball_limit_refuses_jet_and_pole_allocations() {
-    let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
+    let [jet] = parsed_a5_freeform_curves(&a5_freeform_curve_stream())
         .try_into()
         .expect("one rolling-ball jet");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
@@ -1450,7 +1484,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let mut a5 = a5_freeform_curve_stream();
         a5[28..36].copy_from_slice(&le_f64(radius));
         a5[60..68].copy_from_slice(&le_f64(radius));
-        let [curve] = crate::families::a5a8::records::a5_freeform_curves(&a5)
+        let [curve] = parsed_a5_freeform_curves(&a5)
             .try_into()
             .expect("one consolidated rolling-ball jet");
         assert_eq!(curve.sites[0].site.radius(), radius);
@@ -1458,7 +1492,7 @@ fn rolling_ball_parsers_accept_finite_nonzero_radii() {
         let mut a8 = a8_freeform_curve_stream();
         a8[36..44].copy_from_slice(&le_f64(radius));
         a8[68..76].copy_from_slice(&le_f64(radius));
-        let [curve] = crate::families::a5a8::records::a8_freeform_curves(&a8)
+        let [curve] = parsed_a8_freeform_curves(&a8)
             .try_into()
             .expect("one common-form rolling-ball jet");
         assert_eq!(curve.sites[0].site.radius(), radius);
@@ -1472,12 +1506,12 @@ fn rolling_ball_parsers_reject_scale_relative_radius_disagreement() {
     bytes[28..36].copy_from_slice(&le_f64(tiny));
     bytes[60..68].copy_from_slice(&le_f64(2.0 * tiny));
     bytes[100..108].copy_from_slice(&le_f64(std::f64::consts::PI));
-    assert!(crate::families::a5a8::records::a5_freeform_curves(&bytes).is_empty());
+    assert!(parsed_a5_freeform_curves(&bytes).is_empty());
 }
 
 #[test]
 fn consolidated_curve_parser_reads_width2_frame() {
-    let curves = crate::families::a5a8::records::a5_freeform_curves(&a6_freeform_curve_stream());
+    let curves = parsed_a5_freeform_curves(&a6_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(crate::test_support::with_service_context(|ctx| curves[0].knots(ctx)).expect("service resource budget").len(), 2);
     assert_eq!(curves[0].sites[1].site.radius(), 2.0);
@@ -1572,27 +1606,73 @@ fn guide_curve_parser_rejects_nonfinite_jet_channels() {
 
 #[test]
 fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
-    let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
+    let curves = parsed_a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].object_id, 0x1234_5678);
-    assert_eq!(curves[0].multiplicities(), vec![6, 6]);
+    assert_eq!(crate::test_support::with_service_context(|ctx| curves[0].multiplicities(ctx).expect("service decode")), vec![6, 6]);
     assert_eq!(curves[0].sites[1].site.radius(), 2.0);
 
     let mut repeated_knot = a8_freeform_curve_stream();
     repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a8_freeform_curves(&repeated_knot).is_empty());
+    assert!(parsed_a8_freeform_curves(&repeated_knot).is_empty());
 
     let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
     invalid_endpoint_multiplicity[34] = 21;
     assert!(
-        crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
+        parsed_a8_freeform_curves(&invalid_endpoint_multiplicity)
             .is_empty()
     );
 }
 
 #[test]
+fn a8_freeform_sites_refuse_collection_limit_before_materialization() {
+    assert_a8_freeform_collection_refusal(1, "catia_a8_freeform_sites");
+}
+
+#[test]
+fn a8_freeform_curves_refuse_collection_limit_before_retention() {
+    assert_a8_freeform_collection_refusal(2, "catia_a8_freeform_curves");
+}
+
+fn assert_a8_freeform_collection_refusal(limit: u64, operation: &'static str) {
+    let bytes = a8_freeform_curve_stream();
+    let result = crate::test_support::with_collection_limit(limit, |ctx| {
+        crate::families::a5a8::records::a8_freeform_curves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == operation
+    ));
+    assert_eq!(parsed_a8_freeform_curves(&bytes).len(), 1);
+}
+
+#[test]
+fn a8_jet_stations_refuse_collection_limit_before_materialization() {
+    let jet = parsed_a8_freeform_curves(&a8_freeform_curve_stream()).remove(0);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)
+    };
+    assert!(matches!(crate::test_support::with_collection_limit(1, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_a8_jet_stations"
+    ));
+    assert!(crate::test_support::with_service_context(run).expect("service decode").is_some());
+}
+
+#[test]
+fn a8_jet_multiplicities_refuse_collection_limit_before_materialization() {
+    let jet = parsed_a8_freeform_curves(&a8_freeform_curve_stream()).remove(0);
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.multiplicities(ctx);
+    assert!(matches!(crate::test_support::with_collection_limit(1, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_a8_jet_multiplicities"
+    ));
+    assert_eq!(crate::test_support::with_service_context(run).expect("service decode"), vec![6, 6]);
+}
+
+#[test]
 fn a8_curve_parser_accepts_frame_bounded_site_count() {
-    let curves = crate::families::a5a8::records::a8_freeform_curves(
+    let curves = parsed_a8_freeform_curves(
         &a8_freeform_curve_stream_with_count(8193),
     );
     assert_eq!(curves.len(), 1);
@@ -1605,7 +1685,7 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
         let mut bytes = a8_freeform_curve_stream();
         bytes[1] = flag;
         assert_eq!(
-            crate::families::a5a8::records::a8_freeform_curves(&bytes).len(),
+            parsed_a8_freeform_curves(&bytes).len(),
             1,
             "flag {flag:#04x}"
         );
@@ -1613,16 +1693,18 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8_freeform_curve_stream();
     malformed[1] = 0x23;
-    assert!(crate::families::a5a8::records::a8_freeform_curves(&malformed).is_empty());
+    assert!(parsed_a8_freeform_curves(&malformed).is_empty());
 }
 
 #[test]
 fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let freeform = a5_freeform_curve_stream();
     let records = crate::wire::records::consolidated_records(&freeform);
-    let one_shot = crate::families::a5a8::records::a5_freeform_curves(&freeform);
-    let indexed =
-        crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records);
+    let one_shot = parsed_a5_freeform_curves(&freeform);
+    let indexed = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_freeform_curves_from_records(ctx, &freeform, &records)
+            .expect("service decode")
+    });
     assert_eq!(one_shot.len(), indexed.len());
     for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
         assert_eq!(one_shot.pos, indexed.pos);

@@ -1066,8 +1066,8 @@ fn parse_from_records_with_class21(
             );
         }
     }
-    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
-        if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+    for jet in crate::families::a5a8::records::a8_freeform_curves(ctx, bytes)? {
+        if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
         {
             merge_surface_candidate(
                 &mut surfaces,
@@ -1930,8 +1930,8 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             .or_insert(Some(record));
     }
     let mut rolling = HashMap::<u32, Option<B5Surface>>::new();
-    for jet in crate::families::a5a8::records::a8_freeform_curves(bytes) {
-        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
+    for jet in crate::families::a5a8::records::a8_freeform_curves(ctx, bytes)? {
+        let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
         else {
             continue;
         };
