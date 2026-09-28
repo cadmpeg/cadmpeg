@@ -7,7 +7,7 @@ use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use super::work_geometry::ScopePlacementFrame;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
@@ -457,14 +457,10 @@ fn exact_assembly_axial_selector(
     cursor = cursor.checked_add(4)?;
     let selector_asset_at = cursor;
     let (selector_asset_id, after_selector_asset_id) =
-        lp_utf16_bounded(bytes, selector_asset_at, 36..=36)?;
+        fixed_relaxed_guid_text(bytes, selector_asset_at)?;
     let selector_context_at = after_selector_asset_id;
     let (selector_context_id, after_selector_context_id) =
-        lp_utf16_bounded(bytes, selector_context_at, 36..=36)?;
-    let selector_asset_id =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
-    let selector_context_id =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(selector_context_id).ok()?;
+        fixed_relaxed_guid_text(bytes, selector_context_at)?;
     if View::u32_le_at(bytes, after_selector_context_id)? != 2
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
         || View::u32_le_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
@@ -513,9 +509,7 @@ fn exact_assembly_axial_selector(
     }
     let occurrence_role_at = role_at.checked_add(axial_role::ROLE_CODE_UNIT_COUNT)?;
     let (occurrence_role, after_occurrence_role) =
-        lp_utf16_bounded(bytes, occurrence_role_at, 36..=36)?;
-    let occurrence_role =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_role).ok()?;
+        fixed_relaxed_guid_text(bytes, occurrence_role_at)?;
     if after_occurrence_role > limit {
         return None;
     }
