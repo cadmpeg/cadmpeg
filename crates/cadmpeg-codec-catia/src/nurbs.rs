@@ -70,10 +70,12 @@ impl LaneRefusals {
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         error: &cadmpeg_ir::annotations::AnnotationIdentityCollision,
-    ) {
-        self.notes
-            .push(crate::loss::CatiaLossCode::SourceAnnotationCollision.note(error.to_string()));
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(ctx, &mut self.notes,
+            crate::loss::CatiaLossCode::SourceAnnotationCollision,
+            format_args!("{error}"), "catia_annotation_collision_loss")
     }
 
     /// Record one refusal against the record that stated it.
@@ -815,6 +817,30 @@ mod tests {
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
     const DOMAIN_ROUNDING: f64 = 1.0e-12;
+
+    #[test]
+    fn annotation_collision_note_refuses_retained_and_collection_limits() {
+        let collision = cadmpeg_ir::annotations::AnnotationIdentityCollision {
+            id: "catia:test:curve#duplicate".to_string(),
+        };
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_collision_loss"));
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_annotation_collision(ctx, &collision)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_collision_loss"));
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_annotation_collision(ctx, &collision)?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        }).expect("service profile admits collision note");
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].message, collision.to_string());
+    }
 
     #[test]
     // These checked constructors must accept the explicit test fixtures.

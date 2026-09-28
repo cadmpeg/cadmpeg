@@ -2160,7 +2160,7 @@ fn try_decode_standard_populations(
             output.annotations,
             &scope,
         ) {
-            refusal.push_annotation_collision(&error);
+            refusal.push_annotation_collision(ctx, &error)?;
             return Ok(None);
         }
         if output.report.transfer.geometry_transferred() {
