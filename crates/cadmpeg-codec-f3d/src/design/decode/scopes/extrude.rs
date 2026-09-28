@@ -6,8 +6,7 @@ use super::legacy_class_415;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::fixed_guid_end;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_scalar_54;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_70 as class_296_legacy_scalar_70;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
@@ -1492,15 +1491,13 @@ fn exact_shifted_reference_aware_extrude_prologue(
     if !ordered_tail_references_valid || !trailing_reference_valid || !tail_fixed_valid {
         return None;
     }
-    let (guid, guid_end) =
-        lp_utf16_bounded(bytes, start.checked_add(guid_prefix_offset)?, 36..=36)?;
+    let guid_end = fixed_guid_end(bytes, start.checked_add(guid_prefix_offset)?)?;
     let expected_guid_end = if tail_form == TailForm::SymmetricThroughAll {
         start.checked_add(guid_prefix_offset)?.checked_add(76)?
     } else {
         second_side_extent_offset.checked_add(1)?
     };
-    if !is_guid_relaxed(&guid)
-        || guid_end != expected_guid_end
+    if guid_end != expected_guid_end
         || bytes.get(guid_end..reference_count_at)? != [0; 3]
     {
         return None;
@@ -1822,11 +1819,9 @@ fn exact_class_338_two_sided_distance_extrude_prologue(
     {
         return None;
     }
-    let (guid, guid_end) =
-        lp_utf16_bounded(bytes, start.checked_add(class_338_legacy::GUID)?, 36..=36)?;
+    let guid_end = fixed_guid_end(bytes, start.checked_add(class_338_legacy::GUID)?)?;
     let expected_guid_end = start.checked_add(279)?;
-    if !is_guid_relaxed(&guid)
-        || guid_end != expected_guid_end
+    if guid_end != expected_guid_end
         || bytes.get(guid_end..reference_count_at)? != [0; 3]
     {
         return None;

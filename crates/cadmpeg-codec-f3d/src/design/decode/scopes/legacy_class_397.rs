@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse the legacy class-397 symmetric-distance Extrude grammar.
 
-use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
+use crate::bytes::f64s_at;
+use crate::design::decode::text::fixed_guid_end;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
 use crate::records::feature::extrude::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
@@ -159,10 +160,9 @@ pub(super) fn exact_symmetric_extrude_prologue(
     }
 
     let guid_offset = start.checked_add(symmetric::GUID)?;
-    let (guid, guid_end) = lp_utf16_bounded(bytes, guid_offset, 36..=36)?;
+    let guid_end = fixed_guid_end(bytes, guid_offset)?;
     let reference_count_offset = start.checked_add(symmetric::REFERENCE_COUNT)?;
-    if !is_guid_relaxed(&guid)
-        || guid_end != guid_offset.checked_add(76)?
+    if guid_end != guid_offset.checked_add(76)?
         || bytes.get(guid_end..reference_count_offset)? != [0; 3]
         || View::u32_le_at(bytes, reference_count_offset)? != symmetric::REFERENCE_COUNT_VALUE
     {
