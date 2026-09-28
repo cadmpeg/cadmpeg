@@ -13,6 +13,17 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
+    let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
+    let bytes = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
+    crate::test_support::assert_retained_refusal_at(
+        &bytes, "FCStd unsafe entry name diagnostic", |ctx| {
+            super::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).map(|_| ())
+        },
+    );
+}
+
+#[test]
 fn document_root_error_refuses_at_retained_limit() {
     let bytes = b"<UnexpectedRoot SchemaVersion=\"4\"/>";
     crate::test_support::assert_retained_refusal_at(&[], "FCStd document root error", |ctx| {
