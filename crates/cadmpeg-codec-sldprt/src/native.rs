@@ -344,18 +344,6 @@ impl SldprtNative {
                 }
             };
         }
-        macro_rules! admit_index {
-            ($count:expr, $operation:literal) => {
-                if let NativeAdmission::Decode(ctx) = admission {
-                    ctx.charge_collection_items(
-                        u64::try_from($count).map_err(|_| {
-                            ctx.refuse_codec_limit($operation, u64::MAX - 1, u64::MAX)
-                        })?,
-                        $operation,
-                    )?;
-                }
-            };
-        }
         let mut native = Self {
             feature_histories: read_arena!("feature_histories"),
             feature_input_lanes: read_arena!("feature_input_lanes"),
@@ -441,12 +429,13 @@ impl SldprtNative {
             ),
             )?);
         }
-        admit_index!(entity_wires.len(), "load SLDPRT sketch entities");
         let mut entities = Vec::new();
         if let Some(ctx) = admission.context() {
-            entities.try_reserve(entity_wires.len()).map_err(|_| {
-                ctx.refuse_codec_limit("load SLDPRT sketch entities", u64::MAX - 1, u64::MAX)
-            })?;
+            ctx.reserve_collection_vec(
+                &mut entities,
+                entity_wires.len(),
+                "load SLDPRT sketch entities",
+            )?;
         }
         for wire in entity_wires {
             let Some(payload) = lane_payloads.get(wire.parent.as_str()).copied() else {
