@@ -126,3 +126,167 @@ fn fillet_full_round_entity_refuses_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity"));
 }
+
+fn add_radius_parameter(
+    native: &mut crate::native::F3dNative,
+    record_index: u32,
+    source_kind: &str,
+    value: f64,
+    unit: Option<&str>,
+) {
+    use crate::records::{
+        identity::RecordedValue,
+        parameters::{
+            DesignParameter, DesignParameterDraft, DesignParameterOwner,
+            DesignParameterOwnerWire, DesignParameterSource,
+        },
+    };
+    let owner_index = record_index - 1;
+    let base = 10_000 + u64::from(record_index) * 100;
+    let parameter = DesignParameter::try_from(DesignParameterDraft {
+        id: format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}"),
+        byte_offset: base,
+        class_tag: "305".to_owned().try_into().unwrap(),
+        record_index,
+        source_ordinal: 0,
+        source: DesignParameterSource::new(source_kind.to_owned(), Some(owner_index), None).unwrap(),
+        expression: format!("{value}"),
+        expression_offset: base + 12,
+        source_kind_offset: base + 32,
+        unit: unit.map(|unit| RecordedValue { value: unit.into(), offset: base + 52 }),
+        name: source_kind.into(),
+        name_offset: base + 62,
+        evaluated_value: value,
+        evaluated_value_offset: base + 72,
+    }).unwrap();
+    let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
+        id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{owner_index}"),
+        byte_offset: base - 99,
+        frame_length: 99,
+        class_tag: "268".to_owned().try_into().unwrap(),
+        record_index: owner_index,
+        scope_record_index: 10,
+        local_ordinal: 0,
+        evaluated_value: value,
+        evaluated_value_offset: base - 59,
+        parameter_record_index: record_index,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: record_index + 1,
+    }).unwrap();
+    native.design_parameters.push(parameter);
+    native.design_parameter_owners.push(owner);
+}
+
+fn radius_native(valid: bool) -> crate::native::F3dNative {
+    use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
+    let mut native = native();
+    if valid {
+        add_radius_parameter(&mut native, 201, "Radius", 2.0, Some("mm"));
+    }
+    native.design_fillet_radius_groups.push(DesignFilletRadiusGroup {
+        id: "f3d:Design/BulkStream.dat:design-fillet-radius-group#100".into(),
+        scope_record_index: 10,
+        group_ordinal: 0,
+        group_record_index: 100,
+        edge_operand_record_indices: vec![101],
+        law: DesignFilletRadiusLaw::Constant { radius_parameter_record_index: 201 },
+        tangency_weight_parameter_record_index: None,
+    });
+    native
+}
+
+fn radius_error(valid: bool, max_items: u64, max_retained: u64)
+    -> cadmpeg_core::CodecError
+{
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = radius_native(valid);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_fillet_radius_groups(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn fillet_radius_record_index_refuses_collection_limit() {
+    let error = radius_error(true, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Fillet radius group records"));
+}
+
+#[test]
+fn fillet_radius_slot_refuses_collection_limit() {
+    let error = radius_error(true, 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D Fillet radius group slots"));
+}
+
+#[test]
+fn fillet_radius_invalid_finding_refuses_collection_limit() {
+    let error = radius_error(false, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn fillet_radius_invalid_entity_refuses_retained_limit() {
+    let error = radius_error(false, u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+#[test]
+fn fillet_radius_valid_assignment_has_no_finding() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = radius_native(true);
+    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let mut findings = Vec::new();
+    super::super::validate_fillet_radius_groups(&ctx, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}
+
+fn variable_radius_native(increasing: bool) -> crate::native::F3dNative {
+    use crate::records::topology::fillet::{DesignFilletMidpoint, DesignFilletRadiusLaw};
+    let mut native = radius_native(true);
+    for (index, kind, value, unit) in [
+        (202, "StartRadius", 0.0, Some("mm")),
+        (203, "EndRadius", 0.0, Some("mm")),
+        (204, "MidRadius", 1.0, Some("mm")),
+        (205, "MidParams", 0.25, None),
+        (206, "MidRadius", 1.0, Some("mm")),
+        (207, "MidParams", if increasing { 0.75 } else { 0.1 }, None),
+    ] {
+        add_radius_parameter(&mut native, index, kind, value, unit);
+    }
+    native.design_fillet_radius_groups[0].law = DesignFilletRadiusLaw::Variable {
+        start_radius_parameter_record_index: 202,
+        end_radius_parameter_record_index: 203,
+        middle: vec![
+            DesignFilletMidpoint { radius_parameter_record_index: 204, parameter_record_index: 205 },
+            DesignFilletMidpoint { radius_parameter_record_index: 206, parameter_record_index: 207 },
+        ],
+    };
+    native
+}
+
+#[test]
+fn fillet_variable_radius_midpoints_keep_order_validation() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let valid_native = variable_radius_native(true);
+    let valid_ctx = super::super::Ctx::new(&ir, &valid_native, None).unwrap();
+    let mut valid_findings = Vec::new();
+    super::super::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings).unwrap();
+    assert!(valid_findings.is_empty());
+
+    let invalid_native = variable_radius_native(false);
+    let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, None).unwrap();
+    let mut invalid_findings = Vec::new();
+    super::super::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings).unwrap();
+    assert!(invalid_findings.iter().any(|finding|
+        finding.message == "Fusion Design Fillet radius group has an invalid parameter assignment"));
+}
