@@ -715,14 +715,14 @@ pub(in super::super) fn arcs_intersect(
     if distance <= tolerance {
         return false;
     }
-    cadmpeg_ir::math::planar::circle_intersections(
+    cadmpeg_ir::math::planar::circle_intersections_fixed(
         Point2::new(first.0[0], first.0[1]),
         first.1,
         Point2::new(second.0[0], second.0[1]),
         second.1,
     )
     .is_some_and(|points| {
-        points.into_iter().any(|point| {
+        points.into_iter().flatten().any(|point| {
             point_on_profile_arc([point.u, point.v], first, tolerance)
                 && point_on_profile_arc([point.u, point.v], second, tolerance)
         })

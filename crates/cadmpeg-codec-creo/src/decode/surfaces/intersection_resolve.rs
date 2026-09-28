@@ -32,22 +32,21 @@ const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 pub(super) fn multi_component_intersection_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Vec<(CurveGeometry, &'static str)> {
-    let mut candidates = Vec::new();
-    candidates.extend(parallel_plane_cylinder_generator_candidates(first, second));
-    candidates.extend(parallel_cylinder_generator_candidates(first, second));
-    candidates.extend(coaxial_cylinder_sphere_circle_candidates(first, second));
-    candidates.extend(coaxial_cone_cylinder_circle_candidates(first, second));
-    candidates.extend(coaxial_cones_section_candidates(first, second));
-    candidates.extend(apex_plane_cone_generator_candidates(first, second));
-    candidates.extend(coaxial_cone_sphere_circle_candidates(first, second));
-    candidates.extend(coaxial_cone_torus_circle_candidates(first, second));
-    candidates.extend(coaxial_cylinder_torus_circle_candidates(first, second));
-    candidates.extend(coaxial_sphere_torus_circle_candidates(first, second));
-    candidates.extend(coaxial_tori_circle_candidates(first, second));
-    candidates.extend(axis_normal_plane_torus_circle_candidates(first, second));
-    candidates.extend(axis_containing_plane_torus_circle_candidates(first, second));
-    candidates
+) -> impl Iterator<Item = (CurveGeometry, &'static str)> {
+    parallel_plane_cylinder_generator_candidates(first, second)
+        .into_iter()
+        .chain(parallel_cylinder_generator_candidates(first, second))
+        .chain(coaxial_cylinder_sphere_circle_candidates(first, second))
+        .chain(coaxial_cone_cylinder_circle_candidates(first, second))
+        .chain(coaxial_cones_section_candidates(first, second))
+        .chain(apex_plane_cone_generator_candidates(first, second))
+        .chain(coaxial_cone_sphere_circle_candidates(first, second))
+        .chain(coaxial_cone_torus_circle_candidates(first, second))
+        .chain(coaxial_cylinder_torus_circle_candidates(first, second))
+        .chain(coaxial_sphere_torus_circle_candidates(first, second))
+        .chain(coaxial_tori_circle_candidates(first, second))
+        .chain(axis_normal_plane_torus_circle_candidates(first, second))
+        .chain(axis_containing_plane_torus_circle_candidates(first, second))
 }
 
 fn carrier_intersection_components(
@@ -146,7 +145,7 @@ pub(in super::super) fn select_unique_curve_candidate(
 }
 
 pub(in super::super) fn resolve_curve_candidates(
-    candidates: Vec<(CurveGeometry, &'static str)>,
+    candidates: impl IntoIterator<Item = (CurveGeometry, &'static str)>,
     points: Option<[[f64; 3]; 2]>,
 ) -> Option<(CurveGeometry, &'static str)> {
     if let Some(points) = points {
@@ -181,7 +180,7 @@ pub(in super::super) fn fc14_held_coordinate(
 }
 
 pub(in super::super) fn select_fc14_axis_coordinate_candidate(
-    candidates: Vec<(CurveGeometry, &'static str)>,
+    candidates: impl IntoIterator<Item = (CurveGeometry, &'static str)>,
     held_coordinate: f64,
 ) -> Option<(CurveGeometry, &'static str)> {
     let mut matching = candidates

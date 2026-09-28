@@ -402,6 +402,18 @@ pub fn circle_intersections(
     second: Point2,
     second_radius: f64,
 ) -> Option<Vec<FinitePoint2>> {
+    circle_intersections_fixed(first, first_radius, second, second_radius)
+        .map(|points| points.into_iter().flatten().collect())
+}
+
+/// At most two circle intersection points in the same order as
+/// [`circle_intersections`], held without a collection allocation.
+pub fn circle_intersections_fixed(
+    first: Point2,
+    first_radius: f64,
+    second: Point2,
+    second_radius: f64,
+) -> Option<[Option<FinitePoint2>; 2]> {
     if !first.is_finite()
         || !second.is_finite()
         || !first_radius.is_finite()
@@ -414,12 +426,12 @@ pub fn circle_intersections(
     // Work from the smaller circle so its radius survives independently of the
     // separation and the other radius. The returned point set is unordered.
     if first_radius > second_radius {
-        return circle_intersections(second, second_radius, first, first_radius);
+        return circle_intersections_fixed(second, second_radius, first, first_radius);
     }
     let (delta, scale) = scaled_displacement(first, second, 0.0);
     let distance = delta.u.hypot(delta.v);
     if distance == 0.0 {
-        return (first_radius != second_radius).then(Vec::new);
+        return (first_radius != second_radius).then_some([None, None]);
     }
     let mut denominator = ExactSignedSum::default();
     denominator.add_factors([2.0, distance, scale]);
@@ -435,7 +447,7 @@ pub fn circle_intersections(
     let Some(along) = numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
         value.quotient(denominator).ok()
     }) else {
-        return Some(Vec::new());
+        return Some([None, None]);
     };
     let along = along.get();
     // `along` is the signed perpendicular distance from the smaller circle's
@@ -447,21 +459,22 @@ pub fn circle_intersections(
     let radial_scale = first_radius.max(perpendicular);
     let Some(half_chord) = half_chord(first_radius / radial_scale, perpendicular / radial_scale)
     else {
-        return Some(Vec::new());
+        return Some([None, None]);
     };
     let height = radial_scale * half_chord;
     let unit = Point2::new(delta.u / distance, delta.v / distance);
-    let mut points = Vec::new();
-    for height in [height, -height] {
-        let point = FinitePoint2::from_coordinates(
+    let point_at = |height: f64| {
+        Some(FinitePoint2::from_coordinates(
             super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v]).ok()?,
             super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u]).ok()?,
-        );
-        if !points.contains(&point) {
-            points.push(point);
-        }
-    }
-    Some(points)
+        ))
+    };
+    let first_point = point_at(height)?;
+    let second_point = point_at(-height)?;
+    Some([
+        Some(first_point),
+        (second_point != first_point).then_some(second_point),
+    ])
 }
 
 #[cfg(test)]
