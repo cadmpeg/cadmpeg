@@ -1680,7 +1680,7 @@ pub(crate) fn enrich_history_reference_axes(
                 )?;
                 continue;
             }
-            let Some([first, second]) = plane_intersection_axis_sources(bytes, &known_sources)
+            let Some([first, second]) = plane_intersection_axis_sources(ctx, bytes, &known_sources)?
             else {
                 continue;
             };
@@ -2075,13 +2075,17 @@ fn plane_intersection_axis_frame(
 }
 
 fn plane_intersection_axis_sources(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     known_sources: &HashSet<u32>,
-) -> Option<[u32; 2]> {
+) -> Result<Option<[u32; 2]>, CodecError> {
     const RECORD_LEN: usize = 46;
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
-    let mut sources = Vec::new();
-    for source in payload.windows(RECORD_LEN).filter_map(|bytes| {
+    let mut sources = [0; 2];
+    let mut source_count = 0;
+    for bytes in payload.windows(RECORD_LEN) {
+        ctx.charge_work(1, "scan SLDPRT plane intersection axis records")?;
+        let source = (|| {
         let source = View::u32_le_at(bytes, 0)?;
         (known_sources.contains(&source)
             && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
@@ -2093,15 +2097,19 @@ fn plane_intersection_axis_sources(
             && bytes.get(31..38)?.iter().all(|byte| *byte == 0)
             && bytes.get(38..46) == Some(TERMINATOR))
         .then_some(source)
-    }) {
-        if !sources.contains(&source) {
-            sources.push(source);
+        })();
+        if let Some(source) = source {
+            if sources[..source_count].contains(&source) {
+                continue;
+            }
+            let Some(slot) = sources.get_mut(source_count) else {
+                return Ok(None);
+            };
+            *slot = source;
+            source_count += 1;
         }
     }
-    let [first, second] = sources.as_slice() else {
-        return None;
-    };
-    (first != second).then_some([*first, *second])
+    Ok((source_count == 2).then_some(sources))
 }
 
 fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
