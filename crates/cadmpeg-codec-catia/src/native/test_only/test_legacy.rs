@@ -36,7 +36,9 @@ fn legacy_schema_identifiers(
 ) -> Option<Vec<CatiaLegacySchemaIdentifier>> {
     let program_offset = usize::try_from(program.byte_offset).ok()?;
     Some(
-        legacy_entity::parse_schema_identifiers(&program.data, program_offset)
+        crate::test_support::with_service_context(|ctx| {
+            legacy_entity::parse_schema_identifiers(ctx, &program.data, program_offset)
+        }).ok()?
             .into_iter()
             .map(|identifier| CatiaLegacySchemaIdentifier {
                 byte_offset: identifier.offset as u64,
@@ -93,7 +95,9 @@ fn legacy_schema_boundary_closes_text(
 }
 
 fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
-    let Some(parsed) = legacy_entity::parse_relation_signature(&relation.type_signature) else {
+    let Some(parsed) = crate::test_support::with_service_context(|ctx| {
+        legacy_entity::parse_relation_signature(ctx, &relation.type_signature)
+    }).ok().flatten() else {
         return false;
     };
     let Some(expression_field) = run.text_fields.iter().find(|field| {
