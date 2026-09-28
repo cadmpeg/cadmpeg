@@ -7369,28 +7369,46 @@ pub(super) fn feature_thru_curve_construction_envelopes(
     container: &Container,
 ) -> Result<Vec<FeatureThruCurveConstructionEnvelope>, cadmpeg_core::CodecError> {
     let mut envelopes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(field) =
                 crate::om::surface_envelope::thru_curve_payload_references(record.payload_view())
                     .and_then(|field| field.relocate(entry_offset))
             else {
                 return;
             };
-            let operation_key = format!("{section_key}-{operation_ordinal:010}");
-            envelopes.push(FeatureThruCurveConstructionEnvelope {
-                id: format!("nx:feature-history:thru-curve-construction-envelope#{operation_key}"),
-                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+            let projected = (|| -> Result<_, CodecError> {
+                let id = format_feature_history_id(ctx, "thru-curve-construction-envelope", section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX thru-curve construction envelopes")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureThruCurveConstructionEnvelope>()), "NX thru-curve construction envelope")?;
+                envelopes.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX thru-curve construction envelopes", 0, 1))?;
+                Ok(FeatureThruCurveConstructionEnvelope {
+                id,
+                operation_label,
                 discriminator: field.discriminator,
                 controls: field.controls,
                 trailing_control: field.trailing_control,
                 trailing_value: field.trailing_value,
                 source_offset: field.origin(),
-            });
+                })
+            })();
+            match projected {
+                Ok(envelope) => envelopes.push(envelope),
+                Err(error) => failure = Some(error),
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(envelopes)
 }
 

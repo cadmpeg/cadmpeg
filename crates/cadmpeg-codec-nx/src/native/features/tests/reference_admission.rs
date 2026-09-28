@@ -2,6 +2,7 @@
 
 use crate::native::features::feature_projected_curve_references;
 use crate::native::features::feature_surface_construction_references;
+use crate::native::features::feature_thru_curve_construction_envelopes;
 use crate::native::features::draft::feature_draft_construction_references;
 
 fn reference_container(label: &'static str, payload: Vec<u8>) -> crate::container::Container<'static> {
@@ -27,6 +28,10 @@ fn draft_container() -> crate::container::Container<'static> {
     payload.extend_from_slice(b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff");
     payload.extend_from_slice(b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00");
     reference_container("DRAFT", payload)
+}
+
+fn thru_curve_container() -> crate::container::Container<'static> {
+    reference_container("THRU_CURVE", b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03".to_vec())
 }
 
 fn projected_curve_route_refusal(
@@ -125,6 +130,38 @@ fn draft_reference_route_refuses_scoped_limit() {
 #[test]
 fn draft_reference_route_refuses_work_limit() {
     let error = reference_route_refusal(draft_container(), 4, feature_draft_construction_references,
+        |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn thru_curve_envelope_route_refuses_collection_limit() {
+    let error = reference_route_refusal(thru_curve_container(), 1, feature_thru_curve_construction_envelopes,
+        |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn thru_curve_envelope_route_refuses_retained_limit() {
+    let error = reference_route_refusal(thru_curve_container(), 1, feature_thru_curve_construction_envelopes,
+        |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn thru_curve_envelope_route_refuses_scoped_limit() {
+    let error = reference_route_refusal(thru_curve_container(), 1, feature_thru_curve_construction_envelopes,
+        |policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn thru_curve_envelope_route_refuses_work_limit() {
+    let error = reference_route_refusal(thru_curve_container(), 1, feature_thru_curve_construction_envelopes,
         |policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
