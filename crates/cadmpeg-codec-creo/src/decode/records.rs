@@ -717,89 +717,89 @@ pub(super) fn expanded_section_records(
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFcCurveCoordinateRecord {
+pub(super) struct CreoFcCurveCoordinateRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     subtype: u8,
-    body: Vec<u8>,
-    values_mm: Vec<f64>,
-    tokens: Vec<FcCurveCoordinateToken>,
-    opaque_spans: Vec<FcCurveOpaqueSpan>,
+    body: &'a [u8],
+    values_mm: &'a [f64],
+    tokens: &'a [FcCurveCoordinateToken],
+    opaque_spans: &'a [FcCurveOpaqueSpan],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoPrototypePcurveRecord {
+pub(super) struct CreoPrototypePcurveRecord<'a> {
     id: String,
     curve_id: u32,
     face_0_endpoints: [[f64; 2]; 2],
     face_1_endpoints: [[f64; 2]; 2],
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurvePrototypeTopologyRecord {
+pub(super) struct CreoCurvePrototypeTopologyRecord<'a> {
     id: String,
     curve_id: u32,
     faces: [u32; 2],
     next_edges: [u32; 2],
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurvePrototypeRecord {
+pub(super) struct CreoCurvePrototypeRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     type_byte: u8,
     generating_feature_id: Option<u32>,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoPlaneLocalSystemRecord {
+pub(super) struct CreoPlaneLocalSystemRecord<'a> {
     id: String,
     surface_id: u32,
-    body: Vec<u8>,
-    slots: Vec<Option<f64>>,
+    body: &'a [u8],
+    slots: &'a [Option<f64>],
     origin: Option<[f64; 3]>,
     u_axis: Option<[f64; 3]>,
     normal: Option<[f64; 3]>,
     classification: &'static str,
     row_offset: usize,
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoPlaneEnvelopeRecord {
+pub(super) struct CreoPlaneEnvelopeRecord<'a> {
     id: String,
     surface_id: u32,
-    body: Vec<u8>,
+    body: &'a [u8],
     envelope: CreoPlaneEnvelope,
     corner_coordinate_equal: [Option<bool>; 3],
-    scalar_tokens: Vec<Vec<u8>>,
+    scalar_tokens: &'a [Vec<u8>],
     row_offset: usize,
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoOutlinePlaneRecord {
+pub(super) struct CreoOutlinePlaneRecord<'a> {
     id: String,
     surface_id: u32,
     origin: [f64; 3],
     normal: [f64; 3],
     u_axis: [f64; 3],
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoDatumPlaneRecord {
+pub(super) struct CreoDatumPlaneRecord<'a> {
     id: String,
     datum_id: u32,
     owner_feature_id: u32,
@@ -807,11 +807,11 @@ pub(super) struct CreoDatumPlaneRecord {
     plane_offset: f64,
     corners: [[Option<f64>; 3]; 2],
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoDatumCylinderRecord {
+pub(super) struct CreoDatumCylinderRecord<'a> {
     id: String,
     datum_id: u32,
     owner_feature_id: u32,
@@ -822,11 +822,11 @@ pub(super) struct CreoDatumCylinderRecord {
     radius: f64,
     length: Option<f64>,
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureSectionTransformRecord {
+pub(super) struct CreoFeatureSectionTransformRecord<'a> {
     id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
@@ -835,11 +835,11 @@ pub(super) struct CreoFeatureSectionTransformRecord {
     v_axis: [f64; 3],
     normal: [f64; 3],
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeaturePlacementInstructionRecord {
+pub(super) struct CreoFeaturePlacementInstructionRecord<'a> {
     id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
@@ -852,7 +852,7 @@ pub(super) struct CreoFeaturePlacementInstructionRecord {
     member1: u32,
     member2: u32,
     offset: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
 pub(super) fn feature_entity_records<'a>(
@@ -1797,90 +1797,122 @@ mod topology_projection_limit_tests {
     }
 }
 
-pub(super) fn fc_curve_coordinate_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFcCurveCoordinateRecord> {
-    scan.curves
-        .fc_coordinates
-        .iter()
-        .map(|record| CreoFcCurveCoordinateRecord {
-            id: format!("creo:curve:fc_coordinates#{}", record.curve_id),
+pub(super) fn fc_curve_coordinate_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFcCurveCoordinateRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.fc_coordinates {
+        let id = ctx.format_retained(
+            format_args!("creo:curve:fc_coordinates#{}", record.curve_id),
+            "creo native FC curve coordinate record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native FC curve coordinate records")?;
+        records.push(CreoFcCurveCoordinateRecord {
+            id,
             curve_id: record.curve_id,
             subtype: record.subtype,
-            body: record.body.clone(),
-            values_mm: record.values_mm.clone(),
-            tokens: record.tokens.clone(),
-            opaque_spans: record.opaque_spans.clone(),
+            body: &record.body,
+            values_mm: &record.values_mm,
+            tokens: &record.tokens,
+            opaque_spans: &record.opaque_spans,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn prototype_pcurve_records(scan: &ContainerScan) -> Vec<CreoPrototypePcurveRecord> {
-    scan.curves
-        .prototype_pcurves
-        .iter()
-        .map(|record| CreoPrototypePcurveRecord {
-            id: format!("creo:curve:prototype_pcurve#{}", record.curve_id),
+pub(super) fn prototype_pcurve_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoPrototypePcurveRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.prototype_pcurves {
+        let id = ctx.format_retained(
+            format_args!("creo:curve:prototype_pcurve#{}", record.curve_id),
+            "creo native prototype pcurve record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native prototype pcurve records")?;
+        records.push(CreoPrototypePcurveRecord {
+            id,
             curve_id: record.curve_id,
             face_0_endpoints: record.face_0_endpoints,
             face_1_endpoints: record.face_1_endpoints,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn curve_prototype_topology_records(
-    scan: &ContainerScan,
-) -> Vec<CreoCurvePrototypeTopologyRecord> {
-    scan.curves
-        .prototype_topology
-        .iter()
-        .map(|record| CreoCurvePrototypeTopologyRecord {
-            id: format!("creo:curve:prototype_topology#{}", record.curve_id),
+pub(super) fn curve_prototype_topology_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoCurvePrototypeTopologyRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.prototype_topology {
+        let id = ctx.format_retained(
+            format_args!("creo:curve:prototype_topology#{}", record.curve_id),
+            "creo native curve prototype topology record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native curve prototype topology records")?;
+        records.push(CreoCurvePrototypeTopologyRecord {
+            id,
             curve_id: record.curve_id,
             faces: record.stored_face_ids(),
             next_edges: record.next_edges,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn curve_prototype_records(
-    scan: &ContainerScan,
-    prototypes: &[crate::curve::CurvePrototype],
+pub(super) fn curve_prototype_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    prototypes: &'a [crate::curve::CurvePrototype],
     id_prefix: &str,
-) -> Vec<CreoCurvePrototypeRecord> {
-    prototypes
-        .iter()
-        .map(|record| CreoCurvePrototypeRecord {
-            id: format!("{id_prefix}#{}:{}", record.offset, record.id),
+) -> Result<Vec<CreoCurvePrototypeRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in prototypes {
+        let id = ctx.format_retained(
+            format_args!("{id_prefix}#{}:{}", record.offset, record.id),
+            "creo native curve prototype record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native curve prototype records")?;
+        records.push(CreoCurvePrototypeRecord {
+            id,
             curve_id: record.id,
             type_byte: record.type_byte,
             generating_feature_id: record.feature_id,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn plane_local_system_records(
-    scan: &ContainerScan,
-    systems: &[crate::surface::PlaneLocalSystem],
+pub(super) fn plane_local_system_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    systems: &'a [crate::surface::PlaneLocalSystem],
     id_prefix: &str,
-) -> Vec<CreoPlaneLocalSystemRecord> {
-    systems
-        .iter()
-        .map(|record| {
-            let frame = record.frame();
-            CreoPlaneLocalSystemRecord {
-                id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+) -> Result<Vec<CreoPlaneLocalSystemRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in systems {
+        let frame = record.frame();
+        let id = ctx.format_retained(
+            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+            "creo native plane local system record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native plane local system records")?;
+        records.push(CreoPlaneLocalSystemRecord {
+                id,
                 surface_id: record.surface_id,
-                body: record.body.clone(),
-                slots: record.slots.to_vec(),
+                body: &record.body,
+                slots: &record.slots,
                 origin: frame.origin,
                 u_axis: frame.u_axis(),
                 normal: frame.normal(),
@@ -1890,23 +1922,29 @@ pub(super) fn plane_local_system_records(
                 },
                 row_offset: record.row_offset,
                 offset: record.offset,
-                source_section: source_section(scan, record.offset),
-            }
-        })
-        .collect()
+                source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn plane_envelope_records(
-    scan: &ContainerScan,
-    envelopes: &[crate::surface::PlaneEnvelopeRecord],
+pub(super) fn plane_envelope_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    envelopes: &'a [crate::surface::PlaneEnvelopeRecord],
     id_prefix: &str,
-) -> Vec<CreoPlaneEnvelopeRecord> {
-    envelopes
-        .iter()
-        .map(|record| CreoPlaneEnvelopeRecord {
-            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+) -> Result<Vec<CreoPlaneEnvelopeRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in envelopes {
+        let id = ctx.format_retained(
+            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+            "creo native plane envelope record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native plane envelope records")?;
+        records.push(CreoPlaneEnvelopeRecord {
+            id,
             surface_id: record.surface_id,
-            body: record.body.clone(),
+            body: &record.body,
             envelope: match &record.envelope {
                 crate::surface::PlaneEnvelope::Standard {
                     bounds_2d,
@@ -1923,62 +1961,79 @@ pub(super) fn plane_envelope_records(
                 }
             },
             corner_coordinate_equal: record.corner_coordinate_equal,
-            scalar_tokens: record.scalar_tokens.clone(),
+            scalar_tokens: &record.scalar_tokens,
             row_offset: record.row_offset,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn outline_plane_records(
-    scan: &ContainerScan,
-    planes: &[crate::surface::OutlinePlane],
+pub(super) fn outline_plane_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    planes: &'a [crate::surface::OutlinePlane],
     id_prefix: &str,
-) -> Vec<CreoOutlinePlaneRecord> {
-    planes
-        .iter()
-        .map(|record| CreoOutlinePlaneRecord {
-            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+) -> Result<Vec<CreoOutlinePlaneRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in planes {
+        let id = ctx.format_retained(
+            format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+            "creo native outline plane record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native outline plane records")?;
+        records.push(CreoOutlinePlaneRecord {
+            id,
             surface_id: record.surface_id,
             origin: record.origin,
             normal: record.normal(),
             u_axis: record.u_axis(),
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRecord> {
-    scan.planes
-        .datums
-        .iter()
-        .map(|record| CreoDatumPlaneRecord {
-            id: format!(
-                "creo:datum:plane#{}:{}",
-                record.offset_in_payload, record.id
-            ),
+pub(super) fn datum_plane_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoDatumPlaneRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.planes.datums {
+        let id = ctx.format_retained(
+            format_args!("creo:datum:plane#{}:{}", record.offset_in_payload, record.id),
+            "creo native datum plane record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native datum plane records")?;
+        records.push(CreoDatumPlaneRecord {
+            id,
             datum_id: record.id,
             owner_feature_id: record.feature_id,
             normal: record.plane.normal(),
             plane_offset: record.plane.offset,
             corners: record.corners(),
             offset: record.offset_in_payload,
-            source_section: source_section(scan, record.offset_in_payload),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset_in_payload),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylinderRecord> {
-    scan.planes
-        .datum_cylinders
-        .iter()
-        .map(|record| CreoDatumCylinderRecord {
-            id: format!(
-                "creo:datum:cylinder#{}:{}",
-                record.offset_in_payload, record.id
-            ),
+pub(super) fn datum_cylinder_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoDatumCylinderRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.planes.datum_cylinders {
+        let id = ctx.format_retained(
+            format_args!("creo:datum:cylinder#{}:{}", record.offset_in_payload, record.id),
+            "creo native datum cylinder record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native datum cylinder records")?;
+        records.push(CreoDatumCylinderRecord {
+            id,
             datum_id: record.id,
             owner_feature_id: record.feature_id,
             reversed: record.reversed,
@@ -1991,23 +2046,25 @@ pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylin
                 .length()
                 .map(cadmpeg_ir::scalar::PositiveLength::get),
             offset: record.offset_in_payload,
-            source_section: source_section(scan, record.offset_in_payload),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset_in_payload),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_section_transform_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureSectionTransformRecord> {
-    let mut records = scan
-        .features
-        .section_transforms
-        .iter()
-        .map(|record| CreoFeatureSectionTransformRecord {
-            id: format!(
-                "creo:feature:section_transform#{}:{}",
-                record.definition_id, record.offset
-            ),
+pub(super) fn feature_section_transform_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureSectionTransformRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.section_transforms {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:section_transform#{}:{}", record.definition_id, record.offset),
+            "creo native section transform record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native section transform records")?;
+        records.push(CreoFeatureSectionTransformRecord {
+            id,
             definition_id: record.definition_id,
             owner_feature_id: record.feature_id,
             origin: record.origin(),
@@ -2015,28 +2072,28 @@ pub(super) fn feature_section_transform_records(
             v_axis: record.v_axis(),
             normal: record.normal(),
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect::<Vec<_>>();
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
     records.sort_by(|left, right| left.id.cmp(&right.id));
     records.dedup_by(|left, right| left.id == right.id);
-    records
+    Ok(records)
 }
 
-pub(super) fn feature_placement_instruction_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeaturePlacementInstructionRecord> {
-    scan.features
-        .definitions
-        .iter()
-        .flat_map(|definition| {
-            crate::feature::definitions::placement_instructions(definition)
-                .map(|instruction| CreoFeaturePlacementInstructionRecord {
-                    id: format!(
-                        "creo:featdefs:placement_instruction#{}:{}",
-                        definition.identity.id(),
-                        instruction.offset
-                    ),
+pub(super) fn feature_placement_instruction_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeaturePlacementInstructionRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for definition in &scan.features.definitions {
+        for instruction in crate::feature::definitions::placement_instructions(definition) {
+            let id = ctx.format_retained(
+                format_args!("creo:featdefs:placement_instruction#{}:{}", definition.identity.id(), instruction.offset),
+                "creo native placement instruction record id",
+            )?;
+            ctx.try_reserve_items(&mut records, 1, "creo native placement instruction records")?;
+            records.push(CreoFeaturePlacementInstructionRecord {
+                    id,
                     definition_id: definition.identity.id(),
                     owner_feature_id: definition.identity.owner_feature_id(),
                     instruction_type: instruction.kind,
@@ -2048,10 +2105,138 @@ pub(super) fn feature_placement_instruction_records(
                     member1: instruction.member1,
                     member2: instruction.member2,
                     offset: instruction.offset,
-                    source_section: source_section(scan, instruction.offset),
-                })
-        })
-        .collect()
+                    source_section: source_section_ref(scan, instruction.offset),
+            });
+        }
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod curve_plane_projection_limit_tests {
+    use super::{
+        curve_prototype_records, curve_prototype_topology_records, datum_cylinder_records,
+        datum_plane_records, fc_curve_coordinate_records, feature_placement_instruction_records,
+        feature_section_transform_records, outline_plane_records, plane_envelope_records,
+        plane_local_system_records, prototype_pcurve_records,
+    };
+    use crate::curve::{dummy_curve_prototype, CurvePrototypeTopology, FcCurveCoordinates, PrototypePcurveEndpoints};
+    use crate::datum::{Axis, DatumCylinder, DatumPlane, DatumPlaneRecord};
+    use crate::feature::definitions::{DefinitionIdentity, FeatureDefinition};
+    use crate::placement::FeatureSectionTransform;
+    use crate::surface::{LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, PositionalCylinderFrame};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::units::UnitVector3;
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves.fc_coordinates.push(FcCurveCoordinates {
+            curve_id: 8, subtype: 1, body: vec![0xfc, 1], values_mm: vec![2.0],
+            tokens: Vec::new(), opaque_spans: Vec::new(), offset: 3,
+        });
+        scan.curves.prototype_pcurves.push(PrototypePcurveEndpoints {
+            curve_id: 8, face_0_endpoints: [[0.0, 0.0], [1.0, 0.0]],
+            face_1_endpoints: [[0.0, 0.0], [1.0, 0.0]], offset: 5,
+        });
+        scan.curves.prototype_topology.push(CurvePrototypeTopology {
+            curve_id: 8, faces: [None, None], next_edges: [0, 0], offset: 7,
+        });
+        scan.curves.prototypes.push(dummy_curve_prototype());
+        scan.planes.local_systems.push(PlaneLocalSystem {
+            surface_id: 3, body: vec![0xe3], slots: [None; 12], layout: None,
+            classification: LocalSystemClassification::Simple, row_offset: 13, offset: 15,
+        });
+        scan.planes.envelopes.push(PlaneEnvelopeRecord {
+            surface_id: 3, body: vec![0xe3], envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2], corners_3d: [[None; 3]; 2],
+            },
+            corner_coordinate_equal: [None; 3], scalar_tokens: vec![vec![0xf9]],
+            row_offset: 13, offset: 17,
+        });
+        scan.planes.outlines.push(OutlinePlane {
+            surface_id: 3,
+            origin: [0.0, 0.0, 0.0],
+            normal: UnitVector3::Z_AXIS,
+            u_axis: UnitVector3::X_AXIS,
+            offset: 18,
+        });
+        scan.planes.datums.push(DatumPlaneRecord {
+            id: 3, feature_id: 2, plane: DatumPlane { axis: Axis::X, offset: 1.0 },
+            opposite_offset: 1.0, in_plane_corners: [[None; 2]; 2], offset_in_payload: 19,
+        });
+        scan.planes.datum_cylinders.push(DatumCylinder {
+            id: 4, feature_id: 2, reversed: false,
+            frame: PositionalCylinderFrame::new(
+                [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 2.0, None,
+            ).expect("valid cylinder frame"),
+            offset_in_payload: 20,
+        });
+        scan.features.section_transforms.push(
+            FeatureSectionTransform::new(
+                2, Some(2), [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 21,
+            ).expect("orthonormal test frame"),
+        );
+        scan.features.definitions.push(FeatureDefinition {
+            identity: DefinitionIdentity::Parsed { schema_id: None, owner_feature_id: Some(2) },
+            body: b"place_instruction_ptrs\0\xf8\x03\xf7\x0b\xfb\xe3\
+                \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6".to_vec(),
+            parameter_frames: Vec::new(), outlines: Vec::new(), variables: None,
+            segments: None, trim_entities: None, trim_vertices: None, order_table: None,
+            section_3d: None, dimensions: None, relations: None, saved_section: None,
+            offset: 1000,
+        });
+        scan
+    }
+
+    macro_rules! collection_limit_test {
+        ($name:ident, $project:expr, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let scan = scan();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                let error = match ($project)(&ctx, &scan) {
+                    Err(error) => error,
+                    Ok(_) => panic!("one native record exceeds the collection limit"),
+                };
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                    if resource.dimension == ResourceDimension::CollectionItems
+                        && resource.operation == $operation), "{error:?}");
+            }
+        };
+    }
+
+    collection_limit_test!(fc_curve_coordinate_record_refuses_limit, fc_curve_coordinate_records, "creo native FC curve coordinate records");
+    collection_limit_test!(prototype_pcurve_record_refuses_limit, prototype_pcurve_records, "creo native prototype pcurve records");
+    collection_limit_test!(curve_prototype_topology_record_refuses_limit, curve_prototype_topology_records, "creo native curve prototype topology records");
+    collection_limit_test!(curve_prototype_record_refuses_limit, |ctx, scan| curve_prototype_records(ctx, scan, &scan.curves.prototypes, "creo:curve:prototype"), "creo native curve prototype records");
+    collection_limit_test!(plane_local_system_record_refuses_limit, |ctx, scan| plane_local_system_records(ctx, scan, &scan.planes.local_systems, "creo:surface:plane_local_system"), "creo native plane local system records");
+    collection_limit_test!(plane_envelope_record_refuses_limit, |ctx, scan| plane_envelope_records(ctx, scan, &scan.planes.envelopes, "creo:surface:plane_envelope"), "creo native plane envelope records");
+    collection_limit_test!(outline_plane_record_refuses_limit, |ctx, scan| outline_plane_records(ctx, scan, &scan.planes.outlines, "creo:surface:outline_plane"), "creo native outline plane records");
+    collection_limit_test!(datum_plane_record_refuses_limit, datum_plane_records, "creo native datum plane records");
+    collection_limit_test!(datum_cylinder_record_refuses_limit, datum_cylinder_records, "creo native datum cylinder records");
+    collection_limit_test!(section_transform_record_refuses_limit, feature_section_transform_records, "creo native section transform records");
+    collection_limit_test!(placement_instruction_record_refuses_limit, feature_placement_instruction_records, "creo native placement instruction records");
+
+    #[test]
+    fn borrowed_curve_and_plane_projection_preserves_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let fc = fc_curve_coordinate_records(&ctx, &scan).expect("record is admitted");
+        let plane = plane_envelope_records(&ctx, &scan, &scan.planes.envelopes, "creo:surface:plane_envelope")
+            .expect("record is admitted");
+        let fc = serde_json::to_value(&fc[0]).expect("record serializes");
+        let plane = serde_json::to_value(&plane[0]).expect("record serializes");
+        assert_eq!(fc["body"], serde_json::json!([0xfc, 1]));
+        assert_eq!(fc["values_mm"], serde_json::json!([2.0]));
+        assert_eq!(plane["scalar_tokens"], serde_json::json!([[0xf9]]));
+    }
 }
 
 #[derive(Serialize)]
