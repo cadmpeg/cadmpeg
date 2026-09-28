@@ -854,10 +854,10 @@ fn frame_int32_cdp2_inner(
     if codec == 1 {
         return Some(Ok((value_count, codec, cursor)));
     }
-    let (entries, context_len) = propagate_resource!(parse_probability_context(ctx, bytes.get(cursor..)?))?;
+    let (entries, context_len, _entries_reservation) = propagate_resource!(parse_probability_context(ctx, bytes.get(cursor..)?))?;
     cursor = cursor.checked_add(context_len)?;
     let code_words = bytes.get(9..9 + code_byte_len)?;
-    let symbols = propagate_resource!(decode_arithmetic(
+    let (symbols, _symbols_reservation) = propagate_resource!(decode_arithmetic(
         ctx,
         code_words,
         code_bit_len,
@@ -877,10 +877,10 @@ fn frame_int32_cdp2_inner(
     decoded.transpose()
 }
 
-fn parse_probability_context(
-    ctx: &DecodeContext<'_>,
+fn parse_probability_context<'a>(
+    ctx: &'a DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<Option<(Vec<ProbabilityEntry>, usize)>, CodecError> {
+) -> Result<Option<(Vec<ProbabilityEntry>, usize, ScopedReservation<'a>)>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
     let entry_count = usize::from(View::u16_be_at(bytes, 0)?);
     let mut bits = MsbBitReader::new(bytes.get(2..)?);
@@ -907,7 +907,7 @@ fn parse_probability_context(
         cadmpeg_core::decode::u64_from_index(entry_count),
         "parse JT probability context",
     ));
-    let mut entries = propagate_resource!(try_vec(ctx, entry_count));
+    let (mut entries, reservation) = propagate_resource!(try_scoped_vec(ctx, entry_count));
     for _ in 0..entry_count {
         let symbol = bits.read(symbol_bits)? as i32 - 2;
         let occurrence_count = bits.read(occurrence_bits)?;
@@ -919,7 +919,7 @@ fn parse_probability_context(
         });
     }
     let bit_bytes = bits.finish_zero_padding()?;
-    Some(Ok((entries, 2 + bit_bytes)))
+    Some(Ok((entries, 2 + bit_bytes, reservation)))
 
     })();
     decoded.transpose()
@@ -971,13 +971,13 @@ const MAX_ARITHMETIC_VALUES: usize = 1_000_000;
 /// Upper bound on arithmetic decoder table lookups for one lane.
 const MAX_ARITHMETIC_WORK: usize = 64_000_000;
 
-fn decode_arithmetic(
-    ctx: &DecodeContext<'_>,
+fn decode_arithmetic<'a>(
+    ctx: &'a DecodeContext<'_>,
     code_words: &[u8],
     code_bit_len: usize,
     value_count: usize,
     entries: &[ProbabilityEntry],
-) -> Result<Option<Vec<Option<i32>>>, CodecError> {
+) -> Result<Option<(Vec<Option<i32>>, ScopedReservation<'a>)>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
     // Arithmetic symbols can consume zero code bits, so the stream length puts
     // no floor under `value_count`; an absolute cap bounds the allocation and
@@ -1012,7 +1012,7 @@ fn decode_arithmetic(
     }
     let mut low = 0u16;
     let mut high = u16::MAX;
-    let mut values = propagate_resource!(try_vec(ctx, value_count));
+    let (mut values, reservation) = propagate_resource!(try_scoped_vec(ctx, value_count));
     for _ in 0..value_count {
         let range = u32::from(high.wrapping_sub(low)) + 1;
         let scaled = ((u32::from(code.wrapping_sub(low)) + 1) * total - 1) / range;
@@ -1047,7 +1047,7 @@ fn decode_arithmetic(
             Some(entry.value)
         });
     }
-    Some(Ok(values))
+    Some(Ok((values, reservation)))
 
     })();
     decoded.transpose()
@@ -1206,9 +1206,9 @@ fn decode_int32_cdp2_inner(
         let values = propagate_resource!(decode_bitlength(ctx, code_words, code_bit_len, value_count))?;
         return Some(Ok((values, cursor)));
     }
-    let (entries, context_len) = propagate_resource!(parse_probability_context(ctx, bytes.get(cursor..)?))?;
+    let (entries, context_len, _entries_reservation) = propagate_resource!(parse_probability_context(ctx, bytes.get(cursor..)?))?;
     cursor += context_len;
-    let symbols = propagate_resource!(decode_arithmetic(ctx, code_words, code_bit_len, value_count, &entries))?;
+    let (symbols, _symbols_reservation) = propagate_resource!(decode_arithmetic(ctx, code_words, code_bit_len, value_count, &entries))?;
     let escape_count = symbols.iter().filter(|value| value.is_none()).count();
     let (out_of_band, oob_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, depth + 1))?;
     if out_of_band.len() != escape_count {
