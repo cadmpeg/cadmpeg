@@ -45,6 +45,23 @@ fn existing_record_header_index_refuses_collection_limit() {
         if limit.operation == "index F3D existing record headers"));
 }
 
+#[test]
+fn document_digest_attribute_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut attributes = std::collections::BTreeMap::new();
+    let error = super::super::insert_btree_item(
+        &ctx,
+        &mut attributes,
+        || cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+        "0".repeat(64),
+        "record F3D document digest",
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "record F3D document digest"));
+    assert!(attributes.is_empty());
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]

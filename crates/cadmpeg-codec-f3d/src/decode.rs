@@ -183,15 +183,25 @@ fn push_decode_item<T>(
     Ok(())
 }
 
+fn insert_btree_item<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    map: &mut std::collections::BTreeMap<K, V>,
+    key: impl FnOnce() -> K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    map.insert(key(), value);
+    Ok(())
+}
+
 fn insert_source_attribute_owned(
     ctx: &DecodeContext<'_>,
     attributes: &mut std::collections::BTreeMap<String, String>,
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "collect F3D source attributes")?;
-    attributes.insert(key.to_owned(), value);
-    Ok(())
+    insert_btree_item(ctx, attributes, || key.to_owned(), value, "collect F3D source attributes")
 }
 
 fn insert_source_attribute_copy(
@@ -4554,10 +4564,13 @@ fn decode_result(
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
     let hash = document_local_sha256_with_source(&ir, &source)?;
-    source.attributes.insert(
-        cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+    insert_btree_item(
+        ctx,
+        &mut source.attributes,
+        || cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
         hash,
-    );
+        "record F3D document digest",
+    )?;
     Ok(AuthoredDecoded {
         ir,
         source,
