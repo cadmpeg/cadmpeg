@@ -12,6 +12,7 @@ mod face_sources;
 mod header_index;
 mod recipes;
 mod recipe_id_limits;
+mod recipe_structure_limits;
 mod selection;
 mod work_point;
 
