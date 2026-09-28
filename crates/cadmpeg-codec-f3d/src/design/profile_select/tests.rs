@@ -44,6 +44,7 @@ use std::collections::{HashMap, HashSet};
 mod spatial_transition;
 mod historical_allocation;
 mod path_allocation;
+mod region_allocation;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -518,7 +519,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &profile_operand,
             &spatial_sketches[0],
             &resolution,
-        ),
+            None,
+        ).unwrap(),
         Some(vec![0, 1])
     );
 
@@ -535,7 +537,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &whole_sketch_operand,
             &spatial_sketches[0],
             &resolution,
-        ),
+            None,
+        ).unwrap(),
         Some(vec![0, 1, 2])
     );
     assert_eq!(
@@ -576,7 +579,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &profile_operand,
             &spatial_sketches[0],
             &noncoincident_resolution,
-        ),
+            None,
+        ).unwrap(),
         None
     );
 }
@@ -984,7 +988,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
     .unwrap();
 
     assert_eq!(
-        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities,),
+        resolved_sketch_profile_regions("stream", &operand, &source, &curves, &sketch_entities, None).unwrap(),
         Some(vec![1, 0])
     );
 
@@ -1002,7 +1006,9 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         &source,
         &curves,
         &sketch_entities,
+        None,
     )
+    .unwrap()
     .is_none());
 
     source
@@ -1020,7 +1026,9 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         &source,
         &curves,
         &sketch_entities,
+        None,
     )
+    .unwrap()
     .is_none());
 }
 
