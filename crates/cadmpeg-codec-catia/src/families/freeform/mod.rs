@@ -2712,6 +2712,7 @@ fn append_resolved_consolidated_surface_curves(
                 if reversed {
                     let reversed_pcurves = sides.each_ref().map(|side| match &side.pcurve {
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
+                            admission.context(),
                             &pcurve.geometry,
                             resolved.block.parameters.range.endpoints(),
                             refusal,
@@ -2719,11 +2720,11 @@ fn append_resolved_consolidated_surface_curves(
                                 "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
                                 resolved.block.pcurves[0].pos
                             ),
-                        )
-                        .map(Some),
-                        None => Some(None),
+                        ).map(|geometry| geometry.map(Some)),
+                        None => Ok(Some(None)),
                     });
-                    let [Some(first), Some(second)] = reversed_pcurves else {
+                    let [first, second] = reversed_pcurves;
+                    let [Some(first), Some(second)] = [first?, second?] else {
                         return Ok(None);
                     };
                     for (side, pcurve) in sides.iter_mut().zip([first, second]) {
@@ -2837,6 +2838,7 @@ fn append_resolved_consolidated_surface_curves(
                                 };
                                 if reversed {
                                     pcurve = option_or_none!(crate::nurbs::reverse_pcurve_geometry(
+                                    admission.context(),
                                     &pcurve,
                                     resolved.block.parameters.range.endpoints(),
                                     refusal,
@@ -2844,7 +2846,7 @@ fn append_resolved_consolidated_surface_curves(
                                         "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
                                         resolved.block.pcurves[0].pos
                                     ),
-                                ));
+                                )?);
                                 }
                                 pcurve
                             }
@@ -2920,6 +2922,7 @@ fn append_resolved_consolidated_surface_curves(
                                 cadmpeg_ir::topology::Sense::Reversed
                             ) {
                                 let Some(reversed_geometry) = crate::nurbs::reverse_pcurve_geometry(
+                                    admission.context(),
                                     &geometry,
                                     resolved.block.parameters.range.endpoints(),
                                     refusal,
@@ -2927,7 +2930,7 @@ fn append_resolved_consolidated_surface_curves(
                                         "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
                                         resolved.block.pcurves[0].pos
                                     ),
-                                ) else { continue };
+                                )? else { continue };
                                 geometry = reversed_geometry;
                             }
                             // A pcurve binds to a face only when it lifts onto

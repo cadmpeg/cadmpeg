@@ -1180,12 +1180,13 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
     assert_eq!(
-        standard_oriented_native_support_pcurves(
+        crate::test_support::with_service_context(|ctx| standard_oriented_native_support_pcurves(
+            ctx,
             &native,
             &points,
             [1, 0],
             &mut crate::nurbs::LaneRefusals::new()
-        ),
+        )).expect("service profile admits native support pcurve reversal"),
         Some([
             PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -1244,6 +1245,43 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         standard_native_support_endpoint_pair(&disagreeing, &points, &[0, 1], None),
         None
     );
+}
+
+#[test]
+fn native_support_pcurve_copy_refuses_retained_and_collection_limits() {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        ).expect("valid linear pcurve"),
+    };
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+    );
+    let native = StandardEdgeSupport {
+        surface_object_ids: [20, 21],
+        carriers: [carrier.clone(), carrier],
+        pcurves: [pcurve.clone(), pcurve],
+        parameter_range: [0.0, 1.0],
+    };
+    let copy = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        standard_oriented_native_support_pcurves(
+            ctx, &native, &[], [0, 1], &mut crate::nurbs::LaneRefusals::new())
+    };
+    for refused in [
+        crate::test_support::with_retained_limit(0, copy),
+        crate::test_support::with_collection_limit(0, copy),
+    ] {
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_standard_native_support_pcurve_copy"));
+    }
+    let admitted = crate::test_support::with_service_context(copy)
+        .expect("service profile admits native support copy")
+        .expect("unbound endpoints still retain native pcurves");
+    assert_eq!(admitted, native.pcurves);
 }
 
 #[test]

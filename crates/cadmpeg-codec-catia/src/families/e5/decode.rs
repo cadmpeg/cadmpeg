@@ -1321,6 +1321,7 @@ fn plan_e5_boundary<'a>(
                 }
                 let oriented_pcurve = if reversed {
                     let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
+                        ctx,
                         &geometry,
                         range,
                         refusal,
@@ -1328,7 +1329,7 @@ fn plan_e5_boundary<'a>(
                             "e5 boundary pcurve of loop record {} member {member_index}",
                             loop_.record_id
                         ),
-                    ) else {
+                    )? else {
                         return Ok(None);
                     };
                     reversed
@@ -1346,6 +1347,7 @@ fn plan_e5_boundary<'a>(
                 ) {
                     if reversed {
                         let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
+                            ctx,
                             &curve,
                             curve_range,
                             refusal,
@@ -1353,7 +1355,7 @@ fn plan_e5_boundary<'a>(
                                 "e5 boundary curve of loop record {} member {member_index}",
                                 loop_.record_id
                             ),
-                        ) else {
+                        )? else {
                             return Ok(None);
                         };
                         (curve, curve_range) = reversed_curve;
@@ -1471,22 +1473,24 @@ fn plan_e5_boundary<'a>(
             };
             if reversed {
                 let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
+                    ctx,
                     &curve,
                     curve_range,
                     refusal,
                     &format!("e5 boundary curve of edge {edge_ref} pcurve {pcurve_ref}"),
-                ) else {
+                )? else {
                     continue;
                 };
                 (curve, curve_range) = reversed_curve;
             }
             let pcurve = if reversed {
                 let Some(reversed) = crate::nurbs::reverse_pcurve_geometry(
+                    ctx,
                     &geometry,
                     range,
                     refusal,
                     &format!("e5 boundary pcurve of edge {edge_ref} pcurve {pcurve_ref}"),
-                ) else {
+                )? else {
                     continue;
                 };
                 reversed

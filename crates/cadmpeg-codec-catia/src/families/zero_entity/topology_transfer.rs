@@ -283,15 +283,16 @@ pub(super) fn transfer_closed_face_topology(
                         .pcurve
                         .as_ref()
                         .map(|pcurve| pcurve.parameter_range)
-                })
-                .and_then(|range| {
-                    canonical_model_curve_range(
-                        &curve_geometry,
-                        range,
-                        refusal,
-                        "zero-entity edge curve source parameter range",
-                    )
                 });
+            let source_range = match source_range {
+                Some(range) => match canonical_model_curve_range(
+                    admission.context(), &curve_geometry, range, refusal,
+                    "zero-entity edge curve source parameter range") {
+                    Ok(range) => range,
+                    Err(error) => return Some(Err(error)),
+                },
+                None => None,
+            };
             let raw_indices =
                 endpoint_indices(occurrence.oriented_endpoints, occurrence.raw_endpoints)?;
             let direct_orientation = if matches!(
@@ -320,11 +321,16 @@ pub(super) fn transfer_closed_face_topology(
                         )
                     {
                         let reversed_geometry = crate::nurbs::reverse_curve_geometry(
+                            admission.context(),
                             &curve_geometry,
                             parameter_range,
                             refusal,
                             "zero-entity edge curve reversed onto its coedge",
                         );
+                        let reversed_geometry = match reversed_geometry {
+                            Ok(geometry) => geometry,
+                            Err(error) => return Some(Err(error)),
+                        };
                         let curve = ir
                             .model
                             .curves
@@ -332,12 +338,18 @@ pub(super) fn transfer_closed_face_topology(
                             .find(|curve| curve.id == occurrence.curve)?;
                         match reversed_geometry {
                             Some((geometry, parameter_range)) => {
-                                if let Some(parameter_range) = canonical_model_curve_range(
+                                let canonical_range = canonical_model_curve_range(
+                                    admission.context(),
                                     &geometry,
                                     parameter_range,
                                     refusal,
                                     "zero-entity edge curve reversed parameter range",
-                                ) {
+                                );
+                                let canonical_range = match canonical_range {
+                                    Ok(range) => range,
+                                    Err(error) => return Some(Err(error)),
+                                };
+                                if let Some(parameter_range) = canonical_range {
                                     curve.geometry = geometry;
                                     annotations.derived(&occurrence.curve, "geometry").ok()?;
                                     (occurrence.curve.clone(), parameter_range)
