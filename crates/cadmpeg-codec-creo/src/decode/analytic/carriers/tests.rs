@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::equations::{CarrierEquation, PlaneEquation};
-use super::{existing_plane_agrees_with_topology, placed_carriers, transfer_topology_bound_planes};
+use super::{
+    existing_plane_agrees_with_topology, placed_carriers, topology_bound_face_points,
+    transfer_topology_bound_planes,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -142,6 +145,125 @@ fn placed_carriers_refuse_rowless_carrier_node() {
         placed_carrier_collection_error(&scan, &ir, 2),
         "creo placed carrier nodes",
     );
+}
+
+fn topology_bound_curve_input() -> (crate::container::ContainerScan<'static>, CadIr) {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(carrier_row(5, crate::surface::SurfaceKind::Plane));
+    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
+        id: 11,
+        type_byte: 0,
+        feature_id: 1,
+        directions: [0; 2],
+        faces: [std::num::NonZeroU32::new(5), None],
+        next_edges: [11, 0],
+        offset: 20,
+    });
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: vec![crate::topology::HalfEdgeId {
+            curve_id: 11,
+            side: crate::topology::Side::Zero,
+        }],
+    });
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: CurveId::mint("creo:visibgeom:curve#11").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(2.0, 3.0, 4.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .expect("valid CircleCurve fixture"),
+        )),
+        source_object: None,
+    });
+    (scan, ir)
+}
+
+fn topology_bound_curve_collection_error(limit: u64) -> CodecError {
+    let (scan, mut ir) = topology_bound_curve_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    transfer_topology_bound_planes(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &BTreeSet::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("topology-bound curve exceeds collection limit")
+}
+
+#[test]
+fn topology_bound_plane_refuses_unique_surface_count_node() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(2),
+        "creo unique-row count nodes",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_unique_surface_projection() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(3),
+        "creo unique-row projection",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_unique_curve_count_node() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(4),
+        "creo unique-row count nodes",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_unique_curve_projection() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(5),
+        "creo unique-row projection",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_unique_curve_id_node() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(6),
+        "creo topology-bound unique curve IDs",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_boundary_curve_vector() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(7),
+        "creo topology-bound boundary curves",
+    );
+}
+
+#[test]
+fn topology_bound_plane_refuses_face_point_vector() {
+    let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
+    let vertex_faces = BTreeMap::from([(1, BTreeSet::from([5]))]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = topology_bound_face_points(&ctx, &solved_vertices, &vertex_faces, 5)
+        .expect_err("one face point exceeds collection limit");
+    assert_placed_carrier_refusal(error, "creo topology-bound face points");
+    let points = crate::decode::with_test_decode_ctx(|ctx| {
+        topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, 5)
+    })
+    .expect("service face points");
+    assert_eq!(points, [[2.0, 3.0, 4.0]]);
 }
 
 fn topology_plane() -> PlaneEquation {

@@ -79,41 +79,47 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     )?;
     let vertex_faces =
         crate::topology::vertex_incident_faces(ctx, &scan.topology.vertices, &scan.topology.half_edges)?;
-    let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
-    let unique_curve_ids = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-        .into_iter()
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
+    let unique_rows = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.surfaces.rows,
+        |row| row.id,
+    )?;
+    let mut unique_curve_ids = BTreeSet::new();
+    for row in crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )? {
+        ctx.charge_collection_items(1, "creo topology-bound unique curve IDs")?;
+        unique_curve_ids.insert(row.id);
+    }
     let mut transferred = 0;
     for row in unique_rows
         .into_iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)
     {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);
-        let points = solved_vertices
-            .iter()
-            .filter_map(|(vertex_id, point)| {
-                vertex_faces
-                    .get(vertex_id)
-                    .is_some_and(|faces| faces.contains(&row.id))
-                    .then_some(*point)
-            })
-            .collect::<Vec<_>>();
-        let boundary_curves = scan
+        let points = topology_bound_face_points(ctx, &solved_vertices, &vertex_faces, row.id)?;
+        let mut boundary_curves = Vec::new();
+        for half_edge in scan
             .topology
             .loops
             .iter()
             .filter(|lp| lp.face_id == std::num::NonZeroU32::new(row.id))
             .flat_map(|lp| lp.half_edges.iter())
-            .filter_map(|half_edge| {
-                unique_curve_ids
-                    .contains(&half_edge.curve_id)
-                    .then_some(())?;
+        {
+            if unique_curve_ids.contains(&half_edge.curve_id) {
                 let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, half_edge.curve_id);
-                let curve = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))?;
-                Some(source_carriers.curve_geometry(curve))
-            })
-            .collect::<Vec<_>>();
+                if let Some(curve) = exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id)) {
+                    ctx.try_reserve_items(
+                        &mut boundary_curves,
+                        1,
+                        "creo topology-bound boundary curves",
+                    )?;
+                    boundary_curves.push(source_carriers.curve_geometry(curve));
+                }
+            }
+        }
         let curve_planes = boundary_curves
             .iter()
             .filter_map(|geometry| analytic_curve_plane(geometry));
@@ -212,6 +218,25 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         transferred += 1;
     }
     Ok(transferred)
+}
+
+fn topology_bound_face_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    vertex_faces: &BTreeMap<u32, BTreeSet<u32>>,
+    face_id: u32,
+) -> Result<Vec<[f64; 3]>, cadmpeg_core::CodecError> {
+    let mut points = Vec::new();
+    for (vertex_id, point) in solved_vertices {
+        if vertex_faces
+            .get(vertex_id)
+            .is_some_and(|faces| faces.contains(&face_id))
+        {
+            ctx.try_reserve_items(&mut points, 1, "creo topology-bound face points")?;
+            points.push(*point);
+        }
+    }
+    Ok(points)
 }
 
 pub(in crate::decode) fn retain_unresolved_surface_carriers(
