@@ -1079,7 +1079,7 @@ fn validate_loaded(
     validate_body_bounds(&ctx, &mut findings)?;
     validate_canvas_images(&ctx, &mut findings)?;
     validate_decal_images(&ctx, &mut findings)?;
-    validate_mesh_features(&ctx, &mut findings);
+    validate_mesh_features(&ctx, &mut findings)?;
     validate_component_occurrences(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings)?;
@@ -1524,7 +1524,7 @@ fn mesh_record_offset_is(
 }
 
 /// Validate complete `Base Mesh Feature` record graphs and their neutral links.
-fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let mut feature_ids = HashSet::new();
     let mut scope_records = HashSet::new();
     let mut collection_records = HashSet::new();
@@ -1540,32 +1540,27 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut texture_table_records = HashSet::new();
     let mut filename_records = HashMap::new();
     let mut projected_tessellations = HashSet::new();
-    let asset_ids = ctx
-        .ir
-        .model
-        .assets
-        .iter()
-        .map(|asset| &asset.id)
-        .collect::<HashSet<_>>();
-    let tessellation_ids = ctx
-        .ir
-        .model
-        .tessellations
-        .iter()
-        .map(|tessellation| tessellation.id.as_str())
-        .collect::<HashSet<_>>();
+    let asset_ids = ctx.collect_set(ctx.ir.model.assets.iter().map(|asset| &asset.id),
+        "index F3D mesh asset IDs")?;
+    let tessellation_ids = ctx.collect_set(ctx.ir.model.tessellations.iter().map(|tessellation| tessellation.id.as_str()),
+        "index F3D mesh tessellation IDs")?;
     for feature in &ctx.native.design_mesh_features {
         let stream = design_stream(&feature.id);
         let scope = ctx
             .scopes_by_index
             .get(&(stream, feature.scope().record().record_index()));
-        let mut valid = feature_ids.insert(feature.id.as_str())
-            && scope_records.insert((stream, feature.scope().record().record_index()))
-            && collection_records.insert((stream, feature.collection().record().record_index()))
-            && texture_table_records
-                .insert((stream, feature.texture_table.record().record_index()))
-            && collection_owner_records
-                .insert((stream, feature.collection_owner.record().record_index()))
+        let mut valid = ctx.insert_unique(&mut feature_ids, feature.id.as_str(),
+                "index F3D mesh feature IDs")?
+            && ctx.insert_unique(&mut scope_records, (stream, feature.scope().record().record_index()),
+                "index F3D mesh scope records")?
+            && ctx.insert_unique(&mut collection_records, (stream, feature.collection().record().record_index()),
+                "index F3D mesh collection records")?
+            && ctx.insert_unique(&mut texture_table_records,
+                (stream, feature.texture_table.record().record_index()),
+                "index F3D mesh texture tables")?
+            && ctx.insert_unique(&mut collection_owner_records,
+                (stream, feature.collection_owner.record().record_index()),
+                "index F3D mesh collection owners")?
             && feature
                 .scope()
                 .record()
@@ -1583,66 +1578,88 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope.paired_byte_offset() == feature.scope().base_record().byte_offset()
             });
 
-        let mut resources = feature.texture_table.resources().iter().collect::<Vec<_>>();
+        let mut resources = ctx.collect_vec(feature.texture_table.resources().iter(),
+            "collect F3D mesh texture resources")?;
         resources.sort_by_key(|resource| resource.filename_ordinal);
-        valid &= resources.iter().all(|resource| {
+        let mut resources_valid = true;
+        for resource in &resources {
             let filename_key = (stream, resource.file.record().record_index());
             let filename_record_consistent = filename_records
                 .get(&filename_key)
                 .is_none_or(|record| *record == resource.file.record());
+            ctx.charge_map_key(&mut filename_records, &filename_key,
+                "index F3D mesh filename records")?;
             filename_records
                 .entry(filename_key)
                 .or_insert(resource.file.record());
-            filename_record_consistent && asset_ids.contains(&resource.asset)
-        });
+            resources_valid = filename_record_consistent && asset_ids.contains(&resource.asset);
+            if !resources_valid { break; }
+        }
+        valid &= resources_valid;
 
         for body in feature.bodies() {
             let owner_key = (stream, body.owner_record.record_index());
             let owner_consistent = body_owner_records
                 .get(&owner_key)
                 .is_none_or(|record| *record == &body.owner_record);
+            ctx.charge_map_key(&mut body_owner_records, &owner_key,
+                "index F3D mesh body owner records")?;
             body_owner_records
                 .entry(owner_key)
                 .or_insert(&body.owner_record);
-            valid &= body_records.insert((stream, body.placement.record().record_index()))
-                && entry_records.insert((stream, body.entry.record().record_index()))
-                && guid_records.insert((stream, body.guid.record().record_index()))
-                && wrapper_records.insert((stream, body.wrapper_record.record_index()))
-                && state_records.insert((stream, body.scene_state.record().record_index()))
-                && node_records.insert((stream, body.scene_node.record_index()))
-                && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
+            let body_valid = ctx.insert_unique(&mut body_records,
+                    (stream, body.placement.record().record_index()),
+                    "index F3D mesh body records")?
+                && ctx.insert_unique(&mut entry_records,
+                    (stream, body.entry.record().record_index()),
+                    "index F3D mesh entry records")?
+                && ctx.insert_unique(&mut guid_records,
+                    (stream, body.guid.record().record_index()),
+                    "index F3D mesh GUID records")?
+                && ctx.insert_unique(&mut wrapper_records,
+                    (stream, body.wrapper_record.record_index()),
+                    "index F3D mesh wrapper records")?
+                && ctx.insert_unique(&mut state_records,
+                    (stream, body.scene_state.record().record_index()),
+                    "index F3D mesh scene states")?
+                && ctx.insert_unique(&mut node_records,
+                    (stream, body.scene_node.record_index()),
+                    "index F3D mesh scene nodes")?
+                && ctx.insert_unique(&mut auxiliary_records,
+                    (stream, body.scene_auxiliary_record.record_index()),
+                    "index F3D mesh scene auxiliary records")?
                 && owner_consistent
-                && body.scene_node.frame_length() == 133
-                && body.tessellation_id.as_deref().is_none_or(|id| {
-                    tessellation_ids.contains(id) && projected_tessellations.insert(id)
-                });
+                && body.scene_node.frame_length() == 133;
+            let projection_valid = if body_valid {
+                match body.tessellation_id.as_deref() {
+                    Some(id) => tessellation_ids.contains(id)
+                        && ctx.insert_unique(&mut projected_tessellations, id,
+                            "index F3D mesh projected tessellations")?,
+                    None => true,
+                }
+            } else { false };
+            valid &= body_valid && projection_valid;
         }
-        let projected = feature
-            .bodies()
-            .iter()
-            .filter_map(|body| body.tessellation_id.as_deref())
-            .collect::<Vec<_>>();
-        if !projected.is_empty() {
+        let projected = || feature.bodies().iter().filter_map(|body| body.tessellation_id.as_deref());
+        if projected().next().is_some() {
             valid &= scope.is_some_and(|scope| {
                 ctx.ir.model.features.iter().any(|neutral| {
                     neutral.native_ref.as_deref() == Some(scope.id.as_str())
                         && matches!(
                             neutral.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                if tessellations.iter().map(String::as_str).eq(projected.iter().copied())
+                                if tessellations.iter().map(String::as_str).eq(projected())
                         )
                 })
             });
         }
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design mesh feature has an invalid frame or object graph".into(),
-                entity: Some(feature.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design mesh feature has an invalid frame or object graph",
+                Some(ctx.copy_entity(&feature.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate Canvas scope and Design object joins.
