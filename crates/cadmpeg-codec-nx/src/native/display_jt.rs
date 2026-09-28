@@ -375,7 +375,7 @@ impl DisplayJtIndex {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         u32::try_from(rows.len()).map_err(|_| "rows: count exceeds u32")?;
-        let rows = NonEmpty::new(rows).ok_or("rows: at least one row is required")?;
+        let rows = NonEmpty::from_vec(rows).ok_or("rows: at least one row is required")?;
         Ok(Self {
             id,
             version,
