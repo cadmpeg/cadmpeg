@@ -381,10 +381,11 @@ pub(crate) fn project_compact_sketch_profiles(
                 .filter_map(|scalar| lane.scalars.iter().find(|record| record.id == scalar))
                 .map(|scalar| scalar.value.get() * NATIVE_TO_IR)
                 .collect::<Vec<_>>();
-            let dimensioned_rectangle = addresses
-                .is_none()
-                .then(|| unique_dimensioned_rectangle_markers(&owned_markers, &dimensions))
-                .flatten();
+            let dimensioned_rectangle = if addresses.is_none() {
+                unique_dimensioned_rectangle_markers(ctx, &owned_markers, &dimensions)?
+            } else {
+                None
+            };
             let markers = if let Some(rectangle) = dimensioned_rectangle {
                 rectangle.to_vec()
             } else if region_addresses.is_some() {

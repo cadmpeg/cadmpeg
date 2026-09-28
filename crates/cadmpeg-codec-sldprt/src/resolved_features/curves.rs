@@ -1949,30 +1949,48 @@ pub(super) fn legacy_extended_rectangle_diagonal_endpoint(
 }
 
 pub(super) fn unique_dimensioned_rectangle_markers<'a>(
+    ctx: &DecodeContext<'_>,
     markers: &[&'a SketchInputEntity],
     dimensions_mm: &[f64],
-) -> Option<[&'a SketchInputEntity; 4]> {
+) -> Result<Option<[&'a SketchInputEntity; 4]>, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = EPS_CURVE_POSITION;
     if dimensions_mm.len() < 2 {
-        return None;
+        return Ok(None);
     }
-    let points = markers
-        .iter()
-        .filter_map(|marker| {
-            let [u, v] = marker.coordinates_m?.get();
-            Some((
-                *marker,
-                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM).cells()?,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let mut u = points.iter().map(|(_, point)| point.0).collect::<Vec<_>>();
+    let mut points = Vec::new();
+    for marker in markers {
+        let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else {
+            continue;
+        };
+        let Some(cells) = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM).cells() else {
+            continue;
+        };
+        ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT rectangle points")?;
+        points.push((*marker, cells));
+    }
+    let mut u = Vec::new();
+    let mut v = Vec::new();
+    for (_, point) in &points {
+        ctx.reserve_collection_vec(&mut u, 1, "collect SLDPRT rectangle u coordinates")?;
+        ctx.reserve_collection_vec(&mut v, 1, "collect SLDPRT rectangle v coordinates")?;
+        u.push(point.0);
+        v.push(point.1);
+    }
+    let point_count = cadmpeg_core::decode::u64_from_index(points.len());
+    let sort_work = point_count
+        .checked_mul(u64::from(usize::BITS - points.len().leading_zeros()))
+        .and_then(|work| work.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT rectangle coordinates", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(sort_work, "sort SLDPRT rectangle coordinates")?;
     u.sort_unstable();
     u.dedup();
-    let mut v = points.iter().map(|(_, point)| point.1).collect::<Vec<_>>();
     v.sort_unstable();
     v.dedup();
+    let dimension_count = cadmpeg_core::decode::u64_from_index(dimensions_mm.len());
+    let dimension_work = dimension_count.checked_mul(dimension_count).ok_or_else(|| {
+        ctx.refuse_codec_limit("scan SLDPRT rectangle dimensions", u64::MAX - 1, u64::MAX)
+    })?;
     let dimensions_match = |u0: i64, u1: i64, v0: i64, v1: i64| {
         let u_span = (i128::from(u1) - i128::from(u0)) as f64 * QUANTUM;
         let v_span = (i128::from(v1) - i128::from(v0)) as f64 * QUANTUM;
@@ -1992,14 +2010,21 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
                     })
             })
     };
-    let mut candidates = Vec::new();
+    let mut selected = None;
     for (first_u_index, &u0) in u.iter().enumerate() {
         for &u1 in &u[first_u_index + 1..] {
             for (first_v_index, &v0) in v.iter().enumerate() {
                 for &v1 in &v[first_v_index + 1..] {
+                    ctx.charge_work(dimension_work, "scan SLDPRT rectangle dimensions")?;
                     if !dimensions_match(u0, u1, v0, v1) {
                         continue;
                     }
+                    ctx.charge_work(
+                        point_count.checked_mul(4).ok_or_else(|| {
+                            ctx.refuse_codec_limit("scan SLDPRT rectangle corners", u64::MAX - 1, u64::MAX)
+                        })?,
+                        "scan SLDPRT rectangle corners",
+                    )?;
                     let corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)];
                     let matched = corners.map(|corner| {
                         let mut matches = points
@@ -2012,15 +2037,14 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
                     let [Some(first), Some(second), Some(third), Some(fourth)] = matched else {
                         continue;
                     };
-                    candidates.push([first, second, third, fourth]);
+                    if selected.replace([first, second, third, fourth]).is_some() {
+                        return Ok(None);
+                    }
                 }
             }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    Ok(selected)
 }
 
 fn ordered_compact_line_profile(

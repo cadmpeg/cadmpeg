@@ -67,6 +67,54 @@ fn chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     compact_line_chain_addresses(&ctx, payload).unwrap()
 }
 
+fn rectangle_limit_markers() -> [SketchInputEntity; 4] {
+    let marker = |id: &str, u, v| {
+        let mut entity = SketchInputEntity::new(
+            id.to_owned(),
+            "lane".to_owned(),
+            0,
+            0,
+            SketchInputKind::Point,
+        );
+        entity.coordinates_m = cadmpeg_ir::units::FiniteVector::new([u, v]);
+        entity
+    };
+    [
+        marker("lower-left", 0.0, 0.0),
+        marker("lower-right", 0.0055, 0.0),
+        marker("upper-right", 0.0055, 0.0085),
+        marker("upper-left", 0.0, 0.0085),
+    ]
+}
+
+#[test]
+fn dimensioned_rectangle_refuses_collection_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT rectangle points"));
+}
+
+#[test]
+fn dimensioned_rectangle_refuses_work_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 23;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sort SLDPRT rectangle coordinates"));
+}
+
 #[test]
 fn shared_endpoint_block_cycles_remain_profile_chains() {
     let sketch = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
@@ -789,17 +837,20 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         marker("origin", 0.0, 0.0),
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5, 5.5])
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5, 5.5])
+            .unwrap()
             .map(|markers| markers.map(crate::records::SketchInputEntity::id)),
         Some(["lower-left", "lower-right", "upper-right", "upper-left"])
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[8.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[8.5]).unwrap(),
         None
     );
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&marker_refs, &[28.3, 5.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &marker_refs, &[28.3, 5.5]).unwrap(),
         None
     );
 
@@ -815,7 +866,7 @@ fn dimensioned_rectangle_selects_one_complete_marker_product() {
         .chain(second_rectangle.iter())
         .collect::<Vec<_>>();
     assert_eq!(
-        unique_dimensioned_rectangle_markers(&ambiguous, &[8.5, 5.5]),
+        unique_dimensioned_rectangle_markers(&ctx, &ambiguous, &[8.5, 5.5]).unwrap(),
         None
     );
 }
