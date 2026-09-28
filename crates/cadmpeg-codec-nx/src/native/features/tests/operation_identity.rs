@@ -175,6 +175,30 @@ fn feature_label_route_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
+#[test]
+fn feature_label_identity_admits_full_ordinal_width() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let id = crate::native::features::format_feature_history_id(
+        &ctx, "operation-label", "0000000000", usize::MAX, None,
+    ).expect("admitted label identity");
+    assert_eq!(
+        id,
+        format!("nx:feature-history:operation-label#0000000000-{value:010}", value = usize::MAX),
+    );
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.len() - 1);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let error = crate::native::features::format_feature_history_id(
+        &ctx, "operation-label", "0000000000", usize::MAX, None,
+    ).expect_err("full identity exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
 fn unlabeled_record_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
