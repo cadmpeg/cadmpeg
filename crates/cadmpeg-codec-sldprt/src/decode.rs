@@ -17,6 +17,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::btree_map::Entry;
+use std::fmt::Write;
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -3856,7 +3857,7 @@ fn build_geometry_report(
             ),
         );
     }
-    append_swift_pmi_losses(scan, &mut losses);
+    append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(ctx, &mut losses)?;
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -5357,7 +5358,7 @@ fn build_container_report(
             ),
         );
     }
-    append_swift_pmi_losses(scan, &mut losses);
+    append_swift_pmi_losses(ctx, scan, &mut losses)?;
     classification.append_losses(ctx, &mut losses)?;
 
     Ok(DecodeBody {
@@ -5370,22 +5371,57 @@ fn build_container_report(
 }
 
 fn append_swift_pmi_losses(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
-    let unsupported = crate::swift::unsupported_annotation_classes(scan);
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "format SLDPRT unsupported SWIFT classes";
+    let unsupported = crate::swift::unsupported_annotation_classes(ctx, scan)?;
     if unsupported.is_empty() {
-        return;
+        return Ok(());
     }
-    let count = unsupported.values().sum::<usize>();
-    let classes = unsupported
-        .iter()
-        .map(|(class, count)| format!("{class} ({count})"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(format!(
-        "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
-    )));
+    let count = unsupported.values().try_fold(0usize, |sum, value| {
+        sum.checked_add(*value)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+    })?;
+    let mut classes_len = 0usize;
+    for (index, (class, class_count)) in unsupported.iter().enumerate() {
+        let digits = if *class_count == 0 {
+            1
+        } else {
+            usize::try_from(class_count.ilog10()).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })? + 1
+        };
+        let addition = class.len()
+            .checked_add(digits)
+            .and_then(|len| len.checked_add(3))
+            .and_then(|len| len.checked_add(usize::from(index > 0) * 2))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        classes_len = classes_len.checked_add(addition)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    }
+    let (mut classes, _reservation) = ctx.reserve_scoped_string(classes_len, OPERATION)?;
+    for (index, (class, class_count)) in unsupported.iter().enumerate() {
+        if index > 0 {
+            classes.push_str(", ");
+        }
+        classes.push_str(class);
+        classes.push_str(" (");
+        write!(&mut classes, "{class_count}").map_err(|_| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        classes.push(')');
+    }
+    let message = ctx.format_retained(
+        format_args!(
+            "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
+        ),
+        "retain SLDPRT unsupported SWIFT loss",
+    )?;
+    ctx.reserve_collection_vec(losses, 1, "append SLDPRT unsupported SWIFT loss")?;
+    losses.push(SldprtLossCode::PmiSwiftAnnotationUnsupported.note(message));
+    Ok(())
 }
 
 #[cfg(test)]

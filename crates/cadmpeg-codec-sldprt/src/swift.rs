@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
 use cadmpeg_ir::pmi::{
@@ -357,24 +358,37 @@ fn semantic_pattern_name(native_name: &str) -> Option<String> {
         .then(|| format!("Hole Pattern{suffix}"))
 }
 
-pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeMap<String, usize> {
+pub(crate) fn unsupported_annotation_classes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<BTreeMap<String, usize>, CodecError> {
     let Some((_, root, _)) = scan_root(scan) else {
-        return if has_root_marker(scan) {
-            BTreeMap::from([("GdtAnalysisGraphUnresolved".into(), 1)])
-        } else {
-            BTreeMap::new()
-        };
+        let mut classes = BTreeMap::new();
+        if has_root_marker(scan) {
+            ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
+            let key = ctx.format_retained(
+                format_args!("GdtAnalysisGraphUnresolved"),
+                "retain SLDPRT unsupported SWIFT class",
+            )?;
+            classes.insert(key, 1);
+        }
+        return Ok(classes);
     };
     let mut classes = BTreeMap::new();
     if root.annotations.references.len() != root.annotations.entities.len() {
+        ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
+        let key = ctx.format_retained(
+            format_args!("GdtAnalysisIncompleteAnnotationRoster"),
+            "retain SLDPRT unsupported SWIFT class",
+        )?;
         classes.insert(
-            "GdtAnalysisIncompleteAnnotationRoster".into(),
+            key,
             root.annotations
                 .references
                 .len()
                 .abs_diff(root.annotations.entities.len()),
         );
-        return classes;
+        return Ok(classes);
     }
     for (reference, entity) in root
         .annotations
@@ -388,13 +402,21 @@ pub(crate) fn unsupported_annotation_classes(scan: &ContainerScan<'_>) -> BTreeM
                 && tolerance_kind(class).is_none()
                 && dimension_kind(class).is_none())
         {
-            classes
-                .entry(class.to_string())
-                .and_modify(|count| *count = count.saturating_add(1))
-                .or_insert(1);
+            if let Some(count) = classes.get_mut(class) {
+                *count = count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("count SLDPRT unsupported SWIFT classes", u64::MAX - 1, u64::MAX)
+                })?;
+            } else {
+                ctx.charge_collection_items(1, "collect SLDPRT unsupported SWIFT classes")?;
+                let key = ctx.format_retained(
+                    format_args!("{class}"),
+                    "retain SLDPRT unsupported SWIFT class",
+                )?;
+                classes.insert(key, 1);
+            }
         }
     }
-    classes
+    Ok(classes)
 }
 
 fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
