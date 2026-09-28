@@ -7,6 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::container::ContainerScan;
 use crate::ids::neutral_configuration_id;
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -204,11 +205,16 @@ pub(crate) fn project_configurations(
 /// Replace name-keyed configuration properties with stable parameter references
 /// when exactly one neutral parameter has the named source identity.
 pub(crate) fn bind_configuration_parameter_overrides(
+    ctx: Option<&DecodeContext<'_>>,
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     parameters: &[cadmpeg_ir::features::DesignParameter],
-) {
+) -> Result<(), CodecError> {
     for configuration in configurations {
+        let mut refusal = None;
         configuration.properties.retain(|key, expression| {
+            if refusal.is_some() {
+                return true;
+            }
             let Some(name) = key.as_str().strip_prefix("parameter:") else {
                 return true;
             };
@@ -219,12 +225,36 @@ pub(crate) fn bind_configuration_parameter_overrides(
             if matches.next().is_some() {
                 return true;
             }
+            let id = if let Some(ctx) = ctx {
+                match ctx.copy_retained(parameter.id.as_str().as_bytes(),
+                    "f3d configuration parameter override id")
+                    .and_then(|bytes| String::from_utf8(bytes).map_err(|_| {
+                        CodecError::malformed("validated configuration ID is not UTF-8")
+                    }))
+                    .and_then(|value| cadmpeg_ir::features::ParameterId::try_from(value)
+                        .map_err(CodecError::malformed))
+                {
+                    Ok(id) => id,
+                    Err(error) => { refusal = Some(error); return true; }
+                }
+            } else {
+                parameter.id.clone()
+            };
+            if let Some(ctx) = ctx {
+                if let Err(error) = ctx.charge_collection_items(1,
+                    "f3d configuration parameter override") {
+                    refusal = Some(error);
+                    return true;
+                }
+            }
             configuration
                 .parameter_overrides
-                .insert(parameter.id.clone(), std::mem::take(expression));
+                .insert(id, std::mem::take(expression));
             false
         });
+        if let Some(error) = refusal { return Err(error); }
     }
+    Ok(())
 }
 
 /// Replace name-keyed suppression properties with stable feature references
@@ -495,7 +525,7 @@ mod tests {
             native_ref: None,
         };
         let mut projected = project_configurations(&[table]).expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut projected, std::slice::from_ref(&parameter));
+        bind_configuration_parameter_overrides(None, &mut projected, std::slice::from_ref(&parameter)).unwrap();
         assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
         assert!(projected[0].properties.is_empty());
         assert_eq!(
@@ -520,7 +550,7 @@ mod tests {
         )
         .unwrap()])
         .expect("ordered configuration table");
-        bind_configuration_parameter_overrides(&mut ambiguous, &[parameter, duplicate]);
+        bind_configuration_parameter_overrides(None, &mut ambiguous, &[parameter, duplicate]).unwrap();
         assert!(ambiguous[0].parameter_overrides.is_empty());
         assert_eq!(
             unresolved_configuration_parameter_override_count(&ambiguous),
@@ -596,5 +626,47 @@ mod tests {
             unresolved_configuration_suppressed_feature_count(&ambiguous),
             1
         );
+    }
+
+    #[test]
+    fn configuration_parameter_override_refuses_retained_and_collection_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let table = DesignConfiguration::try_new(
+            "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["wide".into()],
+            serde_json::json!({"configurations": {"wide": {"parameters": {"width": "25 mm"}}}})
+                .as_object().unwrap().clone(),
+        ).unwrap();
+        let parameter = NeutralParameter {
+            id: ParameterId::mint("f3d:model:parameter#width").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        for (retained, collections, dimension, operation) in [
+            (0, 1, ResourceDimension::RetainedBytes, "f3d configuration parameter override id"),
+            (100, 0, ResourceDimension::CollectionItems, "f3d configuration parameter override"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = retained;
+            policy.limits.max_collection_items = collections;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut projected = project_configurations(std::slice::from_ref(&table)).unwrap();
+            assert!(matches!(
+                bind_configuration_parameter_overrides(Some(&ctx), &mut projected, std::slice::from_ref(&parameter)),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ));
+            assert!(projected[0].parameter_overrides.is_empty());
+        }
     }
 }
