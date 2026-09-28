@@ -53,6 +53,59 @@ fn model_brep_candidate_index_refuses_collection_limit() {
 }
 
 #[test]
+fn undecoded_brep_loss_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::push_decode_loss(
+        &ctx,
+        &mut report,
+        crate::loss::F3dLossCode::BrepBlobUndecoded,
+        format_args!("1 Design-referenced BREP blob(s) could not be decoded."),
+        "collect F3D undecoded BREP loss",
+        "retain F3D undecoded BREP loss",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D undecoded BREP loss"));
+}
+
+#[test]
+fn primary_brep_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::copy_decode_string(
+        &ctx,
+        "Breps.BlobParts/BREP0.smb",
+        "retain F3D primary BREP name",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D primary BREP name"));
+}
+
+#[test]
+fn asm_history_collection_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut histories = Vec::new();
+    let error = super::super::push_decode_item(
+        &ctx,
+        &mut histories,
+        1_u32,
+        "collect F3D ASM histories",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D ASM histories"));
+    assert!(histories.is_empty());
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();

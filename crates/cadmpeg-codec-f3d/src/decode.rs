@@ -129,6 +129,20 @@ fn append_decode_items<T>(
     Ok(())
 }
 
+fn push_decode_item<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    target
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    target.push(item);
+    Ok(())
+}
+
 fn format_decode_string(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
@@ -2469,11 +2483,16 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_losses(&brep),
         )?;
         if undecoded_candidates != 0 {
-            report
-                .losses
-                .push(F3dLossCode::BrepBlobUndecoded.note(format!(
+            push_decode_loss(
+                ctx,
+                &mut report,
+                F3dLossCode::BrepBlobUndecoded,
+                format_args!(
                     "{undecoded_candidates} Design-referenced BREP blob(s) could not be decoded."
-                )));
+                ),
+                "collect F3D undecoded BREP loss",
+                "retain F3D undecoded BREP loss",
+            )?;
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
             ctx,
@@ -2518,7 +2537,11 @@ impl<'a> F3dDecodeSession<'a> {
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
-                    primary_model_brep_name: primary_model_brep.name.clone(),
+                    primary_model_brep_name: copy_decode_string(
+                        ctx,
+                        &primary_model_brep.name,
+                        "retain F3D primary BREP name",
+                    )?,
                     annotation_records,
                     mesh_projection,
                 },
@@ -2583,7 +2606,12 @@ impl<'a> F3dDecodeSession<'a> {
         let ctx = self.ctx;
         for history_brep in container::history_breps(scan) {
             if let Some(history) = decode_asm_history(ctx, scan, history_brep)? {
-                self.native.asm_histories.push(history);
+                push_decode_item(
+                    ctx,
+                    &mut self.native.asm_histories,
+                    history,
+                    "collect F3D ASM histories",
+                )?;
             }
         }
         self.native.construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
