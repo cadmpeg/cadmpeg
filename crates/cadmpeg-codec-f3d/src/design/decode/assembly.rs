@@ -281,7 +281,11 @@ pub(super) fn exact_legacy_as_built_421_operands(
             draft.payload = crate::records::feature::scope::DesignScopePayload::Hole(None);
         })
         .ok()?;
-    let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
+    let hole = match exact_hole_construction(ctx, bytes, records, &hole_scope, stream_types) {
+        Ok(Some(hole)) => hole,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if hole.point_record_index != hole_record_index
         || !hole
             .input_records
