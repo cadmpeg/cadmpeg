@@ -28,6 +28,7 @@ mod entity_limits;
 mod extrude_group_limits;
 mod construction_group_limits;
 mod face_group_limits;
+mod face_source_limits;
 mod act_limits;
 mod image_limits;
 mod link_limits;
