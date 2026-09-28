@@ -165,14 +165,18 @@ pub(super) fn parasolid_group_records(
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     deltas_records: &[ParasolidDeltasRecord],
 ) -> Result<Vec<ParasolidGroupRecord>, CodecError> {
-    let paired_partition = delta_pairs
-        .iter()
-        .flat_map(|(partition, deltas)| {
-            deltas
-                .iter()
-                .filter_map(move |delta| Some((*delta, u32::try_from(*partition).ok()?)))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut paired_partition = BTreeMap::new();
+    let mut pair_guard = ctx.reserve_scoped(0, "NX GROUP delta pair index")?;
+    for (&partition, deltas) in delta_pairs {
+        let Ok(partition) = u32::try_from(partition) else { continue; };
+        for &delta in deltas {
+            if !paired_partition.contains_key(&delta) {
+                ctx.charge_collection_items(1, "NX GROUP delta pair index")?;
+                pair_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, u32)>() * 4))?;
+            }
+            paired_partition.insert(delta, partition);
+        }
+    }
     let mut groups = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if stream.kind() != crate::parasolid::StreamKind::Partition {
@@ -194,11 +198,8 @@ pub(super) fn parasolid_group_records(
             else {
                 continue;
             };
-            groups.push(ParasolidGroupRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:parasolid-group#{}-{}",
-                    record.offset, record.xmt
-                ),
+            push_group_record(ctx, &mut groups, ParasolidGroupRecord {
+                id: deltas_event_id(ctx, stream_ordinal, "parasolid-group", record.offset, Some(record.xmt))?,
                 origin: GroupOrigin::Partition {
                     stream_ordinal: stream_ordinal_u32,
                 },
@@ -207,9 +208,9 @@ pub(super) fn parasolid_group_records(
                 references,
                 selector,
                 linked_reference_status,
-                byte_len: (record.end - record.offset) as u64,
-                inflated_offset: record.offset as u64,
-            });
+                byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+            })?;
         }
     }
     for record in deltas_records {
@@ -222,8 +223,8 @@ pub(super) fn parasolid_group_records(
         else {
             continue;
         };
-        groups.push(ParasolidGroupRecord {
-            id: record.id.replacen("deltas-record", "parasolid-group", 1),
+        push_group_record(ctx, &mut groups, ParasolidGroupRecord {
+            id: replace_group_record_id(ctx, &record.id)?,
             origin: GroupOrigin::Deltas {
                 stream_ordinal: record.stream_ordinal,
                 partition_stream_ordinal: usize::try_from(record.stream_ordinal)
@@ -237,10 +238,48 @@ pub(super) fn parasolid_group_records(
             linked_reference_status: *linked_reference_status,
             byte_len: record.byte_len,
             inflated_offset: record.inflated_offset,
-        });
+        })?;
     }
+    let scratch = groups.len().checked_mul(std::mem::size_of::<ParasolidGroupRecord>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort scratch", 0, 1))?;
+    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(scratch), "NX GROUP record sort scratch")?;
+    let work = groups.len().checked_mul(groups.len().checked_ilog2().map_or(1, |count| count as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX GROUP record sort work")?;
     groups.sort_by_key(|group| (group.origin.stream_ordinal(), group.inflated_offset));
     Ok(groups)
+}
+
+fn push_group_record(
+    ctx: &DecodeContext<'_>,
+    groups: &mut Vec<ParasolidGroupRecord>,
+    record: ParasolidGroupRecord,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "NX GROUP records")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupRecord>()), "NX GROUP record")?;
+    groups.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP records", 0, 1))?;
+    groups.push(record);
+    Ok(())
+}
+
+fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
+    let (prefix, middle, suffix) = if let Some((prefix, suffix)) = id.split_once("deltas-record") {
+        (prefix, "parasolid-group", suffix)
+    } else {
+        (id, "", "")
+    };
+    let length = prefix.len().checked_add(middle.len())
+        .and_then(|length| length.checked_add(suffix.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP record identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX GROUP record identity")?;
+    let mut output = String::new();
+    output.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP record identity", 0, 1))?;
+    output.push_str(prefix);
+    output.push_str(middle);
+    output.push_str(suffix);
+    Ok(output)
 }
 
 fn group_members_from_records(
@@ -4392,6 +4431,51 @@ mod tests {
         bytes.extend_from_slice(&linked_reference.to_be_bytes());
         bytes.push(0);
         bytes
+    }
+
+    fn group_record_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let streams = [stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST",
+            group_record(10, 7, 8),
+        )];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_group_records(&ctx, &streams, &BTreeMap::new(), &[])
+            .err()
+            .expect("GROUP record limit refusal")
+    }
+
+    #[test]
+    fn group_record_route_refuses_collection_limit() {
+        let error = group_record_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn group_record_route_refuses_retained_limit() {
+        let error = group_record_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn group_record_route_refuses_scoped_limit() {
+        let error = group_record_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn group_record_route_refuses_work_limit() {
+        let error = group_record_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     fn stream(
