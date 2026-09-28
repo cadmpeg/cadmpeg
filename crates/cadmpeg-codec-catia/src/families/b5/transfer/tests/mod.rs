@@ -271,6 +271,47 @@ fn b5_edge_id_map_refuses_collection_limit_before_growth() {
 }
 
 #[test]
+fn b5_region_id_map_refuses_collection_limit_before_growth() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let plan = crate::test_support::with_service_context(|ctx| {
+        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("complete B5 plan");
+    let surfaces = std::collections::HashMap::new();
+    let pcurves = std::collections::HashMap::new();
+    let edges = std::collections::HashMap::new();
+    let emitted = super::faces::EmittedFaceInputs {
+        surface_ids: &surfaces,
+        pcurve_uses: &pcurves,
+        edge_ids: &edges,
+    };
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::faces::emit_faces(&mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &plan, &emitted,
+            &mut admission)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_region_ids"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        super::transfer(&mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(), graph.clone(), &payload,
+            &mut crate::nurbs::LaneRefusals::new(), &mut admission)
+    })
+    .expect("service resource budget");
+    assert!(admitted);
+}
+
+#[test]
 fn b5_ownership_refuses_face_id_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
