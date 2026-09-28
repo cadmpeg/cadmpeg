@@ -63,14 +63,73 @@ fn candidates(
     record_index: u32,
 ) -> Vec<DesignSketchPlacement> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
-    parse_sketch_placement_candidates(
+    crate::design::test_support::with_test_decode_context(|ctx| parse_sketch_placement_candidates(
+        ctx,
         bytes,
         scope_record_index,
         &crate::records::identity::DesignEntityId::try_from(entity_id.to_owned())
             .expect("valid entity ID"),
         record_index,
         &records,
-    )
+    ).unwrap())
+}
+
+#[test]
+fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = vec![0; 212];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"356");
+    bytes[7..11].copy_from_slice(&185u32.to_le_bytes());
+    bytes[201..205].copy_from_slice(&3u32.to_le_bytes());
+    bytes[205..208].copy_from_slice(b"259");
+    bytes[208..212].copy_from_slice(&185u32.to_le_bytes());
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let entity_id = crate::records::identity::DesignEntityId::try_from("0_172".to_owned()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d sketch placement candidate"
+    ));
+
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_retained_bytes = entity_id.as_str().len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d sketch placement entity ID"
+    ));
+}
+
+#[test]
+fn sketch_placement_stream_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::sketch::decode_sketch_placements(&ctx, scan, &[], &[]),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d sketch placement stream index"
+        ));
+    });
 }
 
 #[test]
@@ -382,12 +441,11 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         .expect("valid module registration"),
     };
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let placement = crate::design::decode::sketch::parse_member_run_head_placement(
-        &bytes,
-        entity.byte_offset,
-        &entity.entity_id,
-        &records,
-    )
+    let placement = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::parse_member_run_head_placement(
+            ctx, &bytes, entity.byte_offset, &entity.entity_id, &records,
+        ).unwrap()
+    })
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset(), head_at as u64);
@@ -417,12 +475,11 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let compact = crate::design::decode::sketch::parse_member_run_head_placement(
-        &bytes,
-        entity.byte_offset,
-        &entity.entity_id,
-        &records,
-    )
+    let compact = crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::parse_member_run_head_placement(
+            ctx, &bytes, entity.byte_offset, &entity.entity_id, &records,
+        ).unwrap()
+    })
     .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
     assert_eq!(

@@ -919,11 +919,6 @@ native_record_id!(
     "design-face-source-group"
 );
 native_record_id!(
-    /// The native design-sketch-placement record key.
-    native_design_sketch_placement_id,
-    "design-sketch-placement"
-);
-native_record_id!(
     /// The native persistent-reference record key.
     native_persistent_reference_id,
     "persistent-reference"
