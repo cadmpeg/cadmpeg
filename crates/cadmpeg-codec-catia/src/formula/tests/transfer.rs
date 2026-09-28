@@ -997,6 +997,30 @@ fn formula_parameter_entity_limit_refuses_before_model_extend() {
 }
 
 #[test]
+fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4, false, &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH", Some(33.0), "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut ir = CadIr::empty();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::formula::transfer_parameters(ctx, &mut ir, &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_formula_entity_index"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(ctx, &mut ir, &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unresolved)
+    }).expect("service profile admits formula scan");
+    assert!(admitted.consumed_object_records.is_empty());
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
 fn formula_candidate_entity_limit_refuses_before_first_candidate() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,

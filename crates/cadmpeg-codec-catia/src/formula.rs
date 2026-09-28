@@ -11,6 +11,7 @@ use cadmpeg_ir::{
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
 use crate::native::CatiaNative;
+use crate::resource;
 
 pub(crate) fn transfer_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -19,17 +20,17 @@ pub(crate) fn transfer_parameters(
     annotations: &mut Annotations,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<FormulaTransfer, cadmpeg_core::CodecError> {
-    let entities = native
+    let entities = resource::collect_map(ctx, native
         .entity_records
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
-        .collect::<HashMap<_, _>>();
-    let object_records = native
+        .map(|entity| (entity.id.as_str(), entity)),
+        "catia_formula_entity_index")?;
+    let object_records = resource::collect_map(ctx, native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
+        .map(|record| (record.id.as_str(), record)),
+        "catia_formula_object_index")?;
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
     collect_definition_chain_parameters(
@@ -57,9 +58,10 @@ pub(crate) fn transfer_parameters(
                     .and_then(|output| output.entity()),
             );
         for output in outputs {
-            *formula_definition_counts
-                .entry(neutral_parameter_id(ctx, output)?)
-                .or_default() += 1;
+            let output_id = neutral_parameter_id(ctx, output)?;
+            resource::admit_map_entry(ctx, &mut formula_definition_counts, &output_id,
+                "catia_formula_definition_counts")?;
+            *formula_definition_counts.entry(output_id).or_default() += 1;
         }
     }
     let legacy_scope = if graph_scope.is_unscoped() {
