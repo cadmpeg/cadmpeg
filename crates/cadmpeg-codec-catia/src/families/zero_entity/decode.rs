@@ -755,6 +755,91 @@ fn transfer_closed_wire_loops(
     Ok(counts)
 }
 
+fn zero_entity_coverage(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    transferred_support_curves: usize,
+    transferred_parametric_surface_curves: usize,
+    wire_counts: WireTransferCounts,
+    topology_counts: Option<crate::families::zero_entity::topology_transfer::ZeroEntityTopologyCounts>,
+) -> Result<cadmpeg_ir::report::decode::Coverage, cadmpeg_core::CodecError> {
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+    for (key, count) in [
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
+            transferred_support_curves,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
+            transferred_parametric_surface_curves,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
+            wire_counts.bodies,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
+            wire_counts.owned_bodies,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
+            wire_counts.loops,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
+            wire_counts.edges,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
+            wire_counts.vertices,
+        ),
+        (
+            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
+            wire_counts.points,
+        ),
+    ] {
+        crate::resource::record_coverage(ctx, &mut coverage, key, count, "catia_zero_entity_coverage")?;
+    }
+    if let Some(counts) = topology_counts {
+        for (key, count) in [
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
+                counts.bodies,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
+                counts.faces,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
+                counts.loops,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
+                counts.coedges,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
+                counts.edges,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
+                counts.vertices,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
+                counts.points,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
+                counts.pcurves,
+            ),
+        ] {
+            crate::resource::record_coverage(ctx, &mut coverage, key, count, "catia_zero_entity_coverage")?;
+        }
+    }
+    Ok(coverage)
+}
+
 pub(in crate::families) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1043,78 +1128,13 @@ pub(in crate::families) fn try_decode_zero_entity(
     if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
-    let mut coverage: cadmpeg_ir::report::decode::Coverage = [
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
-            transferred_support_curves,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_PARAMETRIC_SURFACE_CURVE_COUNT,
-            transferred_parametric_surface_curves,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_BODY_COUNT,
-            wire_counts.bodies,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_OWNED_WIRE_BODY_COUNT,
-            wire_counts.owned_bodies,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_LOOP_COUNT,
-            wire_counts.loops,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_EDGE_COUNT,
-            wire_counts.edges,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
-            wire_counts.vertices,
-        ),
-        (
-            crate::coverage::TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
-            wire_counts.points,
-        ),
-    ]
-    .into_iter()
-    .collect();
-    if let Some(counts) = topology_counts {
-        coverage.extend([
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
-                counts.bodies,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
-                counts.faces,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
-                counts.loops,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
-                counts.coedges,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
-                counts.edges,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
-                counts.vertices,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
-                counts.points,
-            ),
-            (
-                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
-                counts.pcurves,
-            ),
-        ]);
-    }
+    let coverage = admitted!(zero_entity_coverage(
+        ctx,
+        transferred_support_curves,
+        transferred_parametric_surface_curves,
+        wire_counts,
+        topology_counts,
+    ));
     let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
         "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; source allocation identities and native physical-edge identity remain retained as native records."
     } else if topology_counts.is_some() {
@@ -1209,6 +1229,19 @@ mod tests {
 
     fn finite_pairs(pairs: Vec<[Point3; 2]>) -> Vec<[FinitePoint3; 2]> {
         pairs.into_iter().map(finite_pair).collect()
+    }
+
+    #[test]
+    fn zero_entity_coverage_refuses_before_map_growth() {
+        let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::zero_entity_coverage(ctx, 1, 1, WireTransferCounts::default(), None)
+        };
+        let service = crate::test_support::with_service_context(build)
+            .expect("service profile admits zero-entity coverage");
+        assert_eq!(service.get(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()), Some(&1));
+        let limited = crate::test_support::with_collection_limit(0, build);
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_zero_entity_coverage"));
     }
 
     #[test]
