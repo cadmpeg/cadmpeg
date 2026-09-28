@@ -967,3 +967,81 @@ fn face_attribute_recursion_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_face_attribute_recursion"));
 }
+
+fn implicit_face_refusal(collection_limit: u64, plane: bool) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE_BOUND('',#2,.T.);#2=POLY_LOOP('',(#3,#4,#5));#3=DUMMY();#4=DUMMY();#5=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid polygon loop references");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, position) in [
+        (3, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)),
+        (4, cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)),
+        (5, cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)),
+    ] {
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::from(crate::ids::data(crate::ids::kind!("point"), id)),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
+            None,
+        ));
+    }
+    let setup_arena = DecodeArena::new();
+    let setup_policy = DecodePolicy::service();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy)
+        .expect("source fits setup policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&ir, &setup_ctx)
+        .expect("point carriers fit setup policy");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let result = if plane {
+        super::super::implicit_face_plane(&[1], &exchange, &BTreeMap::new(), &carriers, &ctx)
+            .map(|_| ())
+    } else {
+        super::super::implicit_face_points(&[1], &exchange, &BTreeMap::new(), &carriers, &ctx)
+            .map(|_| ())
+    };
+    result.err().expect("implicit face exceeds collection limit")
+}
+
+#[test]
+fn implicit_face_point_steps_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(0, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_point_steps"));
+}
+
+#[test]
+fn implicit_face_distinct_points_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(3, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_distinct_points"));
+}
+
+#[test]
+fn implicit_face_points_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(6, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_points"));
+}
+
+#[test]
+fn implicit_face_loops_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(9, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_loops"));
+}
+
+#[test]
+fn implicit_face_plane_points_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(10, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_plane_points"));
+}
+
+#[test]
+fn implicit_face_loop_normals_refuse_collection_limit() {
+    assert!(matches!(implicit_face_refusal(13, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_implicit_face_loop_normals"));
+}
