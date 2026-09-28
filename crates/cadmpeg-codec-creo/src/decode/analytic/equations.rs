@@ -909,18 +909,19 @@ fn conic_resultant(
         &sylvester_matrix(first, second, Coefficient::terms),
         f64::abs,
     )?;
-    ctx.charge_collection_items(
-        values.len().min(terms.len()) as u64,
+    let mut result = Vec::new();
+    ctx.try_reserve_items(
+        &mut result,
+        values.len().min(terms.len()),
         "creo conic resultant coefficients",
     )?;
-    Ok(values
-        .into_iter()
-        .zip(terms)
-        .map(|(value, terms)| BoundedCoefficient {
+    for (value, terms) in values.into_iter().zip(terms) {
+        result.push(BoundedCoefficient {
             value,
             bound: POLYNOMIAL_ERROR_FACTOR * cancellation_bound(terms),
-        })
-        .collect())
+        });
+    }
+    Ok(result)
 }
 
 fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
@@ -1263,7 +1264,7 @@ pub(super) fn common_plane_conic_parameters(
                         <= EPS_PARAM_UNIQUE * scale
                 })
             {
-                ctx.charge_collection_items(1, "creo conic intersection parameters")?;
+                ctx.try_reserve_items(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
             }
         }
@@ -1303,14 +1304,21 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
     let parameters = common_plane_conic_parameters(ctx, first_conic, second_conic)?;
-    ctx.charge_collection_items(parameters.len() as u64, "creo plane-quadric intersections")?;
-    Ok(parameters
-        .into_iter()
-        .map(|[u, v]| {
-            std::array::from_fn(|index| plane.origin[index] + u * u_axis[index] + v * v_axis[index])
-        })
-        .filter(|point| point_on_carrier(*point, first) && point_on_carrier(*point, second))
-        .collect())
+    let mut intersections = Vec::new();
+    ctx.try_reserve_items(
+        &mut intersections,
+        parameters.len(),
+        "creo plane-quadric intersections",
+    )?;
+    for [u, v] in parameters {
+        let point = std::array::from_fn(|index| {
+            plane.origin[index] + u * u_axis[index] + v * v_axis[index]
+        });
+        if point_on_carrier(point, first) && point_on_carrier(point, second) {
+            intersections.push(point);
+        }
+    }
+    Ok(intersections)
 }
 
 pub(in crate::decode) fn intersect_two_planes_with_torus(
@@ -1659,7 +1667,8 @@ pub(in crate::decode) fn plane_cone_conic(
 #[cfg(test)]
 mod tests {
     use super::{
-        BoundedCoefficient, ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation,
+        BoundedCoefficient, CarrierEquation, ConeEquation, PlaneConicEquation, PlaneEquation,
+        SphereEquation, TorusEquation,
     };
     use crate::decode::quadratic::Coefficient;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1686,6 +1695,97 @@ mod tests {
             v,
             constant,
         }
+    }
+
+    fn intersecting_circle_conics() -> (PlaneConicEquation, PlaneConicEquation) {
+        let circle = |u, constant| PlaneConicEquation {
+            uu: Coefficient::single(1.0),
+            uv: Coefficient::single(0.0),
+            vv: Coefficient::single(1.0),
+            u: Coefficient::single(u),
+            v: Coefficient::single(0.0),
+            constant: Coefficient::single(constant),
+        };
+        (circle(0.0, -1.0), circle(-2.0, 0.0))
+    }
+
+    fn collection_limit_reaching<T>(
+        operation: &'static str,
+        run: impl Fn(u64) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> u64 {
+        (0..512)
+            .find(|limit| matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation))
+            .expect("the input reaches the named collection boundary")
+    }
+
+    #[test]
+    fn conic_resultant_coefficients_refuse_before_vec_growth() {
+        let first = dense_conic([1.0, 2.0, 3.0, 5.0, 7.0, 11.0]);
+        let second = dense_conic([13.0, -3.0, 2.0, -17.0, 4.0, -6.0]);
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::conic_resultant(&ctx, first, second)
+        };
+        let limit = collection_limit_reaching("creo conic resultant coefficients", run);
+        let error = run(limit)
+            .map(|coefficients| coefficients.len())
+            .expect_err("five coefficients need a reserved Vec");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo conic resultant coefficients"));
+        assert_eq!(run(u64::MAX).expect("service budget admits the resultant").len(), 5);
+    }
+
+    #[test]
+    fn conic_intersection_parameters_refuse_before_vec_growth() {
+        let (first, second) = intersecting_circle_conics();
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::common_plane_conic_parameters(&ctx, first, second)
+        };
+        let limit = collection_limit_reaching("creo conic intersection parameters", run);
+        let error = run(limit).expect_err("one intersection needs a reserved Vec item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo conic intersection parameters"));
+        assert_eq!(run(u64::MAX).expect("service budget admits both intersections").len(), 2);
+    }
+
+    #[test]
+    fn plane_quadric_intersections_refuse_before_vec_growth() {
+        let plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let sphere = |x| CarrierEquation::Sphere(SphereEquation {
+            center: [x, 0.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        });
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_plane_with_two_quadrics(&ctx, plane, sphere(0.0), sphere(1.0))
+        };
+        let limit = collection_limit_reaching("creo plane-quadric intersections", run);
+        let error = run(limit).expect_err("intersection output needs reserved Vec capacity");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-quadric intersections"));
+        assert_eq!(run(u64::MAX).expect("service budget admits both points").len(), 2);
     }
 
     #[test]
