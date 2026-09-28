@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::value_block_7c0b as value_block;
@@ -190,8 +191,7 @@ pub(crate) enum ValueField {
 }
 
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
-#[must_use]
-pub(crate) fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
+pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
     let mut blocks = Vec::<ValueBlock>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, bytes) {
@@ -210,18 +210,23 @@ pub(crate) fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let Some(block) = parse_candidate(bytes, pos) else {
+        let Some(block) = parse_candidate(ctx, bytes, pos)? else {
             continue;
         };
         if let Some(block_end) = block.pos.checked_add(block.total_len()) {
             enclosing_end = enclosing_end.max(block_end);
         }
-        blocks.push(block);
+        crate::resource::push(ctx, &mut blocks, block, "catia_value_blocks")?;
     }
-    blocks
+    Ok(blocks)
 }
 
-fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
+fn parse_candidate(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    pos: usize,
+) -> Result<Option<ValueBlock>, CodecError> {
+    let Some(payload) = (|| -> Option<_> {
     let declared_len =
         usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
     if declared_len < value_block::LEN {
@@ -232,10 +237,15 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
     if bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02]) {
         return None;
     }
-    Some(ValueBlock {
+    Some(&bytes[pos + value_block::LEN..terminator])
+    })() else {
+        return Ok(None);
+    };
+    Ok(Some(ValueBlock {
         pos,
-        payload: bytes[pos + value_block::LEN..terminator].to_vec(),
-    })
+        payload: crate::resource::copy_retained_slice(ctx, payload,
+            "catia_value_block_payload")?,
+    }))
 }
 
 pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {

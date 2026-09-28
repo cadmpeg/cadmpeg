@@ -651,7 +651,7 @@ pub(crate) fn surface_alias_tag_map(
 ) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(ctx, data)?;
     let mut object_graphs = parse_all_with_paired_roots(ctx, data, &paired_object_graph_roots)?;
-    let mut value_blocks = value_block::parse(data);
+    let mut value_blocks = value_block::parse(ctx, data)?;
     value_blocks.retain(|block| {
         !object_graphs
             .iter()
@@ -816,7 +816,7 @@ pub(crate) fn parse_all_with_paired_roots(
     paired_roots: &std::collections::HashMap<usize, usize>,
 ) -> Result<Vec<ObjectGraph>, CodecError> {
     let catalogs = catalog::parse(ctx, data)?;
-    let value_blocks = value_block::parse(data);
+    let value_blocks = value_block::parse(ctx, data)?;
     let mut roots = Vec::<ObjectGraph>::new();
     let mut enclosing_end = 0usize;
     for pos in memchr::memchr_iter(0x7c, data) {

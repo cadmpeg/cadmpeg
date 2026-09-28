@@ -9296,7 +9296,7 @@ impl CatiaNative {
             , "catia_native_alias_rows")?;
         let mut parsed_object_graphs =
             object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
-        let mut parsed_value_blocks = value_block::parse(bytes);
+        let mut parsed_value_blocks = value_block::parse(ctx, bytes)?;
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
                 extent_contains(graph.pos, graph.total_len, block.pos, block.total_len())
