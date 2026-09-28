@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    DistinctMembers, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureOperation as IrFeatureOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::AnnotationBuilder;
@@ -109,6 +109,21 @@ fn merge_feature_source_properties(
             ctx.charge_collection_items(1, "creo IR Feature source property nodes")?;
         }
         target.insert(key, value);
+    }
+    Ok(())
+}
+
+fn merge_feature_dependencies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &mut DistinctMembers<IrFeatureId>,
+    incoming: Vec<IrFeatureId>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for dependency in incoming {
+        if !target.contains(&dependency) {
+            ctx.try_collection(1, "creo IR Feature dependency members", || {
+                target.try_insert(dependency)
+            })?;
+        }
     }
     Ok(())
 }
@@ -368,11 +383,7 @@ pub(super) fn emit_model_features(
             if name.is_some() {
                 existing.name = name;
             }
-            for dependency in dependencies {
-                if !existing.dependencies.contains(&dependency) {
-                    existing.dependencies.insert(dependency);
-                }
-            }
+            merge_feature_dependencies(ctx, &mut existing.dependencies, dependencies)?;
             merge_feature_source_properties(
                 ctx,
                 &mut existing.source_properties,
@@ -426,7 +437,8 @@ pub(super) fn emit_model_features(
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
             suppressed: Some(false),
-            dependencies: (dependencies).into_iter().collect(),
+            dependencies: DistinctMembers::try_from_reserved_vec(dependencies)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             source_properties: cadmpeg_core::text::named_entries_checked(ctx,
                 format_args!("creo:model:feature#{}", operation.feature_id),
                 source_properties,
@@ -520,15 +532,14 @@ pub(super) fn emit_model_features(
                 reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
             ),
             suppressed: Some(false),
-            dependencies: (feature_dependencies(
+            dependencies: DistinctMembers::try_from_reserved_vec(feature_dependencies(
                 ctx,
                 scan,
                 ir,
                 feature_id,
                 &prototype_feature_dependencies,
             )?)
-            .into_iter()
-            .collect(),
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             source_properties: cadmpeg_core::text::named_entries_checked(ctx,
                 format_args!("creo:model:feature#{feature_id}"),
                 source_properties,
