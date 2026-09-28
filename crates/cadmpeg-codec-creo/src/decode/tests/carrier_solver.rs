@@ -917,14 +917,16 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         origin: [0.0, 0.0, 0.0],
         normal: [0.0, 0.0, 1.0],
     };
-    let mut secant_points = intersect_two_planes_with_torus(
+    let mut secant_points = crate::decode::with_test_decode_ctx(|ctx| intersect_two_planes_with_torus(
+        ctx,
         axial_plane,
         equatorial_plane,
         match torus {
             CarrierEquation::Torus(torus) => torus,
             _ => unreachable!(),
         },
-    );
+    ))
+    .expect("torus intersections admitted");
     secant_points.sort_by(|left, right| left[0].total_cmp(&right[0]));
     assert_eq!(
         secant_points,
