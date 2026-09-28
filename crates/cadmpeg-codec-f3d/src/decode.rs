@@ -1640,13 +1640,13 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 if let ExtrudeStart::FromFace { face, .. } = start {
                     face_selection(face);
                 }
-                let sides = match extent {
+                let (first, second) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
-                        vec![side]
+                        (side, None)
                     }
-                    ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+                    ExtrudeExtent::TwoSided { first, second } => (first, Some(second)),
                 };
-                for side in sides {
+                for side in [Some(first), second].into_iter().flatten() {
                     if let LinearTermination::ToFace { face, .. } = &side.termination {
                         face_selection(face);
                     }
