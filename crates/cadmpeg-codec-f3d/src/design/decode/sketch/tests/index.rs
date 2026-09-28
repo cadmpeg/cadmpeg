@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::{extend_sketch_stream, IndexedRecordOffsets};
+use crate::design::decode::sketch::{
+    decode_headers_for_indices_from_stream, extend_sketch_stream, native_scope_scoped,
+    wanted_record_indices, IndexedRecordOffsets,
+};
 
 #[test]
 fn sketch_stream_output_refuses_collection_limit() {
@@ -153,4 +156,74 @@ fn native_scope_key_refuses_retained_limit() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
     ));
+}
+
+#[test]
+fn scoped_native_scope_key_refuses_materialized_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let expected = crate::ids::native_scope("a:b");
+    policy.limits.max_materialized_bytes = expected.len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        native_scope_scoped(&ctx, "a:b"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+
+    policy.limits.max_materialized_bytes = expected.len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (_reservation, actual) = native_scope_scoped(&ctx, "a:b").unwrap();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn wanted_record_indices_charge_each_distinct_index() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        wanted_record_indices(&ctx, [("stream", 7), ("stream", 7), ("stream", 8)]),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d wanted record index"
+    ));
+}
+
+#[test]
+fn record_header_stream_charges_emitted_index_output_and_id() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&indexed_header(7));
+    bytes.extend_from_slice(&indexed_header(7));
+    let scope = crate::ids::native_scope("BulkStream.dat");
+    let wanted = std::collections::HashSet::from([(scope.as_str(), 7)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    for (items, operation) in [
+        (0, "f3d record header emitted index"),
+        (1, "f3d record header output"),
+    ] {
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let mut out = Vec::new();
+        assert!(matches!(
+            decode_headers_for_indices_from_stream(
+                &ctx, "BulkStream.dat", &scope, &bytes, &wanted, &mut out
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
+
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let mut out = Vec::new();
+    decode_headers_for_indices_from_stream(
+        &ctx, "BulkStream.dat", &scope, &bytes, &wanted, &mut out
+    ).unwrap();
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].id, crate::ids::native_design_record_header_id("BulkStream.dat", 0));
 }

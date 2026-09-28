@@ -115,14 +115,7 @@ pub(in crate::design) fn native_scope_charged(
     ctx: &DecodeContext<'_>,
     name: &str,
 ) -> Result<String, CodecError> {
-    let encoded_len = name.chars().try_fold(ids::SCHEME_PREFIX.len(), |length, character| {
-        let character_len = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-            character.len_utf8().checked_mul(3)?
-        } else {
-            character.len_utf8()
-        };
-        length.checked_add(character_len)
-    }).ok_or_else(|| ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX))?;
+    let encoded_len = native_scope_encoded_len(ctx, name)?;
     ctx.charge_retained(
         u64::try_from(encoded_len).map_err(|_| {
             ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX)
@@ -133,6 +126,40 @@ pub(in crate::design) fn native_scope_charged(
     out.try_reserve_exact(encoded_len).map_err(|_| {
         ctx.refuse_codec_limit("f3d native stream key allocation", 0, 1)
     })?;
+    append_native_scope(name, &mut out);
+    Ok(out)
+}
+
+fn native_scope_scoped<'a>(
+    ctx: &'a DecodeContext<'_>,
+    name: &str,
+) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
+    let encoded_len = native_scope_encoded_len(ctx, name)?;
+    let encoded_len_u64 = u64::try_from(encoded_len).map_err(|_| {
+        ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX)
+    })?;
+    let reservation = ctx.reserve_scoped(encoded_len_u64, "f3d scoped native stream key")?;
+    let mut out = String::new();
+    out.try_reserve_exact(encoded_len).map_err(|_| {
+        ctx.refuse_codec_limit("f3d scoped native stream key allocation", 0, 1)
+    })?;
+    append_native_scope(name, &mut out);
+    Ok((reservation, out))
+}
+
+fn native_scope_encoded_len(ctx: &DecodeContext<'_>, name: &str) -> Result<usize, CodecError> {
+    let encoded_len = name.chars().try_fold(ids::SCHEME_PREFIX.len(), |length, character| {
+        let character_len = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            character.len_utf8().checked_mul(3)?
+        } else {
+            character.len_utf8()
+        };
+        length.checked_add(character_len)
+    }).ok_or_else(|| ctx.refuse_codec_limit("f3d native stream key length", u64::MAX - 1, u64::MAX))?;
+    Ok(encoded_len)
+}
+
+fn append_native_scope(name: &str, out: &mut String) {
     out.push_str(ids::SCHEME_PREFIX);
     for character in name.chars() {
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
@@ -147,7 +174,6 @@ pub(in crate::design) fn native_scope_charged(
             out.push(character);
         }
     }
-    Ok(out)
 }
 
 /// Copy a stream identity for a mutable decode pass under a scoped byte charge.
@@ -1351,22 +1377,17 @@ pub(crate) fn decode_entity_headers(
 /// class tag, for each record index named by any [`DesignEntityHeader`] in
 /// `entities`.
 pub(crate) fn decode_record_headers(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
-    let wanted = entities
-        .iter()
-        .filter_map(|entity| {
-            let scope = native_stream(&entity.id)?;
-            Some(
-                entity
-                    .reference_values()
-                    .map(move |record_index| (scope.to_owned(), *record_index)),
-            )
+    let references = entities.iter().flat_map(|entity| {
+        native_stream(&entity.id).into_iter().flat_map(move |scope| {
+            entity.reference_values().map(move |record_index| (scope, *record_index))
         })
-        .flatten()
-        .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(scan, &wanted)
+    });
+    let wanted = wanted_record_indices(ctx, references)?;
+    decode_headers_for_indices(ctx, scan, &wanted)
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) named by
@@ -1374,19 +1395,35 @@ pub(crate) fn decode_record_headers(
 /// headers referenced by records other than [`DesignEntityHeader`] (for
 /// example, sketch relation records).
 pub(crate) fn decode_related_record_headers(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     indices: &[(String, u32)],
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
-    let wanted = indices
-        .iter()
-        .cloned()
-        .collect::<std::collections::HashSet<_>>();
-    decode_headers_for_indices(scan, &wanted)
+    let wanted = wanted_record_indices(ctx, indices.iter().map(|(scope, index)| (scope.as_str(), *index)))?;
+    decode_headers_for_indices(ctx, scan, &wanted)
 }
 
-fn decode_headers_for_indices(
+fn wanted_record_indices<'a>(
+    ctx: &DecodeContext<'_>,
+    indices: impl IntoIterator<Item = (&'a str, u32)>,
+) -> Result<std::collections::HashSet<(&'a str, u32)>, CodecError> {
+    let mut wanted = std::collections::HashSet::new();
+    for index in indices {
+        if !wanted.contains(&index) {
+            ctx.charge_collection_items(1, "f3d wanted record index")?;
+            wanted.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d wanted record index allocation", 0, 1)
+            })?;
+            wanted.insert(index);
+        }
+    }
+    Ok(wanted)
+}
+
+fn decode_headers_for_indices<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    wanted: &std::collections::HashSet<(String, u32)>,
+    wanted: &std::collections::HashSet<(&'a str, u32)>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
     if wanted.is_empty() {
         return Ok(Vec::new());
@@ -1397,24 +1434,48 @@ fn decode_headers_for_indices(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
-        for header in indexed_record_offsets(bytes) {
-            let position = header.offset;
-            let record_index = header.record_index;
-            let scope = ids::native_scope(&entry.name);
-            if wanted.contains(&(scope, record_index)) && emitted.insert(record_index) {
-                out.push(DesignRecordHeader {
-                    id: ids::native_design_record_header_id(&entry.name, position),
-                    record_index,
-                    class_tag: header.class_tag,
-                    byte_offset: position as u64,
-                });
-            }
-        }
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        decode_headers_for_indices_from_stream(ctx, &entry.name, &scope, bytes, wanted, &mut out)?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn decode_headers_for_indices_from_stream(
+    ctx: &DecodeContext<'_>,
+    stream_name: &str,
+    scope: &str,
+    bytes: &[u8],
+    wanted: &std::collections::HashSet<(&str, u32)>,
+    out: &mut Vec<DesignRecordHeader>,
+) -> Result<(), CodecError> {
+    let mut emitted = std::collections::HashSet::new();
+    for header in indexed_record_offsets(bytes) {
+        let position = header.offset;
+        let record_index = header.record_index;
+        if wanted.contains(&(scope, record_index)) && !emitted.contains(&record_index) {
+            ctx.charge_collection_items(1, "f3d record header emitted index")?;
+            emitted.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d record header emitted index allocation", 0, 1)
+            })?;
+            emitted.insert(record_index);
+            ctx.charge_collection_items(1, "f3d record header output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d record header output allocation", 0, 1)
+            })?;
+            out.push(DesignRecordHeader {
+                id: design_record_id_charged(
+                    ctx, stream_name, ":design-record-header#", position as u64,
+                    "f3d record header ID", "f3d record header ID allocation",
+                )?,
+                record_index,
+                class_tag: header.class_tag,
+                byte_offset: position as u64,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Decode the sketch-relation body at each `records` entry's offset: the
