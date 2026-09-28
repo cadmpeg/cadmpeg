@@ -850,19 +850,26 @@ fn face_boundary_plane(
 
 pub(in crate::decode) fn ordered_face_loops<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    loops: Vec<&'a crate::topology::Loop>,
+    loops: &[&'a crate::topology::Loop],
     plane: Option<PlaneEquation>,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let mut ordered_input = Vec::new();
+    ctx.try_reserve_items(
+        &mut ordered_input,
+        loops.len(),
+        "creo native face ordering loop references",
+    )?;
+    ordered_input.extend_from_slice(loops);
     let plane = match plane {
         Some(plane) => Some(plane),
-        None => face_boundary_plane(ctx, &loops, incidence, solved_vertices)?,
+        None => face_boundary_plane(ctx, &ordered_input, incidence, solved_vertices)?,
     };
     if let Some(plane) = plane {
-        ordered_planar_face_loops(ctx, loops, plane, incidence, solved_vertices)
+        ordered_planar_face_loops(ctx, ordered_input, plane, incidence, solved_vertices)
     } else {
-        Ok((loops.len() == 1).then_some(loops))
+        Ok((ordered_input.len() == 1).then_some(ordered_input))
     }
 }
 

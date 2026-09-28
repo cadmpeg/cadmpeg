@@ -71,7 +71,7 @@ fn ordered_face_loops_service<'a>(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Option<Vec<&'a crate::topology::Loop>> {
     crate::decode::with_test_decode_ctx(|ctx| {
-        ordered_face_loops(ctx, loops, plane, incidence, solved_vertices)
+        ordered_face_loops(ctx, &loops, plane, incidence, solved_vertices)
     })
     .expect("service face loop ordering")
 }
@@ -107,10 +107,10 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
     let points = BTreeMap::from([(1, [0.0, 0.0, 0.0])]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let error = match ordered_face_loops(&ctx, vec![&lp], None, &incidence, &points) {
+    let error = match ordered_face_loops(&ctx, &[&lp], None, &incidence, &points) {
         Ok(_) => panic!("one boundary point exceeds collection limit"),
         Err(error) => error,
     };
@@ -118,6 +118,26 @@ fn ordered_face_loops_refuse_boundary_point_vector() {
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && resource.operation == "creo topology plane candidate points"));
     assert_eq!(ordered_face_loops_service(vec![&lp], None, &incidence, &points), Some(vec![&lp]));
+}
+
+#[test]
+fn ordered_face_loops_refuse_input_references() {
+    let lp = crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(9),
+        half_edges: Vec::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = ordered_face_loops(&ctx, &[&lp], None, &BTreeMap::new(), &BTreeMap::new())
+        .err()
+        .expect("loop reference refused");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo native face ordering loop references"));
+    assert_eq!(ordered_face_loops_service(vec![&lp], None, &BTreeMap::new(), &BTreeMap::new()), Some(vec![&lp]));
 }
 
 #[test]
