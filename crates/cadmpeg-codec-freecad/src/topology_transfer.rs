@@ -1031,8 +1031,8 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             reserve_vec_items(self.ctx, &mut ir.model.tessellations, 1, "FreeCAD tessellations records")?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id_charged(self.ctx, "tessellation",
-                        &self.payload.id, &tessellation_key)?,
+                    crate::native::model_id_charged_at(self.ctx, "tessellation",
+                        &self.payload.id, &tessellation_key, "FreeCAD tessellation identity")?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,
