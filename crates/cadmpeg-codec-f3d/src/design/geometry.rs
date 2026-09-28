@@ -1111,28 +1111,28 @@ fn arrangement_retain_cycle_edges(
         if !budget.charge_by(edges.len().saturating_mul(edges.len())) {
             return Ok(());
         }
-        let mut retained = Vec::new();
+        let mut keep = Vec::new();
         for (index, edge) in edges.iter().enumerate() {
-            if arrangement_has_alternate_path(
+            let has_cycle = arrangement_has_alternate_path(
                 edges,
                 index,
                 edge.nodes[0],
                 edge.nodes[1],
                 node_count,
                 ctx,
-            )? {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "f3d arrangement retained edge")?;
-                    ctx.charge_collection_items(
-                        edge.polyline.len() as u64,
-                        "f3d arrangement retained edge polyline",
-                    )?;
-                }
-                retained.push(edge.clone());
-            }
+            )?;
+            push_geometry_item(ctx, &mut keep, has_cycle,
+                "f3d arrangement retained edge mark")?;
         }
-        if retained.len() == edges.len() {
+        if keep.iter().all(|keep| *keep) {
             break;
+        }
+        let mut retained = Vec::new();
+        for (edge, keep) in std::mem::take(edges).into_iter().zip(keep) {
+            if keep {
+                push_geometry_item(ctx, &mut retained, edge,
+                    "f3d arrangement retained edge")?;
+            }
         }
         *edges = retained;
     }
@@ -1151,10 +1151,8 @@ fn arrangement_has_alternate_path(
         Some(ctx) => ctx.alloc_filled(node_count, false, "f3d arrangement visit marks")?,
         None => alloc_filled(node_count, false, "f3d arrangement visit marks")?,
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
-    }
-    let mut pending = vec![start];
+    let mut pending = Vec::new();
+    push_geometry_item(ctx, &mut pending, start, "f3d arrangement pending nodes")?;
     visited[start] = true;
     while let Some(node) = pending.pop() {
         if node == destination {
@@ -1172,10 +1170,8 @@ fn arrangement_has_alternate_path(
             };
             if !visited[next] {
                 visited[next] = true;
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "f3d arrangement pending nodes")?;
-                }
-                pending.push(next);
+                push_geometry_item(ctx, &mut pending, next,
+                    "f3d arrangement pending nodes")?;
             }
         }
     }
