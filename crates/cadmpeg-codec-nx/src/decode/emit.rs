@@ -1229,6 +1229,7 @@ pub(super) fn emit_topology(
         });
     }
     attach_tolerant_edge_intersections_with_budget(
+        ctx,
         ir,
         graph,
         &edges,
