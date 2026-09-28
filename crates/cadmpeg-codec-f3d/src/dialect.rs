@@ -221,8 +221,11 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
 ) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
-    ctx.charge_collection_items(1, "classify F3D primary dialect layer")?;
-    let mut layers = DialectLayers::of(scan.kind.dialect().clone());
+    let primary = scan
+        .kind
+        .dialect()
+        .clone_charged(ctx, "clone F3D primary dialect layer")?;
+    let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
         if let Err(rejected) = layers.insert_charged(ctx, layer, "collect F3D dialect layers")? {

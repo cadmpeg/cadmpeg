@@ -3135,7 +3135,9 @@ pub(crate) fn decode_archive_member<'a>(
     decode_scanned_document(
         ctx,
         scan,
-        crate::report::ReportScope::ArchiveMember(dialects.clone()),
+        crate::report::ReportScope::ArchiveMember(
+            dialects.clone_charged(ctx, "clone F3Z member dialect layers")?,
+        ),
     )
 }
 

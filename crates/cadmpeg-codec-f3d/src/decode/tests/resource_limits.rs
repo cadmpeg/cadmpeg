@@ -7,6 +7,21 @@ fn context<'a>(arena: &'a DecodeArena, max_collection_items: u64) -> DecodeConte
 }
 
 #[test]
+fn archive_member_dialect_clone_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let layers = cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone());
+    let limited = context(&arena, 0);
+    let error = super::super::decode_archive_member(&limited, &scan, &layers)
+        .err().expect("dialect copy must refuse");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "clone F3Z member dialect layers"));
+}
+
+#[test]
 fn text_brep_fact_name_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

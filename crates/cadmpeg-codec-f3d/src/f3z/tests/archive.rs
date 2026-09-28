@@ -872,3 +872,26 @@ fn f3z_member_scan_propagates_collection_limit() {
         .err().expect("member scan must refuse");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
+
+#[test]
+fn f3z_primary_dialect_clone_refuses_retained_limit() {
+    let member = crate::test_support::zip_test::synthetic_f3d(true);
+    let archive = crate::test_support::assembly_test::f3z_archive(
+        "part.f3d",
+        &[("part.f3d", member.as_slice())],
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    ).unwrap();
+    let error = crate::f3z::archive::classify_members(&limited, &scan)
+        .err().expect("dialect copy must refuse");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "clone F3Z primary dialect layer"));
+}
