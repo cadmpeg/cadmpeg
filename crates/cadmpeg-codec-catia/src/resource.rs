@@ -89,6 +89,30 @@ pub(crate) fn reserve_admitted_vec<T>(
         .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
 }
 
+pub(crate) fn copy_admitted_slice<T: Clone>(
+    values: &[T],
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut copy = Vec::new();
+    reserve_admitted_vec(&mut copy, values.len(), operation)?;
+    copy.extend_from_slice(values);
+    Ok(copy)
+}
+
+pub(crate) fn copy_admitted_rows<T: Clone>(
+    values: &[T],
+    row_len: usize,
+    operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    let mut rows = Vec::new();
+    let row_count = values.len().div_ceil(row_len);
+    reserve_admitted_vec(&mut rows, row_count, operation)?;
+    for chunk in values.chunks(row_len) {
+        rows.push(copy_admitted_slice(chunk, operation)?);
+    }
+    Ok(rows)
+}
+
 pub(crate) fn reserve_admitted_map<K: Eq + Hash, V>(
     values: &mut HashMap<K, V>,
     additional: usize,

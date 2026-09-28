@@ -9,7 +9,7 @@ use super::super::edges::{
     orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::surfaces::{rational_arc, revolve_nurbs};
+use super::super::surfaces::{rational_arc as charged_rational_arc, revolve_nurbs};
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
@@ -40,6 +40,33 @@ fn curve_on_parameter_range(
     crate::test_support::with_service_context(|ctx|
         charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal))
         .expect("service resource budget")
+}
+
+fn rational_arc(
+    center: [f64; 3],
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+    radius: f64,
+    interval: [f64; 2],
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<NurbsCurve> {
+    crate::test_support::with_service_context(|ctx|
+        charged_rational_arc(ctx, center, direction_x, direction_y, radius,
+            interval, record, refusal))
+        .expect("service resource budget")
+}
+
+#[test]
+fn rational_arc_refuses_collection_limit_before_control_net() {
+    let refused = crate::test_support::with_collection_limit(4, |ctx|
+        charged_rational_arc(ctx, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+            1.0, [0.0, std::f64::consts::FRAC_PI_2], &"arc",
+            &mut crate::nurbs::LaneRefusals::new()));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(rational_arc([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
+        1.0, [0.0, std::f64::consts::FRAC_PI_2], &"arc",
+        &mut crate::nurbs::LaneRefusals::new()).is_some());
 }
 
 #[test]
