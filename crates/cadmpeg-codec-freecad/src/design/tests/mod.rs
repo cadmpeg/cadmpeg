@@ -12,6 +12,76 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+    let object = crate::native::ObjectRecord {
+        id: "fcstd:native:object#Sketch".into(),
+        name: "Sketch".into(),
+        type_name: "Sketcher::SketchObject".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: Default::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
+    };
+    let sketch = SketchId::mint("test:test:sketch#group").expect("valid sketch identity");
+    let entities = [SketchEntity::new(
+        SketchEntityId::mint("test:test:entity#line").expect("valid entity identity"),
+        SketchId::mint("test:test:sketch#group").expect("valid sketch identity"),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        }).expect("valid line"),
+    )];
+    let property = |constraint: &str| crate::native::PropertyRecord {
+        id: "constraint-property".into(),
+        owner: object.id.clone(),
+        name: "Constraints".into(),
+        type_name: "Sketcher::PropertyConstraintList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><ConstraintList count=\"1\">{constraint}</ConstraintList></Property>"), 0,
+        ).expect("valid XML span"),
+    };
+    let text = property("<Constrain Type=\"21\" MetaData=\"{&quot;text&quot;:&quot;label&quot;,&quot;font&quot;:&quot;mono&quot;}\" ElementIds=\"0\" ElementPositions=\"0\"/>");
+    for operation in ["fcstd constraint text", "fcstd constraint font"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::parse_constraints(ctx, &object, &[&text], &sketch, &entities)
+        });
+    }
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd constraint locus copies", |ctx| {
+            super::parse_constraints(ctx, &object, &[&text], &sketch, &entities)
+        },
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert!(matches!(super::parse_constraints(&ctx, &object, &[&text], &sketch, &entities),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "fcstd constraint text metadata parse"));
+    let native = property("<Constrain Type=\"99\" First=\"0\" FirstPos=\"0\"/>");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd native constraint entities", |ctx| {
+            super::parse_constraints(ctx, &object, &[&native], &sketch, &entities)
+        },
+    );
+    let alignment = property("<Constrain Type=\"15\" InternalAlignmentType=\"1\" First=\"0\" FirstPos=\"0\" Second=\"0\" SecondPos=\"1\"/>");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd constraint entity identity", |ctx| {
+            super::parse_constraints(ctx, &object, &[&alignment], &sketch, &entities)
+        },
+    );
+}
+
+#[test]
 fn neutral_constraint_copies_refuse_at_matching_limits() {
     let entity = cadmpeg_ir::sketches::SketchEntityId::mint("test:test:entity#one")
         .expect("valid entity identity");
