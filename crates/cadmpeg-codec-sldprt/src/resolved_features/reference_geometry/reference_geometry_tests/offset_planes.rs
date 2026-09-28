@@ -233,8 +233,15 @@ fn offset_plane_frame_translates_its_reference_frame() {
         features: vec![native("plane-native", "3"), native("offset-native", "549")],
     };
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     assert_eq!(
-        sketch_plane_frames(&features, &[history]).get(&549),
+        sketch_plane_frames(&ctx, &features, &[history]).unwrap().get(&549),
         Some(&crate::resolved_features::curves::SketchPlaneFrame {
             origin: Point3::new(0.0, 0.0, 3.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
