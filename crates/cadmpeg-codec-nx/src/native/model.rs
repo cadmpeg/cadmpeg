@@ -1417,7 +1417,7 @@ impl NativeModel {
             fast_load_component_prototypes,
             fast_load_component_uuids,
             fast_load_component_occurrences,
-        ) = fast_load_component_roster(container)?;
+        ) = fast_load_component_roster(ctx, container)?;
         let fast_load_component_object_groups = fast_load_component_object_groups(
             ctx,
             &fast_load_component_uuids,

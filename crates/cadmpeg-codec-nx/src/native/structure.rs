@@ -366,34 +366,38 @@ struct Candidate {
 /// rule. A valid parse nested inside a larger parse is an interpretation of
 /// bytes already owned by that larger candidate, not a second roster. Two
 /// disjoint candidates or partially overlapping candidates remain ambiguous.
-fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
-    candidates.sort_by(|left, right| {
-        left.start
-            .cmp(&right.start)
-            .then_with(|| right.end.cmp(&left.end))
-    });
-    let mut selected = Vec::new();
-    for candidate in candidates {
-        let Some(previous) = selected.last_mut() else {
-            selected.push(candidate);
-            continue;
-        };
-        if candidate.start >= previous.end {
-            selected.push(candidate);
-            continue;
-        }
-        if candidate.end <= previous.end {
-            continue;
-        }
-        return None;
+fn select_roster_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut candidates: Vec<Candidate>,
+) -> Result<Option<Candidate>, cadmpeg_core::CodecError> {
+    let work = candidates.len().checked_mul(3)
+        .ok_or_else(|| ctx.refuse_codec_limit("select NX fast-load roster candidate", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "select NX fast-load roster candidate")?;
+    if candidates.is_empty() {
+        return Ok(None);
     }
-    let [candidate] = selected.try_into().ok()?;
-    Some(candidate)
+    let mut best_index = 0usize;
+    for index in 1..candidates.len() {
+        if candidates[index].start < candidates[best_index].start
+            || (candidates[index].start == candidates[best_index].start
+                && candidates[index].end > candidates[best_index].end)
+        {
+            best_index = index;
+        }
+    }
+    let selected = candidates.remove(best_index);
+    if candidates.iter().any(|candidate| {
+        candidate.start < selected.start || candidate.end > selected.end
+    }) {
+        return Ok(None);
+    }
+    Ok(Some(selected))
 }
 
 /// Extract the component roster only when its entry and internal frame are
 /// unique and every counted lane is complete.
 pub(super) fn fast_load_component_roster(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container<'_>,
 ) -> Result<
     (
@@ -455,7 +459,7 @@ pub(super) fn fast_load_component_roster(
         .into_iter()
         .filter_map(|start| parse_candidate(payload, start))
         .collect::<Vec<_>>();
-    let Some(candidate) = select_roster_candidate(candidates) else {
+    let Some(candidate) = select_roster_candidate(ctx, candidates)? else {
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
@@ -651,13 +655,46 @@ fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
 mod tests {
     use super::occurrences::FastLoadOccurrences;
     use super::{
-        fast_load_component_object_groups, fast_load_component_roster, select_roster_candidate,
+        fast_load_component_object_groups,
         Candidate, FastLoadComponentObjectGroup, OccurrenceLaneForm, ENTRY_NAME,
     };
     use crate::container::Container;
     use crate::container::{DirEntry, Region};
     use crate::native::om::object_uuid::ObjectUuidValue;
     use std::borrow::Cow;
+
+    fn fast_load_component_roster(
+        container: &Container<'_>,
+    ) -> Result<
+        (
+            Vec<super::FastLoadComponentPrototype>,
+            Vec<super::FastLoadComponentUuid>,
+            FastLoadOccurrences,
+        ),
+        cadmpeg_core::CodecError,
+    > {
+        crate::test_support::with_decode_context(|ctx| super::fast_load_component_roster(ctx, container))
+    }
+
+    fn select_roster_candidate(candidates: Vec<Candidate>) -> Option<Candidate> {
+        crate::test_support::with_decode_context(|ctx| super::select_roster_candidate(ctx, candidates))
+            .expect("default test work limit admits candidate selection")
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_candidate_work_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        let file = container(payload(&["plate"], &[1]));
+        let error = super::fast_load_component_roster(&ctx, &file)
+            .err()
+            .expect("roster candidate selection needs work");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
 
     fn string(bytes: &mut Vec<u8>, value: &str) {
         bytes.extend([4, u8::try_from(value.len() + 2).expect("short test string")]);
