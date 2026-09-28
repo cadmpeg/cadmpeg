@@ -965,32 +965,44 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
 /// record_index + six zero bytes` naming the sketch's owned records. The
 /// base-point reference is returned as the first member.
 fn parse_sketch_member_run(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     from: usize,
     entity_suffix: u64,
-) -> Vec<crate::records::identity::Located<u32>> {
+) -> Result<Vec<crate::records::identity::Located<u32>>, CodecError> {
     let empty = Vec::new();
     let Some(paired) = next_indexed_record_offset(bytes, from) else {
-        return empty;
+        return Ok(empty);
     };
     if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
-        return empty;
+        return Ok(empty);
     }
     let Some(count) =
         View::u32_le_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
     else {
-        return empty;
+        return Ok(empty);
     };
     if count == 0
         || bytes.get(paired + 56) != Some(&1)
         || bytes.get(paired + 61..paired + 67) != Some(&[0u8; 6][..])
     {
-        return empty;
+        return Ok(empty);
     }
     let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
-        return empty;
+        return Ok(empty);
     };
-    let mut members = Vec::with_capacity(count + 1);
+    let Some(capacity) = count.checked_add(1) else {
+        return Ok(empty);
+    };
+    let Some(run_end) = count.checked_mul(11).and_then(|length| paired.checked_add(67)?.checked_add(length)) else {
+        return Ok(empty);
+    };
+    if run_end > bytes.len() {
+        return Ok(empty);
+    }
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(capacity), "f3d sketch member run")?;
+    let mut members = Vec::new();
+    members.try_reserve(capacity).map_err(|_| ctx.refuse_codec_limit("f3d sketch member run allocation", 0, 1))?;
     members.push(crate::records::identity::Located {
         value: base_point_index,
         offset: (paired + 57) as u64,
@@ -1000,17 +1012,17 @@ fn parse_sketch_member_run(
         if bytes.get(marker) != Some(&1)
             || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
         {
-            return empty;
+            return Ok(empty);
         }
         let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
-            return empty;
+            return Ok(empty);
         };
         members.push(crate::records::identity::Located {
             value: record_index,
             offset: (marker + 1) as u64,
         });
     }
-    members
+    Ok(members)
 }
 
 /// Parse the counted member-record run of a legacy sketch container's paired
@@ -1019,10 +1031,12 @@ fn parse_sketch_member_run(
 /// state, then the member count at offset 41. Each member is a padded marked
 /// reference.
 fn parse_legacy_sketch_member_run(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
-) -> Option<Vec<crate::records::identity::Located<u32>>> {
+) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
+    let parsed = (|| {
     let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
     if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
         || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
@@ -1047,7 +1061,15 @@ fn parse_legacy_sketch_member_run(
     if run_end > bytes.len() {
         return None;
     }
-    let mut members = Vec::with_capacity(count);
+    Some((paired_at, count))
+    })();
+    let Some((paired_at, count)) = parsed else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d legacy sketch member run")?;
+    let mut members = Vec::new();
+    members.try_reserve(count).map_err(|_| ctx.refuse_codec_limit("f3d legacy sketch member run allocation", 0, 1))?;
+    let parsed = (|| {
     for ordinal in 0..count {
         let marker = paired_at + 45 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
@@ -1061,24 +1083,29 @@ fn parse_legacy_sketch_member_run(
         });
     }
     Some(members)
+    })();
+    Ok(parsed)
 }
 
 /// Recognize either legacy sketch-container tail. A counted container owns
 /// its complete member run. A localized container omits that run and is
 /// accepted only when its paired record names an exact placement-head frame.
 fn parse_legacy_sketch_container_members(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
     records: &IndexedRecordOffsets,
-) -> Option<Vec<crate::records::identity::Located<u32>>> {
-    if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
-        return Some(members);
+) -> Result<Option<Vec<crate::records::identity::Located<u32>>>, CodecError> {
+    if let Some(members) = parse_legacy_sketch_member_run(ctx, bytes, primary_at, entity_suffix)? {
+        return Ok(Some(members));
     }
+    Ok((|| {
     let entity_id =
         crate::records::identity::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix));
     parse_member_run_head_placement(bytes, primary_at as u64, &entity_id, records)?;
     Some(Vec::new())
+    })())
 }
 
 /// Decode every self-validating per-entity design `BulkStream` header (spec
@@ -1175,7 +1202,7 @@ pub(crate) fn decode_entity_headers(
                     },
                 );
             let members = if genesis_form && in_sketch_module {
-                parse_sketch_member_run(bytes, record_end, entity_suffix)
+                parse_sketch_member_run(ctx, bytes, record_end, entity_suffix)?
             } else {
                 Vec::new()
             };
@@ -1222,7 +1249,7 @@ pub(crate) fn decode_entity_headers(
             }
             let class_tag = header.class_tag.clone();
             let Some(members) =
-                parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
+                parse_legacy_sketch_container_members(ctx, bytes, start, entity_suffix, &records)?
             else {
                 continue;
             };
