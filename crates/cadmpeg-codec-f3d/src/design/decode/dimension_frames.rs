@@ -4,6 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::index_from_u32;
 
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
@@ -788,7 +789,7 @@ fn parse_dimension_locus_pair(
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -815,7 +816,7 @@ fn parse_dimension_locus_pair(
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
         let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -826,7 +827,7 @@ fn parse_dimension_locus_pair(
         companion_record_index,
         governing_companion_record_index: companion_record_index,
         byte_offset: start as u64,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         opaque_index: Some(crate::records::identity::Located {
@@ -847,7 +848,7 @@ fn parse_dimension_locus_pair(
                 role_offset: (start + 65) as u64,
             },
         ],
-        paired_class_tag: paired_class_tag.try_into().ok()?,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
     .ok()
@@ -1006,7 +1007,7 @@ fn parse_dimension_null_locus_pair(
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -1028,7 +1029,7 @@ fn parse_dimension_null_locus_pair(
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, position)?;
         let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
             break (at, candidate_tag);
         }
@@ -1039,7 +1040,7 @@ fn parse_dimension_null_locus_pair(
         companion_record_index,
         governing_companion_record_index: companion_record_index,
         byte_offset: start as u64,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         opaque_index: None,
@@ -1057,7 +1058,7 @@ fn parse_dimension_null_locus_pair(
                 role_offset: (start + 50) as u64,
             },
         ],
-        paired_class_tag: paired_class_tag.try_into().ok()?,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
     .ok()
@@ -1240,7 +1241,7 @@ fn parse_dimension_annotation_frame(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionAnnotationFrame> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -1276,9 +1277,9 @@ fn parse_dimension_annotation_frame(
     if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
         return None;
     }
-    let (key, after_key) = lp_ascii_filtered(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
+    let (key, after_key) = lp_ascii_filtered_view(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
     let (meta_type, after_type) =
-        lp_ascii_filtered(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
     if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
         return None;
     }
@@ -1287,7 +1288,7 @@ fn parse_dimension_annotation_frame(
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after) == Some(record_index) {
             break (at, tag);
         }
@@ -1388,7 +1389,7 @@ fn parse_dimension_annotation_frame(
             companion_record_index,
             governing_companion_record_index: *governing_companion_record_index,
             byte_offset: start as u64,
-            class_tag: class_tag.try_into().ok()?,
+            class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             record_index,
             frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
             operands,
@@ -1398,7 +1399,7 @@ fn parse_dimension_annotation_frame(
             governing_owner_record_index: *governing_owner_record_index,
             governing_owner_reference_offset: (*tail + 1) as u64,
             return_members: return_members.clone(),
-            paired_class_tag: paired_class_tag.try_into().ok()?,
+            paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
             paired_byte_offset: paired_byte_offset as u64,
             owner_reference,
             owner_reference_offset: (paired_byte_offset + 20) as u64,
@@ -1569,7 +1570,7 @@ fn parse_dimension_presentation_frame(
     if !is_dimension_presentation_type(primary_type_guid) {
         return None;
     }
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -1606,9 +1607,9 @@ fn parse_dimension_presentation_frame(
     let mut paired_search = position;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
+        let (tag, after) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
         if View::u32_le_at(bytes, after) == Some(record_index)
-            && paired_classes.contains(tag.as_str())
+            && paired_classes.contains(tag)
         {
             if bytes.get(at + 11..at + 19) != Some(&[0; 8]) || bytes.get(at + 19) != Some(&1) {
                 return None;
@@ -1624,7 +1625,7 @@ fn parse_dimension_presentation_frame(
     Some(DesignDimensionPresentationFrame {
         id: String::new(),
         byte_offset: u64::try_from(start).ok()?,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
@@ -1632,7 +1633,7 @@ fn parse_dimension_presentation_frame(
             .get(presentation_byte_offset..paired_byte_offset)?
             .to_vec(),
         presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
-        paired_class_tag: paired_class_tag.try_into().ok()?,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
         owner_reference,
         owner_reference_offset: u64::try_from(paired_byte_offset + 20).ok()?,
@@ -1859,7 +1860,7 @@ fn parse_dimension_locus_group(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusGroup> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
@@ -1940,7 +1941,7 @@ fn parse_dimension_locus_group(
     }
     let next_byte_offset = position.checked_add(1)?;
     let (next_class_tag, next_after_tag) =
-        lp_ascii_filtered(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
     if next_after_tag != next_byte_offset.checked_add(7)? {
         return None;
     }
@@ -1948,7 +1949,7 @@ fn parse_dimension_locus_group(
         id: String::new(),
         companion_record_index,
         byte_offset: start as u64,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
         loci,
@@ -1958,7 +1959,7 @@ fn parse_dimension_locus_group(
         owner_role_offset,
         state,
         state_offset,
-        next_class_tag: next_class_tag.try_into().ok()?,
+        next_class_tag: crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
     })

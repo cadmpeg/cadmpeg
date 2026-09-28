@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact legacy As-built assembly alignment frames.
 
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::operands::{parse_entity_selection_prefix, parse_face_operand};
 use crate::layout::assembly_as_built_421_frame_297 as as_built_421_frame_297;
 use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
@@ -372,8 +372,8 @@ pub(super) fn exact_legacy_as_built_421_operands(
 
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
     let start = usize::try_from(byte_offset).ok()?;
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (after_tag == start.checked_add(7)?).then_some(class_tag)
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    (after_tag == start.checked_add(7)?).then(|| class_tag.to_owned())
 }
 
 fn exact_legacy_as_built_face_selection(

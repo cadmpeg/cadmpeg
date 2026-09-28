@@ -4,7 +4,7 @@
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::operands::parse_entity_selection_prefix;
 use crate::design::decode::operands::parse_face_operand;
@@ -97,7 +97,7 @@ pub(super) fn exact_coil_placement(
         return None;
     }
     let (selection_class_tag, selection_after_tag) =
-        lp_ascii_filtered(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
     if selection_after_tag != selection_start.checked_add(7)?
         || View::u32_le_at(bytes, selection_after_tag)? != selection_record_index
     {
@@ -111,7 +111,7 @@ pub(super) fn exact_coil_placement(
         return None;
     }
     let (transform_class_tag, transform_after_tag) =
-        lp_ascii_filtered(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
     if transform_after_tag != transform_start.checked_add(7)?
         || View::u32_le_at(bytes, transform_after_tag)? != transform_record_index
     {
@@ -267,11 +267,11 @@ pub(super) fn exact_coil_placement(
     Some(Ok(DesignCoilPlacement {
         selection_record_index,
         selection_record_byte_offset: u64::try_from(selection_start).ok()?,
-        selection_class_tag: selection_class_tag.try_into().ok()?,
+        selection_class_tag: crate::design::decode::text::class_tag_from_view(selection_class_tag).ok()?,
         selection,
         transform_record_index,
         transform_record_byte_offset: u64::try_from(transform_start).ok()?,
-        transform_class_tag: transform_class_tag.try_into().ok()?,
+        transform_class_tag: crate::design::decode::text::class_tag_from_view(transform_class_tag).ok()?,
         explicit_transform,
     }))
     })().transpose()

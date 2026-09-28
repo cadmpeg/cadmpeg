@@ -4,7 +4,7 @@
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -154,7 +154,7 @@ fn exact_embedded_extrude_distance(
         .filter_map(|(start, end)| {
             (end.checked_sub(start)? == 100).then_some(())?;
             let (_, after_tag) =
-                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+                lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
             let first_auxiliary = record_index.checked_add(1)?;
             let second_auxiliary = record_index.checked_add(2)?;
             if after_tag != start + 7

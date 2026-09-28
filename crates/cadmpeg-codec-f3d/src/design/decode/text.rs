@@ -7,6 +7,36 @@ use std::fmt::Write;
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 
+/// Read an ASCII-only length-prefixed field without copying its contents.
+pub(in crate::design::decode) fn lp_ascii_filtered_view(
+    bytes: &[u8],
+    at: usize,
+    bounds: RangeInclusive<usize>,
+    allowed: fn(&u8) -> bool,
+) -> Option<(&str, usize)> {
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if !bounds.contains(&length) {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    let raw = bytes.get(start..end)?;
+    if !raw.iter().all(allowed) {
+        return None;
+    }
+    Some((std::str::from_utf8(raw).ok()?, end))
+}
+
+/// Validate a borrowed three-digit class tag before making its fixed-size copy.
+pub(in crate::design::decode) fn class_tag_from_view(
+    value: &str,
+) -> Result<crate::records::references::DesignClassTag, String> {
+    if value.len() != 3 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("class_tag must contain three ASCII digits".into());
+    }
+    crate::records::references::DesignClassTag::try_from(value.to_owned())
+}
+
 pub(in crate::design::decode) fn design_record_id_charged(
     ctx: &DecodeContext<'_>,
     stream: &str,
@@ -138,4 +168,43 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
         text.push(character);
     }
     Ok(Some((text, end, reservation)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{class_tag_from_view, lp_ascii_filtered_view};
+
+    #[test]
+    fn borrowed_ascii_reader_matches_owned_reader() {
+        let fields: [&[u8]; 6] = [b"", b"123", b"EntityGenesis", b"a-b_", b"\0", b"\x80"];
+        for field in fields {
+            let mut bytes = u32::try_from(field.len()).unwrap().to_le_bytes().to_vec();
+            bytes.extend_from_slice(field);
+            for bounds in [0..=2000, 3..=3] {
+                for allowed in [
+                    u8::is_ascii_graphic as fn(&u8) -> bool,
+                    u8::is_ascii_digit as fn(&u8) -> bool,
+                ] {
+                    let original =
+                        crate::bytes::lp_ascii_filtered(&bytes, 0, bounds.clone(), allowed);
+                    let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)
+                        .map(|(value, end)| (value.to_owned(), end));
+                    assert_eq!(borrowed, original);
+                    bytes.pop();
+                    assert_eq!(lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed), None);
+                    bytes.push(*field.last().unwrap_or(&0));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn borrowed_class_tag_conversion_matches_owned_conversion() {
+        for value in ["123", "000", "12", "1234", "12a", "éé"] {
+            assert_eq!(
+                class_tag_from_view(value),
+                crate::records::references::DesignClassTag::try_from(value.to_owned())
+            );
+        }
+    }
 }

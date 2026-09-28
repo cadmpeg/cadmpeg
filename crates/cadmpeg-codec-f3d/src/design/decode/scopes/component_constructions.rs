@@ -3,7 +3,7 @@
 
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -70,7 +70,7 @@ pub(super) fn exact_derived_instance_construction(
 
     let relation_record_index = *scope.reference_members().values().next()?;
     let relation_at = records.first_at_or_after(0, relation_record_index)?;
-    let (relation_kind, _) = lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
+    let (relation_kind, _) = lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
     if relation_at >= start
         || relation_kind != "310"
         || next_indexed_record_offset(bytes, relation_at + 1)?
@@ -428,7 +428,7 @@ fn exact_component_insert_class_426_relation(
 ) -> Option<ComponentInsertClass426Relation> {
     let relation_end = relation_at + component_insert_relation_345::LEN;
     let (relation_class, relation_after_tag) =
-        lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
     if relation_class != "345"
         || relation_after_tag != relation_at + 7
         || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
@@ -465,7 +465,7 @@ fn exact_component_insert_class_426_relation(
 
     let paired_at = relation_end;
     let (paired_class, paired_after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
     if paired_class != "258"
         || paired_after_tag != paired_at + 7
         || View::u32_le_at(bytes, paired_after_tag)? != relation_record_index
@@ -484,7 +484,7 @@ fn exact_component_insert_class_426_relation(
     let child_at = records.first_at_or_after(paired_at + 11, child_record_index)?;
     let child_end = child_at + component_insert_relation_child_393::LEN;
     let (child_class, child_after_tag) =
-        lp_ascii_filtered(bytes, child_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, child_at, 3..=3, u8::is_ascii_digit)?;
     if child_class != "393"
         || child_after_tag != child_at + 7
         || View::u32_le_at(bytes, child_after_tag)? != child_record_index
@@ -531,7 +531,7 @@ fn exact_component_insert_carrier_334(
     relation_at: usize,
     carrier_record_index: u32,
 ) -> Option<(String, usize)> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     if class_tag != "334"
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag)? != carrier_record_index
@@ -826,7 +826,7 @@ fn legacy_component_insert_placements(
     transform: crate::records::sketch_placement::SketchPlacementMatrix,
 ) -> Vec<(String, usize, Option<usize>)> {
     let Some((class_tag, after_tag)) =
-        lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
+        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
     else {
         return Vec::new();
     };

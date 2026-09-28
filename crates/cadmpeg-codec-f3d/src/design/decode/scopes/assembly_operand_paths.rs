@@ -4,7 +4,7 @@
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -267,13 +267,13 @@ fn exact_assembly_operand_path(
     limit: usize,
     link: DesignAssemblyOperandPathLink,
 ) -> Option<DesignAssemblyOperandPath> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 1..=8, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 1..=8, u8::is_ascii_digit)?;
     if View::u64_le_at(bytes, after_tag)? != u64::from(record_index) {
         return None;
     }
     let mut occurrence_guids = Vec::new();
     let mut identity_guids = Vec::new();
-    match class_tag.as_str() {
+    match class_tag {
         "294" | "299" | "307" => {
             let end = next_indexed_record_offset(bytes, start + 1)?;
             if end != limit
@@ -340,7 +340,7 @@ fn exact_assembly_operand_path(
                 position = after_guid;
             }
             if position == limit {
-                if !matches!(class_tag.as_str(), "329" | "330") {
+                if !matches!(class_tag, "329" | "330") {
                     return None;
                 }
             } else {
@@ -383,7 +383,7 @@ fn exact_assembly_operand_path(
     DesignAssemblyOperandPath::try_new(
         link,
         record_index,
-        class_tag.try_into().ok()?,
+        crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         u64::try_from(start).ok()?,
         occurrence_guids,
         identity_guids,

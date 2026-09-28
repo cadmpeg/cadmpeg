@@ -3,7 +3,7 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
@@ -172,13 +172,13 @@ fn exact_construction_operand_group(
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandGroup> {
     let mut candidate = None;
     for (start, _) in records.frames(record_index) {
-        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if after_tag != start + 7 {
             continue;
         }
         let header = RecordFrame {
             record_index,
-            class_tag: class_tag.clone().try_into().ok()?,
+            class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             byte_offset: u64::try_from(start).ok()?,
         };
         if let ConstructionOperandGroupParse::Complete(group) =
@@ -231,7 +231,7 @@ fn exact_surface_boundary_operation(
             .frames(*distance_record_index)
             .filter(|(start, end)| {
                 end.checked_sub(*start) == Some(104)
-                    && lp_ascii_filtered(bytes, *start, 0..=2000, u8::is_ascii_graphic).is_some_and(
+                    && lp_ascii_filtered_view(bytes, *start, 0..=2000, u8::is_ascii_graphic).is_some_and(
                         |(class_tag, after_tag)| {
                             after_tag == *start + 7
                                 && class_tag.len() == 3
@@ -269,7 +269,7 @@ fn exact_surface_boundary_operation(
             let tail = start.checked_add(25)?.checked_add(member_bytes)?;
             (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
             let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+                lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             if after_tag != start + 7
                 || class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())

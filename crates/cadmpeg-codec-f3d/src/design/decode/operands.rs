@@ -7,7 +7,9 @@ use crate::records::topology::{
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{is_guid_relaxed, lp_utf16_bounded, take_reference};
+use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
@@ -1015,7 +1017,7 @@ pub(crate) fn decode_face_source_groups(
                 continue;
             };
             let Some((class_tag, _)) =
-                lp_ascii_filtered(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
             else {
                 reference_headers.push(None);
                 continue;
@@ -1037,7 +1039,7 @@ pub(crate) fn decode_face_source_groups(
             else {
                 continue;
             };
-            if paired_class_tag != layout.paired_class_tag {
+            if *paired_class_tag != layout.paired_class_tag {
                 continue;
             }
             let Some(source_reference_offsets) = parse_face_source_carrier_prefix(
@@ -1056,7 +1058,7 @@ pub(crate) fn decode_face_source_groups(
                         source_record_index,
                     )?;
                     let (source_class_tag, _) =
-                        lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
+                        lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
                     let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
                     let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
                     Some(crate::records::identity::Located {
@@ -1064,7 +1066,7 @@ pub(crate) fn decode_face_source_groups(
                         value: DesignFaceSourceMember {
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
-                            class_tag: source_class_tag.try_into().ok()?,
+                            class_tag: crate::design::decode::text::class_tag_from_view(source_class_tag).ok()?,
                             persistent_identity: DesignConstructionPersistentIdentity::try_new(crate::records::topology::construction::DesignConstructionPersistentIdentityDraft {
                                 local_id: member.local_id,
                                 local_id_offset: member.local_id_offset,
@@ -1099,8 +1101,8 @@ pub(crate) fn decode_face_source_groups(
                 continue;
             };
             let (Ok(carrier_class_tag), Ok(paired_class_tag)) = (
-                crate::records::references::DesignClassTag::try_from(carrier_class_tag.clone()),
-                crate::records::references::DesignClassTag::try_from(paired_class_tag.clone()),
+                crate::design::decode::text::class_tag_from_view(carrier_class_tag),
+                crate::design::decode::text::class_tag_from_view(paired_class_tag),
             ) else {
                 continue;
             };
@@ -2260,14 +2262,14 @@ pub(super) fn parse_construction_operand_group(
                 continue;
             }
             let Some((paired_class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, after, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, after, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
             if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
-            if closed.replace((variant, after, paired_class_tag)).is_some() {
+            if closed.replace((variant, after, paired_class_tag.to_owned())).is_some() {
                 return Unclosed;
             }
         }
@@ -2300,7 +2302,7 @@ pub(super) fn parse_construction_operand_group(
     ) else {
         return Unclosed;
     };
-    let Ok(paired_class_tag) = paired_class_tag.try_into() else {
+    let Ok(paired_class_tag) = crate::records::references::DesignClassTag::try_from(paired_class_tag) else {
         return Unclosed;
     };
     let Ok(opaque_scalar) = cadmpeg_ir::scalar::NonNegativeReal::try_from(opaque_scalar) else {
@@ -2411,7 +2413,7 @@ fn legacy_body_group_tail(
     if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
         return None;
     }
-    let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
+    let (paired_class_tag, after_tag) = lp_ascii_filtered_view(bytes, tail, 3..=3, u8::is_ascii_digit)?;
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
         && header.class_tag.as_str() == "328"
         && paired_class_tag != "263"
@@ -2421,7 +2423,7 @@ fn legacy_body_group_tail(
     if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
         return None;
     }
-    Some((variant, tail, paired_class_tag))
+    Some((variant, tail, paired_class_tag.to_owned()))
 }
 
 /// Bind exact typed records selected by construction-group trailing runs.
@@ -2604,7 +2606,7 @@ fn parse_construction_operand_path(
     }
     let following_at = cursor.checked_add(6)?;
     let (following_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
@@ -2623,7 +2625,7 @@ fn parse_construction_operand_path(
             nested_record_index_offset,
             following_record_index,
             following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag: following_class_tag.try_into().ok()?,
+            following_class_tag: crate::design::decode::text::class_tag_from_view(following_class_tag).ok()?,
         },
     )
     .ok()
@@ -2643,7 +2645,7 @@ fn parse_construction_operand_transform(
     let transform = rigid_transform_at(bytes, transform_at)?;
     let following_at = start.checked_add(152)?;
     let (following_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = View::u32_le_at(bytes, after_tag)?;
     if following_record_index != header.record_index.checked_add(1)? {
         return None;
@@ -2657,7 +2659,7 @@ fn parse_construction_operand_transform(
             transform_offset: u64::try_from(transform_at).ok()?,
             following_record_index,
             following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag: following_class_tag.try_into().ok()?,
+            following_class_tag: crate::design::decode::text::class_tag_from_view(following_class_tag).ok()?,
         },
     )
     .ok()
@@ -2880,9 +2882,9 @@ fn parse_construction_operand_identity(
         );
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
-            lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
-        current_class_tag = next_class_tag.try_into().ok()?;
+        current_class_tag = crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?;
         chain_started = true;
     }
     let tracking_path = parse_construction_tracking_path(
@@ -2948,7 +2950,7 @@ fn parse_construction_tracking_path(
     }
     let carrier_at = wrapper_at.checked_add(33)?;
     let (carrier_class_tag, after_carrier_tag) =
-        lp_ascii_filtered(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     let carrier_record_index = View::u32_le_at(bytes, after_carrier_tag)?;
     if carrier_record_index != wrapper_record_index.checked_add(1)?
         || bytes.get(carrier_at + 11..carrier_at + 21)? != [0; 10]
@@ -2970,7 +2972,7 @@ fn parse_construction_tracking_path(
     let second_related_identity = take_optional_tracking_identity(bytes, &mut cursor)?;
     let following_at = cursor;
     let (following_class_tag, after_following_tag) =
-        lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
     let following_record_index = View::u32_le_at(bytes, after_following_tag)?;
     if following_record_index != carrier_record_index.checked_add(1)? {
         return None;
@@ -2982,7 +2984,7 @@ fn parse_construction_tracking_path(
             wrapper_class_tag: wrapper_class_tag.clone(),
             carrier_record_index,
             carrier_byte_offset: u64::try_from(carrier_at).ok()?,
-            carrier_class_tag: carrier_class_tag.try_into().ok()?,
+            carrier_class_tag: crate::design::decode::text::class_tag_from_view(carrier_class_tag).ok()?,
             primary_identity,
             primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
             selector,
@@ -2993,7 +2995,7 @@ fn parse_construction_tracking_path(
             second_related_identity,
             following_record_index,
             following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag: following_class_tag.try_into().ok()?,
+            following_class_tag: crate::design::decode::text::class_tag_from_view(following_class_tag).ok()?,
         },
     )
     .ok()
@@ -3375,12 +3377,12 @@ fn parse_work_point_sketch_point_frame(
         .into_iter()
         .zip(expected)
     {
-        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (_, after_tag) = lp_ascii_filtered_view(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
-    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (_, after_next_tag) = lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     if next_record_index != record_index.checked_add(4)?
         || bytes
@@ -3450,14 +3452,14 @@ pub(super) fn parse_entity_selection_frame(
         .into_iter()
         .zip(expected)
     {
-        let (_, after_tag) = lp_ascii_filtered(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
+        let (_, after_tag) = lp_ascii_filtered_view(bytes, offset, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_tag)? != expected {
             return None;
         }
     }
     let (identity_class_tag, _) =
-        lp_ascii_filtered(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
-    let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
+    let (_, after_next_tag) = lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
     let (primary_identity_offset, primary_identity, secondary) = if class_tag == "338"
         && identity_class_tag == "361"
@@ -4183,7 +4185,7 @@ fn parse_extrude_identity_member(
             (0, u64::try_from(fixed_end).ok()?)
         } else {
             let (_, after_next_tag) =
-                lp_ascii_filtered(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
+                lp_ascii_filtered_view(bytes, fixed_end, 0..=2000, u8::is_ascii_graphic)?;
             (
                 View::u32_le_at(bytes, after_next_tag)?,
                 u64::try_from(fixed_end).ok()?,
@@ -4194,7 +4196,7 @@ fn parse_extrude_identity_member(
         let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
         let next_at = cursor;
         let (_, after_next_tag) =
-            lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
         if View::u32_le_at(bytes, after_next_tag)? != next_record_index {
             return None;
         }
@@ -4286,7 +4288,7 @@ pub(in crate::design) fn parse_sketch_profile(
     let entity_suffix = entity_suffix_text.parse::<u64>().ok()?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
         || !matches!(tail_length, 89 | 93 | 94)
@@ -4340,7 +4342,7 @@ pub(in crate::design) fn parse_sketch_profile(
             entity_id: entity.entity_id.clone(),
             entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
             region_selection,
-            paired_class_tag: paired_class_tag.try_into().ok()?,
+            paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
             paired_byte_offset: u64::try_from(paired_at).ok()?,
         },
     )
@@ -4374,7 +4376,7 @@ fn parse_sketch_profile_region_selection(
         selection_record_index,
     )?;
     let (class_tag, after_class_tag) =
-        lp_ascii_filtered(bytes, selection_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, selection_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_class_tag)? != selection_record_index
         || bytes.get(
             selection_at + region_selection::ZERO_RUN_10
@@ -4501,20 +4503,20 @@ fn parse_sketch_profile_region_selection(
         return None;
     }
     let (companion_class_tag, after_companion_class_tag) =
-        lp_ascii_filtered(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, companion_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
         return None;
     }
     Some(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         region_count_offset: u64::try_from(
             selection_at.checked_add(region_selection::REGION_COUNT)?,
         )
         .ok()?,
         regions,
-        companion_class_tag: companion_class_tag.try_into().ok()?,
+        companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag).ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
     })
 }
@@ -5231,7 +5233,7 @@ pub(super) fn parse_face_operand(
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) =
-            lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
         indexed.push((class_tag, View::u32_le_at(bytes, after_tag)?));
     }
     let recipe_record_index = header.record_index.checked_add(3)?;
@@ -5336,7 +5338,7 @@ pub(super) fn parse_face_operand(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone().try_into().ok()?,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
