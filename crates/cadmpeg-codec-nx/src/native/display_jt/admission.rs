@@ -168,7 +168,7 @@ impl DisplayJtGraph {
             u64::try_from(document.toc_entries.len())
                 .ok()
                 .and_then(|count| sum.checked_add(count))
-                .ok_or_else(|| invalid(&document.id, "TOC count exceeds u64"))
+                .ok_or_else(|| invalid(ctx, &document.id, "TOC count exceeds u64"))
         })?;
         let mut toc_entries = BTreeMap::new();
         for document in &wire.documents {
@@ -179,7 +179,7 @@ impl DisplayJtGraph {
                     .insert((document.id.as_str(), entry.id.as_str()), entry)
                     .is_some()
                 {
-                    return Err(invalid(
+                    return Err(invalid(ctx,
                         &entry.id,
                         "duplicate toc_entry identity in document",
                     ));
@@ -189,21 +189,21 @@ impl DisplayJtGraph {
         for segment in &wire.segments {
             let document = documents
                 .get(segment.document.as_str())
-                .ok_or_else(|| invalid(&segment.id, "document does not resolve"))?;
+                .ok_or_else(|| invalid(ctx, &segment.id, "document does not resolve"))?;
             let entry = toc_entries
                 .get(&(segment.document.as_str(), segment.toc_entry.as_str()))
-                .ok_or_else(|| invalid(&segment.id, "toc_entry does not resolve in document"))?;
+                .ok_or_else(|| invalid(ctx, &segment.id, "toc_entry does not resolve in document"))?;
             if segment.segment_id != entry.segment_id {
-                return Err(invalid(&segment.id, "segment_id disagrees with toc_entry"));
+                return Err(invalid(ctx, &segment.id, "segment_id disagrees with toc_entry"));
             }
             if segment.segment_type != cadmpeg_core::bytes::assemble_u32_be(entry.attributes) {
-                return Err(invalid(
+                return Err(invalid(ctx,
                     &segment.id,
                     "segment_type disagrees with toc_entry.attributes",
                 ));
             }
             if segment.segment_byte_len != entry.segment_byte_len {
-                return Err(invalid(
+                return Err(invalid(ctx,
                     &segment.id,
                     "segment_byte_len disagrees with toc_entry",
                 ));
@@ -213,7 +213,7 @@ impl DisplayJtGraph {
                 .checked_add(u64::from(entry.segment_offset))
                 != Some(segment.source_offset)
             {
-                return Err(invalid(
+                return Err(invalid(ctx,
                     &segment.id,
                     "source_offset disagrees with document and toc_entry",
                 ));
@@ -222,13 +222,14 @@ impl DisplayJtGraph {
         for element in &wire.shape_lod_elements {
             let segment = segments
                 .get(element.segment.as_str())
-                .ok_or_else(|| invalid(&element.id, "segment does not resolve"))?;
+                .ok_or_else(|| invalid(ctx, &element.id, "segment does not resolve"))?;
             if segment.segment_type != 7 {
-                return Err(invalid(&element.id, "segment is not a type-7 shape LOD"));
+                return Err(invalid(ctx, &element.id, "segment is not a type-7 shape LOD"));
             }
         }
         for element in &wire.compressed_elements {
             admit_compressed_owner(
+                ctx,
                 &segments,
                 &element.id,
                 &element.segment,
@@ -238,6 +239,7 @@ impl DisplayJtGraph {
         }
         for sequence in &wire.compressed_element_sequences {
             admit_compressed_owner(
+                ctx,
                 &segments,
                 &sequence.id,
                 &sequence.segment,
@@ -247,28 +249,28 @@ impl DisplayJtGraph {
             let mut next_offset = 0u64;
             for (ordinal, id) in sequence.elements().iter().enumerate() {
                 let element = elements.get(id.as_str()).ok_or_else(|| {
-                    invalid(&sequence.id, "elements contains an unresolved identity")
+                    invalid(ctx, &sequence.id, "elements contains an unresolved identity")
                 })?;
                 if element.segment != sequence.segment
                     || usize::try_from(element.ordinal).ok() != Some(ordinal)
                 {
-                    return Err(invalid(
+                    return Err(invalid(ctx,
                         &sequence.id,
                         "elements disagrees with element.segment or element.ordinal",
                     ));
                 }
                 if u64::from(element.inflated_offset) != next_offset {
-                    return Err(invalid(
+                    return Err(invalid(ctx,
                         &element.id,
                         "inflated_offset disagrees with the preceding element extent",
                     ));
                 }
                 next_offset = next_offset
                     .checked_add(25 + u64::from(element.body_byte_len()))
-                    .ok_or_else(|| invalid(&sequence.id, "framed_byte_len overflows"))?;
+                    .ok_or_else(|| invalid(ctx, &sequence.id, "framed_byte_len overflows"))?;
             }
             if next_offset.checked_add(20) != Some(u64::from(sequence.framed_byte_len())) {
-                return Err(invalid(
+                return Err(invalid(ctx,
                     &sequence.id,
                     "framed_byte_len disagrees with element body_byte_len values and end marker",
                 ));
@@ -306,6 +308,7 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
 }
 
 fn admit_compressed_owner(
+    ctx: &DecodeContext<'_>,
     segments: &BTreeMap<&str, &DisplayJtSegment>,
     id: &str,
     owner: &str,
@@ -314,15 +317,15 @@ fn admit_compressed_owner(
 ) -> Result<(), NativeConvertError> {
     let segment = segments
         .get(owner)
-        .ok_or_else(|| invalid(id, "segment does not resolve"))?;
+        .ok_or_else(|| invalid(ctx, id, "segment does not resolve"))?;
     if segment.compression.is_none() {
-        return Err(invalid(id, "segment has no compression envelope"));
+        return Err(invalid(ctx, id, "segment has no compression envelope"));
     }
     if segment_type != segment.segment_type {
-        return Err(invalid(id, "segment_type disagrees with segment"));
+        return Err(invalid(ctx, id, "segment_type disagrees with segment"));
     }
     if segment.source_offset.checked_add(24) != Some(source_offset) {
-        return Err(invalid(id, "source_offset disagrees with segment"));
+        return Err(invalid(ctx, id, "source_offset disagrees with segment"));
     }
     Ok(())
 }
@@ -384,17 +387,53 @@ fn by_id<'a, T>(
         ctx.charge_work(1, "index DisplayJT graph records")?;
         let id = id(record);
         if index.insert(id, record).is_some() {
-            return Err(invalid(id, &format!("duplicate identity in {arena}")));
+            return Err(invalid(ctx, id, &format!("duplicate identity in {arena}")));
         }
     }
     Ok(index)
 }
 
-fn invalid(id: &str, field: &str) -> NativeConvertError {
-    NativeConvertError::InvalidCollection(format!(
-        "{}: display_jt {id}: {field}",
-        crate::loss::NxLossCode::DisplayJtGraphRejected.code()
-    ))
+fn invalid(ctx: &DecodeContext<'_>, id: &str, field: &str) -> NativeConvertError {
+    use std::fmt::Write as _;
+
+    let code = crate::loss::NxLossCode::DisplayJtGraphRejected.code();
+    let prefix = ": display_jt ";
+    let separator = ": ";
+    let Some(length) = code
+        .len()
+        .checked_add(prefix.len())
+        .and_then(|len| len.checked_add(id.len()))
+        .and_then(|len| len.checked_add(separator.len()))
+        .and_then(|len| len.checked_add(field.len()))
+    else {
+        return NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "retain DisplayJT graph rejection",
+            0,
+            1,
+        ));
+    };
+    if let Err(error) = ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain DisplayJT graph rejection",
+    ) {
+        return NativeConvertError::Resource(error);
+    }
+    let mut message = String::new();
+    if message.try_reserve_exact(length).is_err() {
+        return NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "allocate DisplayJT graph rejection",
+            0,
+            1,
+        ));
+    }
+    if write!(&mut message, "{code}{prefix}{id}{separator}{field}").is_err() {
+        return NativeConvertError::Resource(ctx.refuse_codec_limit(
+            "format DisplayJT graph rejection",
+            0,
+            1,
+        ));
+    }
+    NativeConvertError::InvalidCollection(message)
 }
 
 #[cfg(test)]
