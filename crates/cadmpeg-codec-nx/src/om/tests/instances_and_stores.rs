@@ -10,8 +10,11 @@ use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
-use crate::om::operation_body_11_continuations;
 use crate::om::operation_body_reference_lanes;
+
+fn operation_body_11_continuations_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBody11Continuation> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_11_continuations(ctx, record)).unwrap()
+}
 
 fn operation_body_members_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBodyMemberGroup> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_body_members(ctx, record)).unwrap()
@@ -1271,7 +1274,7 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let bytes = b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let continuations = operation_body_11_continuations(record);
+    let continuations = operation_body_11_continuations_for_test(record);
     assert_eq!(continuations.len(), 1);
     let continuation = &continuations[0];
     assert_eq!(continuation.body_reference_ordinal, 0);
@@ -1286,7 +1289,7 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let mut distinct_terminal = bytes.to_vec();
     distinct_terminal[31] = 0x71;
     assert_eq!(
-        operation_body_11_continuations(
+        operation_body_11_continuations_for_test(
             crate::om::operation_record::OperationBodyInput::new(
                 &distinct_terminal,
                 record.offset(),
@@ -1302,7 +1305,7 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     );
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(operation_body_11_continuations(
+    assert!(operation_body_11_continuations_for_test(
         crate::om::operation_record::OperationBodyInput::new(
             truncated,
             record.offset(),
@@ -1986,3 +1989,5 @@ fn body_members_refuse_work_limit() {
     let error = body_members_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
+
+mod operation_body_limits;

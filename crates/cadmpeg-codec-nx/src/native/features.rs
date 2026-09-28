@@ -7371,11 +7371,17 @@ pub(super) fn feature_operation_body_11_continuations(ctx: &cadmpeg_core::decode
 ) -> Result<Vec<FeatureOperationBody11Continuation>, cadmpeg_core::CodecError>
 {
     let mut continuations = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let rows = match crate::om::operation_body_11_continuations(ctx, record.body_view()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return; }
+            };
             continuations.extend(
-                crate::om::operation_body_11_continuations(record.body_view())
+                rows
                     .into_iter()
                     .map(|continuation| FeatureOperationBody11Continuation {
                         id: format!(
@@ -7397,6 +7403,7 @@ pub(super) fn feature_operation_body_11_continuations(ctx: &cadmpeg_core::decode
             );
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(continuations)
 }
 
