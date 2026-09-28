@@ -57,8 +57,15 @@ pub fn geometry_a5_surfaces(data: &[u8]) {
 
 /// Exercise A8 NURBS surface extraction.
 pub fn geometry_a8_surfaces(data: &[u8]) {
-    let _probe =
-        crate::families::a5a8::records::a8_surfaces(data, &mut crate::nurbs::LaneRefusals::new());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::families::a5a8::records::a8_surfaces(
+        &ctx, data, &mut crate::nurbs::LaneRefusals::new(),
+    );
 }
 
 /// Exercise standard-nested and FBB topology parsing.

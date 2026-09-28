@@ -33,10 +33,10 @@ use crate::CatiaCodec;
 
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(
+    let surfaces = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &a8_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("service decode"));
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].object_id(), Some(0xdeca_fbad));
     let surface = &surfaces[0].geometry;
@@ -103,10 +103,10 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
 
 #[test]
 fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(
+    let surfaces = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &a8_surface_stream_with_u_count(20_001),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("service decode"));
     assert_eq!(surfaces.len(), 1);
     let surface = &surfaces[0].geometry;
     assert_eq!((surface.u_count(), surface.v_count()), (20_002, 3));
@@ -120,10 +120,10 @@ fn a8_surface_parser_rejects_unframed_trailing_bytes() {
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &bytes,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
 }
 
@@ -141,7 +141,7 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     assert_eq!(
-        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"))
             .len(),
         1
     );
@@ -151,7 +151,7 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
 fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
     let bytes = a8_inline_tail_surface_stream();
     let [surface] =
-        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"))
             .try_into()
             .expect("one inline-tail surface");
     let surface = surface.geometry;
@@ -166,7 +166,7 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     let [surface] =
-        crate::families::a5a8::records::a8_surfaces(&bytes, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"))
             .try_into()
             .expect("one inline-weight-tail surface");
     let surface = surface.geometry;
@@ -209,10 +209,10 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         &alternate_extrapolated,
     ] {
         let bytes = surface_with_tail(tail);
-        let [_surface] = crate::families::a5a8::records::a8_surfaces(
+        let [_surface] = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
             &bytes,
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        ).expect("service decode"))
         .try_into()
         .expect("one inline-tail surface");
         let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
@@ -250,10 +250,10 @@ fn a8_surface_parser_rejects_a_malformed_tail_after_inline_poles() {
     let mut bytes = a8_inline_tail_surface_stream();
     let tail_start = bytes.len() - 141;
     bytes[tail_start + 68] = 0;
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &bytes,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
 }
 
@@ -263,10 +263,10 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
         let mut bytes = a8_surface_stream();
         bytes[1] = flag;
         assert_eq!(
-            crate::families::a5a8::records::a8_surfaces(
+            crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
                 &bytes,
                 &mut crate::nurbs::LaneRefusals::new()
-            )
+            ).expect("service decode"))
             .len(),
             1,
             "flag {flag:#04x}"
@@ -280,10 +280,10 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8_surface_stream();
     malformed[1] = 0x23;
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &malformed,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
 }
 
@@ -298,10 +298,10 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
         let mut bytes = a8_surface_stream();
         bytes[start..start + 8].copy_from_slice(&le_f64(value));
         assert!(
-            crate::families::a5a8::records::a8_surfaces(
+            crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
                 &bytes,
                 &mut crate::nurbs::LaneRefusals::new()
-            )
+            ).expect("service decode"))
             .is_empty(),
             "{label} must not produce a resolved surface"
         );
@@ -316,10 +316,10 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &bytes,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
@@ -347,10 +347,10 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 #[test]
 fn a8_surface_header_identifies_an_elided_pole_grid() {
     let bytes = a8_elided_surface_stream();
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &bytes,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
@@ -495,6 +495,26 @@ fn a8_external_grid_poles_refuse_collection_limit_before_materialization() {
     .expect("service collection budget")
     .expect("unique external pole allocation");
     assert_eq!(surface.geometry.poles().len(), 9);
+}
+
+#[test]
+fn a8_inline_poles_refuse_collection_limit_before_materialization() {
+    let bytes = a8_surface_stream();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::a5a8::records::a8_surfaces(
+            ctx, &bytes, &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_a8_inline_poles"));
+    let surfaces = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_surfaces(
+            ctx, &bytes, &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service collection budget");
+    assert_eq!(surfaces.len(), 1);
 }
 
 #[test]
@@ -803,10 +823,10 @@ fn a5_pcurve_parser_accepts_frame_bounded_site_count() {
 
 #[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
-    let surfaces = crate::families::a5a8::records::a8_surfaces(
+    let surfaces = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &a8_rational_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
-    );
+    ).expect("service decode"));
     assert_eq!(
         surfaces[0]
             .geometry
@@ -846,7 +866,7 @@ fn surface_parsers_require_finite_nonzero_weights() {
     let mut a8 = a8_rational_surface_stream();
     a8[275..283].copy_from_slice(&le_f64(2e12));
     let [surface] =
-        crate::families::a5a8::records::a8_surfaces(&a8, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx, &a8, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"))
             .try_into()
             .expect("one common-form rational surface");
     let surface = surface.geometry;
@@ -861,10 +881,10 @@ fn surface_parsers_require_finite_nonzero_weights() {
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &a8,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
 }
 
@@ -936,7 +956,7 @@ fn surface_parsers_accept_finite_large_control_points() {
     let mut a8 = a8_surface_stream();
     a8[59..67].copy_from_slice(&le_f64(2e12));
     let [surface] =
-        crate::families::a5a8::records::a8_surfaces(&a8, &mut crate::nurbs::LaneRefusals::new())
+        crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx, &a8, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"))
             .try_into()
             .expect("one common-form surface");
     let surface = surface.geometry;
@@ -949,10 +969,10 @@ fn surface_parsers_accept_finite_large_control_points() {
         &mut crate::nurbs::LaneRefusals::new()
     )
     .is_empty());
-    assert!(crate::families::a5a8::records::a8_surfaces(
+    assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
         &a8,
         &mut crate::nurbs::LaneRefusals::new()
-    )
+    ).expect("service decode"))
     .is_empty());
 }
 

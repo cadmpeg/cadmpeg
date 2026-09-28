@@ -1237,15 +1237,18 @@ fn parse_object_stream_pcurve(
 /// field is bounded by the record's `payload_len`, so signature collisions do
 /// not become carriers.
 pub(crate) fn a8_surfaces(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurface> {
-    a8_frames(data, 0x34)
-        .into_iter()
-        .filter_map(|frame| {
-            a8_surface_from_parsed(data, parse_a8_surface_header(data, frame)?, refusal)
-        })
-        .collect()
+) -> Result<Vec<FreeformSurface>, CodecError> {
+    let mut surfaces = Vec::new();
+    for frame in a8_frames(data, 0x34) {
+        let Some(parsed) = parse_a8_surface_header(data, frame) else { continue };
+        if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
+            crate::resource::push(ctx, &mut surfaces, surface, "catia_a8_inline_surfaces")?;
+        }
+    }
+    Ok(surfaces)
 }
 
 /// Decode every complete common-form object-stream NURBS surface, including
@@ -1307,7 +1310,7 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
     if parsed.header.pole_storage == PoleStorage::Elided {
         a8_surface_from_external_grid(ctx, data, &parsed.header, refusal)
     } else {
-        Ok(a8_surface_from_parsed(data, parsed, refusal))
+        a8_surface_from_parsed(ctx, data, parsed, refusal)
     }
 }
 
@@ -1331,8 +1334,8 @@ fn a8_surface_from_external_grid(
         ..
     }) = parse_external_grid_candidate(ctx, data, header, range)? else { return Ok(None) };
     let Some(row_len) = header.v_count().and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
-    let Some(u_knots) = header.u_knots.expanded() else { return Ok(None) };
-    let Some(v_knots) = header.v_knots.expanded() else { return Ok(None) };
+    let Some(u_knots) = header.u_knots.expanded(ctx)? else { return Ok(None) };
+    let Some(v_knots) = header.v_knots.expanded(ctx)? else { return Ok(None) };
     let control_points = grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?;
     let weights = weights.map(|values| grid_rows(ctx, values, row_len,
         "catia_a8_external_weight_rows")).transpose()?;
@@ -1672,17 +1675,18 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
 }
 
 fn a8_surface_from_parsed(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     parsed: ParsedA8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FreeformSurface> {
+) -> Result<Option<FreeformSurface>, CodecError> {
     let ParsedA8SurfaceHeader {
         header,
         mut pole_start,
         end,
     } = parsed;
-    let u_count = header.u_count()?;
-    let v_count = header.v_count()?;
+    let Some(u_count) = header.u_count().and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
+    let Some(v_count) = header.v_count().and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
     let A8SurfaceHeader {
         pos,
         object_id,
@@ -1695,42 +1699,42 @@ fn a8_surface_from_parsed(
         ..
     } = header;
     if pole_storage == PoleStorage::Elided {
-        return None;
+        return Ok(None);
     }
-    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
-    let pole_bytes = poles.checked_mul(24)?;
-    if pole_start.checked_add(pole_bytes)? > end {
-        return None;
+    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else { return Ok(None) };
+    let Some(pole_bytes) = poles.checked_mul(24) else { return Ok(None) };
+    if pole_start.checked_add(pole_bytes).is_none_or(|end_poles| end_poles > end) {
+        return Ok(None);
     }
-    let mut control_points = Vec::with_capacity(poles);
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, poles, "catia_a8_inline_poles")?;
     for _ in 0..poles {
-        control_points.push(f64_point(data, pole_start)?);
+        let Some(point) = f64_point(data, pole_start) else { return Ok(None) };
+        control_points.push(point);
         pole_start += 24;
     }
     let weights = if rational {
-        f64_values(data, &mut pole_start, poles, end)?
-            .into_iter()
-            .map(|weight| NonZeroReal::new(weight.get()))
-            .collect::<Option<Vec<_>>>()?
+        if poles.checked_mul(8).and_then(|bytes| pole_start.checked_add(bytes))
+            .is_none_or(|end_weights| end_weights > end) { return Ok(None) }
+        let mut weights = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut weights, poles, "catia_a8_inline_weights")?;
+        for _ in 0..poles {
+            let Some(weight) = f64_le(data, pole_start).and_then(|value| NonZeroReal::new(value.get())) else { return Ok(None) };
+            weights.push(weight);
+            pole_start += 8;
+        }
+        weights
     } else {
         Vec::new()
     };
-    a8_surface_suffix_start(data, pole_start, end)?;
-    let u_knots = u_knots.expanded()?;
-    let v_knots = v_knots.expanded()?;
-    Some(FreeformSurface {
-        pos,
-        identity: Some(object_id),
-        geometry: crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                rational
-                    .then_some(weights)
-                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            )
+    if a8_surface_suffix_start(data, pole_start, end).is_none() { return Ok(None) }
+    let Some(u_knots) = u_knots.expanded(ctx)? else { return Ok(None) };
+    let Some(v_knots) = v_knots.expanded(ctx)? else { return Ok(None) };
+    let control_points = grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?;
+    let weights = rational.then(|| grid_rows(ctx, weights, v_count,
+        "catia_a8_inline_weight_rows")).transpose()?;
+    Ok(crate::nurbs::note_refusal(
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
             .and_then(|poles| {
                 NurbsSurface::new(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
@@ -1739,10 +1743,13 @@ fn a8_surface_from_parsed(
                     false,
                 )
             }),
-            refusal,
-            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-        )?,
-    })
+        refusal,
+        format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+    ).map(|geometry| FreeformSurface {
+        pos,
+        identity: Some(object_id),
+        geometry,
+    }))
 }
 
 fn object_stream_reference(bytes: &[u8], at: &mut usize) -> Option<u32> {
