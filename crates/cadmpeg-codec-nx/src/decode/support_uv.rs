@@ -811,7 +811,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
         BTreeMap::<ProceduralCurveId, [Option<cadmpeg_ir::geometry::SupportPcurve>; 2]>::new();
     let mut lane_geometry_exhausted = false;
     loop {
-        let before = pending_support_lanes_requiring_completion(ir, pending);
+        let before = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if support_uv_budget_exhausted(support_budget) {
             break;
         }
@@ -829,7 +829,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
             &mut failed_coupled_attempts,
             endpoint_witnesses,
         )?;
-        let after = pending_support_lanes_requiring_completion(ir, pending);
+        let after = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
         }
@@ -875,7 +875,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     isolate_lanes: bool,
 ) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
@@ -899,7 +899,10 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                     break;
                 }
-                if validated_lanes.contains(&(procedural_id.clone(), side)) {
+                if validated_lanes.contains(&(
+                    crate::decode::ids::copy_typed_id(ctx, procedural_id.as_str(), "nx validation lane lookup")?,
+                    side,
+                )) {
                     continue;
                 }
                 let (Some(surface), Some(pcurve)) = (&support.surface, &support.pcurve) else {
@@ -969,17 +972,36 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
                 }
                 if inconsistent {
-                    invalid.push((procedural_id.clone(), side));
+                    ctx.charge_collection_items(1, "nx inconsistent support UV lanes")?;
+                    invalid.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx inconsistent support UV lanes", 0, 1)
+                    })?;
+                    invalid.push((
+                        crate::decode::ids::copy_typed_id(ctx, procedural_id.as_str(), "nx inconsistent support UV owner")?,
+                        side,
+                    ));
                 } else if fully_validated {
                     if let [Some(first), Some(last)] = endpoints {
-                        endpoint_witnesses
-                            .entry((owner.clone(), surface.clone()))
-                            .or_default()
-                            .push((
-                                pcurve.geometry.clone(),
-                                context.parameter_range().endpoints(),
-                                [first, last],
-                            ));
+                        let key = (
+                            crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx validated endpoint owner")?,
+                            crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx validated endpoint support")?,
+                        );
+                        let entries = match endpoint_witnesses.entry(key) {
+                            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                            std::collections::btree_map::Entry::Vacant(entry) => {
+                                ctx.charge_collection_items(1, "nx validated endpoint index")?;
+                                entry.insert(Vec::new())
+                            }
+                        };
+                        ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
+                        entries.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1)
+                        })?;
+                        entries.push((
+                            pcurve.geometry.try_clone_for_decode(ctx, "nx validated endpoint pcurve")?,
+                            context.parameter_range().endpoints(),
+                            [first, last],
+                        ));
                     }
                 }
             }
@@ -1008,11 +1030,12 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
 }
 
 fn pending_support_lanes_requiring_completion(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
-) -> usize {
-    let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    pending
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    Ok(pending
         .iter()
         .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.as_str()))
         .filter_map(|procedural| {
@@ -1032,7 +1055,7 @@ fn pending_support_lanes_requiring_completion(
                     .count(),
             )
         })
-        .sum()
+        .sum())
 }
 
 // Keep independent work budgets, retry state, and the witness sink explicit at
