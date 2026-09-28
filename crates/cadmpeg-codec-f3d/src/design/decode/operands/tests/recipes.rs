@@ -31,6 +31,9 @@ use cadmpeg_ir::ids::FaceId;
 
 #[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
         let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -1031,6 +1034,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.next_record_index, 104);
     assert_eq!(edge_operand.next_byte_offset(), next_at);
     bind_edge_operand_candidates(
+        &ctx,
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&recipe),
         &[
@@ -1055,7 +1059,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
         ],
-    );
+    ).expect("candidate binding");
     assert_eq!(
         edge_operand.candidate_faces,
         [FaceId::mint("f3d:brep:entity#50").expect("identity grammar")]
@@ -1069,6 +1073,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ..index
             });
     bind_edge_operand_candidates(
+        &ctx,
         std::slice::from_mut(&mut edge_operand),
         std::slice::from_ref(&local_recipe),
         &[PersistentSubentityTag {
@@ -1081,7 +1086,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             design_references: vec![303],
             ordinal: 0,
         }],
-    );
+    ).expect("candidate binding");
     assert!(edge_operand.candidate_faces.is_empty());
     let mut embedded_program = vec![99];
     embedded_program.extend_from_slice(&edge_operand.recipe_program[7..]);
@@ -1347,6 +1352,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         alternate_selector_edges: Vec::new(),
     });
     bind_face_operand_candidates(
+        &ctx,
         std::slice::from_mut(&mut operand),
         std::slice::from_ref(&face_recipe),
         &[
@@ -1381,7 +1387,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
         ],
-    );
+    ).expect("candidate binding");
     assert_eq!(
         operand.candidate_faces,
         [

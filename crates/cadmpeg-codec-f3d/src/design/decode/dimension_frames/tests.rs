@@ -23,6 +23,52 @@ use crate::records::{
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
+
+#[test]
+fn recipe_reference_candidate_vectors_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let targets = [
+        (AttributeTarget::Face(FaceId::mint("test:model:face#one").unwrap()), 1),
+        (AttributeTarget::Edge(EdgeId::mint("test:model:edge#one").unwrap()), 1),
+        (AttributeTarget::Face(FaceId::mint("test:model:face#two").unwrap()), 2),
+        (AttributeTarget::Edge(EdgeId::mint("test:model:edge#two").unwrap()), 2),
+    ];
+    for (target, selector) in targets {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut reference = crate::records::dimensions::DesignRecipeReference {
+            selector: 1,
+            selector_offset: 0,
+            token: "13".into(),
+            token_offset: 0,
+            design_reference: 331,
+            design_reference_offset: 0,
+            candidate_faces: Vec::new(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
+        let tag = PersistentSubentityTag {
+            id: "matching".into(),
+            target,
+            selector,
+            token: cadmpeg_core::text::NonBlankString::new("13").unwrap(),
+            design_references: vec![331],
+            ordinal: 0,
+        };
+        assert!(matches!(
+            super::bind_recipe_reference_candidates_charged(
+                &ctx, &mut reference, &[tag], None,
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "f3d recipe reference candidate"
+        ));
+    }
+}
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchAxis, SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,

@@ -13,7 +13,7 @@ use crate::design::decode::text::design_record_id_charged;
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
-    bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
+    bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
 };
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
@@ -629,7 +629,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
         let (_scope_reservation, scope_id) = copy_scoped_stream(ctx, &scope.id)?;
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
-                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
             }
         }
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -637,7 +637,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
         };
         for recipe in construction.rule.vertex_recipes_mut() {
             for reference in &mut recipe.recipe_references {
-                bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
+                bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
             }
         }
     }
@@ -646,14 +646,16 @@ pub(crate) fn bind_vertex_recipe_candidates(
 
 /// Bind active fallback candidates for edge-treatment corner recipes.
 pub(crate) fn bind_edge_treatment_vertex_candidates(
+    ctx: &DecodeContext<'_>,
     operands: &mut [DesignEdgeTreatmentVertexOperand],
     tags: &[PersistentSubentityTag],
-) {
+) -> Result<(), CodecError> {
     for operand in operands {
         for reference in &mut operand.recipe.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&operand.id))?;
         }
     }
+    Ok(())
 }
 
 /// Whether a feature family owns edge-recipe operands directly or through a
@@ -1342,10 +1344,11 @@ fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
 
 /// Join each face recipe's persistent Design reference to active solved faces.
 pub(crate) fn bind_face_operand_candidates(
+    ctx: &DecodeContext<'_>,
     operands: &mut [DesignFaceOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let recipes = recipes
@@ -1355,7 +1358,7 @@ pub(crate) fn bind_face_operand_candidates(
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&operand.id))?;
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -1404,14 +1407,16 @@ pub(crate) fn bind_face_operand_candidates(
             .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.alternate_selector_candidate_faces.dedup();
     }
+    Ok(())
 }
 
 /// Join each edge recipe's persistent Design reference to active solved faces.
 pub(crate) fn bind_edge_operand_candidates(
+    ctx: &DecodeContext<'_>,
     operands: &mut [DesignEdgeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
-) {
+) -> Result<(), CodecError> {
     let recipes = recipes
         .iter()
         .map(|recipe| (recipe.id.as_str(), recipe))
@@ -1419,7 +1424,7 @@ pub(crate) fn bind_edge_operand_candidates(
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
-            bind_recipe_reference_candidates(reference, tags, Some(&operand.id));
+            bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&operand.id))?;
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
@@ -1432,6 +1437,7 @@ pub(crate) fn bind_edge_operand_candidates(
         operand.candidate_faces =
             edge_operand_candidate_faces(design_reference, tags, Some(&operand.id));
     }
+    Ok(())
 }
 
 pub(crate) fn edge_operand_candidate_faces(
