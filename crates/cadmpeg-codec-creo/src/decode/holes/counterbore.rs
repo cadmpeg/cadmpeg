@@ -132,7 +132,7 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
     generated_radii: &[f64],
 ) -> Option<(f64, f64, f64)> {
-    let mut candidates = Vec::new();
+    let mut first = None;
     for table in tables {
         if usize::try_from(table.declared_count).ok() != Some(table.rows.len())
             || table.rows.len() != 4
@@ -140,16 +140,9 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
             continue;
         }
         let value = |external_id, dimension_type| {
-            let rows = table
-                .rows
-                .iter()
-                .filter(|row| {
-                    row.external_id == external_id && row.dimension_type == dimension_type
-                })
-                .collect::<Vec<_>>();
-            let [row] = rows.as_slice() else {
-                return None;
-            };
+            let row = exactly_one(table.rows.iter().filter(|row| {
+                row.external_id == external_id && row.dimension_type == dimension_type
+            }))?;
             row.value.resolved().filter(|value| value.is_finite())
         };
         let (Some(bore_radius), Some(_placement_distance), Some(depth), Some(counterbore_radius)) =
@@ -170,21 +163,26 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
         }
         let bore_diameter = PositiveLength::new(2.0 * bore_radius)?;
         let counterbore_diameter = PositiveLength::new(2.0 * counterbore_radius)?;
-        candidates.push((bore_diameter.get(), counterbore_diameter.get(), depth.abs()));
+        let candidate = (bore_diameter.get(), counterbore_diameter.get(), depth.abs());
+        if let Some(first) = first {
+            if !counterbore_values_agree(candidate, first) {
+                return None;
+            }
+        } else {
+            first = Some(candidate);
+        }
     }
-    let first = *candidates.first()?;
-    candidates
-        .iter()
-        .all(|candidate| {
-            [
-                candidate.0 - first.0,
-                candidate.1 - first.1,
-                candidate.2 - first.2,
-            ]
-            .iter()
-            .all(|delta| delta.abs() <= EPS_COUNTERBORE_GEOMETRY)
-        })
-        .then_some(first)
+    first
+}
+
+fn counterbore_values_agree(candidate: (f64, f64, f64), first: (f64, f64, f64)) -> bool {
+    [
+        candidate.0 - first.0,
+        candidate.1 - first.1,
+        candidate.2 - first.2,
+    ]
+    .iter()
+    .all(|delta| delta.abs() <= EPS_COUNTERBORE_GEOMETRY)
 }
 
 pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
@@ -208,20 +206,22 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     };
     let counterbore_matches =
         |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
-            let diameter_axes = (0..3)
-                .filter(|axis| {
-                    spans[*axis].into_iter().flatten().any(|span| {
-                        (FiniteReal::new(span.get()))
-                            .zip(FiniteReal::new(diameter))
-                            .is_some_and(|(first, second)| approximately_equal(first, second))
-                    })
+            let mut diameter_axes = (0..3).filter(|axis| {
+                spans[*axis].into_iter().flatten().any(|span| {
+                    (FiniteReal::new(span.get()))
+                        .zip(FiniteReal::new(diameter))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
                 })
-                .collect::<Vec<_>>();
-            let [first_axis, second_axis] = diameter_axes.as_slice() else {
+            });
+            let (Some(first_axis), Some(second_axis), None) = (
+                diameter_axes.next(),
+                diameter_axes.next(),
+                diameter_axes.next(),
+            ) else {
                 return false;
             };
             (0..3)
-                .find(|axis| axis != first_axis && axis != second_axis)
+                .find(|axis| *axis != first_axis && *axis != second_axis)
                 .is_some_and(|axis| {
                     spans[axis].into_iter().flatten().any(|span| {
                         (FiniteReal::new(span.get()))
@@ -258,21 +258,25 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
                 (None, None) => false,
             };
             matches.then_some((bore_diameter, counterbore_diameter, counterbore_depth))
-        })
-        .collect::<Vec<_>>();
-    unique_counterbore_dimension_tuple(&candidates)
+        });
+    unique_counterbore_dimension_tuple(candidates)
 }
 
 pub(in crate::decode) fn counterbore_unenveloped_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
 ) -> Option<(f64, f64, f64)> {
-    let candidates = tables
+    let mut candidates = tables
         .filter(|table| {
             feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)
         })
-        .map(counterbore_envelope_dimension_tuple)
-        .collect::<Option<Vec<_>>>()?;
-    unique_counterbore_dimension_tuple(&candidates)
+        .map(counterbore_envelope_dimension_tuple);
+    let first = candidates.next()??;
+    for candidate in candidates {
+        if !counterbore_tuples_approximately_equal(candidate?, first) {
+            return None;
+        }
+    }
+    Some(first)
 }
 
 fn counterbore_envelope_dimension_tuple(
@@ -280,14 +284,9 @@ fn counterbore_envelope_dimension_tuple(
 ) -> Option<(f64, f64, f64)> {
     (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
     let value = |external_id, dimension_type| {
-        let rows = table
-            .rows
-            .iter()
-            .filter(|row| row.external_id == external_id && row.dimension_type == dimension_type)
-            .collect::<Vec<_>>();
-        let [row] = rows.as_slice() else {
-            return None;
-        };
+        let row = exactly_one(table.rows.iter().filter(|row| {
+            row.external_id == external_id && row.dimension_type == dimension_type
+        }))?;
         row.value.resolved().filter(|value| value.is_finite())
     };
     let signed_counterbore_depth = value(0, 1)?;
@@ -313,21 +312,28 @@ fn counterbore_envelope_dimension_tuple(
     ))
 }
 
-fn unique_counterbore_dimension_tuple(candidates: &[(f64, f64, f64)]) -> Option<(f64, f64, f64)> {
-    let first = *candidates.first()?;
+fn unique_counterbore_dimension_tuple(
+    candidates: impl Iterator<Item = (f64, f64, f64)>,
+) -> Option<(f64, f64, f64)> {
+    let mut candidates = candidates;
+    let first = candidates.next()?;
     candidates
-        .iter()
-        .all(|candidate| {
-            [candidate.0, candidate.1, candidate.2]
-                .into_iter()
-                .zip([first.0, first.1, first.2])
-                .all(|(candidate, first)| {
-                    (FiniteReal::new(candidate))
-                        .zip(FiniteReal::new(first))
-                        .is_some_and(|(first, second)| approximately_equal(first, second))
-                })
-        })
+        .all(|candidate| counterbore_tuples_approximately_equal(candidate, first))
         .then_some(first)
+}
+
+fn counterbore_tuples_approximately_equal(
+    candidate: (f64, f64, f64),
+    first: (f64, f64, f64),
+) -> bool {
+    [candidate.0, candidate.1, candidate.2]
+        .into_iter()
+        .zip([first.0, first.1, first.2])
+        .all(|(candidate, first)| {
+            (FiniteReal::new(candidate))
+                .zip(FiniteReal::new(first))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+        })
 }
 
 pub(in crate::decode) fn counterbore_patch_geometries<'a>(
@@ -430,7 +436,7 @@ fn counterbore_entity_table<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<&'a crate::feature::entity::FeatureEntityTable> {
-    let tables = scan
+    exactly_one(scan
         .features
         .entity_tables
         .iter()
@@ -445,12 +451,7 @@ fn counterbore_entity_table<'a>(
                                 && row.kind == crate::surface::SurfaceKind::Cylinder
                         })
             })
-        })
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
-    Some(*table)
+        }))
 }
 
 pub(in crate::decode) fn counterbore_axis_placement(
@@ -485,24 +486,16 @@ pub(in crate::decode) fn counterbore_support_axis_placement(
     frames: &[crate::surface::PlaneLocalSystem],
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     (table.feature_id == feature_id).then_some(())?;
-    let plane_ids = table
+    let plane_id = exactly_one(table
         .surface_ids_iter()
         .filter(|surface_id| {
             crate::surface::unique_surface_row(rows, *surface_id).is_some_and(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
-        })
-        .collect::<Vec<_>>();
-    let [plane_id] = plane_ids.as_slice() else {
-        return None;
-    };
-    let matching_frames = frames
+        }))?;
+    let frame = exactly_one(frames
         .iter()
-        .filter(|frame| frame.surface_id == *plane_id)
-        .collect::<Vec<_>>();
-    let [frame] = matching_frames.as_slice() else {
-        return None;
-    };
+        .filter(|frame| frame.surface_id == plane_id))?;
     let frame = frame.frame();
     let origin = frame.origin?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
@@ -516,15 +509,11 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     counterbore_diameter: f64,
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
-    let carriers = cylinder_sources
+    let carrier = exactly_one(cylinder_sources
         .iter()
         .filter_map(|ids| {
             complete_cylinder_source_carrier(ids, existing_geometries, 0.5 * counterbore_diameter)
-        })
-        .collect::<Vec<_>>();
-    let [carrier] = carriers.as_slice() else {
-        return None;
-    };
+        }))?;
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: carrier.origin(),
         axis: cadmpeg_ir::features::FeatureDirection3::from(*carrier.frame().axis()),
@@ -620,25 +609,28 @@ fn counterbore_source_envelope_layout(
             intervals[0][axis.index()][1].max(intervals[1][axis.index()][1]),
         ]
     };
-    let diameter_axes = Axis::ALL
+    let mut diameter_axes = Axis::ALL
         .into_iter()
         .filter(|axis| {
             let union = union(*axis);
             (shared(*axis) || adjacent(*axis)) && close(union[1] - union[0], diameter)
-        })
-        .collect::<Vec<_>>();
-    let [first_radial, second_radial] = diameter_axes.as_slice() else {
+        });
+    let (Some(first_radial), Some(second_radial), None) = (
+        diameter_axes.next(),
+        diameter_axes.next(),
+        diameter_axes.next(),
+    ) else {
         return None;
     };
     let axis = Axis::ALL
         .into_iter()
-        .find(|axis| axis != first_radial && axis != second_radial)?;
+        .find(|axis| *axis != first_radial && *axis != second_radial)?;
     shared(axis).then_some(())?;
     let axial_interval = intervals[0][axis.index()];
     let axial_span = axial_interval[1] - axial_interval[0];
     (axial_span > 0.0 && axial_depth.is_none_or(|depth| close(axial_span, depth))).then_some(())?;
     let mut center = [0.0; 3];
-    for radial_axis in [*first_radial, *second_radial] {
+    for radial_axis in [first_radial, second_radial] {
         let bounds = union(radial_axis);
         center[radial_axis.index()] = f64::midpoint(bounds[0], bounds[1]);
     }
@@ -702,7 +694,7 @@ fn counterbore_corner_assignment(
         && counterbore_depth > 0.0)
         .then_some(())?;
     let close = |left: f64, right: f64| (left - right).abs() <= EPS_COUNTERBORE_GEOMETRY * scale;
-    let assignments = [
+    let assignment = exactly_one([
         (
             0,
             counterbore_source_envelope_layout(*first_source, bore_diameter, None, scale),
@@ -725,11 +717,8 @@ fn counterbore_corner_assignment(
         ),
     ]
     .into_iter()
-    .filter_map(|(bore_source, bore, counterbore)| Some((bore_source, bore?, counterbore?)))
-    .collect::<Vec<_>>();
-    let [(bore_source, bore, counterbore)] = assignments.as_slice() else {
-        return None;
-    };
+    .filter_map(|(bore_source, bore, counterbore)| Some((bore_source, bore?, counterbore?))))?;
+    let (bore_source, bore, counterbore) = assignment;
     (bore.axis == counterbore.axis).then_some(())?;
     bore.axis
         .complement()
@@ -758,8 +747,8 @@ fn counterbore_corner_assignment(
     let mut direction = [0.0; 3];
     direction[counterbore.axis.index()] = direction_sign;
     Some(CounterboreCornerAssignment {
-        bore_source: *bore_source,
-        bore: *bore,
+        bore_source,
+        bore,
         position: Point3::from(position),
         direction: Vector3::from(direction),
         length,
@@ -830,7 +819,7 @@ fn counterbore_source_boundary_circle(
         .collect::<BTreeMap<_, _>>();
     let local_planes = placed_planes(scan);
     let boundary_for = |cylinder_id| {
-        let boundaries = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        exactly_one(crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
             .into_iter()
             .filter_map(|edge| {
                 (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
@@ -888,34 +877,26 @@ fn counterbore_source_boundary_circle(
                     && distance <= EPS_COUNTERBORE_GEOMETRY * scale)
                     .then_some(())?;
                 Some((other, center, axis))
-            })
-            .collect::<Vec<_>>();
-        let [boundary] = boundaries.as_slice() else {
-            return None;
-        };
-        Some(*boundary)
+            }))
     };
-    let boundaries = cylinder_ids
-        .iter()
-        .copied()
-        .map(boundary_for)
-        .collect::<Option<Vec<_>>>()?;
-    let first = *boundaries.first()?;
-    boundaries
-        .iter()
-        .all(|candidate| {
-            candidate.0 == first.0
-                && candidate.1 == first.1
-                && candidate
-                    .2
-                    .iter()
-                    .zip(first.2)
-                    .map(|(left, right)| left * right)
-                    .sum::<f64>()
-                    .abs()
-                    >= 1.0 - EPS_COUNTERBORE_GEOMETRY
-        })
-        .then_some(first)
+    let mut boundaries = cylinder_ids.iter().copied().map(boundary_for);
+    let first = boundaries.next()??;
+    for candidate in boundaries {
+        let candidate = candidate?;
+        if !(candidate.0 == first.0
+            && candidate.1 == first.1
+            && candidate
+                .2
+                .iter()
+                .zip(first.2)
+                .map(|(left, right)| left * right)
+                .sum::<f64>()
+                .abs()
+                >= 1.0 - EPS_COUNTERBORE_GEOMETRY) {
+            return None;
+        }
+    }
+    Some(first)
 }
 
 pub(in crate::decode) fn counterbore_source_patch_geometries(
@@ -1021,16 +1002,13 @@ fn complete_cylinder_source_carrier(
     existing_geometries: &BTreeMap<u32, SurfaceGeometry>,
     radius: f64,
 ) -> Option<CylinderSurface> {
-    let carriers = ids
-        .iter()
-        .map(|id| existing_geometries.get(id))
-        .collect::<Option<Vec<_>>>()?;
-    let first = *carriers.first()?;
+    let mut carriers = ids.iter().map(|id| existing_geometries.get(id));
+    let first = carriers.next()??;
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = first else {
         return None;
     };
     ((cylinder.radius().get() - radius).abs() <= EPS_COUNTERBORE_GEOMETRY
-        && carriers.iter().all(|candidate| *candidate == first))
+        && carriers.all(|candidate| candidate == Some(first)))
     .then_some(*cylinder)
 }
 
