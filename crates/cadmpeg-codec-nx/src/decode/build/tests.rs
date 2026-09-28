@@ -7,6 +7,79 @@ use super::{
     push_unknown_link, reserve_unknown_pair, retain_live_annotations, unknown_stream_metadata,
 };
 
+fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError {
+    let bytes = crate::test_support::test_prt::prt_with_partition(
+        &crate::test_support::test_streams::topology_partition_stream(),
+    );
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, scan_root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
+        .expect("bounded topology input");
+    let scan = crate::decode::scan(&scan_ctx, scan_root).expect("valid topology container");
+    let (dialects, _) = crate::dialect::classify_layers(&scan_ctx, &scan)
+        .expect("classified topology input")
+        .into_report_parts();
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, policy)
+        .expect("root input fits policy");
+    match super::try_decode_geometry(
+        &ctx,
+        root,
+        &scan,
+        &dialects,
+        &[],
+        &[],
+        &mut 0,
+    ) {
+        Err(error) => error,
+        Ok(_) => panic!("geometry route must refuse the low limit"),
+    }
+}
+
+#[test]
+fn geometry_route_refuses_collection_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        geometry_route_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn geometry_route_refuses_retained_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(
+        geometry_route_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn geometry_route_refuses_scoped_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    assert!(matches!(
+        geometry_route_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+}
+
+#[test]
+fn geometry_route_refuses_work_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(
+        geometry_route_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+    ));
+}
+
 fn preview_stream() -> crate::parasolid::Stream {
     crate::parasolid::Stream {
         file_offset: 0,
