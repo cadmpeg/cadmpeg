@@ -1192,7 +1192,9 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(point)
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            curve.pole_rows().raw_points().into_iter().all(point_valid)
+            (0..curve.pole_count()).all(|index| {
+                curve.pole_rows().point_at(index).is_some_and(|point| point_valid(point.get()))
+            })
         }
         SolvedCurveGeometry::Polyline(polyline) => polyline
             .points()

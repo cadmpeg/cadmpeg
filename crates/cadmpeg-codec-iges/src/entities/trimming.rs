@@ -788,10 +788,8 @@ fn linear_model_nurbs_points(
     range: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    if nurbs
-        .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
-    {
+    if (0..nurbs.pole_count())
+        .any(|index| nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight != 1.0)) {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
@@ -827,16 +825,14 @@ fn linear_pcurve_points(
     let PcurveGeometry::Nurbs { nurbs } = geometry else {
         return Ok(None);
     };
-    if nurbs
-        .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
-    {
+    if (0..nurbs.pole_rows().count())
+        .any(|index| nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight != 1.0)) {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
-        nurbs.control_points().len(),
+        nurbs.pole_rows().count(),
         nurbs.periodic(),
         range,
     ) else {

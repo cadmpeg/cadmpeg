@@ -401,7 +401,7 @@ fn homogeneous_control_points(
     ctx: Option<&DecodeContext<'_>>,
     curve: &NurbsCurve,
 ) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let control_count = curve.control_points().len();
+    let control_count = curve.pole_count();
     let mut homogeneous = match ctx {
         Some(ctx) => ctx.alloc_filled(
             control_count,
@@ -414,11 +414,17 @@ fn homogeneous_control_points(
             "iges composite homogeneous control points",
         )?,
     };
-    for (index, point) in curve.control_points().iter().enumerate() {
-        let Some(weight) = curve.weights().map_or(Some(1.0), |weights| {
-            weights.get(index).map(|weight| weight.get())
-        }) else {
+    for index in 0..control_count {
+        let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
+        };
+        let weight = if matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }) {
+            let Some(weight) = curve.pole_rows().weight_at(index) else {
+                return Ok(None);
+            };
+            weight
+        } else {
+            1.0
         };
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
@@ -590,7 +596,7 @@ fn reverse_nurbs(
             degree: curve.degree(),
         });
     };
-    let control_count = curve.control_points().len();
+    let control_count = curve.pole_count();
     let [start, end] = interval;
     let (Some(finite_start), Some(finite_end)) = (FiniteReal::new(start), FiniteReal::new(end))
     else {
@@ -792,7 +798,7 @@ fn trim_nurbs_lanes(
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
-    let control_count = curve.control_points().len();
+    let control_count = curve.pole_count();
     if curve.periodic() {
         return Ok(None);
     }
@@ -869,7 +875,7 @@ fn trim_nurbs_lanes(
     let Some(EuclideanControlNet {
         control_points,
         weights,
-    }) = euclidean_control_points(ctx, trimmed_homogeneous, curve.weights().is_some())?
+    }) = euclidean_control_points(ctx, trimmed_homogeneous, matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }))?
     else {
         return Ok(None);
     };
@@ -1235,7 +1241,7 @@ fn elevate_nurbs_to_degree(
     {
         return Err(DegreeElevationError::RefinedKnotVector.into());
     }
-    let rational = curve.weights().is_some();
+    let rational = matches!(curve.pole_rows(), NurbsPoles3::Rational { .. });
     let mut pieces = Vec::new();
     for span in source_degree..=refined_count {
         let start = knots[span];
