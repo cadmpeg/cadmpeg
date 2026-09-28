@@ -111,13 +111,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let cap_record = format!("extrusion feature {feature_id} cap");
             let cap = circular_pcurve(
+                ctx,
                 section_center,
                 radius,
                 0.0,
                 std::f64::consts::TAU,
                 &cap_record,
                 &mut refusal,
-            );
+            )?;
             let records = refusal.take_records();
             match cap {
                 Some(cap) if records.is_empty() => cap,

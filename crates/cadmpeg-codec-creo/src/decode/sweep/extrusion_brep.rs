@@ -640,13 +640,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                              at entity {edge_index}"
                         );
                         let cap = extrusion_cap_pcurve(
+                            ctx,
                             &sketch_geometry,
                             reversed,
                             start,
                             end,
                             &record,
                             &mut refusal,
-                        );
+                        )?;
                         let records = refusal.take_records();
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
@@ -717,13 +718,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                              at entity {ring_index}"
                         );
                         let cap = extrusion_cap_pcurve(
+                            ctx,
                             &sketch_geometry,
                             reversed,
                             start,
                             end,
                             &record,
                             &mut refusal,
-                        );
+                        )?;
                         let records = refusal.take_records();
                         if !records.is_empty() {
                             // The shell of this body already declares this cap

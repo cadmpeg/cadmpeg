@@ -1602,14 +1602,16 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
         (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
     ] {
-        let pcurve = circular_pcurve(
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| circular_pcurve(
+            ctx,
             [2.0, 2.0],
             3.0,
             start,
             end,
             &"circular pcurve fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("resource admission")
         .expect("circular pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
@@ -1754,14 +1756,16 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
-        let pcurve = extrusion_cap_pcurve(
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| extrusion_cap_pcurve(
+            ctx,
             &circle,
             reversed,
             seam,
             seam,
             &"extrusion cap fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("resource admission")
         .expect("extrusion cap pcurve fixture");
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");

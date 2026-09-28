@@ -177,24 +177,32 @@ pub(in super::super) fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> Option<Pc
 }
 
 pub(in super::super) fn circular_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     radius: f64,
     start_angle: f64,
     end_angle: f64,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     const MAX_CIRCULAR_PCURVE_SEGMENTS: usize = 100_000;
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
     if !count.is_finite() || count > MAX_CIRCULAR_PCURVE_SEGMENTS as f64 {
-        return None;
+        return Ok(None);
     }
     let segment_count = count as usize;
     let step = span / segment_count as f64;
-    let pole_count = segment_count.checked_mul(2)?.checked_add(1)?;
-    let mut control_points = Vec::with_capacity(pole_count);
-    let mut weights = Vec::with_capacity(pole_count);
+    let Some(pole_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(1)) else {
+        return Ok(None);
+    };
+    let Some(knot_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(4)) else {
+        return Ok(None);
+    };
+    let mut control_points = Vec::new();
+    ctx.try_reserve_items(&mut control_points, pole_count, "creo circular pcurve controls")?;
+    let mut weights = Vec::new();
+    ctx.try_reserve_items(&mut weights, pole_count, "creo circular pcurve weights")?;
     for segment in 0..segment_count {
         let first = start_angle + segment as f64 * step;
         let second = first + step;
@@ -218,7 +226,9 @@ pub(in super::super) fn circular_pcurve(
         ));
         weights.push(1.0);
     }
-    let mut knots = vec![0.0; 3];
+    let mut knots = Vec::new();
+    ctx.try_reserve_items(&mut knots, knot_count, "creo circular pcurve knots")?;
+    knots.extend([0.0; 3]);
     for boundary in 1..segment_count {
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
@@ -230,22 +240,23 @@ pub(in super::super) fn circular_pcurve(
         Some(weights),
         false,
     ) {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note(format!("creo circular pcurve record for {record}"), &error);
-            None
+            Ok(None)
         }
     }
 }
 
 pub(in super::super) fn extrusion_cap_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &SketchGeometry,
     reversed: bool,
     start: [f64; 2],
     end: [f64; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     match geometry.definition() {
         SketchGeometryDefinition::Arc {
             center,
@@ -259,6 +270,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
                 [start_angle.get(), end_angle.get()]
             };
             circular_pcurve(
+                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -270,6 +282,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
         SketchGeometryDefinition::Circle { center, radius } => {
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve(
+                ctx,
                 [center.u, center.v],
                 radius.get(),
                 start_angle,
@@ -279,9 +292,9 @@ pub(in super::super) fn extrusion_cap_pcurve(
             )
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            sketch_nurbs_pcurve(geometry, reversed, record, refusal)
+            Ok(sketch_nurbs_pcurve(geometry, reversed, record, refusal))
         }
-        _ => line_pcurve(start, end),
+        _ => Ok(line_pcurve(start, end)),
     }
 }
 

@@ -9,6 +9,7 @@ use cadmpeg_ir::sketches::{
 };
 
 const EPS_WIDE_NURBS_AREA: f64 = 1.0e-12;
+const EPS_QUARTER_CIRCLE_SEAM: f64 = 1.0e-12;
 
 fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
     Sketch {
@@ -208,24 +209,72 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
 }
 
 #[test]
+fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    for (limit, operation) in [
+        (2, "creo circular pcurve controls"),
+        (5, "creo circular pcurve weights"),
+        (11, "creo circular pcurve knots"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::circular_pcurve(
+            &ctx,
+            [0.0, 0.0],
+            1.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            &"quarter circle",
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect_err("counted circular lane exceeds its limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    let pcurve = crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+        ctx,
+        [0.0, 0.0],
+        1.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+        &"quarter circle",
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    ))
+    .expect("service allocation")
+    .expect("quarter-circle geometry");
+    assert_eq!(cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("start"), Point2::new(1.0, 0.0));
+    let end = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("end");
+    assert!(end.u.abs() < EPS_QUARTER_CIRCLE_SEAM);
+    assert!((end.v - 1.0).abs() < EPS_QUARTER_CIRCLE_SEAM);
+}
+
+#[test]
 fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
-    let first = super::circular_pcurve(
+    let first = crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+        ctx,
         [f64::MAX, f64::MAX],
         f64::MAX,
         0.0,
         std::f64::consts::TAU,
         &"extrusion feature 11 cap",
         &mut refusal,
-    );
-    let second = super::circular_pcurve(
+    ))
+    .expect("resource admission");
+    let second = crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(
+        ctx,
         [f64::MAX, f64::MAX],
         f64::MAX,
         0.0,
         std::f64::consts::TAU,
         &"extrusion feature 12 cap",
         &mut refusal,
-    );
+    ))
+    .expect("resource admission");
     assert!(first.is_none(), "the refused arc states no pcurve");
     assert!(second.is_none(), "the refused arc states no pcurve");
     let records = refusal.take_records();
@@ -246,7 +295,8 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 fn circular_pcurve_refuses_unbounded_span_before_allocation() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     assert!(
-        super::circular_pcurve([0.0, 0.0], 1.0, 0.0, 1.0e20, &"oversized arc", &mut refusal,)
+        crate::decode::with_test_decode_ctx(|ctx| super::circular_pcurve(ctx, [0.0, 0.0], 1.0, 0.0, 1.0e20, &"oversized arc", &mut refusal,))
+            .expect("resource admission")
             .is_none()
     );
 }
