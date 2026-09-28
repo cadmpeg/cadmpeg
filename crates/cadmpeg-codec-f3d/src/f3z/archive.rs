@@ -88,14 +88,12 @@ pub(super) fn model_root(
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
     let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
-    let manifest = {
-        let bytes = u64::try_from(manifest_bytes.len())
-            .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
-        let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
-        serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
-            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
-        })?
-    };
+    let bytes = u64::try_from(manifest_bytes.len())
+        .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
+    let manifest = serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
+        CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+    })?;
     model_root_member(ctx, scan, &manifest.root)
 }
 
@@ -210,6 +208,10 @@ fn model_root_member(
     }
 
     let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    let description_len = u64::try_from(description_bytes.len())
+        .map_err(|_| ctx.refuse_codec_limit("preflight F3Z design description JSON", 0, u64::MAX))?;
+    let _reservation =
+        ctx.reserve_scoped(description_len, "preflight F3Z design description JSON")?;
     crate::json_budget::preflight(
         ctx,
         description_bytes,

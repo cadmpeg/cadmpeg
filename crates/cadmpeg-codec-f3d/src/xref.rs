@@ -251,6 +251,10 @@ fn parse_component_reference_data(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<serde_json::Value, CodecError> {
+    let length = u64::try_from(bytes.len())
+        .map_err(|_| ctx.refuse_codec_limit("preflight F3D component reference JSON", 0, u64::MAX))?;
+    let _reservation =
+        ctx.reserve_scoped(length, "preflight F3D component reference JSON")?;
     crate::json_budget::preflight(
         ctx,
         bytes,
@@ -396,6 +400,9 @@ pub(crate) fn docstruct(
     let Some(payload) = view.take(count) else {
         return Ok(None);
     };
+    let length = u64::try_from(payload.len())
+        .map_err(|_| ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(length, "preflight F3D properties JSON")?;
     if !crate::json_budget::preflight(
         ctx,
         payload,
