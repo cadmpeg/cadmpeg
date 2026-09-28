@@ -510,7 +510,8 @@ pub(crate) fn bind_extrude_profile_selections(
                     effective_previous_history_state_id,
                     &feature.id,
                     scoped_histories,
-                ) {
+                    resolution.ctx,
+                )? {
                     *profile = ProfileRef::Planar(selection);
                 }
                 break 'feature_edit;
@@ -722,31 +723,33 @@ fn historical_face_profile_selection(
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     scoped_histories: &[crate::history_records::AsmHistory],
-) -> Option<cadmpeg_ir::features::PlanarProfileRef> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::PlanarProfileRef>, CodecError> {
     use cadmpeg_ir::features::PlanarProfileRef;
 
-    let previous_state_id = previous_state_id?;
+    let Some(previous_state_id) = previous_state_id else { return Ok(None); };
     let mut states = scoped_histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
-    let topology = states.next()?.topology()?;
+    let Some(topology) = states.next().and_then(|state| state.topology()) else { return Ok(None); };
     if states.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let stream = groups.first().and_then(|group| native_stream(&group.id))?;
+    let Some(stream) = groups.first().and_then(|group| native_stream(&group.id)) else { return Ok(None); };
     let mut selected_faces = Vec::new();
     for group in groups {
         if native_stream(&group.id) != Some(stream) {
-            return None;
+            return Ok(None);
         }
-        let mut group_members = members
-            .iter()
-            .filter(|member| {
+        let mut group_members = Vec::new();
+        for member in members.iter().filter(|member| {
                 native_stream(&member.id) == Some(stream)
                     && member.group_record_index == group.record_index
-            })
-            .collect::<Vec<_>>();
+            }) {
+            push_profile_item(ctx, &mut group_members, member,
+                "f3d historical profile group member")?;
+        }
         group_members.sort_by_key(|member| member.group_member_ordinal);
         if group_members.len() != group.members().len()
             || group_members
@@ -754,7 +757,7 @@ fn historical_face_profile_selection(
                 .zip(group.members())
                 .any(|(member, record_index)| member.record_index() != record_index.value)
         {
-            return None;
+            return Ok(None);
         }
         let mut candidates = None::<HashSet<i64>>;
         for member in group_members {
@@ -763,15 +766,18 @@ fn historical_face_profile_selection(
                     if !binding.state_ids.is_empty()
                         && !binding.state_ids.contains(&previous_state_id)
                     {
-                        return None;
+                        return Ok(None);
                     }
                     (Some(binding.kind), binding.entity_ref)
                 }
-                None => (None, i64::try_from(member.local_id).ok()?),
+                None => {
+                    let Ok(entity_ref) = i64::try_from(member.local_id) else { return Ok(None); };
+                    (None, entity_ref)
+                },
             };
-            let member_faces = historical_profile_face_candidates(kind, entity_ref, topology);
+            let member_faces = historical_profile_face_candidates(kind, entity_ref, topology, ctx)?;
             if member_faces.is_empty() {
-                return None;
+                return Ok(None);
             }
             candidates = Some(match candidates {
                 None => member_faces,
@@ -781,46 +787,53 @@ fn historical_face_profile_selection(
                 }
             });
         }
-        let candidates = candidates?;
+        let Some(candidates) = candidates else { return Ok(None); };
         let mut candidates = candidates.into_iter();
-        let face = candidates.next()?;
+        let Some(face) = candidates.next() else { return Ok(None); };
         if candidates.next().is_some() {
-            return None;
+            return Ok(None);
         }
         if !selected_faces.contains(&face) {
-            selected_faces.push(face);
+            push_profile_item(ctx, &mut selected_faces, face,
+                "f3d historical profile selected face")?;
         }
     }
     if selected_faces.is_empty() {
-        return None;
+        return Ok(None);
     }
     let feature_key = feature_id.key();
-    PlanarProfileRef::historical_faces(
+    let mut face_ids = Vec::new();
+    for face in selected_faces {
+        let id = ids::history_input_face_id(
+            &ids::history_input_prefix(&feature_key, previous_state_id), face,
+        );
+        push_profile_item(ctx, &mut face_ids, id,
+            "f3d historical profile face id")?;
+    }
+    let mut group_ids = Vec::new();
+    for group in groups {
+        let id = copy_profile_text(ctx, &group.id,
+            "f3d historical profile group id")?;
+        push_profile_item(ctx, &mut group_ids, id,
+            "f3d historical profile group id entry")?;
+    }
+    Ok(PlanarProfileRef::historical_faces(
         feature_input_topology_id(feature_id, previous_state_id),
-        selected_faces
-            .into_iter()
-            .map(|face| {
-                ids::history_input_face_id(
-                    &ids::history_input_prefix(&feature_key, previous_state_id),
-                    face,
-                )
-            })
-            .collect(),
-        groups.iter().map(|group| group.id.clone()).collect(),
+        face_ids,
+        group_ids,
     )
-    .ok()
+    .ok())
 }
 
 fn historical_profile_face_candidates(
     kind: Option<crate::records::topology::body_recipe::AsmHistoricalEntityKind>,
     entity_ref: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> HashSet<i64> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<HashSet<i64>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
-    let kinds = match kind {
-        Some(kind) => vec![kind],
-        None => vec![
+    let all_kinds = [
             AsmHistoricalEntityKind::Face,
             AsmHistoricalEntityKind::Loop,
             AsmHistoricalEntityKind::Coedge,
@@ -830,95 +843,122 @@ fn historical_profile_face_candidates(
             AsmHistoricalEntityKind::Vertex,
             AsmHistoricalEntityKind::Point,
             AsmHistoricalEntityKind::Surface,
-        ],
-    };
+    ];
+    let kinds = kind.iter().chain(all_kinds.iter().filter(|_| kind.is_none()));
     let loop_faces = |loop_ref| {
-        topology
-            .face_loops
-            .iter()
-            .filter(|relation| relation.member_refs.contains(&loop_ref))
-            .map(|relation| relation.owner_ref)
-            .collect::<HashSet<_>>()
+        let mut faces = HashSet::new();
+        for relation in topology.face_loops.iter()
+            .filter(|relation| relation.member_refs.contains(&loop_ref)) {
+            insert_profile_set(ctx, &mut faces, relation.owner_ref,
+                "f3d historical loop face candidate")?;
+        }
+        Ok::<_, CodecError>(faces)
     };
     let coedge_faces = |coedge_ref| {
-        topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.coedge == coedge_ref)
-            .flat_map(|coedge| loop_faces(coedge.owner_loop))
-            .collect::<HashSet<_>>()
+        let mut faces = HashSet::new();
+        for coedge in topology.coedge_topology.iter()
+            .filter(|coedge| coedge.coedge == coedge_ref) {
+            for face in loop_faces(coedge.owner_loop)? {
+                insert_profile_set(ctx, &mut faces, face,
+                    "f3d historical coedge face candidate")?;
+            }
+        }
+        Ok::<_, CodecError>(faces)
     };
     let edge_faces = |edge_ref| {
-        topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.edge == edge_ref)
-            .flat_map(|coedge| loop_faces(coedge.owner_loop))
-            .collect::<HashSet<_>>()
+        let mut faces = HashSet::new();
+        for coedge in topology.coedge_topology.iter()
+            .filter(|coedge| coedge.edge == edge_ref) {
+            for face in loop_faces(coedge.owner_loop)? {
+                insert_profile_set(ctx, &mut faces, face,
+                    "f3d historical edge face candidate")?;
+            }
+        }
+        Ok::<_, CodecError>(faces)
     };
     let mut faces = HashSet::new();
     for kind in kinds {
         match kind {
             AsmHistoricalEntityKind::Face => {
                 if topology.faces.contains(&entity_ref) {
-                    faces.insert(entity_ref);
+                    insert_profile_set(ctx, &mut faces, entity_ref,
+                        "f3d historical profile face candidate")?;
                 }
             }
-            AsmHistoricalEntityKind::Loop => faces.extend(loop_faces(entity_ref)),
-            AsmHistoricalEntityKind::Coedge => faces.extend(coedge_faces(entity_ref)),
-            AsmHistoricalEntityKind::Edge => faces.extend(edge_faces(entity_ref)),
-            AsmHistoricalEntityKind::Pcurve => faces.extend(
-                topology
-                    .coedge_pcurves
-                    .iter()
-                    .filter(|binding| binding.carrier == Some(entity_ref))
-                    .flat_map(|binding| coedge_faces(binding.entity)),
-            ),
-            AsmHistoricalEntityKind::Curve => faces.extend(
-                topology
-                    .edge_curves
-                    .iter()
-                    .filter(|binding| binding.carrier == Some(entity_ref))
-                    .flat_map(|binding| edge_faces(binding.entity)),
-            ),
-            AsmHistoricalEntityKind::Vertex => faces.extend(
-                topology
-                    .edge_vertices
-                    .iter()
-                    .filter(|edge| edge.start_vertex == entity_ref || edge.end_vertex == entity_ref)
-                    .flat_map(|edge| edge_faces(edge.edge)),
-            ),
-            AsmHistoricalEntityKind::Point => {
-                let vertices = topology
-                    .vertex_points
-                    .iter()
-                    .filter(|binding| binding.carrier == entity_ref)
-                    .map(|binding| binding.entity)
-                    .collect::<HashSet<_>>();
-                faces.extend(
-                    topology
-                        .edge_vertices
-                        .iter()
-                        .filter(|edge| {
-                            vertices.contains(&edge.start_vertex)
-                                || vertices.contains(&edge.end_vertex)
-                        })
-                        .flat_map(|edge| edge_faces(edge.edge)),
-                );
+            AsmHistoricalEntityKind::Loop => {
+                for face in loop_faces(entity_ref)? {
+                    insert_profile_set(ctx, &mut faces, face,
+                        "f3d historical profile face candidate")?;
+                }
             }
-            AsmHistoricalEntityKind::Surface => faces.extend(
-                topology
-                    .face_surfaces
-                    .iter()
-                    .filter(|binding| binding.carrier == entity_ref)
-                    .map(|binding| binding.entity),
-            ),
+            AsmHistoricalEntityKind::Coedge => {
+                for face in coedge_faces(entity_ref)? {
+                    insert_profile_set(ctx, &mut faces, face,
+                        "f3d historical profile face candidate")?;
+                }
+            }
+            AsmHistoricalEntityKind::Edge => {
+                for face in edge_faces(entity_ref)? {
+                    insert_profile_set(ctx, &mut faces, face,
+                        "f3d historical profile face candidate")?;
+                }
+            }
+            AsmHistoricalEntityKind::Pcurve => {
+                for binding in topology.coedge_pcurves.iter()
+                    .filter(|binding| binding.carrier == Some(entity_ref)) {
+                    for face in coedge_faces(binding.entity)? {
+                        insert_profile_set(ctx, &mut faces, face,
+                            "f3d historical profile face candidate")?;
+                    }
+                }
+            }
+            AsmHistoricalEntityKind::Curve => {
+                for binding in topology.edge_curves.iter()
+                    .filter(|binding| binding.carrier == Some(entity_ref)) {
+                    for face in edge_faces(binding.entity)? {
+                        insert_profile_set(ctx, &mut faces, face,
+                            "f3d historical profile face candidate")?;
+                    }
+                }
+            }
+            AsmHistoricalEntityKind::Vertex => {
+                for edge in topology.edge_vertices.iter()
+                    .filter(|edge| edge.start_vertex == entity_ref || edge.end_vertex == entity_ref) {
+                    for face in edge_faces(edge.edge)? {
+                        insert_profile_set(ctx, &mut faces, face,
+                            "f3d historical profile face candidate")?;
+                    }
+                }
+            }
+            AsmHistoricalEntityKind::Point => {
+                let mut vertices = HashSet::new();
+                for binding in topology.vertex_points.iter()
+                    .filter(|binding| binding.carrier == entity_ref) {
+                    insert_profile_set(ctx, &mut vertices, binding.entity,
+                        "f3d historical point vertex candidate")?;
+                }
+                for edge in topology.edge_vertices.iter()
+                    .filter(|edge| vertices.contains(&edge.start_vertex)
+                        || vertices.contains(&edge.end_vertex)) {
+                    for face in edge_faces(edge.edge)? {
+                        insert_profile_set(ctx, &mut faces, face,
+                            "f3d historical profile face candidate")?;
+                    }
+                }
+            }
+            AsmHistoricalEntityKind::Surface => {
+                for binding in topology.face_surfaces.iter()
+                    .filter(|binding| binding.carrier == entity_ref) {
+                    insert_profile_set(ctx, &mut faces, binding.entity,
+                        "f3d historical profile face candidate")?;
+                }
+            }
             AsmHistoricalEntityKind::Body
             | AsmHistoricalEntityKind::Region
             | AsmHistoricalEntityKind::Shell => {}
         }
     }
-    faces
+    Ok(faces)
 }
 
 #[derive(Debug, Clone, PartialEq)]

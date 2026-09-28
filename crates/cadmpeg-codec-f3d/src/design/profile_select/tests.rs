@@ -45,6 +45,7 @@ mod spatial_transition;
 mod historical_allocation;
 mod path_allocation;
 mod region_allocation;
+mod historical_candidate_allocation;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -1326,15 +1327,15 @@ fn historical_profile_members_resolve_through_topology_ownership() {
     };
 
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Pcurve), 50, &topology,),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Pcurve), 50, &topology, None).unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Surface), 40, &topology,),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Surface), 40, &topology, None).unwrap(),
         HashSet::from([10])
     );
     assert_eq!(
-        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology,),
+        historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology, None).unwrap(),
         HashSet::from([10, 20])
     );
 }

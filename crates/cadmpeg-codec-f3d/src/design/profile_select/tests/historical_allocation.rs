@@ -790,3 +790,89 @@ fn cylindrical_profile_projected_points_refuse_collection_limit() {
     }
     panic!("no cylindrical projected point refusal");
 }
+
+fn assert_historical_face_profile_refusal(operation: &'static str, retained: bool) {
+    let group = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".to_owned(),
+            member_count_offset: 32,
+            members: vec![10],
+            member_offsets: vec![37],
+            opaque_index: 1,
+            opaque_index_offset: 47,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 51,
+            variant: false,
+            paired_class_tag: "277".to_owned(),
+            paired_byte_offset: 100,
+        },
+    ).unwrap();
+    let mut member = historical_point_member();
+    member.id = "f3d:Design/BulkStream.dat:selection-member#10".into();
+    member.local_id = 10;
+    member.historical = Some(HistoricalBinding {
+        kind: AsmHistoricalEntityKind::Face,
+        entity_ref: 10,
+        state_ids: vec![2],
+    });
+    let histories = [AsmHistory {
+        id: "f3d:Design/BulkStream.dat:history#1".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![transition_state(2, AsmHistoricalTopology {
+            faces: vec![10],
+            ..AsmHistoricalTopology::default()
+        }, None)],
+    }];
+    let feature = cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#1").unwrap();
+    for limit in 0..8 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::historical_face_profile_selection(
+            &[&group], std::slice::from_ref(&member), Some(2), &feature,
+            &histories, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected historical face profile refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no historical face profile refusal at {operation}");
+}
+
+#[test]
+fn historical_profile_group_member_refuses_collection_limit() {
+    assert_historical_face_profile_refusal("f3d historical profile group member", false);
+}
+
+#[test]
+fn historical_profile_selected_face_refuses_collection_limit() {
+    assert_historical_face_profile_refusal("f3d historical profile selected face", false);
+}
+
+#[test]
+fn historical_profile_face_id_refuses_collection_limit() {
+    assert_historical_face_profile_refusal("f3d historical profile face id", false);
+}
+
+#[test]
+fn historical_profile_group_id_entry_refuses_collection_limit() {
+    assert_historical_face_profile_refusal("f3d historical profile group id entry", false);
+}
+
+#[test]
+fn historical_profile_group_id_refuses_retained_limit() {
+    assert_historical_face_profile_refusal("f3d historical profile group id", true);
+}
