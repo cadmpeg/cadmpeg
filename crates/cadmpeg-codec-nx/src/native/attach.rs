@@ -52,6 +52,24 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
 const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 
+fn push_native_unknown(
+    ctx: &DecodeContext<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    record: UnknownRecord,
+) -> Result<(), CodecError> {
+    ctx.charge_entities(1, "NX native unknown record")?;
+    ctx.charge_collection_items(1, "NX native unknown records")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<UnknownRecord>()),
+        "retain NX native unknown record",
+    )?;
+    unknowns.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX native unknown records", 0, 1)
+    })?;
+    unknowns.push(record);
+    Ok(())
+}
+
 /// Refuses a document tolerance finer than the hole recognisers resolve.
 ///
 /// The recognisers below compare evaluated B-rep geometry against the document
@@ -144,12 +162,12 @@ fn attach_container_payloads(
             .note(&id, &annotation_stream, offset)
             .tag(content.label());
         annotations.exactness(&id, Exactness::ByteExact);
-        unknowns.push(UnknownRecord::retained(
+        push_native_unknown(ctx, unknowns, UnknownRecord::retained(
             id,
             offset,
             ctx.copy_retained(bytes, "retain NX opaque container payload")?,
             Vec::new(),
-        ));
+        ))?;
     }
     attach_jpeg_preview_assets(ctx, ir, scan, annotations, unknowns)?;
     Ok(())
@@ -177,12 +195,12 @@ fn attach_indexed_om_unknowns(
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_ENTITY_RECORD");
                     annotations.exactness(&id, Exactness::ByteExact);
-                    unknowns.push(UnknownRecord::retained(
+                    push_native_unknown(ctx, unknowns, UnknownRecord::retained(
                         id,
                         offset,
                         ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
-                    ));
+                    ))?;
                 }
             }
             crate::om::IndexedStore::OffsetOnly {
@@ -200,12 +218,12 @@ fn attach_indexed_om_unknowns(
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_DATA_BLOCK");
                     annotations.exactness(&id, Exactness::ByteExact);
-                    unknowns.push(UnknownRecord::retained(
+                    push_native_unknown(ctx, unknowns, UnknownRecord::retained(
                         id,
                         offset,
                         ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
                         Vec::new(),
-                    ));
+                    ))?;
                 }
             }
         }
@@ -895,12 +913,12 @@ fn attach_jpeg_preview_assets(
                 .note(native_ref.as_str(), &stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
-            unknowns.push(UnknownRecord::retained(
+            push_native_unknown(ctx, unknowns, UnknownRecord::retained(
                 native_ref,
                 source_offset,
                 ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
                 Vec::new(),
-            ));
+            ))?;
             continue;
         }
         let id: AssetId = extended_id(native_ref.as_str(), &cadmpeg_ir::identity_key!("asset"))
