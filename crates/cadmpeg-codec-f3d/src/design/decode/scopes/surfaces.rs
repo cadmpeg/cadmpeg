@@ -23,30 +23,31 @@ use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::HashSet;
 
 pub(super) fn exact_surface_extend_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignSurfaceExtendOperation> {
-    let operation = exact_surface_boundary_operation(
-        bytes,
-        records,
-        scope,
-        DesignFeatureFamily::SurfaceExtend,
-        8,
-    )?;
+) -> Result<Option<DesignSurfaceExtendOperation>, CodecError> {
+    let Some(operation) = exact_surface_boundary_operation(
+        ctx, bytes, records, scope, DesignFeatureFamily::SurfaceExtend, 8,
+    )? else {
+        return Ok(None);
+    };
     if operation.distance.get() <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let method = match operation.mode {
         0 => DesignSurfaceExtendMethod::Natural,
         1 => DesignSurfaceExtendMethod::Tangent,
         2 => DesignSurfaceExtendMethod::Perpendicular,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(DesignSurfaceExtendOperation {
+    Ok(Some(DesignSurfaceExtendOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
@@ -58,25 +59,24 @@ pub(super) fn exact_surface_extend_operation(
         edge_record_indices: operation.edge_record_indices,
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
-    })
+    }))
 }
 
 pub(super) fn exact_surface_offset_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignSurfaceOffsetOperation> {
-    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope) {
-        return Some(operation);
+) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
+    if let Some(operation) = exact_surface_offset_face_groups(ctx, bytes, records, scope)? {
+        return Ok(Some(operation));
     }
-    let operation = exact_surface_boundary_operation(
-        bytes,
-        records,
-        scope,
-        DesignFeatureFamily::SurfaceOffset,
-        65,
-    )?;
-    (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
+    let Some(operation) = exact_surface_boundary_operation(
+        ctx, bytes, records, scope, DesignFeatureFamily::SurfaceOffset, 65,
+    )? else {
+        return Ok(None);
+    };
+    Ok((operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
@@ -88,14 +88,16 @@ pub(super) fn exact_surface_offset_operation(
             tolerance: operation.tolerance,
             tolerance_offset: operation.tolerance_offset,
         },
-    })
+    }))
 }
 
 fn exact_surface_offset_face_groups(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignSurfaceOffsetOperation> {
+) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
+    let parsed = (|| {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
         return None;
     }
@@ -131,10 +133,17 @@ fn exact_surface_offset_face_groups(
         if group.role() != DesignOperandRole::PROFILE
             || group.frame.opaque_index.get() != 252
             || group.members().is_empty()
-            || !covered_references.insert(group.record_index)
+            || covered_references.contains(&group.record_index)
         {
             return None;
         }
+        if let Err(error) = ctx.charge_collection_items(1, "f3d surface offset covered reference") {
+            return Some(Err(error));
+        }
+        if covered_references.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d surface offset covered reference allocation", 0, 1)));
+        }
+        covered_references.insert(group.record_index);
         for member in group.members().iter().map(|member| &member.value) {
             if *member == *distance_record_index
                 || !scope
@@ -142,10 +151,23 @@ fn exact_surface_offset_face_groups(
                     .values()
                     .skip(1)
                     .any(|value| value == member)
-                || !covered_references.insert(*member)
+                || covered_references.contains(member)
             {
                 return None;
             }
+            if let Err(error) = ctx.charge_collection_items(1, "f3d surface offset covered reference") {
+                return Some(Err(error));
+            }
+            if covered_references.try_reserve(1).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d surface offset covered reference allocation", 0, 1)));
+            }
+            covered_references.insert(*member);
+        }
+        if let Err(error) = ctx.charge_collection_items(1, "f3d surface offset face group") {
+            return Some(Err(error));
+        }
+        if group_record_indices.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d surface offset face group allocation", 0, 1)));
         }
         group_record_indices.push(group.record_index);
     }
@@ -153,14 +175,16 @@ fn exact_surface_offset_face_groups(
         return None;
     }
 
-    Some(DesignSurfaceOffsetOperation {
+    Some(Ok(DesignSurfaceOffsetOperation {
         distance: scalar.value,
         distance_offset: scalar.value_offset,
         distance_record_index: *distance_record_index,
         support: DesignSurfaceOffsetSupport::FaceGroups {
             group_record_indices,
         },
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 fn exact_construction_operand_group(
@@ -208,12 +232,14 @@ struct ExactSurfaceBoundaryOperation {
 }
 
 fn exact_surface_boundary_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     family: DesignFeatureFamily,
     boundary_kind: u32,
-) -> Option<ExactSurfaceBoundaryOperation> {
+) -> Result<Option<ExactSurfaceBoundaryOperation>, CodecError> {
+    let parsed = (|| {
     if design_feature_family(&scope.kind()) != Some(family) {
         return None;
     }
@@ -262,9 +288,9 @@ fn exact_surface_boundary_operation(
     {
         return None;
     }
-    let candidates = records
-        .frames(*boundary_record_index)
-        .filter_map(|(start, end)| {
+    let mut candidate = None;
+    for (start, end) in records.frames(*boundary_record_index) {
+        let parsed = (|| {
             let member_bytes = edge_record_indices.len().checked_mul(11)?;
             let tail = start.checked_add(25)?.checked_add(member_bytes)?;
             (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
@@ -303,25 +329,44 @@ fn exact_surface_boundary_operation(
             let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
             let tolerance =
                 cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, tail + 39)?)?;
-            Some(ExactSurfaceBoundaryOperation {
-                distance: scalar.value,
-                distance_offset: scalar.value_offset,
-                distance_record_index: *distance_record_index,
+            Some((
                 mode,
-                mode_offset: u64::try_from(tail + 2).ok()?,
-                boundary_record_index: *boundary_record_index,
+                u64::try_from(tail + 2).ok()?,
                 boundary_reference_record_index,
-                boundary_reference_offset: u64::try_from(tail + 6).ok()?,
-                edge_record_indices: edge_record_indices.clone().copied().collect(),
+                u64::try_from(tail + 6).ok()?,
                 tolerance,
-                tolerance_offset: u64::try_from(tail + 39).ok()?,
-            })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
+                u64::try_from(tail + 39).ok()?,
+            ))
+        })();
+        if let Some(parsed) = parsed {
+            if candidate.replace(parsed).is_some() {
+                return None;
+            }
+        }
+    }
+    let (mode, mode_offset, boundary_reference_record_index, boundary_reference_offset, tolerance, tolerance_offset) = candidate?;
+    Some((scalar, *distance_record_index, *boundary_record_index, edge_record_indices, mode, mode_offset, boundary_reference_record_index, boundary_reference_offset, tolerance, tolerance_offset))
+    })();
+    let Some((scalar, distance_record_index, boundary_record_index, edge_record_indices, mode, mode_offset, boundary_reference_record_index, boundary_reference_offset, tolerance, tolerance_offset)) = parsed else {
+        return Ok(None);
     };
-    Some(candidate.clone())
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(edge_record_indices.len()), "f3d surface boundary edges")?;
+    let mut edges = Vec::new();
+    edges.try_reserve(edge_record_indices.len()).map_err(|_| ctx.refuse_codec_limit("f3d surface boundary edges allocation", 0, 1))?;
+    edges.extend(edge_record_indices.copied());
+    Ok(Some(ExactSurfaceBoundaryOperation {
+        distance: scalar.value,
+        distance_offset: scalar.value_offset,
+        distance_record_index,
+        mode,
+        mode_offset,
+        boundary_record_index,
+        boundary_reference_record_index,
+        boundary_reference_offset,
+        edge_record_indices: edges,
+        tolerance,
+        tolerance_offset,
+    }))
 }
 
 pub(super) fn exact_surface_stitch_operation(
@@ -349,12 +394,14 @@ pub(super) fn exact_surface_stitch_operation(
 }
 
 pub(super) fn exact_ruled_surface_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     reference_count_at: usize,
     reference_members: &[u32],
-) -> Option<DesignRuledSurfaceOperation> {
+) -> Result<Option<DesignRuledSurfaceOperation>, CodecError> {
+    let parsed = (|| {
     if bytes.get(start.checked_add(11)?..start.checked_add(20)?)? != [0; 9] {
         return None;
     }
@@ -393,26 +440,50 @@ pub(super) fn exact_ruled_surface_operation(
             return None;
         }
         cursor = cursor.checked_add(4)?;
-        let mut records = Vec::with_capacity(count);
+        if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d ruled surface references") {
+            return Some(Err(error));
+        }
+        let mut records = Vec::new();
+        if records.try_reserve(count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d ruled surface references allocation", 0, 1)));
+        }
         for _ in 0..count {
-            records.push(fixed_reference(cursor)?);
+            records.push(match fixed_reference(cursor) {
+                Some(record) => record,
+                None => return None,
+            });
             cursor = cursor.checked_add(11)?;
         }
-        Some((records, cursor))
+        Some(Ok((records, cursor)))
     };
-    let (mut edge_group_record_indices, mut cursor) = take_reference_list(start.checked_add(54)?)?;
+    let (mut edge_group_record_indices, mut cursor) = match take_reference_list(start.checked_add(54)?)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     if View::u32_le_at(bytes, cursor)? != 0 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let (auxiliary_record_indices, next) = take_reference_list(cursor)?;
+    let (auxiliary_record_indices, next) = match take_reference_list(cursor)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = next;
     if View::u32_le_at(bytes, cursor)? != 0 {
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let (trailing_edge_groups, next) = take_reference_list(cursor)?;
+    let (trailing_edge_groups, next) = match take_reference_list(cursor)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = next;
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(trailing_edge_groups.len()), "f3d ruled surface merged edge groups") {
+        return Some(Err(error));
+    }
+    if edge_group_record_indices.try_reserve(trailing_edge_groups.len()).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d ruled surface merged edge groups allocation", 0, 1)));
+    }
     edge_group_record_indices.extend(trailing_edge_groups);
     let (direction_entity_id, direction_end) = fixed_relaxed_guid_text(bytes, cursor)?;
     let direction_absent = direction_entity_id.as_str() == "00000000-0000-0000-0000-000000000000";
@@ -436,7 +507,7 @@ pub(super) fn exact_ruled_surface_operation(
     {
         return None;
     }
-    Some(DesignRuledSurfaceOperation {
+    Some(Ok(DesignRuledSurfaceOperation {
         method,
         method_offset: method_offset as u64,
         corner,
@@ -448,5 +519,7 @@ pub(super) fn exact_ruled_surface_operation(
         edge_group_record_indices,
         auxiliary_record_indices,
         direction_entity_id,
-    })
+    }))
+    })();
+    parsed.transpose()
 }

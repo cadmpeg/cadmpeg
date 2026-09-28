@@ -13,8 +13,7 @@ use crate::records::feature::surface_ops::{
 };
 use crate::test_support::indexed_header;
 
-#[test]
-fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
+fn ruled_surface_fixture() -> Vec<u8> {
     let mut bytes = vec![0; 366];
     bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
     let reference = |bytes: &mut [u8], at: usize, record_index: u32| {
@@ -35,9 +34,16 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
         bytes[111 + ordinal * 2] = *byte;
     }
     bytes[186..190].copy_from_slice(&6u32.to_le_bytes());
+    bytes
+}
 
-    let operation = exact_ruled_surface_operation(&bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
-        .expect("exact SurfaceRuled operation");
+#[test]
+fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
+    let mut bytes = ruled_surface_fixture();
+
+    let operation = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_ruled_surface_operation(ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16]).unwrap()
+    }).expect("exact SurfaceRuled operation");
     assert_eq!(operation.method, DesignRuledSurfaceMethod::Normal);
     assert_eq!(operation.method_offset, 20);
     assert_eq!(operation.corner, DesignRuledSurfaceCorner::Rounded);
@@ -54,8 +60,9 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
     for (ordinal, byte) in b"01234567-89ab-cdef-0123-456789abcdef".iter().enumerate() {
         bytes[111 + ordinal * 2] = *byte;
     }
-    let operation = exact_ruled_surface_operation(&bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16])
-        .expect("directed SurfaceRuled operation");
+    let operation = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_ruled_surface_operation(ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16]).unwrap()
+    }).expect("directed SurfaceRuled operation");
     assert_eq!(operation.method, DesignRuledSurfaceMethod::Direction);
     assert_eq!(
         operation
@@ -64,6 +71,29 @@ fn ruled_surface_operation_reads_mode_parameters_and_ordered_edge_groups() {
             .map(crate::records::mesh::DesignRelaxedGuidText::as_str),
         Some("01234567-89ab-cdef-0123-456789abcdef")
     );
+}
+
+#[test]
+fn ruled_surface_reference_lists_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let bytes = ruled_surface_fixture();
+    for (limit, operation) in [
+        (0, "f3d ruled surface references"),
+        (1, "f3d ruled surface references"),
+        (2, "f3d ruled surface references"),
+        (3, "f3d ruled surface merged edge groups"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = exact_ruled_surface_operation(
+            &ctx, &bytes, 0, 366, 186, &[11, 12, 13, 14, 15, 16],
+        ).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation));
+    }
 }
 
 #[test]

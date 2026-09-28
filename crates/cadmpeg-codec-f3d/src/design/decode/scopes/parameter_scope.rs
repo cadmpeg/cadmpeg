@@ -267,13 +267,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_extend_operation(bytes, &records, &scope);
+                let construction = exact_surface_extend_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
-                let construction = exact_surface_offset_operation(bytes, &records, &scope);
+                let construction = exact_surface_offset_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -1029,13 +1029,17 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         None
     };
     let ruled_surface_operation = if kind == scope::DesignFeatureKind::SurfaceRuled {
-        exact_ruled_surface_operation(
+        match exact_ruled_surface_operation(
+            ctx,
             bytes,
             start,
             paired_at,
             *reference_count_at,
             reference_members,
-        )
+        ) {
+            Ok(operation) => operation,
+            Err(error) => return Some(Err(error)),
+        }
     } else {
         None
     };

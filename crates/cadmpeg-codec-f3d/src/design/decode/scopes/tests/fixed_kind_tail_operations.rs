@@ -31,10 +31,32 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::features::{FaceSelection, Feature, FeatureDefinition};
 use std::collections::HashMap;
 
+fn tested_surface_extend_operation(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceExtendOperation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_surface_extend_operation(ctx, bytes, records, scope).unwrap()
+    })
+}
+
+fn tested_surface_offset_operation(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignSurfaceOffsetOperation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_surface_offset_operation(ctx, bytes, records, scope).unwrap()
+    })
+}
+
 pub(super) fn fixed_kind_tail_operations(
     mut bytes: Vec<u8>,
     scope: DesignParameterScope,
     transform: [[f64; 4]; 4],
+    boundary_probe: Option<fn(&[u8], &DesignParameterScope)>,
+    face_group_probe: Option<fn(&[u8], &DesignParameterScope)>,
 ) {
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
@@ -1114,8 +1136,11 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
+    if let Some(probe) = boundary_probe {
+        probe(&bytes, &extend_scope);
+    }
     let operation =
-        exact_surface_extend_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
+        tested_surface_extend_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
             .expect("exact SurfaceExtend construction");
     assert_eq!(
         operation,
@@ -1177,7 +1202,7 @@ pub(super) fn fixed_kind_tail_operations(
         *slot = None;
     }
     let operation =
-        exact_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
+        tested_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope)
             .expect("exact SurfaceOffset construction");
     assert_eq!(
         operation,
@@ -1269,7 +1294,10 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let grouped_operation = exact_surface_offset_operation(
+    if let Some(probe) = face_group_probe {
+        probe(&bytes, &grouped_scope);
+    }
+    let grouped_operation = tested_surface_offset_operation(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &grouped_scope,
@@ -1290,7 +1318,7 @@ pub(super) fn fixed_kind_tail_operations(
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());
     assert_eq!(
-        exact_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope,),
+        tested_surface_offset_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &extend_scope,),
         None
     );
 
