@@ -200,6 +200,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
 
 #[test]
 fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
         kind: crate::surface::SurfaceKind::Plane,
@@ -263,13 +264,13 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     };
 
     assert_eq!(
-        generated_rectilinear_plane_extent(
+        generated_rectilinear_plane_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&section)
-        ),
+        ).expect("admitted extent"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -285,13 +286,13 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     );
     section.sketch_plane_flip = Some(crate::feature::definitions::BinaryFlag::Set);
     assert_eq!(
-        generated_rectilinear_plane_extent(
+        generated_rectilinear_plane_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&section)
-        ),
+        ).expect("admitted extent"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -307,13 +308,13 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     );
     section.orientation.section_flip = Some(crate::feature::definitions::BinaryFlag::Clear);
     assert_eq!(
-        generated_rectilinear_plane_extent(
+        generated_rectilinear_plane_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&section)
-        ),
+        ).expect("admitted extent"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -327,42 +328,43 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             [0.0, -1.0, 0.0],
         ))
     );
-    assert!(generated_rectilinear_plane_extent(
+    assert!(generated_rectilinear_plane_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
     let mut incomplete_section = section.clone();
     incomplete_section.sketch_plane_entity_id = None;
-    assert!(generated_rectilinear_plane_extent(
+    assert!(generated_rectilinear_plane_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&incomplete_section)
-    )
+    ).expect("admitted extent")
     .is_none());
 
     scan.surfaces.rows[3].reversed = false;
-    assert!(generated_rectilinear_plane_extent(
+    assert!(generated_rectilinear_plane_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&section)
-    )
+    ).expect("admitted extent")
     .is_none());
     scan.surfaces.rows[3].reversed = true;
     ir.model.surfaces.pop();
-    assert!(generated_rectilinear_plane_extent(
+    assert!(generated_rectilinear_plane_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&section)
-    )
+    ).expect("admitted extent")
     .is_none());
+    });
 }

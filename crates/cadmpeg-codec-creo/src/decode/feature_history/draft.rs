@@ -289,11 +289,12 @@ pub(super) fn linear_extrusion_extent_and_direction(
             )?;
         }
     }
-    Ok(extent.or_else(|| {
-        matches!(unique_transform, Some(None)).then_some(()).and_then(|()| {
-            generated_rectilinear_plane_extent(scan, ir, source_carriers, feature_id, section)
-        })
-    }))
+    if extent.is_none() && matches!(unique_transform, Some(None)) {
+        extent = generated_rectilinear_plane_extent(
+            ctx, scan, ir, source_carriers, feature_id, section,
+        )?;
+    }
+    Ok(extent)
 }
 
 pub(in super::super) fn schema_feature_definition(

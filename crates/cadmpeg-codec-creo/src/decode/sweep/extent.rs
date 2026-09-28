@@ -17,7 +17,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 use cadmpeg_ir::scalar::FiniteReal;
 
 /// General reconstructed sweep-extent geometry tolerance.
@@ -938,70 +937,61 @@ fn rectilinear_extent_from_section_plane(
 }
 
 pub(in super::super) fn generated_rectilinear_plane_extent(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     section: Option<&crate::feature::definitions::FeatureSection3d>,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let section = section?;
-    section.sketch_plane_entity_id?;
-    let plane_flip = match section.sketch_plane_flip? {
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let Some(section) = section else { return Ok(None) };
+    let Some(section_plane_id) = section.sketch_plane_entity_id else { return Ok(None) };
+    let Some(sketch_plane_flip) = section.sketch_plane_flip else { return Ok(None) };
+    let plane_flip = match sketch_plane_flip {
         crate::feature::definitions::BinaryFlag::Clear => false,
         crate::feature::definitions::BinaryFlag::Set => true,
     };
-    let section_flip = match section.orientation.section_flip? {
+    let Some(orientation_flip) = section.orientation.section_flip else { return Ok(None) };
+    let section_flip = match orientation_flip {
         crate::feature::definitions::BinaryFlag::Clear => false,
         crate::feature::definitions::BinaryFlag::Set => true,
     };
     let start_reversed = plane_flip ^ section_flip;
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
-        .filter(|row| row.feature_id == feature_id)
-        .collect::<Vec<_>>();
-    (rows.len() >= 4
-        && rows
-            .iter()
-            .all(|row| row.kind == crate::surface::SurfaceKind::Plane))
-    .then_some(())?;
+    let rows = || scan.surfaces.rows.iter().filter(|row| row.feature_id == feature_id);
+    if rows().count() < 4
+        || !rows().all(|row| row.kind == crate::surface::SurfaceKind::Plane) {
+        return Ok(None);
+    }
 
     let local_planes = placed_planes(scan);
-    let mut planes = Vec::with_capacity(rows.len());
-    for row in rows {
-        (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
-            .then_some(())?;
-        let id = SurfaceId::compose(
-            &crate::identity::VISIBGEOM_SURFACE,
-            IdentityKey::from(row.id),
-        );
-        let surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        let source_geometry = match surfaces.as_slice() {
-            [surface] => source_carriers.surface_geometry(surface),
-            _ => return None,
+    let mut planes = Vec::new();
+    for row in rows() {
+        if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
+            return Ok(None);
+        }
+        let Some(Some(source_geometry)) = unique_source_surface_geometry(ir, source_carriers, row.id) else {
+            return Ok(None);
         };
         let plane = match source_geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
                 local_planes.get(&row.id).copied()
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Some(
-                reconciled_model_plane(&local_planes, ir, source_carriers, row.id)?,
-            ),
-            _ => return None,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+                let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, row.id) else {
+                    return Ok(None);
+                };
+                Some(plane)
+            }
+            _ => return Ok(None),
         };
         let Some(plane) = plane else {
             continue;
         };
-        let plane = canonical_plane(PlaneEquation {
+        let Some(plane) = canonical_plane(PlaneEquation {
             origin: plane.origin,
             normal: plane.normal,
-        })?;
+        }) else { return Ok(None) };
+        ctx.try_reserve_items(&mut planes, 1, "creo rectilinear cap planes")?;
         planes.push((plane, row.reversed));
     }
 
@@ -1013,7 +1003,9 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
     let station_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
-        let station = FiniteReal::new(dot(plane.origin, plane.normal))?;
+        let Some(station) = FiniteReal::new(dot(plane.origin, plane.normal)) else {
+            return Ok(None);
+        };
         if let Some(family) = families.iter_mut().find(|family| {
             family
                 .normal
@@ -1026,37 +1018,41 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 .iter()
                 .find(|known| (station.get() - known.coordinate.get()).abs() <= station_tolerance)
             {
-                (known.reversed == reversed).then_some(())?;
+                if known.reversed != reversed { return Ok(None); }
             } else {
+                ctx.try_reserve_items(&mut family.stations, 1, "creo rectilinear stations")?;
                 family.stations.push(RectilinearPlaneStation {
                     coordinate: station,
                     reversed,
                 });
             }
         } else {
-            families
+            if !families
                 .iter()
                 .all(|family| dot(family.normal, plane.normal).abs() <= EPS_SWEEP_EXTENT_DEGENERATE)
-                .then_some(())?;
+            { return Ok(None); }
+            let mut stations = Vec::new();
+            ctx.try_reserve_items(&mut stations, 1, "creo rectilinear stations")?;
+            stations.push(RectilinearPlaneStation {
+                coordinate: station,
+                reversed,
+            });
+            ctx.try_reserve_items(&mut families, 1, "creo rectilinear families")?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
-                stations: vec![RectilinearPlaneStation {
-                    coordinate: station,
-                    reversed,
-                }],
+                stations,
             });
         }
     }
-    (families.len() >= 2
+    if !(families.len() >= 2
         && families
             .iter()
             .filter(|family| family.stations.len() >= 2)
             .count()
-            >= 2)
-        .then_some(())?;
+            >= 2) { return Ok(None); }
 
-    match section_plane_evidence(scan, section.sketch_plane_entity_id?) {
-        SectionPlaneEvidence::Ambiguous => return None,
+    match section_plane_evidence(scan, section_plane_id) {
+        SectionPlaneEvidence::Ambiguous => return Ok(None),
         SectionPlaneEvidence::Resolved(section_plane) => {
             let mut section_normal = section_plane.normal;
             if plane_flip {
@@ -1065,49 +1061,42 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             if section_flip {
                 section_normal = section_normal.map(|component| -component);
             }
-            let axial_families = families
+            let mut axial_families = families
                 .iter()
                 .filter(|family| {
                     dot(section_normal, family.normal).abs() >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE
-                })
-                .collect::<Vec<_>>();
-            let [family] = axial_families.as_slice() else {
-                return None;
-            };
-            return rectilinear_extent_from_section_plane(
+                });
+            let Some(family) = axial_families.next() else { return Ok(None) };
+            if axial_families.next().is_some() { return Ok(None); }
+            return Ok(rectilinear_extent_from_section_plane(
                 family,
                 section_plane.origin,
                 section_normal,
                 start_reversed,
                 station_tolerance,
-            );
+            ));
         }
         SectionPlaneEvidence::Missing => {}
     }
 
-    let candidates = families
-        .iter()
-        .filter_map(|family| {
-            let (direction, length) =
-                rectilinear_family_extent(family, start_reversed, station_tolerance)?;
-            Some((direction.map(|component| component * length), length))
-        })
-        .collect::<Vec<_>>();
-    let [(vector, length)] = candidates.as_slice() else {
-        return None;
-    };
-    let direction = normalize(*vector)?;
-    Some((
+    let mut candidates = families.iter().filter_map(|family| {
+        let (direction, length) =
+            rectilinear_family_extent(family, start_reversed, station_tolerance)?;
+        Some((direction.map(|component| component * length), length))
+    });
+    let Some((vector, length)) = candidates.next() else { return Ok(None) };
+    if candidates.next().is_some() { return Ok(None); }
+    let Some(direction) = normalize(vector) else { return Ok(None) };
+    let Some(length) = cadmpeg_ir::scalar::NonZeroLength::new(length) else { return Ok(None) };
+    Ok(Some((
         ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: LinearTermination::Blind {
-                    length: cadmpeg_ir::scalar::NonZeroLength::new(*length)?,
-                },
+                termination: LinearTermination::Blind { length },
                 draft: None,
             },
         },
         direction,
-    ))
+    )))
 }
 
 pub(in super::super) fn directed_blind_extrusion_span(
