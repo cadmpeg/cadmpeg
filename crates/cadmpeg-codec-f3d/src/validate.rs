@@ -679,6 +679,25 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(values.insert(key))
     }
 
+    fn collect_vec<T>(
+        &self,
+        values: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut collected = Vec::new();
+        for value in values {
+            self.charge_item(operation)?;
+            collected.try_reserve(1).map_err(|_| {
+                self.decode.map_or_else(
+                    || CodecError::malformed("F3D validation collection allocation failed"),
+                    |decode| decode.refuse_codec_limit(operation, 0, 1),
+                )
+            })?;
+            collected.push(value);
+        }
+        Ok(collected)
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -937,7 +956,7 @@ fn validate_loaded(
         , "index F3D face group members")?;
     validate_act(&ctx, &mut findings);
     validate_body_bindings(&ctx, &mut findings);
-    validate_body_bounds(&ctx, &mut findings);
+    validate_body_bounds(&ctx, &mut findings)?;
     validate_canvas_images(&ctx, &mut findings);
     validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
@@ -1754,35 +1773,20 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate each Design body-bounds repeated record frame.
-fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
-    let entity_headers_by_suffix = native
-        .design_entity_headers
-        .iter()
-        .map(|entity| {
-            (
-                (design_stream(&entity.id), entity.entity_id.suffix()),
-                entity,
-            )
-        })
-        .collect::<std::collections::HashMap<_, _>>();
     let mut bounded_bodies = HashSet::new();
     for bounds in &native.design_body_bounds {
         let native_stream = design_stream(&bounds.id);
-        let mut expected_bindings = native
-            .design_body_bindings
-            .iter()
-            .filter(|binding| {
+        let mut expected_bindings = ctx.collect_vec(
+            native.design_body_bindings.iter().filter(|binding| {
                 design_stream_contains_entry(native_stream, &binding.stream)
                     && binding.entity_suffix == bounds.entity_suffix()
-            })
-            .collect::<Vec<_>>();
+            }),
+            "collect F3D expected body bounds bindings",
+        )?;
         expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset());
-        let expected_binding_ids = expected_bindings
-            .into_iter()
-            .map(|binding| binding.id.as_str())
-            .collect::<Vec<_>>();
-        let valid = entity_headers_by_suffix
+        let valid_frame = ctx.entities_by_suffix
             .get(&(native_stream, bounds.entity_suffix()))
             .is_some_and(|entity| {
                 entity.module() == Some(records::entity_header::DESIGN_MODULE_BODY)
@@ -1792,17 +1796,26 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .body_binding_ids
                 .iter()
                 .map(String::as_str)
-                .eq(expected_binding_ids)
-            && bounded_bodies.insert((native_stream, bounds.entity_suffix()));
+                .eq(expected_bindings.iter().map(|binding| binding.id.as_str()));
+        let valid = if valid_frame {
+            ctx.insert_unique(
+                &mut bounded_bodies,
+                (native_stream, bounds.entity_suffix()),
+                "index F3D bounded bodies",
+            )?
+        } else {
+            false
+        };
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design body bounds have an invalid repeated record frame".into(),
-                entity: Some(bounds.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design body bounds have an invalid repeated record frame",
+                Some(ctx.copy_entity(&bounds.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate feature parameter scopes and their paired feature-operation frames.
