@@ -72,7 +72,7 @@ fn selection_fixture() -> (
             design_reference_offset: 25,
             form: 33,
             form_offset: 33,
-            candidate_faces: Vec::new(),
+            candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap()],
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],
@@ -99,6 +99,58 @@ fn bind(max_items: u64, max_retained_bytes: u64) -> Result<BodySelection, cadmpe
     let feature = FeatureId::mint("f3d:model:feature#body").unwrap();
     super::super::bind_body_recipe_body_selection(
         &ctx, &mut selection, &feature, 1, &scope, &groups, &operands,
+    )?;
+    Ok(selection)
+}
+
+fn bind_direct(max_items: u64, native_set: bool) -> Result<BodySelection, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::ids::{BodyId, RegionId, ShellId};
+    use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
+    let (scope, groups, mut operands, mut selection) = selection_fixture();
+    let body = Body {
+        id: BodyId::mint("f3d:brep:body#1").unwrap(),
+        kind: BodyKind::Solid,
+        regions: vec![RegionId::mint("f3d:model:region#1").unwrap()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: Some(true),
+    };
+    let region = Region {
+        id: RegionId::mint("f3d:model:region#1").unwrap(),
+        body: body.id.clone(),
+        shells: vec![ShellId::mint("f3d:model:shell#1").unwrap()],
+    };
+    let shell = Shell::with_face(
+        ShellId::mint("f3d:model:shell#1").unwrap(),
+        region.id.clone(),
+        cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#7").unwrap(),
+    );
+    if native_set {
+        operands[0].owner = crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
+            scope_reference_ordinal: 0,
+        };
+        selection = BodySelection::NativeSet(vec![
+            "f3d:Design/BulkStream.dat:design-record#21".to_owned(),
+        ].try_into().unwrap());
+    }
+    let inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scope),
+        groups: &groups,
+        body_recipe_operands: &operands,
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::bind_direct_body_recipe_body_selection(
+        &ctx, &mut selection, &scope, &inputs,
     )?;
     Ok(selection)
 }
@@ -134,4 +186,45 @@ fn body_recipe_identity_refuses_retained_limit() {
 #[test]
 fn body_recipe_keeps_historical_selection() {
     assert!(matches!(bind(3, u64::MAX).unwrap(), BodySelection::Historical { .. }));
+}
+
+#[test]
+fn direct_body_recipe_selection_refuses_collection_limit() {
+    let error = bind_direct(0, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D direct body recipe selections"));
+}
+
+#[test]
+fn direct_body_recipe_selection_validation_refuses_collection_limit() {
+    let error = bind_direct(1, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "validate F3D direct body recipe selections"));
+}
+
+#[test]
+fn direct_body_recipe_native_members_refuse_collection_limit() {
+    let error = bind_direct(0, true).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D direct body recipe native members"));
+}
+
+#[test]
+fn direct_body_recipe_rows_refuse_collection_limit() {
+    let error = bind_direct(1, true).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D direct body recipe rows"));
+}
+
+#[test]
+fn direct_body_recipe_rows_validation_refuses_collection_limit() {
+    let error = bind_direct(2, true).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "validate F3D direct body recipe rows"));
+}
+
+#[test]
+fn direct_body_recipe_keeps_resolved_selection() {
+    assert!(matches!(bind_direct(2, false).unwrap(), BodySelection::Resolved { .. }));
+    assert!(matches!(bind_direct(3, true).unwrap(), BodySelection::ResolvedSet { .. }));
 }

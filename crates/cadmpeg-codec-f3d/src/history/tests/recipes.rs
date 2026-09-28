@@ -997,7 +997,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut selection = BodySelection::Native(group_id.into());
-    super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &inputs);
+    super::super::bind_direct_body_recipe_body_selection(
+        &cadmpeg_test_support::service_decode_context(), &mut selection, &scope, &inputs).unwrap();
     assert_eq!(
         selection,
         BodySelection::Resolved {
@@ -1067,7 +1068,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         crate::ids::native_stream(&scope.id).expect("test scope stream")
     );
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
-    super::super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &direct_inputs);
+    super::super::bind_direct_body_recipe_body_selection(
+        &cadmpeg_test_support::service_decode_context(), &mut selection, &scope, &direct_inputs).unwrap();
     assert_eq!(
         selection,
         BodySelection::ResolvedSet {

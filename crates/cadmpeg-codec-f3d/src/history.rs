@@ -1560,9 +1560,10 @@ pub(crate) fn bind_feature_body_selections(
                         );
                     }
                 } else {
-                    bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                    edit_result = bind_direct_body_recipe_body_selection(ctx, tools, scope, inputs);
                     for cell in cells {
-                        bind_direct_body_recipe_body_selection(cell, scope, inputs);
+                        if edit_result.is_err() { break; }
+                        edit_result = bind_direct_body_recipe_body_selection(ctx, cell, scope, inputs);
                     }
                 }
                 break 'feature_edit;
@@ -1575,8 +1576,10 @@ pub(crate) fn bind_feature_body_selections(
                         let (Some(state_id), Some(previous_state_id)) =
                             (scope.history_state_id(), scope.previous_history_state_id())
                         else {
-                            bind_direct_body_recipe_body_selection(target, scope, inputs);
-                            bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                            edit_result = bind_direct_body_recipe_body_selection(ctx, target, scope, inputs);
+                            if edit_result.is_err() { return; }
+                            edit_result = bind_direct_body_recipe_body_selection(ctx, tools, scope, inputs);
+                            if edit_result.is_err() { return; }
                             if matches!(
                                 tools,
                                 BodySelection::Native(_) | BodySelection::NativeSet(_)
@@ -1820,7 +1823,7 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                 } else {
-                    bind_direct_body_recipe_body_selection(targets, scope, inputs);
+                    edit_result = bind_direct_body_recipe_body_selection(ctx, targets, scope, inputs);
                 }
                 break 'feature_edit;
             }
@@ -1838,7 +1841,7 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                 } else {
-                    bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                    edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                 }
                 break 'feature_edit;
             }
@@ -1856,10 +1859,10 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     if edit_result.is_ok() && matches!(bodies, BodySelection::Native(_)) {
-                        bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                        edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                     }
                 } else {
-                    bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                    edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                 }
                 break 'feature_edit;
             }
@@ -1894,13 +1897,13 @@ pub(crate) fn bind_feature_body_selections(
             let (Some(state_id), Some(previous_state_id)) =
                 (scope.history_state_id(), scope.previous_history_state_id())
             else {
-                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                 break 'feature_edit;
             };
             let Some((history, state, _previous)) =
                 unique_history_state_pair(histories, state_id, previous_state_id)
             else {
-                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+                edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                 break 'feature_edit;
             };
             let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
@@ -2184,7 +2187,7 @@ fn bind_pattern_body_selections(
                         body_recipe_operands,
                     ).err();
                 } else {
-                    bind_direct_body_recipe_body_selection(selection, scope, inputs);
+                    reserve_error = bind_direct_body_recipe_body_selection(ctx, selection, scope, inputs).err();
                 }
             });
             if let Some(error) = reserve_error {
@@ -2341,10 +2344,11 @@ fn bind_body_recipe_body_selection(
 }
 
 fn bind_direct_body_recipe_body_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{BodyMember, BodySelection};
 
     let groups = inputs.groups;
@@ -2370,12 +2374,12 @@ fn bind_direct_body_recipe_body_selection(
                     && crate::ids::native_stream(&group.id) == stream
             });
             let Some(group) = matching_groups.next() else {
-                return;
+                return Ok(());
             };
             if matching_groups.next().is_some() || group.members().is_empty() {
-                return;
+                return Ok(());
             }
-            let mut selected = Vec::with_capacity(group.members().len());
+            let mut selected = Vec::new();
             for (ordinal, record_index) in group
                 .members()
                 .iter()
@@ -2383,7 +2387,7 @@ fn bind_direct_body_recipe_body_selection(
                 .enumerate()
             {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return;
+                    return Ok(());
                 };
                 let mut matching_operands = operands.iter().filter(|operand| {
                     operand.owner.group() == Some((group.record_index, ordinal))
@@ -2391,10 +2395,10 @@ fn bind_direct_body_recipe_body_selection(
                         && crate::ids::native_stream(&operand.id) == stream
                 });
                 let Some(operand) = matching_operands.next() else {
-                    return;
+                    return Ok(());
                 };
                 if matching_operands.next().is_some() {
-                    return;
+                    return Ok(());
                 }
                 let Some(body) = direct_body_recipe_candidate(
                     operand,
@@ -2404,41 +2408,51 @@ fn bind_direct_body_recipe_body_selection(
                     regions,
                     shells,
                 ) else {
-                    return;
+                    return Ok(());
                 };
                 if selected.contains(&body) {
-                    return;
+                    return Ok(());
                 }
+                ctx.charge_collection_items(1, "collect F3D direct body recipe selections")?;
+                selected.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "collect F3D direct body recipe selections", 0, 1))?;
                 selected.push(body);
             }
+            let count = u64::try_from(selected.len()).map_err(|_| ctx.refuse_codec_limit(
+                "validate F3D direct body recipe selections", 0, u64::MAX))?;
+            ctx.charge_collection_items(count, "validate F3D direct body recipe selections")?;
+            let Ok(bodies) = selected.try_into() else { return Ok(()); };
+            let native = copy_history_string(ctx, &group.id,
+                "copy F3D direct body recipe group identity")?;
             *selection = BodySelection::Resolved {
-                bodies: selected.into_iter().collect(),
-                native: group.id.clone(),
+                bodies,
+                native,
             };
-            return;
+            return Ok(());
         }
-        BodySelection::NativeSet(native) => native.to_vec(),
-        _ => return,
+        BodySelection::NativeSet(native) => history_collect(Some(ctx),
+            native.iter().map(String::as_str), "collect F3D direct body recipe native members")?,
+        _ => return Ok(()),
     };
-    if native_members.is_empty()
-        || native_members
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != native_members.len()
-    {
-        return;
+    if native_members.is_empty() {
+        return Ok(());
     }
-    let mut rows = Vec::with_capacity(native_members.len());
+    for (index, native) in native_members.iter().enumerate() {
+        for previous in &native_members[..index] {
+            ctx.charge_work(1, "validate F3D direct body recipe native members")?;
+            if native == previous { return Ok(()); }
+        }
+    }
+    let mut rows = Vec::new();
     for native in &native_members {
         let Some((native_stream_name, record_index)) = native.rsplit_once(":design-record#") else {
-            return;
+            return Ok(());
         };
         let Ok(record_index) = record_index.parse::<u32>() else {
-            return;
+            return Ok(());
         };
         if Some(native_stream_name) != stream {
-            return;
+            return Ok(());
         }
         let mut matching_operands = operands.iter().filter(|operand| {
             crate::ids::native_stream(&operand.id) == Some(native_stream_name)
@@ -2450,10 +2464,10 @@ fn bind_direct_body_recipe_body_selection(
                 && operand.record_index() == record_index
         });
         let Some(operand) = matching_operands.next() else {
-            return;
+            return Ok(());
         };
         if matching_operands.next().is_some() {
-            return;
+            return Ok(());
         }
         let Some(body) = direct_body_recipe_candidate(
             operand,
@@ -2463,19 +2477,28 @@ fn bind_direct_body_recipe_body_selection(
             regions,
             shells,
         ) else {
-            return;
+            return Ok(());
         };
         if rows.iter().any(|row: &BodyMember<_>| row.body() == &body) {
-            return;
+            return Ok(());
         }
-        let Some(row) = body_member(body, native.clone()) else {
-            return;
+        let native = copy_history_string(ctx, native,
+            "copy F3D direct body recipe member identity")?;
+        let Some(row) = body_member(body, native) else {
+            return Ok(());
         };
+        ctx.charge_collection_items(1, "collect F3D direct body recipe rows")?;
+        rows.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "collect F3D direct body recipe rows", 0, 1))?;
         rows.push(row);
     }
+    let count = u64::try_from(rows.len()).map_err(|_| ctx.refuse_codec_limit(
+        "validate F3D direct body recipe rows", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "validate F3D direct body recipe rows")?;
     if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) {
         *selection = BodySelection::ResolvedSet { members };
     }
+    Ok(())
 }
 
 fn direct_body_recipe_candidate(
