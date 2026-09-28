@@ -79,6 +79,7 @@ fn offset_identity_copies_refuse_before_retaining_text() {
     let bytes = placed_uniform_offset_circle_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
     for operation in [
         "iges offset source identity copy",
+        "iges offset procedural source identity",
         "iges offset placed source identity",
         "iges offset edge carrier identity",
     ] {
