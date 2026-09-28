@@ -82,6 +82,25 @@ pub(crate) struct BinaryValue {
 }
 
 impl BinaryValue {
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(u64_from_index(self.data.len()), operation)?;
+        }
+        let mut data = Vec::new();
+        data.try_reserve_exact(self.data.len()).map_err(|_| {
+            ctx.map_or_else(
+                || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(self.data.len())),
+                |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.data.len())),
+            )
+        })?;
+        data.extend_from_slice(&self.data);
+        Ok(Self { unused_bits: self.unused_bits, data: data.into_boxed_slice() })
+    }
+
     pub(crate) fn bit_len(&self) -> usize {
         self.data.len() * 8 - usize::from(self.unused_bits)
     }

@@ -16,6 +16,38 @@ use super::super::{
 };
 
 #[test]
+fn nested_value_copy_refuses_inner_collection_limit() {
+    let value = Value::List(vec![Value::List(vec![Value::Integer(1)])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::try_clone_value(&value, Some(&ctx), "step_test_value_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_test_value_copy"
+    ));
+}
+
+#[test]
+fn typed_value_copy_refuses_nested_slot_limit() {
+    let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        super::super::try_clone_value(&value, Some(&ctx), "step_test_typed_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_test_typed_copy"
+    ));
+}
+
+#[test]
 fn header_string_validation_refuses_retained_limit() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(SOURCE).expect("valid header");

@@ -7,6 +7,25 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+#[test]
+fn binary_value_copy_refuses_collection_limit() {
+    let value = super::BinaryValue {
+        unused_bits: 0,
+        data: vec![0x12, 0x34].into_boxed_slice(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    assert!(matches!(
+        value.try_clone_for_decode(Some(&ctx), "step_binary_value_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_binary_value_copy"
+    ));
+}
+
 fn lex_under_policy(
     input: &[u8],
     policy: DecodePolicy,
