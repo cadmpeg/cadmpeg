@@ -96,13 +96,25 @@ pub fn value_blocks(data: &[u8]) {
 
 /// Exercise `7C08` object-graph parsing.
 pub fn object_graph(data: &[u8]) {
-    let _probe = crate::object_graph::parse(data);
-    let _probe = crate::object_graph::surface_aliases(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::object_graph::parse(&ctx, data);
+    let _probe = crate::object_graph::surface_aliases(&ctx, data);
 }
 
 /// Exercise `7C02` string-catalog parsing.
 pub fn catalog(data: &[u8]) {
-    let _probe = crate::catalog::parse(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::catalog::parse(&ctx, data);
 }
 
 /// Exercise zero-entity record inventory parsing.

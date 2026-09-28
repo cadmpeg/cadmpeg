@@ -201,7 +201,9 @@ fn native_design_inventory_excludes_object_graphs_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::object_graph::parse_all(&bytes).len(), 1);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::parse_all(ctx, &bytes)
+    }).expect("service budget" ).len(), 1);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.object_graphs.is_empty());
     assert!(native.design_objects.is_empty());
@@ -227,7 +229,9 @@ fn native_design_inventory_excludes_alias_rows_inside_catalog_entries() {
         &entry,
     ]);
 
-    assert_eq!(crate::object_graph::surface_aliases(&bytes).len(), 1);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::surface_aliases(ctx, &bytes)
+    }).expect("service budget").len(), 1);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.catalogs.len(), 1);
     assert!(native.alias_rows.is_empty());

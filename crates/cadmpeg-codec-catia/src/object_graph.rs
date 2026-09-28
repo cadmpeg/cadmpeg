@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -584,44 +585,59 @@ impl SurfaceAlias {
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
-#[must_use]
-pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
+pub(crate) fn surface_aliases(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<SurfaceAlias>, CodecError> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
-    data.windows(MARKER.len())
-        .enumerate()
-        .filter(|(_, bytes)| *bytes == MARKER)
-        .filter_map(|(pos, _)| {
-            let row = pos.checked_sub(alias_row::MARKER)?;
-            let tag_raw = View::u32_le_at(data, row + alias_row::TAG)?;
-            if row + alias_row::LEN > data.len() {
-                return None;
+    let mut aliases = Vec::new();
+    for (pos, bytes) in data.windows(MARKER.len()).enumerate() {
+            if bytes != MARKER {
+                continue;
             }
-            let lead_raw = View::u32_le_at(data, row + alias_row::LEAD)?;
-            let group = alias_group_membership(data, pos);
+            let Some(row) = pos.checked_sub(alias_row::MARKER) else {
+                continue;
+            };
+            let Some(tag_raw) = View::u32_le_at(data, row + alias_row::TAG) else {
+                continue;
+            };
+            if row + alias_row::LEN > data.len() {
+                continue;
+            }
+            let Some(lead_raw) = View::u32_le_at(data, row + alias_row::LEAD) else {
+                continue;
+            };
+            let group = alias_group_membership(ctx, data, pos)?;
             if lead_raw & 0xff != 1
                 && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133)
                 && group.is_none()
             {
-                return None;
+                continue;
             }
             let f1 = [
                 data[row + alias_row::F1],
                 data[row + alias_row::F1 + 1],
                 data[row + alias_row::F1 + 2],
             ];
-            Some(SurfaceAlias {
+            let (Some(f2), Some(f3)) = (
+                View::u32_le_at(data, row + alias_row::F2),
+                View::u32_le_at(data, row + alias_row::F3),
+            ) else {
+                continue;
+            };
+            crate::resource::push(ctx, &mut aliases, SurfaceAlias {
                 pos,
                 row_pos: row,
                 lead_raw,
                 tag_raw,
                 flag: data[row + alias_row::FLAG],
                 f1,
-                f2: View::u32_le_at(data, row + alias_row::F2)?,
-                f3: View::u32_le_at(data, row + alias_row::F3)?,
+                f2,
+                f3,
                 group,
-            })
-        })
-        .collect()
+            }, "catia_surface_aliases")?;
+    }
+    Ok(aliases)
 }
 
 /// Resolve the outer persistent-surface alias closure for geometry routes.
@@ -634,7 +650,7 @@ pub(crate) fn surface_alias_tag_map(
     data: &[u8],
 ) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
     let paired_object_graph_roots = entity_table::paired_object_graph_roots(ctx, data)?;
-    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
+    let mut object_graphs = parse_all_with_paired_roots(ctx, data, &paired_object_graph_roots)?;
     let mut value_blocks = value_block::parse(data);
     value_blocks.retain(|block| {
         !object_graphs
@@ -646,7 +662,7 @@ pub(crate) fn surface_alias_tag_map(
             .iter()
             .any(|block| extent_contains(block.pos, block.total_len(), graph.pos, graph.total_len))
     });
-    let catalogs = catalog::parse(data)
+    let catalogs = crate::resource::collect_vec(ctx, catalog::parse(ctx, data)?
         .into_iter()
         .filter(|catalog| {
             !object_graphs.iter().any(|graph| {
@@ -654,10 +670,9 @@ pub(crate) fn surface_alias_tag_map(
             }) && !value_blocks.iter().any(|block| {
                 extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
-        })
-        .collect::<Vec<_>>();
+        }), "catia_alias_filtered_catalogs")?;
 
-    let mut rows = surface_aliases(data);
+    let mut rows = surface_aliases(ctx, data)?;
     rows.retain(|row| {
         let row_start = row.row_pos;
         !object_graphs
@@ -679,6 +694,8 @@ pub(crate) fn surface_alias_tag_map(
         if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
+        crate::resource::admit_map_entry(ctx, &mut stored_by_group,
+            &(group.prototype, group.group_id), "catia_alias_stored_groups")?;
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
@@ -697,6 +714,8 @@ pub(crate) fn surface_alias_tag_map(
             }),
             _ => None,
         };
+        crate::resource::admit_map_entry(ctx, &mut tags, &row.tag(),
+            "catia_alias_tags")?;
         tags.entry(row.tag())
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
@@ -717,29 +736,47 @@ pub(crate) fn extent_contains(
             .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
 }
 
-fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMembership> {
-    let candidates = [3usize, 4, 7, 8]
-        .into_iter()
-        .filter_map(|storage_len| {
-            let start = marker.checked_sub(20 + storage_len)?;
-            let storage = data.get(start + 20..marker)?;
-            (data.get(start..start + 2) == Some(&[0x02, 0x00])
+fn alias_group_membership(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    marker: usize,
+) -> Result<Option<AliasGroupMembership>, CodecError> {
+    let mut candidate = None;
+    for storage_len in [3usize, 4, 7, 8] {
+            let Some(start) = marker.checked_sub(20 + storage_len) else {
+                continue;
+            };
+            let Some(storage) = data.get(start + 20..marker) else {
+                continue;
+            };
+            if data.get(start..start + 2) == Some(&[0x02, 0x00])
                 && data.get(start + 10..start + 13) == Some(&[0x00, 0x05, 0x00])
                 && data.get(start + 13..start + 17) == Some(&[0x01, 0x00, 0x00, 0x00])
                 && data.get(start + 17..start + 20) == Some(&[0x30, 0x00, 0x00])
-                && is_alias_group_storage_prefix(storage))
-            .then_some((start, storage))
-        })
-        .collect::<Vec<_>>();
-    let [(start, storage)] = candidates.as_slice() else {
-        return None;
+                && is_alias_group_storage_prefix(storage) {
+                if candidate.is_some() {
+                    return Ok(None);
+                }
+                candidate = Some((start, storage));
+            }
+    }
+    let Some((start, storage)) = candidate else {
+        return Ok(None);
     };
-    Some(AliasGroupMembership {
-        prototype: View::u32_le_at(data, start + 2)?,
-        group_id: View::u32_le_at(data, start + 6)?,
-        target_slot: View::u32_le_at(data, marker + 11)?,
-        storage_prefix: storage.to_vec(),
-    })
+    let (Some(prototype), Some(group_id), Some(target_slot)) = (
+        View::u32_le_at(data, start + 2),
+        View::u32_le_at(data, start + 6),
+        View::u32_le_at(data, marker + 11),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(AliasGroupMembership {
+        prototype,
+        group_id,
+        target_slot,
+        storage_prefix: crate::resource::copy_retained_slice(ctx, storage,
+            "catia_alias_group_storage")?,
+    }))
 }
 
 pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
@@ -753,28 +790,32 @@ pub(crate) fn is_alias_group_storage_prefix(storage: &[u8]) -> bool {
 }
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
-#[must_use]
-pub(crate) fn parse(data: &[u8]) -> Option<ObjectGraph> {
-    parse_all(data)
+pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Option<ObjectGraph>, CodecError> {
+    Ok(parse_all(ctx, data)?
         .into_iter()
-        .max_by_key(|graph| graph.records.len())
+        .max_by_key(|graph| graph.records.len()))
 }
 
 /// Parse every length-closed `7C08` object graph in source order.
-#[must_use]
-pub(crate) fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
-    parse_all_with_paired_roots(data, &std::collections::HashMap::new())
+pub(crate) fn parse_all(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<ObjectGraph>, CodecError> {
+    parse_all_with_paired_roots(ctx, data, &std::collections::HashMap::new())
 }
 
 /// Parse every length-closed object graph, admitting opaque childless records
 /// only when a preceding entity-table run selects the exact root and record
 /// cardinality.
-#[must_use]
 pub(crate) fn parse_all_with_paired_roots(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     paired_roots: &std::collections::HashMap<usize, usize>,
-) -> Vec<ObjectGraph> {
-    let catalogs = catalog::parse(data);
+) -> Result<Vec<ObjectGraph>, CodecError> {
+    let catalogs = catalog::parse(ctx, data)?;
     let value_blocks = value_block::parse(data);
     let mut roots = Vec::<ObjectGraph>::new();
     let mut enclosing_end = 0usize;
@@ -793,26 +834,26 @@ pub(crate) fn parse_all_with_paired_roots(
         if pos < enclosing_end && declared_end.is_some_and(|end| end <= enclosing_end) {
             continue;
         }
-        let graph = parse_candidate(data, pos, false).or_else(|| {
-            let expected_count = *paired_roots.get(&pos)?;
-            let graph = parse_candidate(data, pos, true)?;
-            (graph.records.len() == expected_count).then_some(graph)
-        });
+        let graph = if let Some(graph) = parse_candidate(ctx, data, pos, false)? {
+            Some(graph)
+        } else if let Some(expected_count) = paired_roots.get(&pos) {
+            parse_candidate(ctx, data, pos, true)?
+                .filter(|graph| graph.records.len() == *expected_count)
+        } else {
+            None
+        };
         let Some(graph) = graph else {
             continue;
         };
         if let Some(graph_end) = graph.pos.checked_add(graph.total_len) {
             enclosing_end = enclosing_end.max(graph_end);
         }
-        roots.push(graph);
+        crate::resource::push(ctx, &mut roots, graph, "catia_object_graph_roots")?;
     }
-    roots
-        .into_iter()
-        .map(|mut graph| {
-            bind_catalog(&mut graph, &catalogs, &value_blocks);
-            graph
-        })
-        .collect()
+    for graph in &mut roots {
+        bind_catalog(graph, &catalogs, &value_blocks);
+    }
+    Ok(roots)
 }
 
 fn bind_catalog(
@@ -840,10 +881,20 @@ fn bind_catalog(
 }
 
 fn parse_candidate(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     pos: usize,
     allow_opaque_childless_records: bool,
-) -> Option<ObjectGraph> {
+) -> Result<Option<ObjectGraph>, CodecError> {
+    (|| -> Option<Result<ObjectGraph, CodecError>> {
+    macro_rules! admitted {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let total_len = usize::try_from(View::u32_le_at(data, pos + 2)?).ok()?;
     let end = pos.checked_add(total_len)?;
     if total_len < 15 || end > data.len() {
@@ -879,34 +930,37 @@ fn parse_candidate(
             Some((child, _)) => {
                 let head_bytes = data.get(head_start..child)?;
                 let lead = *head_bytes.first()?;
-                let head = decode_head(head_bytes);
-                let payload = decode_payload(&data[child + 6..record_end])?;
+                let head = admitted!(decode_head(ctx, head_bytes));
+                let payload = admitted!(decode_payload(ctx, &data[child + 6..record_end]))?;
                 (lead, ObjectRecordBody::Nested { head, payload })
             }
             None if is_inline_body(body) => {
                 let lead = body[0];
-                (lead, ObjectRecordBody::Inline(body.to_vec()))
+                (lead, ObjectRecordBody::Inline(admitted!(crate::resource::copy_retained_slice(
+                    ctx, body, "catia_object_inline_body"))))
             }
             None if allow_opaque_childless_records && !body.is_empty() => {
                 let lead = body[0];
-                (lead, ObjectRecordBody::Inline(body.to_vec()))
+                (lead, ObjectRecordBody::Inline(admitted!(crate::resource::copy_retained_slice(
+                    ctx, body, "catia_object_inline_body"))))
             }
             None => return None,
         };
-        records.push(ObjectRecord {
+        admitted!(crate::resource::push(ctx, &mut records, ObjectRecord {
             pos: at,
             total_len: record_len,
             lead,
             body: body_form,
-        });
+        }, "catia_object_records"));
         at = record_end;
     }
-    (!records.is_empty() && at == end).then_some(ObjectGraph {
+    (!records.is_empty() && at == end).then_some(Ok(ObjectGraph {
         pos,
         total_len,
         catalog_pos: None,
         records,
-    })
+    }))
+    })().transpose()
 }
 
 /// Occupant of the object head owner slot.
@@ -1042,18 +1096,18 @@ pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
 }
 
 fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
-    if matches!(
-        (head.first(), head.last()),
-        (Some(HeadToken::Lead(0x56)), Some(HeadToken::Reference(3)))
-    ) {
-        let mut base_head = head[..head.len() - 1].to_vec();
-        base_head[0] = HeadToken::Lead(0x16);
-        return extended_compact_role_count(&base_head);
-    }
+    let head = if matches!(head.first(), Some(HeadToken::Lead(0x56))) {
+        if !matches!(head.last(), Some(HeadToken::Reference(3))) {
+            return None;
+        }
+        &head[..head.len() - 1]
+    } else {
+        head
+    };
     if matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(storage),
             HeadToken::Reference(0),
@@ -1067,7 +1121,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     if matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(0),
             owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
@@ -1095,7 +1149,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     if matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(storage),
             HeadToken::Reference(0),
@@ -1110,7 +1164,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     if matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(0),
             HeadToken::Reference(_) | HeadToken::Literal(_) | HeadToken::Separator,
@@ -1186,7 +1240,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     let extended_class_storage_owner = matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(0),
             owner_token @ (HeadToken::Reference(_) | HeadToken::Literal(_)),
@@ -1201,7 +1255,7 @@ fn extended_compact_role_count(head: &[HeadToken]) -> Option<usize> {
     ) || matches!(
         head,
         [
-            HeadToken::Lead(0x16),
+            HeadToken::Lead(0x16 | 0x56),
             HeadToken::Reference(_),
             HeadToken::Reference(0),
             HeadToken::Reference(owner),
@@ -1367,34 +1421,41 @@ fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaP
     matches.next().is_none().then_some(preamble)
 }
 
-fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
+fn decode_head(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<HeadToken>, CodecError> {
     let Some(&lead) = bytes.first() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut tokens = vec![HeadToken::Lead(lead)];
+    let mut tokens = Vec::new();
+    crate::resource::push(ctx, &mut tokens, HeadToken::Lead(lead),
+        "catia_object_head_tokens")?;
     let mut at = 1;
     while at < bytes.len() {
         let byte = bytes[at];
         if byte == 0x01 {
-            tokens.push(HeadToken::Separator);
+            crate::resource::push(ctx, &mut tokens, HeadToken::Separator,
+                "catia_object_head_tokens")?;
             at += 1;
         } else if bytes.get(at..at + 4) == Some(&[0xff; 4]) {
-            tokens.push(HeadToken::NullHandle);
+            crate::resource::push(ctx, &mut tokens, HeadToken::NullHandle,
+                "catia_object_head_tokens")?;
             at += 4;
         } else if (0xd1..=0xe4).contains(&byte) && at + 1 < bytes.len() {
-            tokens.push(HeadToken::Reference(
+            crate::resource::push(ctx, &mut tokens, HeadToken::Reference(
                 u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
-            ));
+            ), "catia_object_head_tokens")?;
             at += 2;
         } else if (0x80..=0xd0).contains(&byte) {
-            tokens.push(HeadToken::Reference(u32::from(byte - 0x80)));
+            crate::resource::push(ctx, &mut tokens,
+                HeadToken::Reference(u32::from(byte - 0x80)),
+                "catia_object_head_tokens")?;
             at += 1;
         } else {
-            tokens.push(HeadToken::Literal(byte));
+            crate::resource::push(ctx, &mut tokens, HeadToken::Literal(byte),
+                "catia_object_head_tokens")?;
             at += 1;
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -1423,17 +1484,30 @@ fn is_final_terminator_run(bytes: &[u8], at: usize) -> bool {
     bytes.get(at) == Some(&0xfe) && bytes[at..].iter().all(|byte| *byte == 0xfe)
 }
 
-fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
+fn decode_payload(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<ObjectPayload>, CodecError> {
+    (|| -> Option<Result<ObjectPayload, CodecError>> {
+    macro_rules! admitted {
+        ($result:expr) => {
+            match $result {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let mut fields = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
         let offset = at;
         if bytes[at] == 0xe5 {
             if let Some(end) = blob_end(bytes, at) {
-                fields.push(PayloadField::Blob {
-                    bytes: bytes[at + 5..end].to_vec(),
+                admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Blob {
+                    bytes: admitted!(crate::resource::copy_retained_slice(ctx,
+                        &bytes[at + 5..end], "catia_object_payload_blob")),
                     offset,
-                });
+                }, "catia_object_payload_fields"));
                 at = end;
                 continue;
             }
@@ -1446,11 +1520,11 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 .get(at + 5)
                 .and_then(|_| View::u32_le_at(bytes, at + 1))
             {
-                fields.push(if bytes[at] == 0x80 {
+                admitted!(crate::resource::push(ctx, &mut fields, if bytes[at] == 0x80 {
                     PayloadField::Atom { value, offset }
                 } else {
                     PayloadField::Reference { value, offset }
-                });
+                }, "catia_object_payload_fields"));
                 at += 5;
                 continue;
             }
@@ -1458,26 +1532,26 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
         match bytes[at] {
             0xfe if is_final_terminator_run(bytes, at) => {
                 while bytes.get(at) == Some(&0xfe) {
-                    fields.push(PayloadField::Terminator);
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Terminator, "catia_object_payload_fields"));
                     at += 1;
                 }
                 break;
             }
             0x3c => {
                 let Some((count, advance)) = atom(bytes, at + 1) else {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: 0x3c,
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 };
                 let table_at = at + 1 + advance;
                 let Some(table_count) = View::u32_le_at(bytes, table_at) else {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: 0x3c,
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 };
@@ -1486,35 +1560,36 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     .ok()
                     .is_some_and(|count| count <= bytes.len() - table_end)
                 {
-                    let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
-                    fields.push(PayloadField::BulkTable {
+                    let (rows, end) = admitted!(parse_bulk_table_rows(
+                        ctx, bytes, table_end, table_count))?;
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::BulkTable {
                         count,
                         rows,
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at = end;
                     continue;
                 }
-                fields.push(PayloadField::Atom {
+                admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                     value: 0x3c,
                     offset,
-                });
+                }, "catia_object_payload_fields"));
                 at += 1;
             }
             0x3b => {
                 if is_final_terminator_run(bytes, at + 1) {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: 0x3b,
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 }
                 let Some((declared_count, advance)) = atom(bytes, at + 1) else {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: 0x3b,
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 };
@@ -1543,7 +1618,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let Some((value, consumed)) = tagged_value(bytes, value_at) else {
                         break;
                     };
-                    items.push(if tagged_reference || fixed_reference {
+                    admitted!(crate::resource::push(ctx, &mut items, if tagged_reference || fixed_reference {
                         ListItem::Reference {
                             value,
                             offset: item_offset,
@@ -1553,65 +1628,72 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                             value,
                             offset: item_offset,
                         }
-                    });
+                    }, "catia_object_list_items"));
                     at = value_at + consumed;
                 }
-                fields.push(PayloadField::List {
+                admitted!(crate::resource::push(ctx, &mut fields, PayloadField::List {
                     declared_count,
                     items,
                     offset,
-                });
+                }, "catia_object_payload_fields"));
             }
             0x81 | 0x3a | 0x39 | 0x7a => {
                 let tag = bytes[at];
                 if is_final_terminator_run(bytes, at + 1) {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: u32::from(tag),
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 }
                 let Some((value, consumed)) = tagged_value(bytes, at + 1) else {
-                    fields.push(PayloadField::Atom {
+                    admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom {
                         value: u32::from(tag),
                         offset,
-                    });
+                    }, "catia_object_payload_fields"));
                     at += 1;
                     continue;
                 };
-                fields.push(match tag {
+                admitted!(crate::resource::push(ctx, &mut fields, match tag {
                     0x81 => PayloadField::Reference { value, offset },
                     _ => PayloadField::Scalar { tag, value, offset },
-                });
+                }, "catia_object_payload_fields"));
                 at += 1 + consumed;
             }
             0x0d => {
-                fields.push(PayloadField::Sentinel { offset });
+                admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Sentinel { offset }, "catia_object_payload_fields"));
                 at += 1;
             }
             _ => {
                 let (value, consumed) = atom(bytes, at).unwrap_or((u32::from(bytes[at]), 1));
-                fields.push(PayloadField::Atom { value, offset });
+                admitted!(crate::resource::push(ctx, &mut fields, PayloadField::Atom { value, offset }, "catia_object_payload_fields"));
                 at += consumed;
             }
         }
     }
     (at == bytes.len() && matches!(fields.last(), Some(PayloadField::Terminator))).then_some(
-        ObjectPayload {
+        Ok(ObjectPayload {
             size: bytes.len(),
             fields,
-        },
+        }),
     )
+    })().transpose()
 }
 
 fn parse_bulk_table_rows(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     mut at: usize,
     table_count: u32,
-) -> Option<(Vec<BulkTableRow>, usize)> {
+) -> Result<Option<(Vec<BulkTableRow>, usize)>, CodecError> {
+    (|| -> Option<Result<(Vec<BulkTableRow>, usize), CodecError>> {
     let count = usize::try_from(table_count).ok()?;
-    let mut rows = Vec::with_capacity(count.min(bytes.len()));
+    let mut rows = Vec::new();
+    if let Err(error) = crate::resource::reserve_vec(ctx, &mut rows, count,
+        "catia_object_bulk_table_rows") {
+        return Some(Err(error));
+    }
     for _ in 0..count {
         let offset = at;
         if bytes.get(at) != Some(&0x81) {
@@ -1630,29 +1712,31 @@ fn parse_bulk_table_rows(
             offset,
         });
     }
-    Some((rows, at))
+    Some(Ok((rows, at)))
+    })().transpose()
 }
 
 fn bulk_row_id(bytes: &[u8], at: &mut usize) -> Option<u32> {
     let start = *at;
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     if let Some((value, consumed)) = atom(bytes, start) {
         let end = start.checked_add(consumed)?;
         if bytes.get(end) == Some(&0x80) && end.checked_add(5)? <= bytes.len() {
-            candidates.push((value, end));
+            candidate = Some((value, end));
         }
     }
     if bytes.get(start) == Some(&0x80) {
         let end = start.checked_add(5)?;
         if end.checked_add(5)? <= bytes.len() && bytes.get(end) == Some(&0x80) {
-            candidates.push((View::u32_le_at(bytes, start + 1)?, end));
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((View::u32_le_at(bytes, start + 1)?, end));
         }
     }
-    let [(value, end)] = candidates.as_slice() else {
-        return None;
-    };
-    *at = *end;
-    Some(*value)
+    let (value, end) = candidate?;
+    *at = end;
+    Some(value)
 }
 
 fn blob_end(bytes: &[u8], at: usize) -> Option<usize> {

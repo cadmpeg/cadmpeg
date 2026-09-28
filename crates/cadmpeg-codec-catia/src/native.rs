@@ -9280,7 +9280,7 @@ impl CatiaNative {
                 data: bytes[segment.range].to_vec(),
             })
             .collect::<Vec<_>>();
-        let mut parsed_catalogs = catalog::parse(bytes);
+        let mut parsed_catalogs = catalog::parse(ctx, bytes)?;
         let entity_runs = entity_table::parse_runs(ctx, bytes)?;
         let paired_object_graph_roots = entity_runs
             .iter()
@@ -9289,12 +9289,13 @@ impl CatiaNative {
                 (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
             })
             .collect::<HashMap<_, _>>();
-        let mut alias_rows = object_graph::surface_aliases(bytes)
+        let mut alias_rows = crate::resource::collect_vec(ctx,
+            object_graph::surface_aliases(ctx, bytes)?
             .into_iter()
             .map(CatiaAliasRow::from)
-            .collect::<Vec<_>>();
+            , "catia_native_alias_rows")?;
         let mut parsed_object_graphs =
-            object_graph::parse_all_with_paired_roots(bytes, &paired_object_graph_roots);
+            object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
         let mut parsed_value_blocks = value_block::parse(bytes);
         parsed_value_blocks.retain(|block| {
             !parsed_object_graphs.iter().any(|graph| {
