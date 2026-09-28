@@ -962,10 +962,12 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
 
 /// Resolve compact edge endpoint references through the framed allocation walk.
 pub(crate) fn consolidated_compact_edge_endpoints_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedCompactEdgeEndpoints> {
-    struct EndpointResolver<'a> {
+) -> Result<Vec<ConsolidatedCompactEdgeEndpoints>, CodecError> {
+    struct EndpointResolver<'a, 'b> {
+        ctx: &'a DecodeContext<'b>,
         records: &'a [ConsolidatedRecord],
         nodes: &'a HashMap<usize, B2EdgeNode>,
         allocation_locations: &'a HashMap<usize, (usize, usize)>,
@@ -974,14 +976,17 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         memo: HashMap<(usize, usize), Option<usize>>,
     }
 
-    impl EndpointResolver<'_> {
-        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Option<usize> {
+    impl EndpointResolver<'_, '_> {
+        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Result<Option<usize>, CodecError> {
             let key = (record_index, endpoint);
             if let Some(cached) = self.memo.get(&key) {
-                return *cached;
+                return Ok(*cached);
             }
-            if !self.active.insert(key) {
-                return None;
+            let _depth = self.ctx.enter_nested("catia_compact_endpoint_resolution_depth")?;
+            self.ctx.charge_work(1, "catia_compact_endpoint_resolution_work")?;
+            if !crate::resource::insert_set(self.ctx, &mut self.active, key,
+                "catia_compact_endpoint_active")? {
+                return Ok(None);
             }
             let result = (|| {
                 let node = self.nodes.get(&record_index)?;
@@ -1009,7 +1014,7 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                         {
                             return None;
                         }
-                        return Some(target);
+                        return Some(Ok(target));
                     }
                     AllocationReferenceEncoding::Selector2
                     | AllocationReferenceEncoding::TaggedU8
@@ -1020,48 +1025,54 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                     return None;
                 }
                 match target_record.class {
-                    0x5d => Some(target),
-                    0x5e => self.resolve(target, 1),
+                    0x5d => Some(Ok(target)),
+                    0x5e => self.resolve(target, 1).transpose(),
                     _ => None,
                 }
             })();
             self.active.remove(&key);
-            self.memo.insert(key, result);
-            result
+            let result = result.transpose()?;
+            crate::resource::insert_map(self.ctx, &mut self.memo, key, result,
+                "catia_compact_endpoint_memo")?;
+            Ok(result)
         }
     }
 
-    let by_pos = b2_edge_nodes_from_records(data, records)
-        .into_iter()
-        .map(|node| (node.pos, node))
-        .collect::<HashMap<_, _>>();
-    let nodes = records
-        .iter()
-        .enumerate()
-        .filter_map(|(index, record)| {
-            by_pos
-                .get(&record.byte_offset())
-                .copied()
-                .map(|node| (index, node))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut allocation_scopes = vec![Vec::new()];
+    let mut by_pos = HashMap::new();
+    for node in b2_edge_nodes_from_records(data, records) {
+        crate::resource::insert_map(ctx, &mut by_pos, node.pos, node,
+            "catia_compact_endpoint_nodes_by_pos")?;
+    }
+    let mut nodes = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        if let Some(node) = by_pos.get(&record.byte_offset()).copied() {
+            crate::resource::insert_map(ctx, &mut nodes, index, node,
+                "catia_compact_endpoint_nodes_by_index")?;
+        }
+    }
+    let mut allocation_scopes = Vec::new();
+    crate::resource::push(ctx, &mut allocation_scopes, Vec::new(),
+        "catia_compact_endpoint_scopes")?;
     let mut allocation_locations = HashMap::new();
     for (index, record) in records.iter().enumerate() {
         if index > 0
             && (records[index - 1].source_index != record.source_index
                 || records[index - 1].source_range.end != record.source_range.start)
         {
-            allocation_scopes.push(Vec::new());
+            crate::resource::push(ctx, &mut allocation_scopes, Vec::new(),
+                "catia_compact_endpoint_scopes")?;
         }
         if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
             let scope = allocation_scopes.len() - 1;
             let ordinal = allocation_scopes[scope].len();
-            allocation_scopes[scope].push(index);
-            allocation_locations.insert(index, (scope, ordinal));
+            crate::resource::push(ctx, &mut allocation_scopes[scope], index,
+                "catia_compact_endpoint_scope_entries")?;
+            crate::resource::insert_map(ctx, &mut allocation_locations, index, (scope, ordinal),
+                "catia_compact_endpoint_locations")?;
         }
     }
     let mut resolver = EndpointResolver {
+        ctx,
         records,
         nodes: &nodes,
         allocation_locations: &allocation_locations,
@@ -1069,21 +1080,20 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         active: HashSet::new(),
         memo: HashMap::new(),
     };
-    let mut endpoints = nodes
-        .iter()
-        .filter_map(|(&record_index, &node)| {
-            let vertices = [0, 1].map(|endpoint| resolver.resolve(record_index, endpoint));
+    let mut endpoints = Vec::new();
+    for (&record_index, &node) in &nodes {
+            let vertices = [resolver.resolve(record_index, 0)?,
+                resolver.resolve(record_index, 1)?];
             let [Some(start), Some(end)] = vertices else {
-                return None;
+                continue;
             };
-            Some(ConsolidatedCompactEdgeEndpoints {
+            crate::resource::push(ctx, &mut endpoints, ConsolidatedCompactEdgeEndpoints {
                 node,
                 endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
-            })
-        })
-        .collect::<Vec<_>>();
+            }, "catia_compact_endpoint_bindings")?;
+    }
     endpoints.sort_by_key(|binding| binding.node.pos);
-    endpoints
+    Ok(endpoints)
 }
 
 /// Derive owner-local four-edge boundary cycles from fixed-nine references.
@@ -1095,7 +1105,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
     records: &[ConsolidatedRecord],
 ) -> Result<Vec<ConsolidatedOwnerBoundaryCycle>, CodecError> {
     let mut endpoint_records = HashMap::new();
-    for binding in consolidated_compact_edge_endpoints_from_records(data, records) {
+    for binding in consolidated_compact_edge_endpoints_from_records(ctx, data, records)? {
         crate::resource::insert_map(ctx, &mut endpoint_records, binding.node.pos,
             binding.endpoint_records, "catia_owner_boundary_endpoints")?;
     }

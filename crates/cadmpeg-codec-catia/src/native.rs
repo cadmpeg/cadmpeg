@@ -8761,8 +8761,8 @@ fn consolidated_edge_nodes(
     }
     let mut compact_endpoints = HashMap::new();
     for binding in crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
-        bytes, records,
-    ) {
+        ctx, bytes, records,
+    )? {
         crate::resource::insert_map(ctx, &mut compact_endpoints, binding.node.pos,
             binding.endpoint_records.map(|pos| pos as u64), "catia_native_edge_compact_endpoints")?;
     }
