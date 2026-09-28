@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::admission::{admit_temporary_clones, admit_validation_candidates, NativeAdmission};
+use super::admission::{admit_temporary_clones, admit_validation_candidates, invalid_owner, NativeAdmission};
 use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
@@ -32,16 +32,33 @@ pub(super) fn admit(
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
         }
-        if let Some((index, actual, expected)) =
+        if let Some((index, actual, expected_units)) =
             crate::resolved_features::names::first_object_name_value_mismatch(
                 &lane.native_payload,
                 &lane.names,
             )
         {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-                lane.id, actual.value, expected
-            )));
+            let characters = || std::char::decode_utf16(crate::resolved_features::names::utf16_units(expected_units));
+            let (expected, _reservation) = if let Some(ctx) = admission.context() {
+                let length = characters().fold(0usize, |length, character| {
+                    length + character.map_or(0, char::len_utf8)
+                });
+                let (mut expected, reservation) = ctx.reserve_scoped_string(
+                    length,
+                    "decode SLDPRT native validation name",
+                )?;
+                expected.extend(characters().filter_map(Result::ok));
+                (expected, Some(reservation))
+            } else {
+                (characters().filter_map(Result::ok).collect::<String>(), None)
+            };
+            return Err(invalid_owner(
+                admission,
+                format_args!(
+                    "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
+                    lane.id, actual.value, expected
+                ),
+            )?);
         }
         let mut entities = lane.sketch_entities.iter();
         for (index, position) in (0..lane.native_payload.len())
