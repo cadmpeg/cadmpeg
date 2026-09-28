@@ -26,6 +26,7 @@ use crate::F3dCodec;
 
 mod entity_limits;
 mod image_limits;
+mod link_limits;
 mod resource_limits;
 
 #[test]
