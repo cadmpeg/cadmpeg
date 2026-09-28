@@ -255,7 +255,7 @@ pub(super) fn emit_model_features(
         {
             insert_feature_source_property(ctx, &mut source_properties, "mdl_stored_name_prefix", char::from(prefix))?;
         }
-        let parameters = feature_parameters(ctx, scan, operation.feature_id)?;
+        let mut parameters = feature_parameters(ctx, scan, operation.feature_id)?;
         let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
@@ -295,12 +295,14 @@ pub(super) fn emit_model_features(
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                            kind: current_operation
-                                .map_or("Native Feature", |operation| operation.kind.as_str())
-                                .into(),
+                            kind: ctx.copy_retained_text(
+                                current_operation
+                                    .map_or("Native Feature", |operation| operation.kind.as_str()),
+                                "creo native Feature kind",
+                            )?.into(),
                             parameters: cadmpeg_core::text::named_entries_checked(ctx,
                                 format_args!("creo:model:feature#{}", operation.feature_id),
-                                parameters.clone(),
+                                std::mem::take(&mut parameters),
                             )?,
                         }))
                     })
@@ -489,7 +491,7 @@ pub(super) fn emit_model_features(
             "schema_feature_operation",
             Exactness::ByteExact,
         );
-        let parameters = feature_parameters(ctx, scan, feature_id)?;
+        let mut parameters = feature_parameters(ctx, scan, feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(
             || match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
@@ -498,10 +500,10 @@ pub(super) fn emit_model_features(
                 }) {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
-                    kind: kind.into(),
+                    kind: ctx.copy_retained_text(kind, "creo native row Feature kind")?.into(),
                     parameters: cadmpeg_core::text::named_entries_checked(ctx,
                         format_args!("creo:model:feature#{feature_id}"),
-                        parameters.clone(),
+                        std::mem::take(&mut parameters),
                     )?,
                 })),
             },
