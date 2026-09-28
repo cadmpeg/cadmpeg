@@ -47,6 +47,7 @@ mod path_allocation;
 mod region_allocation;
 mod historical_candidate_allocation;
 mod extrude_bind_allocation;
+mod loft_bind_allocation;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
