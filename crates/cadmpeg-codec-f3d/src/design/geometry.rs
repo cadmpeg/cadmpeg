@@ -1834,7 +1834,7 @@ impl CertifiedProfileLoop {
         (tubes.len() >= 3).then_some(Self { tubes })
     }
 
-    fn vertices(&self) -> impl Iterator<Item = Point2> + '_ {
+    fn vertices(&self) -> impl Iterator<Item = Point2> + Clone + '_ {
         self.tubes.iter().map(|tube| tube.start)
     }
 
@@ -1854,7 +1854,12 @@ impl CertifiedProfileLoop {
         self.tubes
             .iter()
             .all(|tube| point_segment_distance(point, (tube.start, tube.end)) > tube.error)
-            && point_in_polygon(point, &self.vertices().collect::<Vec<_>>())
+            && point_in_polygon_edges(
+                point,
+                self.vertices()
+                    .zip(self.vertices().cycle().skip(1))
+                    .take(self.tubes.len()),
+            )
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
@@ -2411,11 +2416,11 @@ fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment
 }
 
 pub(super) fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
-    vertices
-        .iter()
-        .copied()
-        .zip(vertices.iter().copied().cycle().skip(1))
-        .take(vertices.len())
+    point_in_polygon_edges(point, polygon_edges(vertices))
+}
+
+fn point_in_polygon_edges(point: Point2, edges: impl Iterator<Item = (Point2, Point2)>) -> bool {
+    edges
         .filter(|(start, end)| {
             (start.v > point.v) != (end.v > point.v)
                 && point.u < start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
