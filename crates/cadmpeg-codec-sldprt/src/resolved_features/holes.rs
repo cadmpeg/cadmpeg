@@ -4273,17 +4273,17 @@ pub(super) fn sketch_feature_frames(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<String, (Point3, Vector3, Vector3)>, CodecError> {
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag == "Sketch")
-        .collect::<Vec<_>>();
-    let mut candidates = HashMap::<String, Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut candidates = HashMap::<String, Option<(Point3, Vector3, Vector3)>>::new();
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
-        for feature in &native_features {
+        for feature in histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| feature.xml_tag == "Sketch")
+        {
+            ctx.charge_work(1, "resolve sketch feature frames")?;
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
             };
@@ -4297,23 +4297,40 @@ pub(super) fn sketch_feature_frames(
             ) else {
                 continue;
             };
-            candidates
-                .entry(feature.id.clone())
-                .or_default()
-                .push(frame);
+            if let Some(candidate) = candidates.get_mut(feature.id.as_str()) {
+                if candidate.as_ref().is_some_and(|current| {
+                    reference_plane_frame_key(current) != reference_plane_frame_key(&frame)
+                }) {
+                    *candidate = None;
+                }
+            } else {
+                ctx.charge_collection_items(1, "index sketch feature frame owners")?;
+                candidates.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index sketch feature frame owners", u64::MAX - 1, u64::MAX)
+                })?;
+                let mut owner = String::new();
+                ctx.reserve_retained_string(
+                    &mut owner,
+                    feature.id.len(),
+                    "copy sketch feature frame owner",
+                )?;
+                owner.push_str(&feature.id);
+                candidates.insert(owner, Some(frame));
+            }
         }
     }
-    Ok(candidates
-        .into_iter()
-        .filter_map(|(feature, mut frames)| {
-            frames.sort_by_key(reference_plane_frame_key);
-            frames.dedup();
-            let [frame] = frames.as_slice() else {
-                return None;
-            };
-            Some((feature, *frame))
-        })
-        .collect())
+    let mut unique = HashMap::new();
+    for (feature, frame) in candidates {
+        ctx.charge_work(1, "select unique sketch feature frames")?;
+        if let Some(frame) = frame {
+            ctx.charge_collection_items(1, "retain unique sketch feature frames")?;
+            unique.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("retain unique sketch feature frames", u64::MAX - 1, u64::MAX)
+            })?;
+            unique.insert(feature, frame);
+        }
+    }
+    Ok(unique)
 }
 
 fn compact_position_relations(
