@@ -702,21 +702,39 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
 #[test]
 fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
     let mut bytes = *b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
-    let descriptor = datum_plane_descriptor_block(&bytes).unwrap();
+    let descriptor = crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &bytes))
+        .unwrap().unwrap();
     assert_eq!(descriptor.identity(), "793487222121a5474a9125451b8e31f5");
     assert_eq!(descriptor.suffix(), b"?A\xf0\x1e\xff\x02\x01\x33");
     assert_eq!(descriptor.schema_index(), 28_702);
     assert_eq!(descriptor.label(), "3");
 
     let short_bytes = *b"a75c5f0ed880dd1443b3c5c57908aae?A\xf0\x1f\xff\x02\x01\x66\x33";
-    let short = datum_plane_descriptor_block(&short_bytes).unwrap();
+    let short = crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &short_bytes))
+        .unwrap().unwrap();
     assert_eq!(short.identity().len(), 31);
     assert_eq!(short.schema_index(), 28_703);
     assert_eq!(short.label(), "f3");
 
     bytes[0] = b'G';
-    assert!(datum_plane_descriptor_block(&bytes).is_none());
-    assert!(datum_plane_descriptor_block(&bytes[..39]).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &bytes))
+        .unwrap().is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| datum_plane_descriptor_block(ctx, &bytes[..39]))
+        .unwrap().is_none());
+}
+
+#[test]
+fn om_datum_plane_descriptor_route_refuses_retained_limit() {
+    let bytes = b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("test root is admitted");
+    assert!(matches!(
+        datum_plane_descriptor_block(&ctx, bytes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]
