@@ -22,8 +22,8 @@ use edge_definition::CatiaConsolidatedEdgeDefinition;
 
 mod edge_node;
 use edge_node::{
-    consolidated_vertex_identities, edge_node_wires, load_edge_nodes, CatiaConsolidatedEdgeNode,
-    CatiaConsolidatedEdgeNodeWire,
+    consolidated_vertex_identities, edge_node_wires, edge_node_wires_charged, load_edge_nodes,
+    CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeNodeWire,
 };
 
 pub(crate) mod entity_record;
@@ -1879,13 +1879,18 @@ struct CatiaCatalogWire {
 }
 
 impl CatiaCatalogWire {
-    fn header(catalog: &CatiaCatalog) -> Self {
-        Self {
-            id: catalog.id.clone(),
+    fn header_charged(
+        ctx: &DecodeContext<'_>,
+        catalog: &CatiaCatalog,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: crate::resource::copy_retained_str(
+                ctx, &catalog.id, "catia_native_catalog_header_id",
+            )?,
             byte_offset: catalog.byte_offset,
             byte_len: catalog.byte_len,
             entries: Vec::new(),
-        }
+        })
     }
 }
 
@@ -7022,29 +7027,27 @@ macro_rules! define_catia_arenas {
             )*
         }
 
-        impl From<&CatiaNative> for CatiaArenaProjection {
-            fn from(native: &CatiaNative) -> Self {
-                Self::from((*native).clone())
-            }
-        }
-
-        impl From<CatiaNative> for CatiaArenaProjection {
-            fn from(mut native: CatiaNative) -> Self {
+        impl CatiaArenaProjection {
+            fn from_owned(
+                ctx: &DecodeContext<'_>,
+                mut native: CatiaNative,
+            ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
                 $(
                     $(
-                        define_catia_arenas!(@prepare $field, native, $stored, $field);
+                        define_catia_arenas!(@prepare ctx, $field, native, $stored, $field);
                     )?
                 )*
                 $(
                     $(
-                        let $field = native
-                            .$owner
-                            .iter_mut()
-                            .flat_map(|parent| std::mem::take(&mut parent.$children))
-                            .collect();
+                        let $field = crate::resource::collect_vec(
+                            ctx,
+                            native.$owner.iter_mut()
+                                .flat_map(|parent| std::mem::take(&mut parent.$children)),
+                            "catia_native_flattened_arena",
+                        )?;
                     )?
                 )*
-                Self {
+                Ok(Self {
                     $(
                         $(
                             $field: define_catia_arenas!(
@@ -7059,7 +7062,7 @@ macro_rules! define_catia_arenas {
                             ),
                         )?
                     )*
-                }
+                })
             }
         }
 
@@ -7097,8 +7100,8 @@ macro_rules! define_catia_arenas {
     (@native_value consolidated_edge_nodes, $kind:ident, $owner:ident, $nodes:ident) => { $nodes };
     (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
     (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
-    (@prepare consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
-        let $binding = edge_node_wires(std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities);
+    (@prepare $ctx:ident, consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = edge_node_wires_charged($ctx, std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities)?;
     };
     (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
     (@type catalogs, $kind:ident, $record:ty) => {
@@ -7110,10 +7113,14 @@ macro_rules! define_catia_arenas {
     (@flattened_type $owner:ident, $children:ident, $record:ty) => {
         Vec<$record>
     };
-    (@prepare catalogs, $native:ident, $kind:ident, $binding:ident) => {
-        let $binding = $native.catalogs.iter().map(CatiaCatalogWire::header).collect();
+    (@prepare $ctx:ident, catalogs, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = crate::resource::try_collect_vec(
+            $ctx,
+            $native.catalogs.iter().map(|catalog| CatiaCatalogWire::header_charged($ctx, catalog)),
+            "catia_native_catalog_headers",
+        )?;
     };
-    (@prepare $field:ident, $native:ident, $kind:ident, $binding:ident) => {};
+    (@prepare $ctx:ident, $field:ident, $native:ident, $kind:ident, $binding:ident) => {};
     (@stored_value stored, $native:ident, catalogs, $binding:ident) => {
         $binding
     };
@@ -10025,7 +10032,8 @@ impl CatiaNative {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        store_projection(ctx, &CatiaArenaProjection::from(self), namespace)
+        let projection = CatiaArenaProjection::from_owned(ctx, self)?;
+        store_projection(ctx, &projection, namespace)
     }
 }
 
