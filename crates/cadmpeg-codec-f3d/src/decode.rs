@@ -5790,6 +5790,31 @@ struct MetadataIr {
     unknowns: Vec<UnknownRecord>,
 }
 
+fn append_metadata_unknown(
+    ctx: &DecodeContext<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    brep: &BrepFacts,
+) -> Result<(), CodecError> {
+    let id = UnknownId::mint(crate::ids::native_scoped_id_charged(
+        ctx,
+        &brep.name,
+        "unknown",
+        0_u64,
+    )?)
+    .map_err(|error| {
+        CodecError::malformed(format_args!(
+            "F3D BREP name cannot form an unknown-record identity: {error}"
+        ))
+    })?;
+    let digest = copy_decode_string(ctx, brep.sha256.as_str(), "retain F3D unavailable BREP digest")?;
+    push_decode_item(
+        ctx,
+        unknowns,
+        UnknownRecord::unavailable(id, 0, brep.uncompressed_len, digest, Vec::new()),
+        "collect F3D metadata unknowns",
+    )
+}
+
 fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
@@ -5832,23 +5857,7 @@ fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Me
             }
         }
 
-        let namespace = cadmpeg_ir::ids::IdentityNamespace::new(
-            "f3d",
-            crate::ids::identity_key_component(&brep.name),
-            "unknown",
-        )
-        .map_err(|error| {
-            CodecError::malformed(format_args!(
-                "F3D BREP name cannot form an unknown-record identity: {error}"
-            ))
-        })?;
-        unknowns.push(UnknownRecord::unavailable(
-            UnknownId::compose(&namespace, 0_u64),
-            0,
-            brep.uncompressed_len,
-            brep.sha256.as_str(),
-            Vec::new(),
-        ));
+        append_metadata_unknown(ctx, &mut unknowns, brep)?;
     }
 
     Ok(MetadataIr {
