@@ -133,6 +133,26 @@ fn index_selected_body_key(
     Ok(())
 }
 
+fn body_visibility_for<'m>(
+    ctx: &DecodeContext<'_>,
+    index: &'m std::collections::HashMap<
+        (String, u64),
+        crate::design::decode::body::DecodedBodyVisibility,
+    >,
+    blob_name: &str,
+    body_key: u64,
+) -> Result<Option<&'m crate::design::decode::body::DecodedBodyVisibility>, CodecError> {
+    let operation = "look up F3D body visibility";
+    let bytes = u64::try_from(blob_name.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut name = String::new();
+    name.try_reserve(blob_name.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    name.push_str(blob_name);
+    Ok(index.get(&(name, body_key)))
+}
+
 fn append_decode_items<T>(
     ctx: &DecodeContext<'_>,
     target: &mut Vec<T>,
@@ -3469,9 +3489,12 @@ fn decode_scanned_document<'a>(
                 None => part.body_selectors(ctx)?,
             };
             for body in &mut part.asm.bodies {
-                if let Some(visibility) = body_selectors.get(&body.id).and_then(|selector| {
-                    all_body_visibility.get(&(blob_name.to_owned(), *selector))
-                }) {
+                if let Some(visibility) = body_selectors
+                    .get(&body.id)
+                    .map(|selector| body_visibility_for(ctx, &all_body_visibility, blob_name, *selector))
+                    .transpose()?
+                    .flatten()
+                {
                     body.visible = Some(visibility.visible);
                 }
             }
@@ -3489,27 +3512,40 @@ fn decode_scanned_document<'a>(
                 };
             }
             for body in &part.asm.bodies {
-                if let Some((body_selector, visibility)) =
-                    body_selectors.get(&body.id).and_then(|selector| {
-                        all_body_visibility
-                            .get(&(blob_name.to_owned(), *selector))
-                            .map(|visibility| (*selector, visibility))
+                if let Some((body_selector, visibility)) = body_selectors
+                    .get(&body.id)
+                    .map(|selector| {
+                        body_visibility_for(ctx, &all_body_visibility, blob_name, *selector)
+                            .map(|visibility| visibility.map(|visibility| (*selector, visibility)))
                     })
+                    .transpose()?
+                    .flatten()
                 {
-                    body_visibilities.push(crate::records::bodies::BodyVisibility {
-                        id: crate::ids::native_scoped_id(
+                    let visibility = crate::records::bodies::BodyVisibility {
+                        id: crate::ids::native_scoped_id_charged(
+                            ctx,
                             &candidate.name,
                             "body-visibility",
                             body_selector,
-                        ),
-                        body: body.id.clone(),
-                        stream: visibility.stream.clone(),
+                        )?,
+                        body: cadmpeg_ir::ids::BodyId::mint(copy_decode_string(
+                            ctx,
+                            body.id.as_str(),
+                            "retain F3D visible body ID",
+                        )?)
+                        .map_err(CodecError::malformed)?,
+                        stream: copy_decode_string(
+                            ctx,
+                            &visibility.stream,
+                            "retain F3D body visibility stream",
+                        )?,
                         byte_offset: visibility.byte_offset,
                         asm_body_key_offset: visibility.asm_body_key_offset,
                         asm_body_key: body_selector,
                         entity_suffix: visibility.entity_suffix,
                         visible: visibility.visible,
-                    });
+                    };
+                    push_decode_item(ctx, &mut body_visibilities, visibility, "collect F3D body visibilities")?;
                 }
             }
             brep.append(ctx, part)?;
