@@ -563,6 +563,7 @@ pub(super) fn project(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,

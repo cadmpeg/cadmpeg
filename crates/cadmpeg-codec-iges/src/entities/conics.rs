@@ -77,11 +77,13 @@ fn add_bounded_curve(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges conic neutral points")?;
+    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
     ir.model.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
     reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges conic neutral vertices")?;
+    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
@@ -96,12 +98,14 @@ fn add_bounded_curve(
     ]);
     sequences.record_curve(&curve, entry.sequence, ctx)?;
     reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges conic neutral curves")?;
+    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry,
         source_object: Some(source_object(entry, ctx)?),
     });
     reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges conic neutral edges")?;
+    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
