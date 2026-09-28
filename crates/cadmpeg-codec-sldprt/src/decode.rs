@@ -2151,15 +2151,19 @@ fn conflicting_display_reference(
     candidates: &BTreeSet<FeatureSourceId>,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "retain SLDPRT conflicting display reference";
-    let index_text = table_index.to_string();
+    let index_digits = usize::try_from(table_index.checked_ilog10().unwrap_or(0)).map_err(|_| {
+        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+    })? + 1;
     let mut bytes = stream.len();
-    for part in ["::DisplayFace[".len(), index_text.len(), "] (".len(), 1] {
+    for part in ["::DisplayFace[".len(), index_digits, "] (".len(), 1] {
         bytes = bytes.checked_add(part).ok_or_else(|| {
             ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
         })?;
     }
     for (position, source) in candidates.iter().enumerate() {
-        let digits = source.value().ilog10() as usize + 1;
+        let digits = usize::try_from(source.value().ilog10()).map_err(|_| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })? + 1;
         bytes = bytes.checked_add(digits + usize::from(position > 0) * 2).ok_or_else(|| {
             ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
         })?;
@@ -2168,13 +2172,17 @@ fn conflicting_display_reference(
     ctx.reserve_retained_string(&mut message, bytes, OPERATION)?;
     message.push_str(stream);
     message.push_str("::DisplayFace[");
-    message.push_str(&index_text);
+    write!(&mut message, "{table_index}").map_err(|_| {
+        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+    })?;
     message.push_str("] (");
     for (position, source) in candidates.iter().enumerate() {
         if position > 0 {
             message.push_str(", ");
         }
-        message.push_str(&source.value().to_string());
+        write!(&mut message, "{}", source.value()).map_err(|_| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
     }
     message.push(')');
     Ok(message)
@@ -2207,7 +2215,10 @@ fn appearance_assignment_loss_message(
         add(&mut bytes, MISSING_PREFIX.len())?;
         add(&mut bytes, MISSING_SUFFIX.len())?;
         for (position, source) in assigned.difference(matched).enumerate() {
-            add(&mut bytes, source.value().ilog10() as usize + 1)?;
+            let digits = usize::try_from(source.value().ilog10()).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })? + 1;
+            add(&mut bytes, digits)?;
             if position > 0 {
                 add(&mut bytes, ", ".len())?;
             }
@@ -2234,7 +2245,9 @@ fn appearance_assignment_loss_message(
             if position > 0 {
                 message.push_str(", ");
             }
-            message.push_str(&source.value().to_string());
+            write!(&mut message, "{}", source.value()).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
         }
         message.push_str(MISSING_SUFFIX);
     }
