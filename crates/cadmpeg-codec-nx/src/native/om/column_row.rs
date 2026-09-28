@@ -4,6 +4,8 @@
 use super::{column_storage_block_at, control_index_data_block};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod borrowed_wires;
@@ -70,11 +72,11 @@ pub(in crate::native) struct DataBlockTargetIndexRow {
 }
 
 /// Decode complete index rows from offset-store column storage.
-pub(in crate::native) fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
+pub(in crate::native) fn data_block_index_rows(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockIndexRow>, CodecError> {
     project_column_rows(
         container,
         |storage, section, block_count, source_base| {
-            crate::om::column_row::scan::index_rows(storage)
+            Ok(crate::om::column_row::scan::index_rows(ctx, storage)?
                 .into_iter()
                 .filter_map(|row| {
                     let offset = row.offset();
@@ -83,7 +85,7 @@ pub(in crate::native) fn data_block_index_rows(container: &Container) -> Vec<Dat
                     })?;
                     Some((offset, frame))
                 })
-                .collect()
+                .collect())
         },
         |section_ordinal, ordinal, frame, source_entry, opening| DataBlockIndexRow {
             id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
@@ -99,12 +101,13 @@ pub(in crate::native) fn data_block_index_rows(container: &Container) -> Vec<Dat
 
 /// Decode complete in-range linked index rows from column storage.
 pub(in crate::native) fn data_block_linked_index_rows(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockLinkedIndexRow> {
+) -> Result<Vec<DataBlockLinkedIndexRow>, CodecError> {
     project_column_rows(
         container,
         |storage, section, block_count, source_base| {
-            crate::om::column_row::scan::linked_rows(storage)
+            Ok(crate::om::column_row::scan::linked_rows(ctx, storage)?
                 .into_iter()
                 .filter_map(|row| {
                     let offset = row.offset();
@@ -113,7 +116,7 @@ pub(in crate::native) fn data_block_linked_index_rows(
                     })?;
                     Some((offset, frame))
                 })
-                .collect()
+                .collect())
         },
         |section_ordinal, ordinal, frame, source_entry, opening| DataBlockLinkedIndexRow {
             id: format!("nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"),
@@ -129,12 +132,13 @@ pub(in crate::native) fn data_block_linked_index_rows(
 
 /// Decode complete in-range target-index rows from column storage.
 pub(in crate::native) fn data_block_target_index_rows(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockTargetIndexRow> {
+) -> Result<Vec<DataBlockTargetIndexRow>, CodecError> {
     project_column_rows(
         container,
         |storage, section, block_count, source_base| {
-            crate::om::column_row::scan::target_rows(storage)
+            Ok(crate::om::column_row::scan::target_rows(ctx, storage)?
                 .into_iter()
                 .filter_map(|row| {
                     let offset = row.offset();
@@ -143,7 +147,7 @@ pub(in crate::native) fn data_block_target_index_rows(
                     })?;
                     Some((offset, frame))
                 })
-                .collect()
+                .collect())
         },
         |section_ordinal, ordinal, frame, source_entry, opening| DataBlockTargetIndexRow {
             id: format!("nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"),
@@ -160,9 +164,9 @@ pub(in crate::native) fn data_block_target_index_rows(
 /// One owner for section framing, source locations and admitted row ordinals.
 fn project_column_rows<F, T>(
     container: &Container,
-    scan: impl Fn(&[u8], usize, usize, u64) -> Vec<(usize, F)>,
+    scan: impl Fn(&[u8], usize, usize, u64) -> Result<Vec<(usize, F)>, CodecError>,
     project: impl Fn(usize, usize, F, String, (String, u32)) -> T,
-) -> Vec<T> {
+) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections().into_iter().enumerate()
@@ -174,7 +178,7 @@ fn project_column_rows<F, T>(
             continue;
         };
         let source_base = entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
-        let rows = scan(storage, section_ordinal, records.len() + 1, source_base);
+        let rows = scan(storage, section_ordinal, records.len() + 1, source_base)?;
         for (ordinal, (frame, opening)) in rows
             .into_iter()
             .filter_map(|(offset, frame)| {
@@ -193,5 +197,5 @@ fn project_column_rows<F, T>(
             ));
         }
     }
-    result
+    Ok(result)
 }

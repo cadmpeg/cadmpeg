@@ -4,6 +4,8 @@
 use super::{rmfastload_target_object_id, RmFastLoadObjectId};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod borrowed_wires;
@@ -47,9 +49,10 @@ pub(in crate::native) struct RmCreationDisplayDataRelation {
 /// areas. The compact indices remain uninterpreted until their object roles are
 /// established independently.
 pub(in crate::native) fn rm_creation_display_data_relations(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmCreationDisplayDataRelation> {
+) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
     let mut candidates = Vec::new();
     for (entry, section) in container
         .om_sections()
@@ -77,7 +80,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
         let source_base = entry_offset + record_area_offset as u64;
         let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
 
-        for row in crate::om::column_row::scan::index_rows(record_area) {
+        for row in crate::om::column_row::scan::index_rows(ctx, record_area)? {
             if row.indices()[3].atom.value() != class_ordinal {
                 continue;
             }
@@ -90,7 +93,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 entry.name.clone(),
             ));
         }
-        for row in crate::om::column_row::scan::linked_rows(record_area) {
+        for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
@@ -108,7 +111,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 entry.name.clone(),
             ));
         }
-        for row in crate::om::column_row::scan::target_rows(record_area) {
+        for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
             if row.indices()[2].atom.value() != class_ordinal {
                 continue;
             }
@@ -129,7 +132,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
     }
 
     candidates.sort_by_key(|(encoding, _, _)| encoding.offset());
-    candidates
+    Ok(candidates
         .into_iter()
         .enumerate()
         .map(|(ordinal, (encoding, class_definition, source_entry))| {
@@ -141,5 +144,5 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 source_entry,
             }
         })
-        .collect()
+        .collect())
 }
