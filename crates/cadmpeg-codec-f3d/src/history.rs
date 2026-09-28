@@ -1601,19 +1601,19 @@ pub(crate) fn bind_feature_body_selections(
                         else {
                             return;
                         };
-                        let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-                        for history_state in &history.states {
-                            history_states
-                                .entry(history_state.state_id)
-                                .and_modify(|state| *state = None)
-                                .or_insert(Some(history_state));
-                        }
-                        let Some(body) = singleton_revised_input_body_across_state_chain(
+                        let history_states = match unique_feature_history_states(ctx, history) {
+                            Ok(states) => states,
+                            Err(error) => { edit_result = Err(error); return; }
+                        };
+                        let body = match singleton_revised_input_body_across_state_chain(
+                            ctx,
                             state,
                             previous_state_id,
                             &history_states,
-                        ) else {
-                            return;
+                        ) {
+                            Ok(Some(body)) => body,
+                            Ok(None) => return,
+                            Err(error) => { edit_result = Err(error); return; }
                         };
                         let prefix = feature_input_prefix(&feature_id, previous_state_id);
                         let input_state = crate::design::edge_resolve::feature_input_topology_id(
@@ -1914,16 +1914,14 @@ pub(crate) fn bind_feature_body_selections(
                 edit_result = bind_direct_body_recipe_body_selection(ctx, bodies, scope, inputs);
                 break 'feature_edit;
             };
-            let mut history_states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-            for history_state in &history.states {
-                history_states
-                    .entry(history_state.state_id)
-                    .and_modify(|state| *state = None)
-                    .or_insert(Some(history_state));
-            }
+            let history_states = match unique_feature_history_states(ctx, history) {
+                Ok(states) => states,
+                Err(error) => { edit_result = Err(error); break 'feature_edit; }
+            };
             let body = match proof {
                 BodySelectionProof::TopologyStableRevision => {
                     singleton_body_revision_across_state_chain(
+                        ctx,
                         state,
                         previous_state_id,
                         &history_states,
@@ -1931,11 +1929,16 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 BodySelectionProof::RevisedInput => {
                     singleton_revised_input_body_across_state_chain(
+                        ctx,
                         state,
                         previous_state_id,
                         &history_states,
                     )
                 }
+            };
+            let body = match body {
+                Ok(body) => body,
+                Err(error) => { edit_result = Err(error); break 'feature_edit; }
             };
             let Some(body) = body else {
                 break 'feature_edit;
@@ -2654,65 +2657,88 @@ enum BodySelectionProof {
     RevisedInput,
 }
 
+fn unique_feature_history_states<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    history: &'a AsmHistory,
+) -> Result<HashMap<i64, Option<&'a AsmDeltaState>>, cadmpeg_core::CodecError> {
+    let mut states = HashMap::new();
+    for state in &history.states {
+        if !states.contains_key(&state.state_id) {
+            ctx.charge_collection_items(1, "index F3D feature history states")?;
+            states.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index F3D feature history states", 0, 1))?;
+        }
+        states.entry(state.state_id)
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(state));
+    }
+    Ok(states)
+}
+
 fn singleton_revised_input_body_across_state_chain<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
-) -> Option<i64> {
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
     let mut current = state;
     let mut visited = HashSet::new();
     let mut revised = BTreeSet::new();
     while current.state_id != previous_state_id {
-        if !visited.insert(current.state_id) {
-            return None;
+        if !history_hash_set_insert(Some(ctx), &mut visited, current.state_id,
+            "visit F3D revised input body states")? {
+            return Ok(None);
         }
-        let transition = current.transition.as_ref()?;
-        revised.extend(
-            transition
-                .topology
-                .bodies
-                .updated
-                .iter()
-                .chain(&transition.topology.bodies.deleted)
-                .copied(),
-        );
-        let previous_id = transition.previous_state_id?;
-        current = *states.get(&previous_id)?.as_ref()?;
+        let Some(transition) = current.transition.as_ref() else { return Ok(None); };
+        for &body in transition.topology.bodies.updated.iter()
+            .chain(&transition.topology.bodies.deleted) {
+            history_set_insert(Some(ctx), &mut revised, body,
+                "index F3D revised input bodies")?;
+        }
+        let Some(previous_id) = transition.previous_state_id else { return Ok(None); };
+        let Some(Some(previous)) = states.get(&previous_id) else { return Ok(None); };
+        current = previous;
     }
-    let input = current.topology()?;
+    let Some(input) = current.topology() else { return Ok(None); };
     let mut candidates = input.bodies.iter().filter(|body| revised.contains(body));
-    let body = *candidates.next()?;
-    candidates.next().is_none().then_some(body)
+    let Some(body) = candidates.next().copied() else { return Ok(None); };
+    Ok(candidates.next().is_none().then_some(body))
 }
 
 fn singleton_body_revision_across_state_chain<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
-) -> Option<i64> {
-    let result_topology = state.topology()?;
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let Some(result_topology) = state.topology() else { return Ok(None); };
     let mut current = state;
     let mut visited = HashSet::new();
     let mut selected = None;
     while current.state_id != previous_state_id {
-        if !visited.insert(current.state_id) {
-            return None;
+        if !history_hash_set_insert(Some(ctx), &mut visited, current.state_id,
+            "visit F3D stable body revision states")? {
+            return Ok(None);
         }
-        if let TopologyStableBodyRevision::Revised(body) =
-            body_revision_without_topology_change(current)?
-        {
+        let Some(revision) = body_revision_without_topology_change(current) else {
+            return Ok(None);
+        };
+        if let TopologyStableBodyRevision::Revised(body) = revision {
             match selected {
                 None => selected = Some(body),
                 Some(selected) if selected == body => {}
-                Some(_) => return None,
+                Some(_) => return Ok(None),
             }
         }
-        let previous = current.transition.as_ref()?.previous_state_id?;
-        current = *states.get(&previous)?.as_ref()?;
+        let Some(previous) = current.transition.as_ref()
+            .and_then(|transition| transition.previous_state_id) else { return Ok(None); };
+        let Some(Some(previous)) = states.get(&previous) else { return Ok(None); };
+        current = previous;
     }
-    let body = selected?;
-    (result_topology.bodies.contains(&body) && current.topology()?.bodies.contains(&body))
-        .then_some(body)
+    let Some(body) = selected else { return Ok(None); };
+    let Some(input_topology) = current.topology() else { return Ok(None); };
+    Ok((result_topology.bodies.contains(&body) && input_topology.bodies.contains(&body))
+        .then_some(body))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
