@@ -1580,79 +1580,87 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         }
     }
     Ok((|| {
-    let mut endpoint_spaces = records
-        .iter()
-        .map(RectangleLineRecord::endpoint_space)
-        .collect::<Vec<_>>();
-    endpoint_spaces.sort_unstable_by_key(|space| match space {
-        EndpointSpace::Roster => 0,
-        EndpointSpace::Object => 1,
-    });
-    endpoint_spaces.dedup();
-    let [endpoint_space] = endpoint_spaces.as_slice() else {
+    let Some(endpoint_space) = records.first().map(RectangleLineRecord::endpoint_space) else {
         return None;
     };
-    let current_codes = records
-        .iter()
-        .filter_map(|record| match record {
+    if records.iter().any(|record| record.endpoint_space() != endpoint_space) {
+        return None;
+    }
+    let mut current_code_count = 0;
+    let mut code_one_count = 0;
+    let mut code_two_count = 0;
+    for code in records.iter().filter_map(|record| match record {
             RectangleLineRecord::CurrentWide { code, .. } => *code,
             RectangleLineRecord::Indexed { .. } => None,
-        })
-        .collect::<Vec<_>>();
-    if !(current_codes.is_empty()
-        || current_codes.len() == 4
-            && current_codes.iter().filter(|code| **code == 1).count() == 3
-            && current_codes.iter().filter(|code| **code == 2).count() == 1
-        || current_codes.len() == 3
-            && current_codes.iter().filter(|code| **code == 1).count() == 2
-            && current_codes.iter().filter(|code| **code == 2).count() == 1)
+        }) {
+        current_code_count += 1;
+        code_one_count += usize::from(code == 1);
+        code_two_count += usize::from(code == 2);
+    }
+    if !(current_code_count == 0
+        || current_code_count == 4 && code_one_count == 3 && code_two_count == 1
+        || current_code_count == 3 && code_one_count == 2 && code_two_count == 1)
     {
         return None;
     }
-    let edges = records
-        .into_iter()
-        .map(|record| match record {
-            RectangleLineRecord::Indexed { endpoints, .. } => (endpoints, false),
+    let edge_count = records.len();
+    if !matches!(edge_count, 3 | 4) || edge_count == 3 && current_code_count != 3 {
+        return None;
+    }
+    let mut edges = [[0u32; 2]; 4];
+    for (index, record) in records.iter().enumerate() {
+        let (endpoints, alternate_locus) = match record {
+            RectangleLineRecord::Indexed { endpoints, .. } => (*endpoints, false),
             RectangleLineRecord::CurrentWide {
                 endpoints,
                 alternate_locus,
                 ..
-            } => (endpoints, alternate_locus),
-        })
-        .collect::<Vec<_>>();
-    if !matches!(edges.len(), 3 | 4) || edges.len() == 3 && current_codes.len() != 3 {
+            } => (*endpoints, *alternate_locus),
+        };
+        if edge_count == 4 && alternate_locus {
+            return None;
+        }
+        edges[index] = endpoints;
+    }
+    edges[..edge_count].sort_unstable();
+    let edges = &edges[..edge_count];
+    if edges.windows(2).any(|pair| pair[0] == pair[1])
+        || edges.iter().any(|edge| edge[0] == edge[1])
+    {
         return None;
     }
-    if edges.len() == 4 && edges.iter().any(|(_, alternate_locus)| *alternate_locus) {
+    let mut vertices = [0u32; 8];
+    for (index, vertex) in edges.iter().flatten().enumerate() {
+        vertices[index] = *vertex;
+    }
+    vertices[..edge_count * 2].sort_unstable();
+    let mut unique_vertices = [0u32; 4];
+    let mut vertex_count = 0;
+    for vertex in &vertices[..edge_count * 2] {
+        if vertex_count == 0 || unique_vertices[vertex_count - 1] != *vertex {
+            if vertex_count == unique_vertices.len() {
+                return None;
+            }
+            unique_vertices[vertex_count] = *vertex;
+            vertex_count += 1;
+        }
+    }
+    if vertex_count != 4 {
         return None;
     }
-    let mut edges = edges
-        .into_iter()
-        .map(|(endpoints, _)| endpoints)
-        .collect::<Vec<_>>();
-    let edge_count = edges.len();
-    edges.sort_unstable();
-    edges.dedup();
-    if edges.len() != edge_count || edges.iter().any(|edge| edge[0] == edge[1]) {
-        return None;
+    let vertices = &unique_vertices;
+    let mut degrees = [0usize; 4];
+    for (index, vertex) in vertices.iter().enumerate() {
+        degrees[index] = edges.iter().filter(|edge| edge.contains(vertex)).count();
     }
-    let mut vertices = edges.iter().flatten().copied().collect::<Vec<_>>();
-    vertices.sort_unstable();
-    vertices.dedup();
-    let [_, _, _, _] = vertices.as_slice() else {
-        return None;
-    };
-    let mut degrees = vertices
-        .iter()
-        .map(|vertex| edges.iter().filter(|edge| edge.contains(vertex)).count())
-        .collect::<Vec<_>>();
     degrees.sort_unstable();
-    if !matches!(degrees.as_slice(), [2, 2, 2, 2] | [1, 1, 2, 2]) {
+    if !matches!(degrees, [2, 2, 2, 2] | [1, 1, 2, 2]) {
         return None;
     }
-    let mut known = vertices
-        .iter()
-        .filter_map(|vertex| {
+    let mut known = [(0u32, [0.0f64; 2]); 4];
+    let mut known_count = 0;
+    for vertex in vertices {
+        let candidate = (|| {
             let marker = match endpoint_space {
                 EndpointSpace::Roster => *roster.get(usize::try_from(*vertex).ok()?)?,
                 EndpointSpace::Object => {
@@ -1673,13 +1681,17 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) && marker.coordinates_m.is_some())
             .then_some((*vertex, marker.coordinates_m?.get()))
-        })
-        .collect::<Vec<_>>();
-    known.sort_unstable_by_key(|(vertex, _)| *vertex);
-    if edges.len() == 3 && known.len() != 4 {
+        })();
+        if let Some(candidate) = candidate {
+            known[known_count] = candidate;
+            known_count += 1;
+        }
+    }
+    let known = &known[..known_count];
+    if edge_count == 3 && known.len() != 4 {
         return None;
     }
-    let corners = match known.as_slice() {
+    let corners = match known {
         [(first_vertex, [first_u, first_v]), (second_vertex, [second_u, second_v])] => {
             if edges
                 .iter()
@@ -1702,7 +1714,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 let mut v = [0.0; 3];
                 let mut u_len = 0;
                 let mut v_len = 0;
-                for (_, [point_u, point_v]) in &known {
+                for (_, [point_u, point_v]) in known {
                     if u[..u_len].iter()
                         .all(|candidate| !same_dimension_length(*candidate, *point_u))
                     {
@@ -1728,7 +1740,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                     Point2::new(*u0, *v1),
                 ];
                 let mut occupied = [false; 4];
-                for (_, [point_u, point_v]) in &known {
+                for (_, [point_u, point_v]) in known {
                     let mut matches = products.iter().enumerate().filter(|(_, product)| {
                         same_dimension_length(product.u, *point_u)
                             && same_dimension_length(product.v, *point_v)
@@ -1773,7 +1785,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                     first_u + second_u - opposite_u,
                     first_v + second_v - opposite_v,
                 ];
-                let [(_, first), (_, second), (_, third)] = known.as_slice() else {
+                let [(_, first), (_, second), (_, third)] = known else {
                     return None;
                 };
                 [
