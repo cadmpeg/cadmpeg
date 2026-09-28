@@ -99,8 +99,9 @@ pub(crate) fn active_configuration_state_is_incomplete(
             .suppressed
             .is_none_or(|suppressed| {
                 configuration
-                    .suppressed_features()
-                    .any(|id| id == &feature.id)
+                    .feature_states
+                    .get(&feature.id)
+                    .is_some_and(|state| state.evaluation.is_suppressed())
                     != suppressed
             })
     }) {
