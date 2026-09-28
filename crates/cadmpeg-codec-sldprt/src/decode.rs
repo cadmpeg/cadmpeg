@@ -2969,21 +2969,27 @@ fn build_geometry_ir(
     let mut unknowns = brep.unknowns;
     for owned_face_color in brep.face_colors {
         let annotation_source = &owned_face_color.source_stream;
-        let site = owned_face_color.site_key.as_deref().map_or_else(
-            || {
-                owned_face_color
-                    .value
-                    .target
-                    .as_deref()
-                    .and_then(|target| target.split_once('@').map(|(_, site)| format!("@{site}")))
-                    .unwrap_or_default()
-            },
-            |site| format!("@{site}"),
-        );
+        let site = owned_face_color.site_key.as_deref().or_else(|| {
+            owned_face_color
+                .value
+                .target
+                .as_deref()
+                .and_then(|target| target.split_once('@').map(|(_, site)| site))
+        });
+        let mut qualified_site = String::new();
+        if let Some(site) = site {
+            const OPERATION: &str = "retain SLDPRT colour site qualifier";
+            let bytes = site.len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.reserve_retained_string(&mut qualified_site, bytes, OPERATION)?;
+            qualified_site.push('@');
+            qualified_site.push_str(site);
+        }
         let face_color = owned_face_color.value;
         // The site qualifier is admitted once here and appended as a key tail,
         // so the colour id and its binding below share one proof.
-        let site = cadmpeg_ir::ids::IdentityKeyTail::try_new(site).map_err(|error| {
+        let site = cadmpeg_ir::ids::IdentityKeyTail::try_new(qualified_site).map_err(|error| {
             CodecError::malformed(format_args!(
                 "SLDPRT colour site qualifier is not identity key text: {error}"
             ))
