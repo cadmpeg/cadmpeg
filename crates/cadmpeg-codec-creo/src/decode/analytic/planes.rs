@@ -1765,9 +1765,14 @@ pub(in crate::decode) fn placed_plane_surfaces(
 }
 
 pub(super) fn topology_bound_plane(
-    points: impl IntoIterator<Item = [f64; 3]>,
-) -> Option<PlaneEquation> {
-    let mut points = points.into_iter().collect::<Vec<_>>();
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    input_points: impl IntoIterator<Item = [f64; 3]>,
+) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
+    let mut points = Vec::new();
+    for point in input_points {
+        ctx.try_reserve_items(&mut points, 1, "creo topology plane candidate points")?;
+        points.push(point);
+    }
     points.sort_by(|left, right| {
         left.iter()
             .zip(right)
@@ -1783,7 +1788,9 @@ pub(super) fn topology_bound_plane(
             .zip(finite_model_point(*right))
             .is_some_and(|(left, right)| model_points_agree(left, right))
     });
-    let origin = *points.first()?;
+    let Some(&origin) = points.first() else {
+        return Ok(None);
+    };
     let scale = points
         .iter()
         .flatten()
@@ -1801,23 +1808,30 @@ pub(super) fn topology_bound_plane(
             break 'candidate;
         }
     }
-    let mut normal = normal?;
-    let leading = normal
+    let Some(mut normal) = normal else {
+        return Ok(None);
+    };
+    let Some(leading) = normal
         .iter()
-        .find(|coordinate| coordinate.abs() > EPS_NEAR_ZERO)?;
+        .find(|coordinate| coordinate.abs() > EPS_NEAR_ZERO) else {
+        return Ok(None);
+    };
     if *leading < 0.0 {
         normal = normal.map(|coordinate| -coordinate);
     }
-    points
+    Ok(points
         .iter()
         .all(|point| {
             let displacement = std::array::from_fn(|axis| point[axis] - origin[axis]);
             dot(displacement, normal).abs() <= EPS_AGREE * scale
         })
-        .then_some(PlaneEquation { origin, normal })
+        .then_some(PlaneEquation { origin, normal }))
 }
 
-pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+pub(super) fn analytic_curve_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
+) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
     let (origin, normal) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
@@ -1834,18 +1848,23 @@ pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEqua
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            valid_positive_nurbs_curve(nurbs)?;
-            let plane = topology_bound_plane(
+            if valid_positive_nurbs_curve(nurbs).is_none() {
+                return Ok(None);
+            }
+            let Some(plane) = topology_bound_plane(
+                ctx,
                 nurbs
                     .control_points()
                     .iter()
                     .map(|point| [point.x, point.y, point.z]),
-            )?;
+            )? else {
+                return Ok(None);
+            };
             (plane.origin, plane.normal)
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(PlaneEquation { origin, normal })
+    Ok(Some(PlaneEquation { origin, normal }))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1951,7 +1970,7 @@ pub(super) fn agreed_topology_bound_plane(
         admitted_lines.push(line);
     }
     let mut candidates = Vec::new();
-    for candidate in topology_bound_plane(admitted_points.iter().copied())
+    for candidate in topology_bound_plane(ctx, admitted_points.iter().copied())?
         .into_iter()
         .chain(curve_planes)
         .chain(topology_bound_line_plane(&admitted_lines))

@@ -64,6 +64,50 @@ const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
 const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
 
+fn ordered_face_loops_service<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    plane: Option<PlaneEquation>,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        ordered_face_loops(ctx, loops, plane, incidence, solved_vertices)
+    })
+    .expect("service face loop ordering")
+}
+
+#[test]
+fn ordered_face_loops_refuse_boundary_point_vector() {
+    let half_edge = HalfEdgeId {
+        curve_id: 1,
+        side: crate::topology::Side::Zero,
+    };
+    let lp = crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(9),
+        half_edges: vec![half_edge],
+    };
+    let binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge,
+        start_vertex_id: 1,
+        end_vertex_id: None,
+    };
+    let incidence = BTreeMap::from([(half_edge, &binding)]);
+    let points = BTreeMap::from([(1, [0.0, 0.0, 0.0])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = match ordered_face_loops(&ctx, vec![&lp], None, &incidence, &points) {
+        Ok(_) => panic!("one boundary point exceeds collection limit"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo topology plane candidate points"));
+    assert_eq!(ordered_face_loops_service(vec![&lp], None, &incidence, &points), Some(vec![&lp]));
+}
+
 #[test]
 fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     let segment = crate::feature::definitions::FeatureSegment {
@@ -1588,11 +1632,11 @@ fn planar_loop_containment_selects_one_outer_boundary() {
             .is_none()
     );
     assert_eq!(
-        ordered_face_loops(vec![&outer], None, &incidence, &disjoint_points),
+        ordered_face_loops_service(vec![&outer], None, &incidence, &disjoint_points),
         Some(vec![&outer])
     );
     assert!(
-        ordered_face_loops(vec![&outer, &inner], None, &incidence, &disjoint_points,).is_none()
+        ordered_face_loops_service(vec![&outer, &inner], None, &incidence, &disjoint_points,).is_none()
     );
 }
 
@@ -1638,7 +1682,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
         (8, [-1.0, 1.0, 4.0]),
     ]);
 
-    let ordered = ordered_face_loops(vec![&inner, &outer], None, &incidence, &points)
+    let ordered = ordered_face_loops_service(vec![&inner, &outer], None, &incidence, &points)
         .expect("boundary vertices prove a unique plane");
     assert_eq!(ordered[0].half_edges[0].curve_id, 1);
     assert_eq!(ordered[1].half_edges[0].curve_id, 5);
@@ -1652,7 +1696,7 @@ fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
             (id, point)
         })
         .collect::<BTreeMap<_, _>>();
-    assert!(ordered_face_loops(vec![&outer, &inner], None, &incidence, &non_planar).is_none());
+    assert!(ordered_face_loops_service(vec![&outer, &inner], None, &incidence, &non_planar).is_none());
 }
 
 #[test]

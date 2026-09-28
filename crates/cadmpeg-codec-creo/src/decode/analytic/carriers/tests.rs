@@ -249,6 +249,14 @@ fn topology_bound_plane_refuses_boundary_curve_vector() {
 }
 
 #[test]
+fn topology_bound_plane_refuses_curve_plane_vector() {
+    assert_placed_carrier_refusal(
+        topology_bound_curve_collection_error(8),
+        "creo topology-bound curve planes",
+    );
+}
+
+#[test]
 fn topology_bound_plane_refuses_face_point_vector() {
     let solved_vertices = BTreeMap::from([(1, [2.0, 3.0, 4.0])]);
     let vertex_faces = BTreeMap::from([(1, BTreeSet::from([5]))]);

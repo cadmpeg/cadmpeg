@@ -120,9 +120,13 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 }
             }
         }
-        let curve_planes = boundary_curves
-            .iter()
-            .filter_map(|geometry| analytic_curve_plane(geometry));
+        let mut curve_planes = Vec::new();
+        for geometry in &boundary_curves {
+            if let Some(plane) = analytic_curve_plane(ctx, geometry)? {
+                ctx.try_reserve_items(&mut curve_planes, 1, "creo topology-bound curve planes")?;
+                curve_planes.push(plane);
+            }
+        }
         let lines = boundary_curves
             .iter()
             .filter_map(|geometry| analytic_boundary_line(geometry));
@@ -812,11 +816,12 @@ pub(in crate::decode) fn ordered_parameter_face_loops<'a>(
 }
 
 fn face_boundary_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: &[&crate::topology::Loop],
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<PlaneEquation> {
-    topology_bound_plane(loops.iter().flat_map(|lp| {
+) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
+    topology_bound_plane(ctx, loops.iter().flat_map(|lp| {
         lp.half_edges
             .iter()
             .filter_map(|half_edge| incidence.get(half_edge))
@@ -825,19 +830,20 @@ fn face_boundary_plane(
 }
 
 pub(in crate::decode) fn ordered_face_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: Vec<&'a crate::topology::Loop>,
     plane: Option<PlaneEquation>,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    let plane = plane.or_else(|| face_boundary_plane(&loops, incidence, solved_vertices));
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let plane = match plane {
+        Some(plane) => Some(plane),
+        None => face_boundary_plane(ctx, &loops, incidence, solved_vertices)?,
+    };
     if let Some(plane) = plane {
-        ordered_planar_face_loops(loops, plane, incidence, solved_vertices)
+        Ok(ordered_planar_face_loops(loops, plane, incidence, solved_vertices))
     } else {
-        let [single] = loops.as_slice() else {
-            return None;
-        };
-        Some(vec![*single])
+        Ok((loops.len() == 1).then_some(loops))
     }
 }
 
