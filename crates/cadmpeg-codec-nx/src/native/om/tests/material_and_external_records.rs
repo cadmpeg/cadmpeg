@@ -918,8 +918,10 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         source_offset: 30,
     };
 
-    let handles =
-        super::super::persistent_handles(&[reference], &[control], &[external], &[tail_pair]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let handles = super::super::persistent_handles(&ctx, &[reference], &[control], &[external], &[tail_pair]).unwrap();
 
     assert_eq!(handles.len(), 2);
     assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
@@ -930,6 +932,51 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     assert_eq!(handles[1].value, 0x5060_7080);
     assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
     assert_eq!(handles[1].external_occurrence_count, 1);
+}
+
+fn persistent_handle_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = super::super::ObjectReference {
+        id: "reference".into(),
+        record: "record".into(),
+        object_id: 1,
+        ordinal: 0,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(17)),
+        source_entry: "om".into(),
+        source_offset: 0,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::persistent_handles(&ctx, &[reference], &[], &[], &[]).unwrap_err()
+}
+
+#[test]
+fn persistent_handle_route_refuses_collection_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn persistent_handle_route_refuses_scoped_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn persistent_handle_route_refuses_retained_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn persistent_handle_route_refuses_work_limit() {
+    let error = persistent_handle_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]

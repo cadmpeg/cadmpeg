@@ -4497,6 +4497,24 @@ fn copy_om_retained_text(
     Ok(copy)
 }
 
+fn copy_om_retained_texts(
+    ctx: &DecodeContext<'_>,
+    values: &[&str],
+    operation: &'static str,
+) -> Result<Vec<String>, CodecError> {
+    let slot_bytes = values.len().checked_mul(std::mem::size_of::<String>())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(values.len()), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slot_bytes), operation)?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    for value in values {
+        output.push(copy_om_retained_text(ctx, value, operation)?);
+    }
+    Ok(output)
+}
+
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
 pub(super) fn data_block_control_values(
     ctx: &DecodeContext<'_>,
@@ -5488,73 +5506,134 @@ pub(super) fn object_record_handle_pairs(
 
 /// Group persistent-handle occurrences into cross-record identities.
 pub(super) fn persistent_handles(
+    ctx: &DecodeContext<'_>,
     references: &[ObjectReference],
     control_references: &[DataBlockControlReference],
     external: &[ExternalReferenceRecord],
     external_tail_pairs: &[ExternalReferenceTailReferencePair],
-) -> Vec<PersistentHandle> {
+) -> Result<Vec<PersistentHandle>, CodecError> {
     #[derive(Default)]
-    struct Group {
-        records: Vec<String>,
+    struct Group<'a> {
+        records: Vec<&'a str>,
         occurrence_count: u32,
-        external_records: Vec<String>,
-        data_blocks: Vec<String>,
+        external_records: Vec<&'a str>,
+        data_blocks: Vec<&'a str>,
         external_occurrence_count: u32,
     }
 
-    let mut groups = BTreeMap::<u32, Group>::new();
+    let external_count = external.iter().try_fold(0usize, |count, record| {
+        count.checked_add(record.handles.serialized().len())
+    }).ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle index size", 0, 1))?;
+    let occurrence_count = references.len()
+        .checked_add(control_references.len())
+        .and_then(|count| count.checked_add(external_count))
+        .and_then(|count| count.checked_add(external_tail_pairs.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle index size", 0, 1))?;
+    let index_bytes = occurrence_count.checked_mul(
+        std::mem::size_of::<(u32, Group<'_>)>() * 4 + std::mem::size_of::<&str>() * 3,
+    ).ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle index size", 0, 1))?;
+    let _index_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "NX persistent handle index",
+    )?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(occurrence_count), "index NX persistent handles")?;
+    let mut groups = BTreeMap::<u32, Group<'_>>::new();
     for reference in references {
         let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
             reference.reference
         else {
             continue;
         };
+        if !groups.contains_key(&handle) {
+            ctx.charge_collection_items(1, "NX persistent handle groups")?;
+        }
         let group = groups.entry(handle).or_default();
-        group.occurrence_count += 1;
-        if group.records.last() != Some(&reference.record)
-            && !group.records.contains(&reference.record)
+        group.occurrence_count = group.occurrence_count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle occurrence count", 0, 1))?;
+        if group.records.last().copied() != Some(reference.record.as_str())
+            && !group.records.contains(&reference.record.as_str())
         {
-            group.records.push(reference.record.clone());
+            ctx.charge_collection_items(1, "NX persistent handle record index")?;
+            group.records.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent handle record index", 0, 1))?;
+            group.records.push(reference.record.as_str());
         }
     }
     for reference in control_references {
         let DirectReference::PersistentHandle(handle) = reference.reference else {
             continue;
         };
+        if !groups.contains_key(&handle) {
+            ctx.charge_collection_items(1, "NX persistent handle groups")?;
+        }
         let group = groups.entry(handle).or_default();
-        group.occurrence_count += 1;
-        if !group.data_blocks.contains(&reference.data_block) {
-            group.data_blocks.push(reference.data_block.clone());
+        group.occurrence_count = group.occurrence_count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle occurrence count", 0, 1))?;
+        if !group.data_blocks.contains(&reference.data_block.as_str()) {
+            ctx.charge_collection_items(1, "NX persistent handle data block index")?;
+            group.data_blocks.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent handle data block index", 0, 1))?;
+            group.data_blocks.push(reference.data_block.as_str());
         }
     }
     for record in external {
         for handle in record.handles.serialized() {
+            if !groups.contains_key(handle) {
+                ctx.charge_collection_items(1, "NX persistent handle groups")?;
+            }
             let group = groups.entry(*handle).or_default();
-            group.external_occurrence_count += 1;
-            if !group.external_records.contains(&record.id) {
-                group.external_records.push(record.id.clone());
+            group.external_occurrence_count = group.external_occurrence_count.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1))?;
+            if !group.external_records.contains(&record.id.as_str()) {
+                ctx.charge_collection_items(1, "NX persistent external record index")?;
+                group.external_records.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent external record index", 0, 1))?;
+                group.external_records.push(record.id.as_str());
             }
         }
     }
     for pair in external_tail_pairs {
+        if !groups.contains_key(&pair.persistent_handle) {
+            ctx.charge_collection_items(1, "NX persistent handle groups")?;
+        }
         let group = groups.entry(pair.persistent_handle).or_default();
-        group.external_occurrence_count += 1;
-        if !group.external_records.contains(&pair.handle_set_record) {
-            group.external_records.push(pair.handle_set_record.clone());
+        group.external_occurrence_count = group.external_occurrence_count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX external handle occurrence count", 0, 1))?;
+        if !group.external_records.contains(&pair.handle_set_record.as_str()) {
+            ctx.charge_collection_items(1, "NX persistent external record index")?;
+            group.external_records.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent external record index", 0, 1))?;
+            group.external_records.push(pair.handle_set_record.as_str());
         }
     }
-    groups
-        .into_iter()
-        .map(|(value, group)| PersistentHandle {
-            id: format!("nx:om-persistent-handles:handle#{value:08x}"),
+    let mut handles = Vec::new();
+    for (value, group) in groups {
+        use std::fmt::Write;
+        ctx.charge_collection_items(1, "NX persistent handles")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<PersistentHandle>()), "retain NX persistent handle")?;
+        handles.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX persistent handles", 0, 1))?;
+        let prefix = "nx:om-persistent-handles:handle#";
+        let id_length = prefix.len().checked_add(8)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX persistent handle id", 0, 1))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(id_length), "NX persistent handle id")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_length), "NX persistent handle id")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_length)
+            .map_err(|_| ctx.refuse_codec_limit("NX persistent handle id", 0, 1))?;
+        write!(&mut id, "{prefix}{value:08x}")
+            .map_err(|_| ctx.refuse_codec_limit("NX persistent handle id", 0, 1))?;
+        handles.push(PersistentHandle {
+            id,
             value,
-            records: group.records,
+            records: copy_om_retained_texts(ctx, &group.records, "NX persistent handle records")?,
             occurrence_count: group.occurrence_count,
-            data_blocks: group.data_blocks,
-            external_records: group.external_records,
+            data_blocks: copy_om_retained_texts(ctx, &group.data_blocks, "NX persistent handle data blocks")?,
+            external_records: copy_om_retained_texts(ctx, &group.external_records, "NX persistent handle external records")?,
             external_occurrence_count: group.external_occurrence_count,
-        })
-        .collect()
+        });
+    }
+    Ok(handles)
 }
 
 /// Decode named parameter declarations from expression-class OM records.
