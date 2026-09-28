@@ -247,12 +247,13 @@ impl MergeSession<'_, '_> {
                 .model
                 .extend_rewritten(component_ir.model, &mut scope)?;
             reparent_component_roots(
+                self.ctx,
                 &mut parent_ir.model.occurrences[occurrence_start..],
                 &crate::ids::neutral_xref_occurrence_id(
                     reference.ordinal,
                     reference.occurrence_ordinal,
                 ),
-            );
+            )?;
             extend_native(&mut parent_ir.native, component_ir.native, &occurrence)?;
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
@@ -289,19 +290,27 @@ impl MergeSession<'_, '_> {
 /// occurrence that owns that member. Child occurrence parents already carry
 /// the member-local hierarchy and are left unchanged.
 fn reparent_component_roots(
+    ctx: &DecodeContext<'_>,
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
     parent: &cadmpeg_ir::ids::OccurrenceId,
-) {
+) -> Result<(), CodecError> {
     for occurrence in occurrences {
         if matches!(
             occurrence.parent,
             cadmpeg_ir::products::OccurrenceParent::Root {}
         ) {
+            let parent_id = String::from_utf8(ctx.copy_retained(
+                parent.as_str().as_bytes(),
+                "copy F3Z parent occurrence identity",
+            )?)
+            .map_err(CodecError::malformed)?;
             occurrence.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
-                occurrence: parent.clone(),
+                occurrence: cadmpeg_ir::ids::OccurrenceId::mint(parent_id)
+                    .map_err(CodecError::malformed)?,
             };
         }
     }
+    Ok(())
 }
 
 /// Places one component's feature history after the histories already merged.
