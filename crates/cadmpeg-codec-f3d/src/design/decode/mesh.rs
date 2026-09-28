@@ -1470,9 +1470,10 @@ pub(crate) fn decode_mesh_bodies(
     {
         let container = match scan
             .entry_bytes(&entry.name)
-            .and_then(decode_mesh_container)
+            .and_then(|bytes| decode_mesh_container(ctx, bytes))
         {
             Ok(container) => container,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 outcomes.push(MeshContainerOutcome::Failed {
                     entry_name: entry.name.clone(),
