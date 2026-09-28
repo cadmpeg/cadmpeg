@@ -819,13 +819,17 @@ fn explicit_reference_axis_requires_redundant_collinear_witnesses() {
     let mut payload = vec![0xaa; 17];
     payload.extend_from_slice(&record);
     payload.extend_from_slice(&[0xbb; 11]);
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     assert_eq!(
-        explicit_reference_axis_frame(&payload),
+        explicit_reference_axis_frame(&ctx, &payload).unwrap(),
         Some((Point3::new(250.0, 0.0, 100.0), Vector3::new(0.0, 1.0, 0.0),))
     );
 
     record[24..32].copy_from_slice(&0.5_f64.to_le_bytes());
-    assert_eq!(explicit_reference_axis_frame(&record), None);
+    assert_eq!(explicit_reference_axis_frame(&ctx, &record).unwrap(), None);
 }
 
 #[test]
@@ -852,7 +856,11 @@ fn explicit_reference_axis_does_not_rank_unanchored_candidates() {
     let mut payload = frame(0.25, 0.0, -0.5);
     payload.extend_from_slice(&[0xff; 88]);
     payload.extend_from_slice(&frame(0.35, 1.0, 1.0));
-    assert_eq!(explicit_reference_axis_frame(&payload), None);
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .unwrap();
+    assert_eq!(explicit_reference_axis_frame(&ctx, &payload).unwrap(), None);
 }
 
 #[test]

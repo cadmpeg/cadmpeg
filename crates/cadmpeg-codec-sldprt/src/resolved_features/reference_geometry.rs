@@ -1641,12 +1641,19 @@ pub(crate) fn enrich_history_reference_axes(
             }
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                if let Some(frame) = (|| {
-                    let body = usize::try_from(class.offset)
-                        .ok()?
-                        .checked_add(6 + class.name.len())?;
-                    explicit_reference_axis_frame(lane.native_payload.get(body..body + 88)?)
-                })() {
+                let Some(body) = usize::try_from(class.offset)
+                    .ok()
+                    .and_then(|offset| offset.checked_add(6 + class.name.len()))
+                else {
+                    continue;
+                };
+                let Some(end) = body.checked_add(88) else {
+                    continue;
+                };
+                let Some(payload) = lane.native_payload.get(body..end) else {
+                    continue;
+                };
+                if let Some(frame) = explicit_reference_axis_frame(ctx, payload)? {
                     ctx.reserve_collection_vec(&mut anchored_frames, 1, "collect SLDPRT anchored reference axis frames")?;
                     anchored_frames.push(frame);
                 }
@@ -1654,7 +1661,7 @@ pub(crate) fn enrich_history_reference_axes(
             anchored_frames.sort_by_key(reference_axis_frame_key);
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
             let explicit_frame = if axis_data_classes.is_empty() {
-                explicit_reference_axis_frame(bytes)
+                explicit_reference_axis_frame(ctx, bytes)?
             } else {
                 let [frame] = anchored_frames.as_slice() else {
                     continue;
@@ -1865,7 +1872,10 @@ fn complete_reference_axis_triad(
     Some((missing, (origin, normalize(direction)?)))
 }
 
-fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
+fn explicit_reference_axis_frame(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(Point3, Vector3)>, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const UNIT_TOLERANCE: f64 = 1e-9;
     const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1e-9;
@@ -1875,9 +1885,7 @@ fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
         let value = View::f64_le_at(bytes, offset)?;
         value.is_finite().then_some(value)
     };
-    let mut candidates = payload
-        .windows(88)
-        .filter_map(|bytes| {
+    let candidate = |bytes: &[u8]| {
             let first = Vector3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
             let second = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
             let _first_parameter = scalar(bytes, 48)?;
@@ -1928,14 +1936,22 @@ fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
                     canonical_zero(direction.z, DIRECTION_ZERO_TOLERANCE),
                 ),
             ))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(reference_axis_frame_key);
-    candidates.dedup_by_key(|frame| reference_axis_frame_key(frame));
-    let [frame] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+        };
+    let mut unique = None;
+    for bytes in payload.windows(88) {
+        ctx.charge_work(1, "scan SLDPRT explicit reference axis windows")?;
+        let Some(frame) = candidate(bytes) else {
+            continue;
+        };
+        match unique {
+            Some(existing) if reference_axis_frame_key(&existing) != reference_axis_frame_key(&frame) => {
+                return Ok(None);
+            }
+            None => unique = Some(frame),
+            Some(_) => {}
+        }
+    }
+    Ok(unique)
 }
 
 fn reference_axis_frame_key((origin, direction): &(Point3, Vector3)) -> [u64; 6] {
