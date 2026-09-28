@@ -1,6 +1,6 @@
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
-    analytic_offset_magnitude_agrees, counted_cardinality, evaluate_pcurve,
+    analytic_offset_magnitude_agrees, counted_cardinality,
     is_referenced_geometry_class, parse_extrusion_surface, parse_offset_surface,
     parse_profile, parse_sphere_great_circle_pcurve, parse_surface,
     surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
@@ -10,6 +10,12 @@ use crate::families::b5::graph::{
 use crate::wire;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::evaluate_pcurve(ctx, pcurve, parameter)
+    }).expect("service budget")
+}
 
 fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| super::super::parse_line_pcurve(ctx, record))

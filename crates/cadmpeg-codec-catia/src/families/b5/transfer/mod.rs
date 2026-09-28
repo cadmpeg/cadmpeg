@@ -476,10 +476,16 @@ fn build_plan(
                 {
                     return None;
                 }
-                let knots = pcurve_nurbs_knots(pcurve)?
-                    .into_iter()
-                    .map(FiniteReal::get)
-                    .collect();
+                let knots = match pcurve_nurbs_knots(ctx, pcurve) {
+                    Ok(Some(knots)) => knots,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                let knots = match crate::resource::collect_vec(ctx,
+                    knots.into_iter().map(FiniteReal::get), "catia_b5_transfer_pcurve_knots") {
+                    Ok(knots) => knots,
+                    Err(error) => return Some(Err(error)),
+                };
                 let parameter_range = pcurve_parameter_domain(pcurve)?;
                 let surface = graph.surfaces.get(&loop_.surface)?;
                 let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
@@ -516,7 +522,10 @@ fn build_plan(
                 }) {
                     supports.push((loop_.surface, pcurve_id, support_range));
                 }
-                let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
+                let lifted = match lifted_curve_geometry(ctx, pcurve, surface) {
+                    Ok(lifted) => lifted,
+                    Err(error) => return Some(Err(error)),
+                }.or_else(|| {
                     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
                         &surface_plan.get(&loop_.surface)?.geometry
                     else {
@@ -539,14 +548,16 @@ fn build_plan(
                         })
                     } else if matches!(surface, B5Surface::Nurbs(_) | B5Surface::Revolution { .. })
                     {
-                        edge_pcurve_parameters(graph, edge_id, pcurve_id)
-                            .and_then(|parameters| {
-                                isocurve_endpoint_parameters(
-                                    pcurve,
-                                    parameters.map(FiniteReal::get),
-                                )
-                            })
-                            .and_then(|parameters| {
+                        let parameters = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                            .map(|parameters| parameters.map(FiniteReal::get));
+                        let parameters = match parameters {
+                            Some(parameters) => match isocurve_endpoint_parameters(ctx, pcurve, parameters) {
+                                Ok(parameters) => parameters,
+                                Err(error) => return Some(Err(error)),
+                            },
+                            None => None,
+                        };
+                        parameters.and_then(|parameters| {
                                 oriented_nurbs_range(
                                     geometry.clone(),
                                     parameters,
@@ -563,16 +574,15 @@ fn build_plan(
                         geometry,
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
                     ) {
-                        edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
-                            oriented_circle_plan(
-                                pcurve,
-                                surface,
-                                &geometry,
-                                parameters.map(FiniteReal::get),
-                                edge_start,
-                                edge_end,
-                            )
-                        })
+                        let parameters = edge_pcurve_parameters(graph, edge_id, pcurve_id);
+                        match parameters {
+                            Some(parameters) => match oriented_circle_plan(ctx, pcurve, surface,
+                                &geometry, parameters.map(FiniteReal::get), edge_start, edge_end) {
+                                Ok(plan) => plan,
+                                Err(error) => return Some(Err(error)),
+                            },
+                            None => None,
+                        }
                     } else {
                         None
                     };
@@ -599,14 +609,18 @@ fn build_plan(
                         edge_ids.insert(edge_id);
                         continue;
                     };
-                    let Some(helix) = cylinder_helix(
-                        pcurve,
+                    let helix = match cylinder_helix(
+                        ctx, pcurve,
                         surface,
                         endpoint_parameters.map(FiniteReal::get),
                         edge_start,
                         edge_end,
                         refusal,
-                    ) else {
+                    ) {
+                        Ok(helix) => helix,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    let Some(helix) = helix else {
                         edge_ids.insert(edge_id);
                         continue;
                     };
@@ -1077,10 +1091,17 @@ pub(in crate::families) fn resolved_extrusion_surface(
                             Err(error) => return Some(Err(error)),
                         };
                     let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-                    let knots = pcurve_nurbs_knots(pcurve)?
-                        .into_iter()
-                        .map(FiniteReal::get)
-                        .collect();
+                    let knots = match pcurve_nurbs_knots(ctx, pcurve) {
+                        Ok(Some(knots)) => knots,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    let knots = match crate::resource::collect_vec(ctx,
+                        knots.into_iter().map(FiniteReal::get),
+                        "catia_b5_extrusion_pcurve_knots") {
+                        Ok(knots) => knots,
+                        Err(error) => return Some(Err(error)),
+                    };
                     let domain = pcurve_parameter_domain(pcurve)?;
                     bounded_occurrence_range(pcurve_parameter_range, domain)?;
                     let pcurve_geometry = PcurveGeometry::Nurbs {
@@ -1102,7 +1123,10 @@ pub(in crate::families) fn resolved_extrusion_surface(
                             format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
                         )?,
                     };
-                    let curve = lifted_curve_geometry(pcurve, source_surface);
+                    let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
+                        Ok(curve) => curve,
+                        Err(error) => return Some(Err(error)),
+                    };
                     Some(Ok(ResolvedExtrusionSupport {
                         surface_object_id,
                         surface,
