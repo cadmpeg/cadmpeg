@@ -1456,6 +1456,10 @@ pub(crate) fn decode_dimension_annotation_frames(
     let mut decoded_offsets = HashSet::new();
     for (companion_ordinal, companion) in companions.iter().enumerate() {
         let Some(stream) = native_stream(companion.id()) else { continue };
+        let comparisons = u64::try_from(companion_ordinal).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension annotation stream scan", 0, 1)
+        })?;
+        ctx.charge_work(comparisons, "f3d dimension annotation stream scan")?;
         if companions[..companion_ordinal]
             .iter()
             .any(|previous| native_stream(previous.id()) == Some(stream))
