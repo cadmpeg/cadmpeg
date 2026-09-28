@@ -227,11 +227,11 @@ impl StreamView {
     ) -> Result<Self, CodecError> {
         let graph = Rc::new(Graph::parse(ctx, bytes)?);
         Ok(StreamView {
-            offset_surfaces: graph.offset_surfaces(),
-            blend_surfaces: graph.blend_surfaces(),
-            trimmed_curves: graph.trimmed_curves(),
-            surface_curves: graph.surface_curves(),
-            intersections: intersection::scan_with_graph(bytes, &graph, point_layout),
+            offset_surfaces: graph.offset_surfaces(ctx)?,
+            blend_surfaces: graph.blend_surfaces(ctx)?,
+            trimmed_curves: graph.trimmed_curves(ctx)?,
+            surface_curves: graph.surface_curves(ctx)?,
+            intersections: intersection::scan_with_graph(ctx, bytes, &graph, point_layout)?,
             graph,
         })
     }
@@ -270,20 +270,21 @@ impl StreamView {
                 replacement_streams.push(scan.streams[*delta].inflated.as_slice());
             }
             intersection::scan_with_auxiliary_replacements_and_graph(
+                ctx,
                 semantic_bytes,
                 topology_bytes,
                 &replacement_streams,
                 scan_graph,
-            )
+            )?
         } else {
-            intersection::scan_with_graph(semantic_bytes, scan_graph, point_layout)
+            intersection::scan_with_graph(ctx, semantic_bytes, scan_graph, point_layout)?
         };
         Ok((
             StreamView {
-                offset_surfaces: scan_graph.offset_surfaces(),
-                blend_surfaces: scan_graph.blend_surfaces(),
-                trimmed_curves: scan_graph.trimmed_curves(),
-                surface_curves: scan_graph.surface_curves(),
+                offset_surfaces: scan_graph.offset_surfaces(ctx)?,
+                blend_surfaces: scan_graph.blend_surfaces(ctx)?,
+                trimmed_curves: scan_graph.trimmed_curves(ctx)?,
+                surface_curves: scan_graph.surface_curves(ctx)?,
                 intersections,
                 graph,
             },
