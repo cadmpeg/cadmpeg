@@ -358,25 +358,33 @@ pub(super) struct CreoFeatureChoiceFieldRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoHalfEdgeRecord {
+pub(super) struct CreoHalfEdgeRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     side: crate::topology::Side,
     face_id: u32,
     next: Option<CreoHalfEdgeRef>,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoLoopRecord {
+pub(super) struct CreoLoopRecord<'a> {
     id: String,
     face_id: u32,
-    half_edges: Vec<CreoHalfEdgeRef>,
+    #[serde(serialize_with = "serialize_half_edge_refs")]
+    half_edges: &'a [crate::topology::HalfEdgeId],
+}
+
+fn serialize_half_edge_refs<S: serde::Serializer>(
+    half_edges: &[crate::topology::HalfEdgeId],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(half_edges.iter().copied().map(half_edge_ref))
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoLoopArrayFrameRecord {
+pub(super) struct CreoLoopArrayFrameRecord<'a> {
     id: String,
     variant: Option<crate::loop_array::LayoutMarker>,
     declared_count: u32,
@@ -386,10 +394,10 @@ pub(super) struct CreoLoopArrayFrameRecord {
     offset: usize,
     prototype_end: usize,
     end: usize,
-    source_section: String,
+    source_section: &'a str,
 }
 
-pub(super) struct CreoLoopArrayRecord {
+pub(super) struct CreoLoopArrayRecord<'a> {
     pub(super) id: String,
     frame_offset: usize,
     lo_id: u32,
@@ -399,13 +407,13 @@ pub(super) struct CreoLoopArrayRecord {
     attributes: u8,
     direction: u32,
     next_lo_ptr: u32,
-    body: Vec<u8>,
+    body: &'a [u8],
     pub(super) offset: usize,
     body_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
-impl Serialize for CreoLoopArrayRecord {
+impl Serialize for CreoLoopArrayRecord<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut record = serializer.serialize_struct("CreoLoopArrayRecord", 14)?;
@@ -428,10 +436,11 @@ impl Serialize for CreoLoopArrayRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoTopologicalVertexRecord {
+pub(super) struct CreoTopologicalVertexRecord<'a> {
     id: String,
     vertex_id: u32,
-    half_edges: Vec<CreoHalfEdgeRef>,
+    #[serde(serialize_with = "serialize_half_edge_refs")]
+    half_edges: &'a [crate::topology::HalfEdgeId],
 }
 
 #[derive(Serialize)]
@@ -443,10 +452,10 @@ pub(super) struct CreoHalfEdgeVertexIncidenceRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFaceComponentRecord {
+pub(super) struct CreoFaceComponentRecord<'a> {
     id: String,
-    face_ids: Vec<u32>,
-    curve_ids: Vec<u32>,
+    face_ids: &'a [u32],
+    curve_ids: &'a [u32],
 }
 
 #[derive(Serialize)]
@@ -1477,62 +1486,89 @@ pub(super) fn feature_choice_field_records(
         .collect()
 }
 
-pub(super) fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord> {
-    let topology_rows = scan
-        .curves
-        .topology_rows
-        .iter()
-        .map(|row| (row.id, row))
-        .collect::<BTreeMap<_, _>>();
-    scan.topology
-        .half_edges
-        .iter()
-        .filter_map(|edge| {
-            let row = topology_rows.get(&edge.id.curve_id)?;
-            Some(CreoHalfEdgeRecord {
-                id: format!(
-                    "creo:topology:half_edge#{}:{}",
-                    edge.id.curve_id, edge.id.side
-                ),
+pub(super) fn half_edge_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoHalfEdgeRecord<'a>>, CodecError> {
+    let mut topology_rows = BTreeMap::new();
+    for row in &scan.curves.topology_rows {
+        match topology_rows.entry(row.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => { entry.insert(row); }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo native half edge topology row nodes")?;
+                entry.insert(row);
+            }
+        }
+    }
+    let mut records = Vec::new();
+    for edge in &scan.topology.half_edges {
+        let Some(row) = topology_rows.get(&edge.id.curve_id) else {
+            continue;
+        };
+        let id = ctx.format_retained(
+            format_args!("creo:topology:half_edge#{}:{}", edge.id.curve_id, edge.id.side),
+            "creo native half edge record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native half edge records")?;
+        records.push(CreoHalfEdgeRecord {
+                id,
                 curve_id: edge.id.curve_id,
                 side: edge.id.side,
                 face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
                 next: edge.next.map(half_edge_ref),
                 offset: row.offset,
-                source_section: source_section(scan, row.offset),
-            })
-        })
-        .collect()
+                source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
-    scan.topology
-        .loops
-        .iter()
-        .enumerate()
-        .map(|(index, record)| CreoLoopRecord {
-            id: format!("creo:topology:loop#{}", index + 1),
+pub(super) fn loop_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoLoopRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for (index, record) in scan.topology.loops.iter().enumerate() {
+        let id = ctx.format_retained(
+            format_args!("creo:topology:loop#{}", index + 1),
+            "creo native loop record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native loop records")?;
+        records.push(CreoLoopRecord {
+            id,
             face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
-            half_edges: record
-                .half_edges
-                .iter()
-                .copied()
-                .map(half_edge_ref)
-                .collect(),
-        })
-        .collect()
+            half_edges: &record.half_edges,
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArrayFrameRecord> {
+pub(super) fn loop_array_frame_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoLoopArrayFrameRecord<'a>>, CodecError> {
     let mut counts = BTreeMap::<usize, usize>::new();
     for record in &scan.loop_arrays.records {
-        *counts.entry(record.frame_offset).or_default() += 1;
+        let count = match counts.entry(record.frame_offset) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo native loop array frame count nodes")?;
+                entry.insert(0)
+            }
+        };
+        *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(
+            "creo native loop array frame counts", u64::MAX, u64::MAX
+        ))?;
     }
-    scan.loop_arrays
-        .frames
-        .iter()
-        .map(|frame| CreoLoopArrayFrameRecord {
-            id: format!("creo:loop_array:frame#{}", frame.offset),
+    let mut records = Vec::new();
+    for frame in &scan.loop_arrays.frames {
+        let id = ctx.format_retained(
+            format_args!("creo:loop_array:frame#{}", frame.offset),
+            "creo native loop array frame record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native loop array frame records")?;
+        records.push(CreoLoopArrayFrameRecord {
+            id,
             variant: frame.variant,
             declared_count: frame.declared_count,
             class_id: frame.class_id,
@@ -1541,17 +1577,25 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
             offset: frame.offset,
             prototype_end: frame.prototype_end,
             end: frame.end,
-            source_section: source_section(scan, frame.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, frame.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn loop_array_record_records(scan: &ContainerScan) -> Vec<CreoLoopArrayRecord> {
-    scan.loop_arrays
-        .records
-        .iter()
-        .map(|record| CreoLoopArrayRecord {
-            id: format!("creo:loop_array:record#{}", record.offset),
+pub(super) fn loop_array_record_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoLoopArrayRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.loop_arrays.records {
+        let id = ctx.format_retained(
+            format_args!("creo:loop_array:record#{}", record.offset),
+            "creo native loop array record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native loop array records")?;
+        records.push(CreoLoopArrayRecord {
+            id,
             frame_offset: record.frame_offset,
             lo_id: record.lo_id,
             lo_type: record.lo_type,
@@ -1560,60 +1604,197 @@ pub(super) fn loop_array_record_records(scan: &ContainerScan) -> Vec<CreoLoopArr
             attributes: record.attributes,
             direction: record.direction,
             next_lo_ptr: record.next_lo_ptr,
-            body: record.body.clone(),
+            body: &record.body,
             offset: record.offset,
             body_offset: record.body_offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn topological_vertex_records(scan: &ContainerScan) -> Vec<CreoTopologicalVertexRecord> {
-    scan.topology
-        .vertices
-        .iter()
-        .map(|record| CreoTopologicalVertexRecord {
-            id: format!("creo:topology:vertex#{}", record.id),
+pub(super) fn topological_vertex_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoTopologicalVertexRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.topology.vertices {
+        let id = ctx.format_retained(
+            format_args!("creo:topology:vertex#{}", record.id),
+            "creo native topological vertex record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native topological vertex records")?;
+        records.push(CreoTopologicalVertexRecord {
+            id,
             vertex_id: record.id,
-            half_edges: record
-                .half_edges
-                .iter()
-                .copied()
-                .map(half_edge_ref)
-                .collect(),
-        })
-        .collect()
+            half_edges: &record.half_edges,
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn half_edge_vertex_incidence_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<CreoHalfEdgeVertexIncidenceRecord> {
-    scan.topology
-        .half_edge_vertex_incidence
-        .iter()
-        .map(|record| CreoHalfEdgeVertexIncidenceRecord {
-            id: format!(
-                "creo:topology:half_edge_vertex_incidence#{}:{}",
-                record.half_edge.curve_id, record.half_edge.side
-            ),
+) -> Result<Vec<CreoHalfEdgeVertexIncidenceRecord>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.topology.half_edge_vertex_incidence {
+        let id = ctx.format_retained(
+            format_args!("creo:topology:half_edge_vertex_incidence#{}:{}", record.half_edge.curve_id, record.half_edge.side),
+            "creo native half edge vertex incidence record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native half edge vertex incidence records")?;
+        records.push(CreoHalfEdgeVertexIncidenceRecord {
+            id,
             half_edge: half_edge_ref(record.half_edge),
             start_vertex_id: record.start_vertex_id,
             end_vertex_id: record.end_vertex_id,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn face_component_records(scan: &ContainerScan) -> Vec<CreoFaceComponentRecord> {
-    scan.topology
-        .face_components
-        .iter()
-        .enumerate()
-        .map(|(index, record)| CreoFaceComponentRecord {
-            id: format!("creo:topology:face_component#{}", index + 1),
-            face_ids: record.face_ids.clone(),
-            curve_ids: record.curve_ids.clone(),
-        })
-        .collect()
+pub(super) fn face_component_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFaceComponentRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for (index, record) in scan.topology.face_components.iter().enumerate() {
+        let id = ctx.format_retained(
+            format_args!("creo:topology:face_component#{}", index + 1),
+            "creo native face component record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native face component records")?;
+        records.push(CreoFaceComponentRecord {
+            id,
+            face_ids: &record.face_ids,
+            curve_ids: &record.curve_ids,
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod topology_projection_limit_tests {
+    use super::{
+        face_component_records, half_edge_records, half_edge_vertex_incidence_records,
+        loop_array_frame_records, loop_array_record_records, loop_records,
+        topological_vertex_records,
+    };
+    use crate::curve::CurveTopologyRow;
+    use crate::loop_array::{LoopArrayFrame, LoopArrayRecord};
+    use crate::topology::{
+        FaceComponent, HalfEdge, HalfEdgeId, HalfEdgeVertexIncidence, Loop, Side,
+        TopologicalVertex,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::num::NonZeroU32;
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let half_edge = HalfEdgeId { curve_id: 8, side: Side::Zero };
+        scan.curves.topology_rows.push(CurveTopologyRow {
+            id: 8,
+            type_byte: 1,
+            feature_id: 2,
+            directions: [0, 0],
+            faces: [NonZeroU32::new(1), None],
+            next_edges: [8, 0],
+            offset: 13,
+        });
+        scan.topology.half_edges.push(HalfEdge {
+            id: half_edge,
+            face_id: NonZeroU32::new(1),
+            next: Some(half_edge),
+        });
+        scan.topology.loops.push(Loop {
+            face_id: NonZeroU32::new(1),
+            half_edges: vec![half_edge],
+        });
+        scan.topology.vertices.push(TopologicalVertex {
+            id: 1,
+            half_edges: vec![half_edge],
+        });
+        scan.topology.half_edge_vertex_incidence.push(HalfEdgeVertexIncidence {
+            half_edge,
+            start_vertex_id: 1,
+            end_vertex_id: Some(1),
+        });
+        scan.topology.face_components.push(FaceComponent {
+            face_ids: vec![1],
+            curve_ids: vec![8],
+        });
+        scan.loop_arrays.frames.push(LoopArrayFrame {
+            offset: 17,
+            variant: None,
+            declared_count: 1,
+            class_id: 4,
+            prototype_end: 19,
+            end: 23,
+            overfull: false,
+        });
+        scan.loop_arrays.records.push(LoopArrayRecord {
+            frame_offset: 17,
+            lo_id: 3,
+            lo_type: 0,
+            lo_subtype: 0,
+            feature_id: 2,
+            attributes: 0,
+            direction: 0,
+            next_lo_ptr: 0,
+            body: vec![0xe3],
+            offset: 19,
+            body_offset: 22,
+        });
+        scan
+    }
+
+    macro_rules! collection_limit_test {
+        ($name:ident, $projection:ident, $limit:expr, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let scan = scan();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = $limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                let error = match $projection(&ctx, &scan) {
+                    Err(error) => error,
+                    Ok(_) => panic!("one native record exceeds the collection limit"),
+                };
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                    if resource.dimension == ResourceDimension::CollectionItems
+                        && resource.operation == $operation), "{error:?}");
+            }
+        };
+    }
+
+    collection_limit_test!(half_edge_topology_nodes_refuse_limit, half_edge_records, 0, "creo native half edge topology row nodes");
+    collection_limit_test!(half_edge_records_refuse_limit, half_edge_records, 1, "creo native half edge records");
+    collection_limit_test!(loop_records_refuse_limit, loop_records, 0, "creo native loop records");
+    collection_limit_test!(loop_array_frame_count_nodes_refuse_limit, loop_array_frame_records, 0, "creo native loop array frame count nodes");
+    collection_limit_test!(loop_array_frame_records_refuse_limit, loop_array_frame_records, 1, "creo native loop array frame records");
+    collection_limit_test!(loop_array_records_refuse_limit, loop_array_record_records, 0, "creo native loop array records");
+    collection_limit_test!(topological_vertex_records_refuse_limit, topological_vertex_records, 0, "creo native topological vertex records");
+    collection_limit_test!(half_edge_vertex_incidence_records_refuse_limit, half_edge_vertex_incidence_records, 0, "creo native half edge vertex incidence records");
+    collection_limit_test!(face_component_records_refuse_limit, face_component_records, 0, "creo native face component records");
+
+    #[test]
+    fn borrowed_topology_projection_preserves_half_edges_and_body() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let loops = loop_records(&ctx, &scan).expect("loop is admitted");
+        let rows = loop_array_record_records(&ctx, &scan).expect("row is admitted");
+        let loop_value = serde_json::to_value(&loops[0]).expect("loop serializes");
+        let row_value = serde_json::to_value(&rows[0]).expect("row serializes");
+        assert_eq!(loop_value["half_edges"], serde_json::json!([{"curve_id":8,"side":0}]));
+        assert_eq!(row_value["body"], serde_json::json!([0xe3]));
+        assert_eq!(row_value["end"], serde_json::json!(23));
+    }
 }
 
 pub(super) fn fc_curve_coordinate_records(

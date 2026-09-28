@@ -383,9 +383,9 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_curve_row",
         Exactness::ByteExact,
     )?;
-    let loop_array_frames = loop_array_frame_records(scan);
+    let loop_array_frames = loop_array_frame_records(ctx, scan)?;
     store_arena(ctx, ir, "loop_array_frames", &loop_array_frames)?;
-    let loop_array_records = loop_array_record_records(scan);
+    let loop_array_records = loop_array_record_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -398,7 +398,7 @@ pub(super) fn emit_geometry_arenas(
         "loop_array_record",
         Exactness::ByteExact,
     )?;
-    let half_edges = half_edge_records(scan);
+    let half_edges = half_edge_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -411,18 +411,18 @@ pub(super) fn emit_geometry_arenas(
         "native_half_edge",
         Exactness::Derived,
     )?;
-    let native_loops = loop_records(scan);
+    let native_loops = loop_records(ctx, scan)?;
     store_arena(ctx, ir, "loops", &native_loops)?;
-    let topological_vertices = topological_vertex_records(scan);
+    let topological_vertices = topological_vertex_records(ctx, scan)?;
     store_arena(ctx, ir, "topological_vertices", &topological_vertices)?;
-    let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
+    let half_edge_vertex_incidence = half_edge_vertex_incidence_records(ctx, scan)?;
     store_arena(
         ctx,
         ir,
         "half_edge_vertex_incidence",
         &half_edge_vertex_incidence,
     )?;
-    let face_components = face_component_records(scan);
+    let face_components = face_component_records(ctx, scan)?;
     store_arena(ctx, ir, "face_components", &face_components)?;
     let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
     store_arena(
