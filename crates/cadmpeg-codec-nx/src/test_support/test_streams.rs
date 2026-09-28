@@ -1079,18 +1079,18 @@ pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec
 }
 
 pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
-    let chart = crate::intersection::chart_source_records(
+    let chart = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_records(ctx,
         ext11,
         crate::intersection::ChartPointLayout::Ext11,
-    )
+    )).unwrap()
     .into_iter()
     .next()
     .expect("ext11 chart record");
-    let (_, chart_end) = crate::intersection::chart_source_record_at(
+    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_record_at(ctx,
         ext11,
         chart.pos,
         crate::intersection::ChartPointLayout::Ext11,
-    )
+    )).unwrap()
     .expect("ext11 chart bounds");
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);

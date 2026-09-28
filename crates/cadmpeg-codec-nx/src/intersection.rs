@@ -40,6 +40,29 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
+    pub(crate) fn from_present_values_charged(
+        ctx: &DecodeContext<'_>,
+        values: Vec<[f64; 2]>,
+    ) -> Result<Option<Self>, CodecError> {
+        let count = values.len();
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        let operation = "NX chart support-UV lane";
+        ctx.charge_collection_items(count_u64, operation)?;
+        let bytes = count_u64
+            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FiniteVector<2>>()))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut checked = Vec::new();
+        checked.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        for pair in values {
+            let Some(value) = FiniteVector::new(pair) else { return Ok(None); };
+            if pair.iter().any(|value| *value == MISSING_PARAMETER) {
+                return Ok(None);
+            }
+            checked.push(value);
+        }
+        Ok(Some(Self(checked)))
+    }
     /// Construct one parameter pair per chart sample.
     #[cfg(test)]
     pub(crate) fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
@@ -379,7 +402,7 @@ pub(crate) fn scan_with_graph(
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
         ctx,
-        &chart_records(stream, point_layout),
+        &chart_records(ctx, stream, point_layout)?,
         &term_records(ctx, stream)?,
         &uv,
         &blend_bound_records(ctx, stream)?,
@@ -425,12 +448,12 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     replacement_streams: &[&[u8]],
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
-    let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
+    let mut charts = chart_records(ctx, base_stream, ChartPointLayout::Xyz3)?;
     let mut terms = term_records(ctx, base_stream)?;
     let mut uv = uv_records(ctx, base_stream)?;
     let mut bridges = blend_bound_records(ctx, base_stream)?;
     for replacement_stream in replacement_streams {
-        charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
+        extend_replacement_map(ctx, &mut charts, chart_records(ctx, replacement_stream, ChartPointLayout::Ext11)?, "NX replacement chart keys")?;
         extend_replacement_map(ctx, &mut terms, term_records(ctx, replacement_stream)?, "NX replacement term keys")?;
         extend_replacement_map(ctx, &mut uv, uv_records(ctx, replacement_stream)?, "NX replacement UV keys")?;
         extend_replacement_map(ctx, &mut bridges, blend_bound_records(ctx, replacement_stream)?, "NX replacement bridge keys")?;
@@ -636,7 +659,7 @@ fn enrich(
     let support_uv = construction.references[5]
         .and_then(|target| uv.get(&u32::from(target)))
         .map_or([None, None], |values| {
-            values.support_uv(chart.samples.points().len())
+            values.support_uv(chart.samples.len())
         });
     Ok(IntersectionCurve {
         references: construction.references,
@@ -856,11 +879,15 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
     .any(|kind| graph.get(kind, xmt).is_some())
 }
 
-fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
+fn chart_records(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+) -> Result<BTreeMap<u32, Chart>, CodecError> {
     let mut out = BTreeMap::new();
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
-    for source in chart_source_records(stream, point_layout) {
+    for source in chart_source_records(ctx, stream, point_layout)? {
         if duplicates.contains(&source.xmt) {
             continue;
         }
@@ -868,7 +895,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
             continue;
         };
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
-        let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
+        let Some((samples, ext_support_uv)) = source.data.into_samples_charged(ctx, source.preamble)? else {
             continue;
         };
         let candidate = Chart {
@@ -878,6 +905,11 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         };
         match out.entry(source.xmt) {
             std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX chart identity index")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Chart)>()),
+                    "NX chart identity index",
+                )?;
                 entry.insert(candidate);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -886,11 +918,10 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                     && entry
                         .get()
                         .samples
-                        .points()
-                        .iter()
-                        .zip(candidate.samples.points().iter())
+                        .iter_points()
+                        .zip(candidate.samples.iter_points())
                         .all(|(first, second)| {
-                            Point3::distance(*first, *second)
+                            Point3::distance(first, second)
                                 <= entry
                                     .get()
                                     .fit_tolerance
@@ -900,30 +931,40 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                     && entry
                         .get_mut()
                         .samples
-                        .replace_parameters_from(&candidate.samples);
+                        .replace_parameters_from_charged(ctx, &candidate.samples)?;
                 if complements {
                     entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+                    ctx.charge_collection_items(1, "NX complemented chart identities")?;
                     complemented.insert(source.xmt);
                 } else {
                     entry.remove();
+                    ctx.charge_collection_items(1, "NX duplicate chart identities")?;
                     duplicates.insert(source.xmt);
                 }
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Decode every complete physical direct or escaped `CHART_s` source record.
 pub(crate) fn chart_source_records(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     point_layout: ChartPointLayout,
-) -> Vec<ChartSourceRecord> {
+) -> Result<Vec<ChartSourceRecord>, CodecError> {
     let mut out = Vec::new();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.len()), "scan NX chart records")?;
     let mut tag = 0usize;
     while tag.saturating_add(2) <= stream.len() {
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
-            if let Some((record, end)) = chart_source_record_at(stream, tag, point_layout) {
+            if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
+                ctx.charge_collection_items(1, "NX chart source records")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ChartSourceRecord>()),
+                    "NX chart source records",
+                )?;
+                out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX chart source records", 0, 1))?;
                 out.push(record);
                 // A complete chart owns its counted point lane. Do not rescan
                 // bytes inside that lane as nested chart candidates.
@@ -933,15 +974,16 @@ pub(crate) fn chart_source_records(
         }
         tag += 1;
     }
-    out
+    Ok(out)
 }
 
 pub(crate) fn chart_source_record_at(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     tag: usize,
     point_layout: ChartPointLayout,
-) -> Option<(ChartSourceRecord, usize)> {
-    (stream.get(tag..tag + 2) == Some(&[0, 40])).then_some(())?;
+) -> Result<Option<(ChartSourceRecord, usize)>, CodecError> {
+    if stream.get(tag..tag + 2) != Some(&[0, 40]) { return Ok(None); }
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
             continue;
@@ -979,10 +1021,10 @@ pub(crate) fn chart_source_record_at(
             continue;
         };
         let block = preamble + chart_preamble::LEN;
-        let Some((data, end)) = chart_points(stream, block, count, point_layout) else {
+        let Some((data, end)) = chart_points(ctx, stream, block, count, point_layout)? else {
             continue;
         };
-        return Some((
+        return Ok(Some((
             ChartSourceRecord {
                 xmt,
                 preamble: preamble_values,
@@ -995,35 +1037,57 @@ pub(crate) fn chart_source_record_at(
                 pos: tag,
             },
             end,
-        ));
+        )));
     }
-    None
+    Ok(None)
 }
 
 fn chart_points(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     block: usize,
     count: usize,
     point_layout: ChartPointLayout,
-) -> Option<(SourceChartData, usize)> {
+) -> Result<Option<(SourceChartData, usize)>, CodecError> {
     let point_width = match point_layout {
         ChartPointLayout::Xyz3 => 24,
         ChartPointLayout::Ext11 => 88,
     };
-    let end = block.checked_add(count.checked_mul(point_width)?)?;
-    stream.get(block..end)?;
+    let Some(end) = count.checked_mul(point_width).and_then(|bytes| block.checked_add(bytes)) else { return Ok(None); };
+    if stream.get(block..end).is_none() { return Ok(None); }
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     if point_layout == ChartPointLayout::Xyz3 {
-        let points = (0..count)
-            .map(|index| point_m(stream, block + index * 24).map(|point| Point3::from(point.get())))
-            .collect::<Option<Vec<_>>>()?;
-        return Some((SourceChartData::xyz3(points).ok()?, end));
+        let operation = "NX raw xyz3 chart points";
+        ctx.charge_collection_items(count_u64, operation)?;
+        let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point3>()))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let _reservation = ctx.reserve_scoped(bytes, operation)?;
+        let mut points = Vec::new();
+        points.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        for index in 0..count {
+            let Some(point) = point_m(stream, block + index * 24) else { return Ok(None); };
+            points.push(Point3::from(point.get()));
+        }
+        return Ok(SourceChartData::xyz3_charged(ctx, points)?.map(|data| (data, end)));
     }
 
-    let mut points = Vec::with_capacity(count);
-    let mut native_parameters = Vec::with_capacity(count);
+    let operation = "NX raw ext11 chart fields";
+    let fields = std::mem::size_of::<Point3>() + std::mem::size_of::<f64>();
+    let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(fields))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    ctx.charge_collection_items(count_u64.checked_mul(2).ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?, operation)?;
+    let _reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut points = Vec::new();
+    points.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    let mut native_parameters = Vec::new();
+    native_parameters.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
     let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
+    let mut lane_reservations = [
+        ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
+        ctx.reserve_scoped(0, "NX raw ext11 support-UV lane")?,
+    ];
     for index in 0..count {
-        let (point, parameter, lanes) = chart_ext_point_at(stream, block + index * 88)?;
+        let Some((point, parameter, lanes)) = chart_ext_point_at(stream, block + index * 88) else { return Ok(None); };
         points.push(point);
         native_parameters.push(parameter);
         for lane in 0..2 {
@@ -1032,6 +1096,9 @@ fn chart_points(
                 .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
             {
                 if let Some(values) = &mut ext_support_uv[lane] {
+                    ctx.charge_collection_items(1, "NX raw ext11 support-UV lane")?;
+                    lane_reservations[lane].grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<[f64; 2]>()))?;
+                    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX raw ext11 support-UV lane", 0, 1))?;
                     values.push(lanes[lane]);
                 }
             } else {
@@ -1039,10 +1106,8 @@ fn chart_points(
             }
         }
     }
-    Some((
-        SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?,
-        end,
-    ))
+    Ok(SourceChartData::ext11_charged(ctx, points, native_parameters, ext_support_uv)?
+        .map(|data| (data, end)))
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {

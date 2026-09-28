@@ -772,7 +772,7 @@ impl NativeModel {
         let parasolid_intersection_records = parasolid_intersection_records(parsed);
         let parasolid_term_use_records = parasolid_term_use_records(ctx, streams)?;
         let parasolid_support_uv_records = parasolid_support_uv_records(ctx, streams)?;
-        let parasolid_chart_records = parasolid_chart_records(streams);
+        let parasolid_chart_records = parasolid_chart_records(ctx, streams)?;
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
         let parasolid_entity_51_records = parasolid_entity_51_records(streams);
         let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
