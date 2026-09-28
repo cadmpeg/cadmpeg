@@ -5512,17 +5512,28 @@ fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
     ])
 }
 
-fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
-    let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
+fn relation_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"relat_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"relat_ptr\0".len();
     if payload.get(cursor..cursor + 2) == Some(&[0xf4, 0x04]) {
         cursor += 2;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (value, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(value)
     } else {
@@ -5544,15 +5555,17 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
         (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
     })();
-    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
-        positional_relation_rows(
+    let rows = match rows_start {
+        Some(rows_start) => positional_relation_rows(
+            ctx,
             payload,
             rows_start,
             rows_end,
             RelationBodyRows::from_declared(declared_count),
-        )
-    });
-    Some(FeatureRelationTable {
+        )?,
+        None => Vec::new(),
+    };
+    Ok(Some(FeatureRelationTable {
         declared_count,
         entity_ref,
         rows,
@@ -5565,7 +5578,7 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
             feature_relation_triples(payload, start, end),
         ),
         offset: table,
-    })
+    }))
 }
 
 /// Body rows stated by a `relat_ptr` allocation count. A count of one is the
@@ -5599,16 +5612,17 @@ impl RelationBodyRows {
 }
 
 fn positional_relation_rows(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     end: usize,
     row_count: RelationBodyRows,
-) -> Vec<FeatureRelation> {
+) -> Result<Vec<FeatureRelation>, CodecError> {
     if cursor > end || end > payload.len() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(row_count) = row_count.get() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut rows = Vec::new();
     for _ in 0..row_count {
@@ -5647,7 +5661,12 @@ fn positional_relation_rows(
         let Some((suffix_start, sign, dimension_id, relation_type)) = suffix else {
             break;
         };
-        let operands = payload[after_used..suffix_start].to_vec();
+        let operands = ctx.copy_retained(
+            &payload[after_used..suffix_start],
+            "creo relation operands",
+        )?;
+        let body = ctx.copy_retained(&payload[cursor..row_end], "creo relation row body")?;
+        ctx.try_reserve_items(&mut rows, 1, "creo relation rows")?;
         rows.push(FeatureRelation {
             relation_id,
             used,
@@ -5656,21 +5675,22 @@ fn positional_relation_rows(
             sign,
             dimension_id,
             relation_type,
-            body: payload[cursor..row_end].to_vec(),
+            body,
             offset: cursor,
         });
         cursor = row_end + 1;
     }
-    rows
+    Ok(rows)
 }
 
 fn positional_relation_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<FeatureRelationTable> {
-    let (table, declared_count, cursor, reference_bytes) = (start..end).find_map(|table| {
+) -> Result<Option<FeatureRelationTable>, CodecError> {
+    let Some((table, declared_count, cursor, reference_bytes)) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -5683,35 +5703,36 @@ fn positional_relation_table(
                 table,
                 declared_count,
                 after_reference + 2,
-                payload[reference_start..after_reference].to_vec(),
+                &payload[reference_start - 1..after_reference],
             )
         })
-    })?;
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
+    }) else {
+        return Ok(None);
+    };
     let rows_start = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, prototype) = psb::reference_id(payload, cursor + 1).ok()?;
-        let prototype_end = find_bytes(payload, &prototype_separator, prototype, end)?;
-        Some(prototype_end + prototype_separator.len())
+        let prototype_end = find_class_close(payload, prototype, end, 0xf1, reference_bytes)?;
+        Some(prototype_end + reference_bytes.len() + 2)
     })();
-    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
-        positional_relation_rows(
+    let rows = match rows_start {
+        Some(rows_start) => positional_relation_rows(
+            ctx,
             payload,
             rows_start,
             end,
             RelationBodyRows::from_declared(declared_count),
-        )
-    });
-    Some(FeatureRelationTable {
+        )?,
+        None => Vec::new(),
+    };
+    Ok(Some(FeatureRelationTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         skamps: None,
         triples: None,
         offset: table,
-    })
+    }))
 }
 
 fn saved_section_scalar(
@@ -7050,11 +7071,16 @@ fn definitions_in_ranges(
         if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
-        let mut relations = relation_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_relation_table(payload, start, end, replay_relation_class?))
-                .flatten()
-        });
+        let mut relations = match relation_table(ctx, payload, start, end)? {
+            Some(table) => Some(table),
+            None if positional => match replay_relation_class {
+                Some(table_class) => {
+                    positional_relation_table(ctx, payload, start, end, table_class)?
+                }
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
             replay_skamp_class = named_array_class(payload, b"skamp_ptr\0", start, schema_end);
