@@ -18,7 +18,6 @@ use crate::surface::first_compound_close;
 use crate::surface::opaque_spans;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
-use crate::surface::plane_envelopes;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
@@ -57,6 +56,10 @@ fn frame_bound_outline_planes(
 
 fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
     super::with_decode_ctx(&[], |ctx| crate::surface::outline_planes(ctx, envelopes))
+}
+
+fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    super::with_decode_ctx(payload, |ctx| crate::surface::plane_envelopes(ctx, payload))
 }
 
 fn positional_frame_planes(

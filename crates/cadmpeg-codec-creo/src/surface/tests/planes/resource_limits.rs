@@ -3,6 +3,78 @@
 use crate::scalar;
 use crate::surface::SurfacePrototypeFamily;
 
+fn plane_envelope_limit_error(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = [
+        7, 0x22, 4, 0x01, 0, 0,
+        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3,
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("plane envelope fits root input limit");
+    crate::surface::plane_envelopes(&ctx, &payload)
+        .expect_err("one envelope exceeds its limit")
+}
+
+#[test]
+fn plane_envelope_refuses_scalar_token_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = plane_envelope_limit_error(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo plane envelope scalar token items"));
+}
+
+#[test]
+fn plane_envelope_refuses_scalar_token_bytes() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = plane_envelope_limit_error(u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo plane envelope scalar token bytes"));
+}
+
+#[test]
+fn plane_envelope_refuses_body_copy() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = plane_envelope_limit_error(u64::MAX, 10);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo plane envelope body"));
+}
+
+#[test]
+fn plane_envelope_refuses_output_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = plane_envelope_limit_error(10, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo plane envelopes"));
+}
+
+#[test]
+fn named_plane_outline_refuses_envelope_output_vector() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\xf9\x02\x03\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 6;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("named outline fits root input limit");
+    let error = crate::surface::plane_envelopes(&ctx, payload)
+        .expect_err("six tokens leave no envelope output slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo plane envelopes"));
+}
+
 fn plane_local_system_limit_error(
     collection_limit: u64,
     retained_limit: u64,

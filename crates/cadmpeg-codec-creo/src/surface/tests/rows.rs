@@ -12,7 +12,6 @@ use crate::scalar;
 use crate::surface::complete_surface_array_bounds;
 use crate::surface::contour_records_for_rows;
 use crate::surface::counted_row_bounds;
-use crate::surface::cross_section_plane_envelopes;
 use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
@@ -378,7 +377,9 @@ fn cross_section_filters_boundary_one_body_candidate() {
 fn cross_section_plane_envelope_retains_its_namespace_geometry() {
     let payload = b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x22\x04\x01\x06\0\xe4\xe4\xe4\xe4\x0f\x0f\x0f\xe4\x0f\xe4\xe3";
 
-    let envelopes = cross_section_plane_envelopes(payload);
+    let envelopes = super::with_decode_ctx(payload, |ctx| {
+        crate::surface::cross_section_plane_envelopes(ctx, payload)
+    });
     assert_eq!(envelopes.len(), 1);
     let planes = super::with_decode_ctx(payload, |ctx| {
         crate::surface::outline_planes(ctx, &envelopes)
@@ -412,7 +413,11 @@ fn plane_records_end_at_the_next_surface_family() {
             }
         ]
     ));
-    assert_eq!(plane_envelopes_for_rows(&payload, &rows).len(), 1);
+    assert_eq!(
+        super::with_decode_ctx(&payload, |ctx| plane_envelopes_for_rows(ctx, &payload, &rows))
+            .len(),
+        1
+    );
     assert!(plane_local_systems_for_rows(&payload, &rows).is_empty());
 }
 

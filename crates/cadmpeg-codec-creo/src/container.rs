@@ -1663,7 +1663,7 @@ fn plane_envelopes(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(surface::plane_envelopes(bytes)),
+        |bytes| surface::plane_envelopes(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1679,7 +1679,7 @@ fn cross_section_plane_envelopes(
     collect_section_records_result(
         ctx,
         cross_sections(sections),
-        |bytes| Ok(surface::cross_section_plane_envelopes(bytes)),
+        |bytes| surface::cross_section_plane_envelopes(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
