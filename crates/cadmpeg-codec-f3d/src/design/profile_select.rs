@@ -172,7 +172,7 @@ pub(crate) fn bind_sweep_sketch_selections(
     } = resolution;
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 break 'feature_edit;
@@ -192,7 +192,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 path,
                 guide_rail,
                 ..
-            }) = &mut definition
+            }) = definition
             else {
                 break 'feature_edit;
             };
@@ -201,7 +201,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 if let (Some(PlanarProfileRef::Native(group_id)), Some(profile_operand)) =
                     (section.referenced_profile(), scope.sweep_profile())
                 {
-                    let group_id = group_id.clone();
+                    let group_id = group_id.as_str();
                     let group_matches = {
                         let mut matching_groups = groups.iter().filter(|group| {
                             group.id == group_id
@@ -234,7 +234,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     }
                 }
                 if let Some(PlanarProfileRef::Native(group_id)) = section.referenced_profile() {
-                    let group_id = group_id.clone();
+                    let group_id = group_id.as_str();
                     let resolved = (|| {
                         let mut matching_groups = groups.iter().filter(|group| {
                             group.id == group_id
@@ -324,7 +324,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                 }
             }
         }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -337,10 +337,10 @@ pub(crate) fn bind_split_face_sketch_selections(
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::SplitFace { tool, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -362,7 +362,7 @@ pub(crate) fn bind_split_face_sketch_selections(
                 *tool = SplitFaceTool::Path(path);
             }
         }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -375,10 +375,10 @@ pub(crate) fn bind_surface_trim_sketch_selections(
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -400,7 +400,7 @@ pub(crate) fn bind_surface_trim_sketch_selections(
                 *tool = path;
             }
         }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -416,7 +416,9 @@ pub(crate) fn bind_extrude_profile_selections(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef};
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let Some(scope) = feature.native_ref.as_deref() else {
                 break 'feature_edit;
@@ -438,7 +440,7 @@ pub(crate) fn bind_extrude_profile_selections(
                 .collect::<Vec<_>>();
             matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
             let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -584,7 +586,10 @@ pub(crate) fn bind_extrude_profile_selections(
                     )
                 });
         }
-        feature.evaluation.set_definition(definition);
+        Ok(())
+        })();
+        });
+        edit_result?;
     }
     Ok(())
 }
