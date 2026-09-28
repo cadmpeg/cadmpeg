@@ -2457,12 +2457,13 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
+        ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
         &histories,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -2692,6 +2693,7 @@ fn build_geometry_ir(
         },
     )?;
     crate::resolved_features::holes::project_hole_axes(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &crate::resolved_features::holes::HoleTopology {
@@ -2705,7 +2707,7 @@ fn build_geometry_ir(
         },
         &histories,
         &native.feature_input_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
         &mut ir.model.features,
@@ -3647,12 +3649,13 @@ fn build_metadata_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
+        ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
         &sketch_lanes,
-    );
+    )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         &mut ir.model.features,
         &mut ir.model.sketches,
@@ -3772,6 +3775,7 @@ fn build_metadata_ir(
         },
     )?;
     crate::resolved_features::holes::project_hole_axes(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &crate::resolved_features::holes::HoleTopology {
@@ -3785,7 +3789,7 @@ fn build_metadata_ir(
         },
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
         &mut ir.model.features,

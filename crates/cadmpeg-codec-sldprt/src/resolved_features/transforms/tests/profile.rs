@@ -566,13 +566,22 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut entities = Vec::new();
     let histories = vec![history];
     let lanes = vec![lane];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
+        &ctx,
         &mut features,
         &mut sketches,
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .expect("marker profile projection fits service policy");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
@@ -615,12 +624,14 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
         }));
     project_marker_backed_sketches(
+        &ctx,
         &mut configured_features,
         &mut sketches,
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .expect("configured marker profile projection fits service policy");
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 13);
     assert!(matches!(
@@ -653,12 +664,14 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     let mut replacement_sketches = vec![compact_sketch];
     let mut replacement_entities = vec![compact_entity];
     project_marker_backed_sketches(
+        &ctx,
         &mut replacement_features,
         &mut replacement_sketches,
         &mut replacement_entities,
         &histories,
         &lanes,
-    );
+    )
+    .expect("replacement marker profile projection fits service policy");
     assert_eq!(replacement_sketches.len(), 1);
     assert_eq!(replacement_sketches[0].id, expected_sketch);
     assert_eq!(replacement_entities.len(), 13);
@@ -731,13 +744,22 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("marker profile fixture fits service policy");
     project_marker_backed_sketches(
+        &ctx,
         &mut features,
         &mut sketches,
         &mut entities,
         &histories,
         &lanes,
-    );
+    )
+    .expect("marker profile projection fits service policy");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].placement, SketchPlacement::Unresolved {});
