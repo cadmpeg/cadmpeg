@@ -89,6 +89,35 @@ struct JoinedCounts<'a> {
     separator: &'static str,
 }
 
+struct JoinedCountLabels<'a> {
+    counts: &'a BTreeMap<&'a str, usize>,
+}
+
+impl Display for JoinedCountLabels<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (family, count) in self.counts {
+            if !first {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "{family} ({count})")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+struct ClosureDetail<'a>(Option<&'a str>);
+
+impl Display for ClosureDetail<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(reason) = self.0 {
+            write!(formatter, " Active-feature closure rejected with `{reason}`.")?;
+        }
+        Ok(())
+    }
+}
+
 impl Display for JoinedCounts<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
@@ -356,12 +385,19 @@ pub(crate) fn append_design_intent_losses(
     ir: &CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let current_body_ids = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
+    let count = cadmpeg_core::decode::u64_from_index(ir.model.bodies.len());
+    ctx.charge_collection_items(count, "nx report current body identities")?;
+    let mut current_body_ids = Vec::new();
+    current_body_ids.try_reserve_exact(ir.model.bodies.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx report current body identities", 0, count)
+    })?;
+    for body in &ir.model.bodies {
+        current_body_ids.push(crate::decode::ids::copy_typed_id(
+            ctx,
+            body.id.as_str(),
+            "nx report current body identity",
+        )?);
+    }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
     let (active_features, closure_rejection) =
         match crate::native::history::active_feature_closure(ir, &current_body_ids) {
@@ -394,16 +430,14 @@ pub(crate) fn append_design_intent_losses(
         })
         .count();
     if unresolved_suppression_count != 0 {
-        let closure_detail = closure_rejection
-            .map(|reason| format!(" Active-feature closure rejected with `{reason}`."))
-            .unwrap_or_default();
-        losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
+        let closure_detail = ClosureDetail(closure_rejection);
+        push_report_loss(ctx, losses, NxLossCode::FeatureSuppressionUnresolved, format_args!(
             "Suppression state remains unresolved for {unresolved_suppression_count} NX \
                  {suppression_scope}feature history operation(s): no admitted \
                  operation-to-state-object-to-typed-value relation is present. Common-frame \
                  state lanes, saved toggles, OM registry declarations, and topology ObjectState \
                  values remain non-suppression evidence.{closure_detail}"
-        )));
+        ))?;
     }
 
     let active_configuration_count = ir
@@ -412,12 +446,11 @@ pub(crate) fn append_design_intent_losses(
         .iter()
         .filter(|configuration| configuration.active)
         .count();
-    let current_bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| &body.id)
-        .collect::<BTreeSet<_>>();
+    let mut current_bodies = BTreeSet::new();
+    for body in &ir.model.bodies {
+        ctx.charge_collection_items(1, "nx report current body set")?;
+        current_bodies.insert(&body.id);
+    }
     let incomplete_configuration_count = ir
         .model
         .configurations
@@ -428,26 +461,26 @@ pub(crate) fn append_design_intent_losses(
                 || (configuration.active
                     && configuration.bodies.as_deref().is_none_or(|bodies| {
                         bodies.len() != current_bodies.len()
-                            || bodies.iter().collect::<BTreeSet<_>>() != current_bodies
+                            || current_bodies.iter().any(|body| !bodies.contains(body))
                     }))
                 || (configuration.active
                     && active_configuration_state_is_incomplete(ir, configuration))
         })
         .count();
     if incomplete_configuration_count != 0 {
-        losses.push(NxLossCode::ConfigurationStateUnresolved.note(format!(
+        push_report_loss(ctx, losses, NxLossCode::ConfigurationStateUnresolved, format_args!(
             "Activation, complete body membership, evaluated feature state, or evaluated \
                  parameter state remains unresolved for {incomplete_configuration_count} NX \
                  design configuration(s)."
-        )));
+        ))?;
     }
 
     let incomplete_expression_count = incomplete_expression_parameters(ctx, ir)?.len();
     if incomplete_expression_count != 0 {
-        losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
+        push_report_loss(ctx, losses, NxLossCode::ExpressionParameterIncomplete, format_args!(
             "Neutral evaluation or dependency semantics remain incomplete for \
                  {incomplete_expression_count} NX expression parameter(s)."
-        )));
+        ))?;
     }
 
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
@@ -458,19 +491,21 @@ pub(crate) fn append_design_intent_losses(
         if let FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) =
             feature.evaluation.definition()
         {
-            *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
+            match native_feature_kinds.entry(kind.as_str()) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "nx report native feature kinds")?;
+                    entry.insert(1);
+                }
+            }
         }
     }
     if !native_feature_kinds.is_empty() {
-        let kinds = native_feature_kinds
-            .into_iter()
-            .map(|(kind, count)| format!("{kind} ({count})"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        losses.push(NxLossCode::FeatureNativeKindRetained.note(format!(
+        let kinds = JoinedCountLabels { counts: &native_feature_kinds };
+        push_report_loss(ctx, losses, NxLossCode::FeatureNativeKindRetained, format_args!(
             "NX feature-history operation(s) remain native-only because their complete neutral \
                  operation semantics are not decoded: {kinds}."
-        )));
+        ))?;
     }
 
     let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
@@ -512,31 +547,31 @@ pub(crate) fn append_design_intent_losses(
             },
             _ => continue,
         };
-        *unresolved_feature_families.entry(family).or_default() += 1;
+        match unresolved_feature_families.entry(family) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "nx report unresolved feature families")?;
+                entry.insert(1);
+            }
+        }
     }
     if !unresolved_feature_families.is_empty() {
-        let families = unresolved_feature_families
-            .into_iter()
-            .map(|(family, count)| format!("{family} ({count})"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        losses.push(
-            NxLossCode::FeatureFamilyConstructionUnresolved.note(format!(
+        let families = JoinedCountLabels { counts: &unresolved_feature_families };
+        push_report_loss(ctx, losses, NxLossCode::FeatureFamilyConstructionUnresolved, format_args!(
                 "NX feature family identities were transferred, but their neutral construction \
                  semantics remain unresolved: {families}."
-            )),
-        );
+        ))?;
     }
 
     let mut incomplete_feature_output_families = BTreeMap::<&str, usize>::new();
     let mut incomplete_feature_construction_families = BTreeMap::<&str, usize>::new();
-    let generated_body_outputs = ir
-        .model
-        .feature_result_topologies
-        .iter()
-        .filter(|state| !state.bodies().is_empty())
-        .map(|state| &state.output_of)
-        .collect::<BTreeSet<_>>();
+    let mut generated_body_outputs = BTreeSet::new();
+    for state in &ir.model.feature_result_topologies {
+        if !state.bodies().is_empty() {
+            ctx.charge_collection_items(1, "nx report generated body outputs")?;
+            generated_body_outputs.insert(&state.output_of);
+        }
+    }
     for feature in &ir.model.features {
         if !feature_in_active_scope(feature) {
             continue;
@@ -569,9 +604,13 @@ pub(crate) fn append_design_intent_losses(
                                 && generated_body_outputs.contains(&feature.id))
                     })
             {
-                *incomplete_feature_output_families
-                    .entry(family)
-                    .or_default() += 1;
+                match incomplete_feature_output_families.entry(family) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "nx report incomplete output families")?;
+                        entry.insert(1);
+                    }
+                }
                 continue;
             }
         }
@@ -780,31 +819,27 @@ pub(crate) fn append_design_intent_losses(
             }
             _ => continue,
         };
-        *incomplete_feature_construction_families
-            .entry(family)
-            .or_default() += 1;
+        match incomplete_feature_construction_families.entry(family) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "nx report incomplete construction families")?;
+                entry.insert(1);
+            }
+        }
     }
     if !incomplete_feature_output_families.is_empty() {
-        let families = incomplete_feature_output_families
-            .into_iter()
-            .map(|(family, count)| format!("{family} ({count})"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        losses.push(NxLossCode::FeatureOutputLineageIncomplete.note(format!(
+        let families = JoinedCountLabels { counts: &incomplete_feature_output_families };
+        push_report_loss(ctx, losses, NxLossCode::FeatureOutputLineageIncomplete, format_args!(
             "NX typed feature operation output lineage is missing, duplicated, or does not \
                  resolve to a transferred body: {families}."
-        )));
+        ))?;
     }
     if !incomplete_feature_construction_families.is_empty() {
-        let families = incomplete_feature_construction_families
-            .into_iter()
-            .map(|(family, count)| format!("{family} ({count})"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        losses.push(NxLossCode::FeatureConstructionIncomplete.note(format!(
+        let families = JoinedCountLabels { counts: &incomplete_feature_construction_families };
+        push_report_loss(ctx, losses, NxLossCode::FeatureConstructionIncomplete, format_args!(
             "NX typed feature operations have incomplete neutral construction fields: \
                  {families}."
-        )));
+        ))?;
     }
 
     let sketch_feature_count = ir
@@ -836,26 +871,27 @@ pub(crate) fn append_design_intent_losses(
         })
         .count();
     if unresolved_sketch_feature_count != 0 {
-        losses.push(NxLossCode::SketchGraphUnresolved.note(format!(
+        push_report_loss(ctx, losses, NxLossCode::SketchGraphUnresolved, format_args!(
             "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
                  {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
                  sketch placement and entity semantics are unresolved."
-        )));
+        ))?;
     }
 
-    let active_sketch_ids = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature_in_active_scope(feature))
-        .filter_map(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-                ..
-            }) => Some(sketch.clone()),
-            _ => None,
-        })
-        .collect::<BTreeSet<_>>();
+    let mut active_sketch_ids = BTreeSet::<cadmpeg_ir::sketches::SketchId>::new();
+    for feature in ir.model.features.iter().filter(|feature| feature_in_active_scope(feature)) {
+        if let FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
+            ..
+        }) = feature.evaluation.definition() {
+            ctx.charge_collection_items(1, "nx report active sketch identities")?;
+            active_sketch_ids.insert(crate::decode::ids::copy_typed_id(
+                ctx,
+                sketch.as_str(),
+                "nx report active sketch identity",
+            )?);
+        }
+    }
     let sketch_in_active_scope = |sketch: &cadmpeg_ir::sketches::SketchId| {
         active_features.is_none() || active_sketch_ids.contains(sketch)
     };
@@ -884,11 +920,64 @@ pub(crate) fn append_design_intent_losses(
         })
         .count();
     if native_sketch_entity_count != 0 || native_sketch_constraint_count != 0 {
-        losses.push(NxLossCode::SketchNativeSemantics.note(format!(
+        push_report_loss(ctx, losses, NxLossCode::SketchNativeSemantics, format_args!(
             "Neutral semantics remain unresolved for {native_sketch_entity_count} NX sketch \
                  geometry record(s) and {native_sketch_constraint_count} sketch constraint \
                  record(s)."
-        )));
+        ))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_design_intent_losses;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    fn body_ir() -> CadIr {
+        let mut ir = CadIr::empty();
+        ir.model.bodies.push(Body {
+            id: BodyId::mint("test:model:entity#report-body").expect("identity grammar"),
+            kind: BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir
+    }
+
+    #[test]
+    fn design_intent_report_refuses_body_list_at_collection_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded test input");
+        assert!(matches!(
+            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx report current body identities"
+        ));
+    }
+
+    #[test]
+    fn design_intent_report_refuses_body_copy_at_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded test input");
+        assert!(matches!(
+            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx report current body identity"
+        ));
+    }
 }
