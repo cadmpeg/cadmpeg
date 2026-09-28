@@ -1164,19 +1164,28 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     };
                     let domain = pcurve_parameter_domain(pcurve)?;
                     bounded_occurrence_range(pcurve_parameter_range, domain)?;
+                    let points = match crate::resource::collect_vec(ctx,
+                        pcurve.control_points.iter().map(|point|
+                            neutral_pcurve_point(point.get(), source_surface)),
+                        "catia_b5_extrusion_pcurve_points") {
+                        Ok(points) => points,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    let weights = match pcurve.weights.as_ref().map(|weights|
+                        crate::resource::collect_vec(ctx,
+                            weights.iter().copied().map(PositiveReal::get),
+                            "catia_b5_extrusion_pcurve_weights"))
+                        .transpose() {
+                        Ok(weights) => weights,
+                        Err(error) => return Some(Err(error)),
+                    };
                     let pcurve_geometry = PcurveGeometry::Nurbs {
                         nurbs: crate::nurbs::note_refusal(
                             PcurveNurbs::from_lanes(
                                 pcurve.degree,
                                 knots,
-                                pcurve
-                                    .control_points
-                                    .iter()
-                                    .map(|point| neutral_pcurve_point(point.get(), source_surface))
-                                    .collect(),
-                                pcurve.weights.as_ref().map(|weights| {
-                                    weights.iter().copied().map(PositiveReal::get).collect()
-                                }),
+                                points,
+                                weights,
                                 false,
                             ),
                             refusal,
@@ -1216,6 +1225,11 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 };
                 let supports = [left, right];
                 (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
+                if let Err(error) = ctx.charge_retained(
+                    std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                    "catia_b5_extrusion_intersection_support_box") {
+                    return Some(Err(error));
+                }
                 ResolvedExtrusionDirectrix::Intersection {
                     supports: Box::new(supports),
                     cache_fit_tolerance: *cache_fit_tolerance,
@@ -1227,8 +1241,13 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let curve = curve_on_parameter_range(
-                    support.curve.clone()?,
+                let curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
+                    Ok(curve) => curve,
+                    Err(error) => return Some(Err(error)),
+                };
+                let curve = match curve_on_parameter_range(
+                    ctx,
+                    curve,
                     support.pcurve_parameter_range,
                     active,
                     &format_args!(
@@ -1236,7 +1255,11 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         support.surface_object_id
                     ),
                     refusal,
-                )?;
+                ) {
+                    Ok(Some(curve)) => curve,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 ResolvedExtrusionDirectrix::SurfaceCurve { support, curve }
             }
             B5ExtrusionDirectrix::Offset {
@@ -1257,8 +1280,13 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     Ok(None) => return None,
                     Err(error) => return Some(Err(error)),
                 };
-                let source_curve = curve_on_parameter_range(
-                    support.curve.clone()?,
+                let source_curve = match copy_lifted_curve(ctx, support.curve.as_ref()?) {
+                    Ok(curve) => curve,
+                    Err(error) => return Some(Err(error)),
+                };
+                let source_curve = match curve_on_parameter_range(
+                    ctx,
+                    source_curve,
                     source_parameter_range.endpoints(),
                     active,
                     &format_args!(
@@ -1266,7 +1294,11 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         support.surface_object_id
                     ),
                     refusal,
-                )?;
+                ) {
+                    Ok(Some(curve)) => curve,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 ResolvedExtrusionDirectrix::Offset {
                     source_object_id: *object_id,
                     support,
@@ -1289,21 +1321,40 @@ pub(in crate::families) fn resolved_extrusion_surface(
     .transpose()
 }
 
+fn copy_lifted_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &CurveGeometry,
+) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
+    Ok(match curve {
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => CurveGeometry::Solved(
+            SolvedCurveGeometry::Nurbs(crate::resource::copy_nurbs_curve(ctx, nurbs,
+                "catia_b5_extrusion_lifted_curve_copy")?),
+        ),
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) =>
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(*line)),
+        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) =>
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle)),
+        _ => return Err(cadmpeg_core::CodecError::malformed(
+            "B5 lifted extrusion curve has unsupported geometry")),
+    })
+}
+
 fn curve_on_parameter_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: CurveGeometry,
     source: [f64; 2],
     target: IncreasingParameterInterval,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<CurveGeometry> {
-    let source_interval = IncreasingParameterInterval::new(source)?;
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    let Some(source_interval) = IncreasingParameterInterval::new(source) else { return Ok(None) };
     let target_interval = target;
     let target = target_interval.endpoints();
     if target
         .into_iter()
         .all(|value| cadmpeg_ir::math::parameter_in_domain(value, source, 64.0 * f64::EPSILON))
     {
-        return Some(curve);
+        return Ok(Some(curve));
     }
     let source_span = source[1] - source[0];
     let target_span = target[1] - target[0];
@@ -1311,18 +1362,14 @@ fn curve_on_parameter_range(
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) => {
-            let mapped = curve
-                .knots()
-                .iter()
-                .map(|knot| target[0] + (*knot - source[0]) * target_per_source)
-                .collect::<Vec<_>>();
+            let mapped = crate::resource::collect_vec(ctx, curve.knots().iter()
+                .map(|knot| target[0] + (*knot - source[0]) * target_per_source),
+                "catia_b5_reparameterized_curve_knots")?;
             let mapped = if mapped.iter().all(|knot| knot.is_finite()) {
                 mapped
             } else {
-                curve
-                    .knots()
-                    .iter()
-                    .map(|knot| {
+                let mapped = crate::resource::collect_options(ctx,
+                    curve.knots().iter().map(|knot| {
                         target_interval
                             .map_from(
                                 source_interval,
@@ -1331,32 +1378,33 @@ fn curve_on_parameter_range(
                             )
                             .ok()
                             .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    })
-                    .collect::<Option<Vec<_>>>()?
+                    }), "catia_b5_reparameterized_curve_fallback_knots")?;
+                let Some(mapped) = mapped else { return Ok(None) };
+                mapped
             };
-            curve
-                .edit_knots(|knots| knots.copy_from_slice(&mapped))
-                .ok()?;
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
+            if curve.edit_knots(|knots| knots.copy_from_slice(&mapped)).is_err() {
+                return Ok(None);
+            }
+            Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
-                return crate::nurbs::note_refusal(
+                return Ok(crate::nurbs::note_refusal(
                     NurbsCurve::from_lanes(
                         1,
-                        vec![target[0], target[0], target[1], target[1]],
-                        source
-                            .into_iter()
-                            .map(|parameter| {
+                        crate::resource::collect_vec(ctx,
+                            [target[0], target[0], target[1], target[1]],
+                            "catia_b5_reparameterized_line_knots")?,
+                        crate::resource::collect_vec(ctx,
+                            source.into_iter().map(|parameter| {
                                 Point3::new(
                                     origin.x + parameter * direction.x,
                                     origin.y + parameter * direction.y,
                                     origin.z + parameter * direction.z,
                                 )
-                            })
-                            .collect(),
+                            }), "catia_b5_reparameterized_line_points")?,
                         None,
                         false,
                     ),
@@ -1366,20 +1414,20 @@ fn curve_on_parameter_range(
                     ),
                 )
                 .map(SolvedCurveGeometry::Nurbs)
-                .map(CurveGeometry::Solved);
+                .map(CurveGeometry::Solved));
             }
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    FinitePoint3::new(Point3::new(
+                    match FinitePoint3::new(Point3::new(
                         origin.x + (source[0] - target[0] * source_per_target) * direction.x,
                         origin.y + (source[0] - target[0] * source_per_target) * direction.y,
                         origin.z + (source[0] - target[0] * source_per_target) * direction.z,
-                    ))?,
+                    )) { Some(point) => point, None => return Ok(None) },
                     line_curve.direction(),
                 ),
-            )))
+            ))))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
