@@ -23,6 +23,12 @@ use crate::test_support::test_b2::{
 };
 use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
 
+fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2NurbsCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_nurbs_curves(ctx, data).expect("service decode")
+    })
+}
+
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
     let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
@@ -1978,7 +1984,7 @@ fn b2_nurbs_curve_stream(weights: [f64; 4]) -> Vec<u8> {
 
 #[test]
 fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
-    let curves = crate::families::b2::records::b2_nurbs_curves(&b2_nurbs_curve_stream([
+    let curves = parsed_b2_nurbs_curves(&b2_nurbs_curve_stream([
         1.0, 0.72, 1.31, 0.93,
     ]));
     let [curve] = curves.as_slice() else {
@@ -1994,20 +2000,52 @@ fn b2_nurbs_curve_parser_preserves_asymmetric_weights_in_source_order() {
 }
 
 #[test]
+fn b2_nurbs_control_points_refuse_collection_limit_before_materialization() {
+    assert_b2_nurbs_collection_refusal(3, "catia_b2_nurbs_control_points");
+}
+
+#[test]
+fn b2_nurbs_weights_refuse_collection_limit_before_materialization() {
+    assert_b2_nurbs_collection_refusal(7, "catia_b2_nurbs_weights");
+}
+
+#[test]
+fn b2_nurbs_knots_refuse_collection_limit_before_materialization() {
+    assert_b2_nurbs_collection_refusal(15, "catia_b2_nurbs_knots");
+}
+
+#[test]
+fn b2_nurbs_curves_refuse_collection_limit_before_retention() {
+    assert_b2_nurbs_collection_refusal(16, "catia_b2_nurbs_curves");
+}
+
+fn assert_b2_nurbs_collection_refusal(limit: u64, operation: &'static str) {
+    let bytes = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    let result = crate::test_support::with_collection_limit(limit, |ctx| {
+        crate::families::b2::records::b2_nurbs_curves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == operation
+    ));
+    assert_eq!(parsed_b2_nurbs_curves(&bytes).len(), 1);
+}
+
+#[test]
 fn b2_nurbs_curve_parser_rejects_broken_frame_invariants() {
     let valid = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     for offset in [6, 7, 8, 16, 24, 153, 154, 155, 163, 171, 179, 187, 188] {
         let mut broken = valid.clone();
         broken[offset] ^= 1;
         assert!(
-            crate::families::b2::records::b2_nurbs_curves(&broken).is_empty(),
+            parsed_b2_nurbs_curves(&broken).is_empty(),
             "offset {offset}"
         );
     }
     let mut nonpositive_weight = valid;
     nonpositive_weight[5 + 3 + 16 + 1 + 4 * 24..5 + 3 + 16 + 1 + 4 * 24 + 8]
         .copy_from_slice(&0.0f64.to_le_bytes());
-    assert!(crate::families::b2::records::b2_nurbs_curves(&nonpositive_weight).is_empty());
+    assert!(parsed_b2_nurbs_curves(&nonpositive_weight).is_empty());
 }
 
 #[test]
@@ -2015,15 +2053,15 @@ fn b2_nurbs_curve_parser_rejects_nonfinite_knots_poles_and_weights() {
     let mut nonfinite_knot = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     nonfinite_knot[8..16].copy_from_slice(&f64::NAN.to_le_bytes());
     nonfinite_knot[155..163].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::b2::records::b2_nurbs_curves(&nonfinite_knot).is_empty());
+    assert!(parsed_b2_nurbs_curves(&nonfinite_knot).is_empty());
 
     let mut nonfinite_pole = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     nonfinite_pole[25..33].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::b2::records::b2_nurbs_curves(&nonfinite_pole).is_empty());
+    assert!(parsed_b2_nurbs_curves(&nonfinite_pole).is_empty());
 
     let mut infinite_weight = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
     infinite_weight[121..129].copy_from_slice(&f64::INFINITY.to_le_bytes());
-    assert!(crate::families::b2::records::b2_nurbs_curves(&infinite_weight).is_empty());
+    assert!(parsed_b2_nurbs_curves(&infinite_weight).is_empty());
 }
 
 fn b2_spatial_circle_stream() -> Vec<u8> {

@@ -2018,27 +2018,35 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 /// knot limits occur twice and the second pair must reproduce the first pair.
 #[must_use]
 #[cfg(test)]
-fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
+fn b2_nurbs_curves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<B2NurbsCurve>, CodecError> {
     let records = consolidated_records(data);
-    b2_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
+    b2_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(in crate::families) fn b2_nurbs_curves_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<B2NurbsCurve> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x16)
-        .into_iter()
-        .filter_map(|frame| parse_b2_nurbs_curve(data, frame, refusal))
-        .collect()
+) -> Result<Vec<B2NurbsCurve>, CodecError> {
+    let mut curves = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x16) {
+        if let Some(curve) = parse_b2_nurbs_curve(ctx, data, frame, refusal)? {
+            crate::resource::push(ctx, &mut curves, curve, "catia_b2_nurbs_curves")?;
+        }
+    }
+    Ok(curves)
 }
 
 fn parse_b2_nurbs_curve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<B2NurbsCurve> {
+) -> Result<Option<B2NurbsCurve>, CodecError> {
+    let Some((degree, control_count, knot_start, knot_end, point_start, weight_start)) = (|| {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let control_count = usize::try_from(degree.checked_add(1)?).ok()?;
@@ -2055,20 +2063,16 @@ fn parse_b2_nurbs_curve(
     if knot_start >= knot_end || compact_int(data, &mut at)? != 1 {
         return None;
     }
-    let control_points = (0..control_count)
-        .map(|_| {
-            let point = f64_point(data, at)?;
-            at += 24;
-            Some(point)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let weights = (0..control_count)
-        .map(|_| {
-            let weight = PositiveReal::new(f64_le(data, at)?.get())?;
-            at += 8;
-            Some(NonZeroReal::from(weight))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let point_start = at;
+    for _ in 0..control_count {
+        f64_point(data, at)?;
+        at += 24;
+    }
+    let weight_start = at;
+    for _ in 0..control_count {
+        PositiveReal::new(f64_le(data, at)?.get())?;
+        at += 8;
+    }
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {
         return None;
     }
@@ -2085,23 +2089,38 @@ fn parse_b2_nurbs_curve(
     {
         return None;
     }
-    let multiplicity = usize::try_from(degree.checked_add(1)?).ok()?;
-    let mut knots = Vec::with_capacity(2 * multiplicity);
-    knots.extend(std::iter::repeat_n(knot_start, multiplicity));
-    knots.extend(std::iter::repeat_n(knot_end, multiplicity));
-    Some(B2NurbsCurve {
+    Some((degree, control_count, knot_start, knot_end, point_start, weight_start))
+    })() else { return Ok(None) };
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count, "catia_b2_nurbs_control_points")?;
+    for index in 0..control_count {
+        let Some(point) = f64_point(data, point_start + index * 24) else { return Ok(None) };
+        control_points.push(point);
+    }
+    let mut weights = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut weights, control_count, "catia_b2_nurbs_weights")?;
+    for index in 0..control_count {
+        let Some(weight) = f64_le(data, weight_start + index * 8)
+            .and_then(|weight| PositiveReal::new(weight.get())) else { return Ok(None) };
+        weights.push(NonZeroReal::from(weight));
+    }
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, 2 * control_count, "catia_b2_nurbs_knots")?;
+    knots.extend(std::iter::repeat_n(knot_start, control_count));
+    knots.extend(std::iter::repeat_n(knot_end, control_count));
+    Ok(crate::nurbs::note_refusal(
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
+            control_points,
+            Some(weights),
+        )
+        .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
+        refusal,
+        format_args!("b2 NURBS curve record at byte {}", frame.pos),
+    ).map(|geometry| B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
-                control_points,
-                Some(weights),
-            )
-            .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
-            refusal,
-            format_args!("b2 NURBS curve record at byte {}", frame.pos),
-        )?,
-    })
+        geometry,
+    }))
 }
 
 /// Analytic cylinder support stored in a `b2 03 28` record.
