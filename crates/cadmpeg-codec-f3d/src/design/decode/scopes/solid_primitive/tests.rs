@@ -13,6 +13,30 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 
 #[test]
+fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
+    for value in [
+        "00000000-0000-0000-0000-000000000000",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        "00000000-0000-0000-0000-00000000000!",
+        "é0000000-0000-0000-0000-000000000000",
+        "short",
+    ] {
+        let mut bytes = u32::try_from(value.encode_utf16().count())
+            .unwrap()
+            .to_le_bytes()
+            .to_vec();
+        for code_unit in value.encode_utf16() {
+            bytes.extend_from_slice(&code_unit.to_le_bytes());
+        }
+        let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
+            .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
+        assert_eq!(super::fixed_guid_end(&bytes, 0), prior);
+        bytes.pop();
+        assert_eq!(super::fixed_guid_end(&bytes, 0), None);
+    }
+}
+
+#[test]
 fn named_solid_primitives_bind_ordered_parameter_owners() {
     fn owner(
         scope_record_index: u32,
