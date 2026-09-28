@@ -607,7 +607,10 @@ fn active_configuration_join_result(
         super::super::configurations(ctx, &container)
     })
     .expect("arrangement table");
-    let attributes = super::super::part_attributes(&container);
+    let attributes = crate::test_support::with_decode_context(|ctx| {
+        super::super::part_attributes(ctx, &container)
+    })
+    .expect("part attribute table");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
@@ -708,6 +711,57 @@ fn arrangement_configuration_route_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "nx arrangement XML scan"), "{error:?}");
+}
+
+fn part_attribute_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::PartAttribute>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("part attribute container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::part_attributes(&ctx, &container)
+}
+
+#[test]
+fn part_attribute_route_preserves_typed_value() {
+    let attributes = part_attribute_result(|_| {}).expect("typed part attribute");
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].title, "NX_Arrangement");
+    assert_eq!(attributes[0].value, "Model");
+}
+
+#[test]
+fn part_attribute_route_refuses_collection_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("part attribute exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native part attributes"), "{error:?}");
+}
+
+#[test]
+fn part_attribute_route_refuses_retained_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("part attribute exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native part attributes"), "{error:?}");
+}
+
+#[test]
+fn part_attribute_route_refuses_work_limit() {
+    let error = part_attribute_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("part attribute XML exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx part attribute XML scan"), "{error:?}");
 }
 
 #[test]
