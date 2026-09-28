@@ -40,6 +40,31 @@ fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn primitive_identity_copy_refuses_retained_budget_before_model_insertion() {
+    use cadmpeg_core::decode::DecodePolicy;
+    use cadmpeg_ir::codec::DecodeFailure;
+
+    let bytes = crate::test_support::test_curves_and_surfaces::point_file();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges geometry neutral identity copy" {
+                    crate::IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected primitive identity refusal: {other:?}"),
+        }
+    }
+    panic!("primitive identity copy was not reached");
+}
+
+#[test]
 fn nurbs_projection_refuses_source_lanes_neutral_slots_and_decoded_node() {
     let bytes = crate::test_support::test_curves_and_surfaces::rational_nurbs_curve_file();
     for operation in [

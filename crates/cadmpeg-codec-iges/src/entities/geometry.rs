@@ -1205,10 +1205,8 @@ pub(super) fn curve_geometry_coplanar(
                     valid = false;
                     break;
                 }
-                if let Some(ctx) = ctx {
-                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(segment.curve.as_str().len()), "iges coplanar active curve id")?;
-                }
-                insert_optional_btree_set(ctx, active, segment.curve.clone(), "iges coplanar active curves")?;
+                let active_id = clone_optional_identity(ctx, &segment.curve, "iges coplanar active curve id")?;
+                insert_optional_btree_set(ctx, active, active_id, "iges coplanar active curves")?;
                 let Some(geometry) = curve.geometry.solved() else {
                     valid = false;
                     break;
@@ -1645,19 +1643,19 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges circle neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None),
-            Point::new(end_point.clone(), end, None),
+            Point::new(clone_optional_identity(Some(ctx), &start_point, "iges geometry neutral identity copy")?, start, None),
+            Point::new(clone_optional_identity(Some(ctx), &end_point, "iges geometry neutral identity copy")?, end, None),
         ]);
         reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges circle neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &start_vertex, "iges geometry neutral identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &end_vertex, "iges geometry neutral identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -1666,7 +1664,7 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges circle neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            id: curve.clone(),
+            id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
@@ -1689,7 +1687,7 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges circle neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, angle]))
                 .map_err(CodecError::malformed)?,
             start: start_vertex,
@@ -1745,7 +1743,7 @@ pub(crate) fn project_geometry(
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model
             .points
-            .push(Point::new(point.clone(), position, None));
+            .push(Point::new(clone_optional_identity(Some(ctx), &point, "iges geometry neutral identity copy")?, position, None));
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1753,7 +1751,7 @@ pub(crate) fn project_geometry(
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges point neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
-                id: vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &vertex, "iges geometry neutral identity copy")?,
                 point,
                 tolerance: None,
             });
@@ -1830,7 +1828,7 @@ pub(crate) fn project_geometry(
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model
             .points
-            .push(Point::new(point.clone(), position, None));
+            .push(Point::new(clone_optional_identity(Some(ctx), &point, "iges geometry neutral identity copy")?, position, None));
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1838,7 +1836,7 @@ pub(crate) fn project_geometry(
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges flash neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
-                id: vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &vertex, "iges geometry neutral identity copy")?,
                 point,
                 tolerance: None,
             });
@@ -1912,7 +1910,7 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges line neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            id: curve.clone(),
+            id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(start, direction),
             )),
@@ -1932,19 +1930,19 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges line neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None),
-            Point::new(end_point.clone(), end, None),
+            Point::new(clone_optional_identity(Some(ctx), &start_point, "iges geometry neutral identity copy")?, start, None),
+            Point::new(clone_optional_identity(Some(ctx), &end_point, "iges geometry neutral identity copy")?, end, None),
         ]);
         reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges line neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &start_vertex, "iges geometry neutral identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &end_vertex, "iges geometry neutral identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -1952,7 +1950,7 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges line neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, length]))
                 .map_err(CodecError::malformed)?,
             start: start_vertex,
@@ -2252,19 +2250,19 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges NURBS neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None),
-            Point::new(end_point.clone(), end, None),
+            Point::new(clone_optional_identity(Some(ctx), &start_point, "iges geometry neutral identity copy")?, start, None),
+            Point::new(clone_optional_identity(Some(ctx), &end_point, "iges geometry neutral identity copy")?, end, None),
         ]);
         reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges NURBS neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &start_vertex, "iges geometry neutral identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: clone_optional_identity(Some(ctx), &end_vertex, "iges geometry neutral identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -2273,14 +2271,14 @@ pub(crate) fn project_geometry(
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges NURBS neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
-            id: curve.clone(),
+            id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges NURBS neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
             start: start_vertex,
             end: end_vertex,
@@ -2348,11 +2346,11 @@ pub(crate) fn project_geometry(
         let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
         let mut body_regions = reserve_vec(ctx, 1, "iges free wire body regions")?;
-        body_regions.push(region.clone());
+        body_regions.push(clone_optional_identity(Some(ctx), &region, "iges geometry neutral identity copy")?);
         reserve_vec_growth(ctx, &mut ir.model.bodies, 1, "iges free wire body slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_wire_topology")?;
         ir.model.bodies.push(Body {
-            id: body.clone(),
+            id: clone_optional_identity(Some(ctx), &body, "iges geometry neutral identity copy")?,
             kind: BodyKind::Wire,
             regions: body_regions,
             transform: None,
@@ -2361,11 +2359,11 @@ pub(crate) fn project_geometry(
             visible: None,
         });
         let mut region_shells = reserve_vec(ctx, 1, "iges free wire region shells")?;
-        region_shells.push(shell.clone());
+        region_shells.push(clone_optional_identity(Some(ctx), &shell, "iges geometry neutral identity copy")?);
         reserve_vec_growth(ctx, &mut ir.model.regions, 1, "iges free wire region slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_wire_topology")?;
         ir.model.regions.push(Region {
-            id: region.clone(),
+            id: clone_optional_identity(Some(ctx), &region, "iges geometry neutral identity copy")?,
             body,
             shells: region_shells,
         });
