@@ -197,7 +197,7 @@ impl NullableCompactIndex {
 pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>);
 
 impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
-    pub(super) fn map_charged<U>(
+    pub(crate) fn map_charged<U>(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         mut map: impl FnMut(T) -> U,
@@ -252,6 +252,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         &self.0
     }
 
+    #[cfg(test)]
     pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect())
     }

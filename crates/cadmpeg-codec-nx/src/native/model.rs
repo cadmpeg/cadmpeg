@@ -1097,7 +1097,7 @@ impl NativeModel {
         let feature_pattern_transform_lanes = feature_pattern_transform_lanes(container);
         let feature_multi_instance_output_lanes = feature_multi_instance_output_lanes(container);
         let feature_identical_instance_output_lanes =
-            feature_identical_instance_output_lanes(container);
+            feature_identical_instance_output_lanes(ctx, container)?;
         let feature_point_construction_headers = feature_point_construction_headers(container);
         let feature_point_construction_scalar_lanes =
             feature_point_construction_scalar_lanes(container, &feature_point_construction_headers);
