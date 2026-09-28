@@ -3672,6 +3672,13 @@ fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::mat
     }
 }
 
+fn admitted_surface_poles(
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+) -> impl Iterator<Item = FinitePoint3> + '_ {
+    (0..surface.u_count())
+        .flat_map(move |u| (0..surface.v_count()).filter_map(move |v| surface.pole(u, v)))
+}
+
 fn golden_section_minimum<F>(
     mut left: f64,
     mut right: f64,
@@ -4955,8 +4962,7 @@ fn nurbs_boundary_pcurve(
         return Ok(InverseResolution::NoMatch);
     }
     let tolerance = inverse_coordinate_tolerance(
-        (0..surface.u_count())
-            .flat_map(|u| (0..surface.v_count()).filter_map(move |v| surface.pole(u, v)))
+        admitted_surface_poles(surface)
             .chain((0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)))
             .map(FinitePoint3::get),
     );
@@ -5128,8 +5134,7 @@ fn nurbs_strict_isocurve_pcurve(
                 .sum::<f64>();
         }
         let tolerance = inverse_coordinate_tolerance(
-            (0..surface.u_count())
-                .flat_map(|u| (0..surface.v_count()).filter_map(move |v| surface.pole(u, v)))
+            admitted_surface_poles(surface)
                 .chain((0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)))
                 .map(FinitePoint3::get),
         );
@@ -5582,9 +5587,7 @@ fn extended_nurbs_isocurve_axis_candidate(
         };
         if let Some(point) = point {
             let tolerance = inverse_coordinate_tolerance(
-                surface
-                    .poles()
-                    .into_iter()
+                admitted_surface_poles(surface)
                     .map(FinitePoint3::get)
                     .chain(std::iter::once(point.get())),
             );
@@ -5704,17 +5707,21 @@ enum NurbsPcurveResolution {
 }
 
 fn nurbs_curve_sample_parameters(
+    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Option<Vec<f64>> {
-    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
+) -> Result<Option<Vec<f64>>, NurbsPcurveFailure> {
+    let Some(domain) = nurbs_curve_parameter_domain(curve) else {
+        return Ok(None);
+    };
+    let domain = domain.endpoints();
     if !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
         || range[0] < domain[0]
         || range[1] > domain[1]
     {
-        return None;
+        return Ok(None);
     }
     let mut parameters = vec![range[0], range[1]];
     for span in curve.knots().windows(2) {
@@ -5725,13 +5732,18 @@ fn nurbs_curve_sample_parameters(
         }
         for index in 0..=NURBS_CACHE_SAMPLES_PER_SPAN {
             let fraction = index as f64 / NURBS_CACHE_SAMPLES_PER_SPAN as f64;
-            parameters.push(cadmpeg_ir::math::interpolate(start, end, fraction)?.get());
+            let Some(parameter) = cadmpeg_ir::math::interpolate(start, end, fraction) else {
+                return Ok(None);
+            };
+            ctx.charge_work(1, "sample NURBS curve span")?;
+            ctx.reserve_collection_vec(&mut parameters, 1, "collect NURBS sample parameters")?;
+            parameters.push(parameter.get());
         }
     }
     parameters.sort_by(f64::total_cmp);
     // Every distinct sample participates in the fit bound, including tiny spans.
     parameters.dedup();
-    (!parameters.is_empty()).then_some(parameters)
+    Ok((!parameters.is_empty()).then_some(parameters))
 }
 
 fn nurbs_edge_endpoint_parameters(
@@ -5751,9 +5763,7 @@ fn nurbs_edge_endpoint_parameters(
     // the NURBS endpoint tolerance.
     let tolerance = looser_tolerance(
         inverse_coordinate_tolerance(
-            surface
-                .poles()
-                .into_iter()
+            admitted_surface_poles(surface)
                 .chain([first, last])
                 .map(FinitePoint3::get),
         ),
@@ -5784,11 +5794,12 @@ fn nurbs_edge_endpoint_parameters(
 }
 
 fn nurbs_curve_surface_deviation(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
+) -> Result<Option<f64>, NurbsPcurveFailure> {
+    let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
         return Ok(None);
     };
     let mut seed = None;
@@ -5829,24 +5840,29 @@ fn nurbs_curve_surface_deviation(
 /// tolerance they reach. `None` when the curve is not a degree-one cache
 /// candidate or a projection does not land on the surface.
 fn nurbs_degree_one_cache_lanes(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<(Vec<cadmpeg_ir::math::Point2>, f64)>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<(Vec<cadmpeg_ir::math::Point2>, f64)>, NurbsPcurveFailure> {
     if curve.degree() != 1 || curve.pole_rows().weight_at(0).is_some() || curve.periodic() {
         return Ok(None);
     }
-    let curve_points = curve.pole_rows().raw_points();
-    let mut control_points = Vec::with_capacity(curve_points.len());
+    let mut control_points = Vec::new();
+    ctx.reserve_collection_vec(&mut control_points, curve.pole_count(), "collect NURBS cache pcurve controls")?;
     let mut seed = None;
-    for point in &curve_points {
+    for index in 0..curve.pole_count() {
+        let Some(point) = curve.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
+        let point = point.get();
         let projected = match seed {
-            Some(seed) => nurbs_surface_parameter_near_point(surface, *point, Some(seed))?,
+            Some(seed) => nurbs_surface_parameter_near_point(surface, point, Some(seed))?,
             None => None,
         };
         let parameters = match projected {
             Some(parameters) => Some(parameters),
-            None => nurbs_surface_parameter_near_point(surface, *point, None)?,
+            None => nurbs_surface_parameter_near_point(surface, point, None)?,
         };
         let Some(parameters) = parameters else {
             return Ok(None);
@@ -5855,7 +5871,7 @@ fn nurbs_degree_one_cache_lanes(
         seed = Some(parameters);
         control_points.push(parameters);
     }
-    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
+    let Some(parameters) = nurbs_curve_sample_parameters(ctx, curve, range)? else {
         return Ok(None);
     };
     let mut fit_tolerance = 0.0_f64;
@@ -5889,16 +5905,20 @@ fn nurbs_degree_one_cache_lanes(
 }
 
 fn nurbs_degree_one_cache_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Result<Option<(PcurveGeometry, f64)>, NurbsPcurveFailure> {
     let Some((control_points, fit_tolerance)) =
-        nurbs_degree_one_cache_lanes(surface, curve, range)?
+        nurbs_degree_one_cache_lanes(ctx, surface, curve, range)?
     else {
         return Ok(None);
     };
-    let nurbs = PcurveNurbs::from_lanes(1, curve.knots().to_vec(), control_points, None, false)?;
+    let mut knots = Vec::new();
+    ctx.reserve_collection_vec(&mut knots, curve.knots().len(), "copy NURBS cache pcurve knots")?;
+    knots.extend_from_slice(curve.knots());
+    let nurbs = PcurveNurbs::from_lanes(1, knots, control_points, None, false)?;
     Ok(Some((PcurveGeometry::Nurbs { nurbs }, fit_tolerance)))
 }
 
@@ -5947,13 +5967,13 @@ fn derive_nurbs_edge_pcurve(
     if nurbs_edge_endpoint_parameters(surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::OffSurface);
     }
-    if nurbs_curve_surface_deviation(surface, curve, range)?.is_none() {
+    if nurbs_curve_surface_deviation(ctx, surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::NoMatch);
     }
     Ok(match nurbs_isocurve_pcurve(ctx, surface, curve)? {
         InverseResolution::Unique(geometry) => NurbsPcurveResolution::Exact(geometry),
         InverseResolution::Ambiguous => NurbsPcurveResolution::Ambiguous,
-        InverseResolution::NoMatch => match nurbs_degree_one_cache_pcurve(surface, curve, range)? {
+        InverseResolution::NoMatch => match nurbs_degree_one_cache_pcurve(ctx, surface, curve, range)? {
             Some((geometry, fit_tolerance)) => NurbsPcurveResolution::Cache {
                 geometry,
                 fit_tolerance,
@@ -5998,17 +6018,31 @@ fn ruled_surface_line_pcurve(
         || varying_periodic
         || varying_knots.as_slice() != [varying_min, varying_min, varying_max, varying_max]
         || varying_min >= varying_max
-        || surface.pole_weights().is_some_and(|weights| {
-            (0..fixed_count).any(|fixed| {
-                let (a, b) = match fixed_axis {
-                    SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
-                    SurfaceParameterAxis::V => (fixed, vc + fixed),
-                };
-                (weights[a].get() - weights[b].get()).abs() > EPS_NURBS_WEIGHT
-            })
-        })
     {
         return Ok(InverseResolution::NoMatch);
+    }
+    if matches!(
+        surface.pole_grid(),
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { .. }
+    ) {
+        ctx.charge_work(
+            u64::try_from(fixed_count).map_err(|_| {
+                ctx.refuse_codec_limit("compare ruled surface weights", u64::MAX - 1, u64::MAX)
+            })?,
+            "compare ruled surface weights",
+        )?;
+        if (0..fixed_count).any(|fixed| {
+            let ((a_u, a_v), (b_u, b_v)) = match fixed_axis {
+                SurfaceParameterAxis::U => ((fixed, 0), (fixed, 1)),
+                SurfaceParameterAxis::V => ((0, fixed), (1, fixed)),
+            };
+            match (surface.weight(a_u, a_v), surface.weight(b_u, b_v)) {
+                (Some(a), Some(b)) => (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT,
+                _ => true,
+            }
+        }) {
+            return Ok(InverseResolution::NoMatch);
+        }
     }
     let Some(fixed_degree) = usize::try_from(fixed_degree).ok() else {
         return Ok(InverseResolution::NoMatch);
@@ -6073,9 +6107,7 @@ fn ruled_surface_line_pcurve(
     let resolution = unique_inverse_parameter(
         candidates,
         inverse_coordinate_tolerance(
-            surface
-                .poles()
-                .into_iter()
+            admitted_surface_poles(surface)
                 .map(FinitePoint3::get)
                 .chain(std::iter::once(line_origin)),
         ),
