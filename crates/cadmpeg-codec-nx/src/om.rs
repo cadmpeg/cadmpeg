@@ -2156,7 +2156,7 @@ pub(crate) fn extrude_payload_header(record: OperationPayload<'_>) -> Option<Ext
 pub(crate) fn operation_body_members(
     record: OperationBodyInput<'_>,
 ) -> Vec<OperationBodyMemberGroup> {
-    operation_body_references(record)
+    operation_body_reference_candidates(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
@@ -2212,7 +2212,7 @@ pub(crate) fn operation_body_11_continuations(
     if record.name() != "TRIM BODY" {
         return Vec::new();
     }
-    operation_body_references(record)
+    operation_body_reference_candidates(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
@@ -2283,7 +2283,7 @@ pub(crate) fn operation_body_11_continuations(
 pub(crate) fn operation_body_reference_lanes(
     record: OperationBodyInput<'_>,
 ) -> Vec<OperationBodyReferenceLane> {
-    operation_body_references(record)
+    operation_body_reference_candidates(record)
         .into_iter()
         .enumerate()
         .filter_map(|(body_ordinal, reference)| {
@@ -2715,9 +2715,16 @@ fn operation_body_reference_candidates(
 
 /// Decode every ordered direct primary-body field in one operation.
 pub(crate) fn operation_body_references(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Vec<OperationBodyReference> {
-    operation_body_reference_candidates(record).collect()
+) -> Result<Vec<OperationBodyReference>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.bytes().len()), "scan NX operation body references")?;
+    let mut references = Vec::new();
+    for reference in operation_body_reference_candidates(record) {
+        reserve_om_retained_item(ctx, &mut references, "NX operation body references")?;
+        references.push(reference);
+    }
+    Ok(references)
 }
 
 /// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.

@@ -27,7 +27,37 @@ fn offset_store_named_point_test<'a>(blocks: impl IntoIterator<Item = &'a [u8]>)
     crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
 }
 use crate::om::operation_body_reference;
-use crate::om::operation_body_references;
+fn operation_body_references(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBodyReference> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_references(ctx, record)).unwrap()
+}
+
+fn operation_body_reference_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationBodyInput::new(&bytes, 100, 0, "EXTRUDE").unwrap();
+    crate::om::operation_body_references(&ctx, record).unwrap_err()
+}
+
+#[test]
+fn om_operation_body_references_refuse_collection_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_operation_body_references_refuse_retained_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_operation_body_references_refuse_work_limit() {
+    let error = operation_body_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 use crate::om::sections;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
