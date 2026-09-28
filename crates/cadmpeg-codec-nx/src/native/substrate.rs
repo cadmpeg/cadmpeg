@@ -378,18 +378,20 @@ impl<'a> ParsedStreams<'a> {
             if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&si) {
                 if let Some(census) = topology_streams[si].delta_census.as_ref() {
                     residual.extend_from_slice(&crate::deltas::semantic_residual_with_census(
+                        ctx,
                         &stream.inflated,
                         census,
-                    ));
+                    )?);
                 }
             }
             if let Some(deltas) = paired {
                 for delta in deltas {
                     if let Some(census) = topology_streams[*delta].delta_census.as_ref() {
                         residual.extend_from_slice(&crate::deltas::semantic_residual_with_census(
+                            ctx,
                             &scan.streams[*delta].inflated,
                             census,
-                        ));
+                        )?);
                     }
                 }
             }
