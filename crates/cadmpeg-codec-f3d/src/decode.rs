@@ -4605,6 +4605,7 @@ fn extend_related_design_records(
             &native.design_parameters,
         );
     crate::design::decode::operands::bind_lost_edge_groups(
+        ctx,
         &mut native.design_construction_operand_groups,
         &native.design_construction_operand_identities,
         &native.lost_edge_references,
