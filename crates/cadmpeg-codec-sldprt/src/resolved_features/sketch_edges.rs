@@ -8,7 +8,18 @@ use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
 };
 use cadmpeg_ir::Exactness;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
+
+fn retained_id_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut text = String::new();
+    ctx.reserve_retained_string(&mut text, value.len(), operation)?;
+    text.push_str(value);
+    Ok(text)
+}
 
 const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1.0e-9;
 const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1.0e-9;
@@ -42,6 +53,7 @@ impl EdgeProjectionTolerance {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn project_endpoint_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     entities: &[SketchEntity],
     block_offset: usize,
@@ -50,40 +62,62 @@ pub(super) fn project_endpoint_constraints(
     stream: &cadmpeg_ir::StreamName,
     annotations: &mut Annotations,
     constraints: &mut Vec<SketchConstraint>,
-) {
-    let mut loci_by_endpoint = BTreeMap::<&str, Vec<SketchLocus>>::new();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut loci_by_endpoint = BTreeMap::<&str, Vec<(bool, &cadmpeg_ir::sketches::SketchEntityId)>>::new();
     for entity in entities {
         if entity.endpoint_refs.len() != 2 {
             continue;
         }
         for (index, endpoint) in entity.endpoint_refs.iter().enumerate() {
-            let locus = if index == 0 {
-                SketchLocus::Start(entity.id().clone())
-            } else {
-                SketchLocus::End(entity.id().clone())
-            };
-            loci_by_endpoint.entry(endpoint).or_default().push(locus);
+            if !loci_by_endpoint.contains_key(endpoint.as_str()) {
+                ctx.charge_collection_items(1, "index SLDPRT shared sketch endpoints")?;
+            }
+            let loci = loci_by_endpoint.entry(endpoint).or_default();
+            ctx.reserve_collection_vec(loci, 1, "collect SLDPRT shared sketch endpoint loci")?;
+            loci.push((index == 0, entity.id()));
         }
     }
-    for (_endpoint, loci) in loci_by_endpoint {
-        let distinct_entities = loci
-            .iter()
-            .map(|locus| match locus {
-                SketchLocus::Start(entity)
-                | SketchLocus::End(entity)
-                | SketchLocus::Center(entity)
-                | SketchLocus::Entity(entity) => entity,
-            })
-            .collect::<HashSet<_>>();
-        if distinct_entities.len() < 2 {
+    for (_endpoint, sources) in loci_by_endpoint {
+        let Some((_, first)) = sources.first() else { continue; };
+        ctx.charge_work(
+            u64::try_from(sources.len()).map_err(|_| {
+                ctx.refuse_codec_limit("compare SLDPRT shared sketch endpoints", u64::MAX - 1, u64::MAX)
+            })?,
+            "compare SLDPRT shared sketch endpoints",
+        )?;
+        if !sources.iter().any(|(_, entity)| entity != first) {
             continue;
         }
-        let Ok(id) = SketchConstraintId::mint(format!(
-            "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
-            constraints.len()
-        )) else {
+        let digits = |value: usize| if value == 0 { 1 } else { value.ilog10() as usize + 1 };
+        let id_length = "sldprt:model:sketch-constraint#:::".len()
+            + digits(block_offset)
+            + digits(stream_ordinal)
+            + digits(face_ordinal)
+            + digits(constraints.len());
+        let mut id_text = String::new();
+        ctx.reserve_retained_string(&mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
+        std::fmt::Write::write_fmt(
+            &mut id_text,
+            format_args!(
+                "sldprt:model:sketch-constraint#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+                constraints.len()
+            ),
+        )
+        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT shared endpoint constraint ID"))?;
+        let Ok(id) = SketchConstraintId::mint(id_text) else {
             continue;
         };
+        let mut loci = Vec::new();
+        ctx.reserve_collection_vec(&mut loci, sources.len(), "collect SLDPRT shared endpoint constraint loci")?;
+        for (start, source) in sources {
+            let source = cadmpeg_ir::sketches::SketchEntityId::mint(retained_id_text(
+                ctx,
+                source.as_str(),
+                "retain SLDPRT shared endpoint entity ID",
+            )?)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch entity ID"))?;
+            loci.push(if start { SketchLocus::Start(source) } else { SketchLocus::End(source) });
+        }
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::CoincidentLoci { loci },
         ) else {
@@ -91,15 +125,18 @@ pub(super) fn project_endpoint_constraints(
         };
         crate::annotations::note(
             annotations,
-            id.as_str().to_owned(),
+            retained_id_text(ctx, id.as_str(), "retain SLDPRT shared endpoint annotation ID")?,
             stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,
         );
+        let sketch = SketchId::mint(retained_id_text(ctx, sketch.as_str(), "retain SLDPRT constraint sketch ID")?)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
+        ctx.reserve_collection_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
         constraints.push(SketchConstraint {
             id,
-            sketch: sketch.clone(),
+            sketch,
             definition,
             name: None,
             driving: None,
@@ -113,6 +150,7 @@ pub(super) fn project_endpoint_constraints(
             native_ref: None,
         });
     }
+    Ok(())
 }
 
 /// The sketch plane a projection maps model space onto.
