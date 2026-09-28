@@ -265,11 +265,13 @@ pub(crate) fn transfer_parameters(
                         let accepted = match &value {
                             TypedParameterEvaluation::Unset => transferable_expression.is_some(),
                             TypedParameterEvaluation::Value(value) => {
-                                evaluated_expression.as_ref().is_some_and(|evaluated| {
+                                if let Some(evaluated) = evaluated_expression.as_ref() {
                                     evaluated.agrees_with(&TypedParameterEvaluation::Value(
-                                        value.clone(),
+                                        copy_parameter_value(ctx, value)?,
                                     ))
-                                })
+                                } else {
+                                    false
+                                }
                             }
                         };
                         if accepted {
@@ -967,7 +969,8 @@ fn collect_legacy_parameters(
             if canonical_parameter_type(evaluation.source_type) != Some(candidate.parameter_type) {
                 continue;
             }
-            if let Some(stored) = candidate.parameter.value.clone() {
+            if let Some(stored) = candidate.parameter.value.as_ref() {
+                let stored = copy_parameter_value(ctx, stored)?;
                 if !evaluation
                     .evaluated
                     .agrees_with(&TypedParameterEvaluation::Value(stored))
@@ -1455,9 +1458,13 @@ fn relation_program_output_candidate(
     let accepted = match &value {
         TypedParameterEvaluation::Unset => true,
         TypedParameterEvaluation::Value(value) => {
-            evaluated_expression.as_ref().is_some_and(|evaluated| {
-                evaluated.agrees_with(&TypedParameterEvaluation::Value(value.clone()))
-            })
+            if let Some(evaluated) = evaluated_expression.as_ref() {
+                evaluated.agrees_with(&TypedParameterEvaluation::Value(
+                    copy_parameter_value(ctx, value)?,
+                ))
+            } else {
+                false
+            }
         }
     };
     if !accepted {
@@ -1586,6 +1593,17 @@ fn parameter_expression(
             format_args!("{value}"), operation),
         ParameterValue::String(value) => Ok(string_literal_expression(ctx, value)?.unwrap_or_default()),
     }
+}
+
+fn copy_parameter_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &ParameterValue,
+) -> Result<ParameterValue, cadmpeg_core::CodecError> {
+    Ok(match value {
+        ParameterValue::String(text) => ParameterValue::String(resource::copy_retained_str(
+            ctx, text, "catia_formula_parameter_value_copy")?),
+        other => other.clone(),
+    })
 }
 
 fn string_literal_expression(
@@ -3609,6 +3627,20 @@ mod parser_tests {
         }).expect("service profile admits properties");
         assert_eq!(properties["value_type"], "String");
         assert_eq!(properties["catia_binding"], "source-binding");
+    }
+
+    #[test]
+    fn formula_string_value_copy_refuses_retained_limit() {
+        let value = ParameterValue::String("source string".to_string());
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::copy_parameter_value(ctx, &value)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_parameter_value_copy"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::copy_parameter_value(ctx, &value)
+        }).expect("service profile admits string copy");
+        assert_eq!(admitted, value);
     }
 
     #[test]
