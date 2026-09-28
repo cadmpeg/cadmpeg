@@ -23,6 +23,7 @@ use super::{
 };
 
 mod eligible_index;
+mod body_index;
 
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
@@ -949,7 +950,7 @@ fn brep_diagnostics_report_component_gate_inputs() {
 
 #[test]
 fn explicit_single_body_merges_disconnected_components() {
-    let merged = merge_body_components(vec![
+    let merged = crate::decode::with_test_decode_ctx(|ctx| merge_body_components(ctx, vec![
         NeutralShellSpec {
             faces: vec![1, 2],
             wire_curves: BTreeSet::from([10]),
@@ -958,7 +959,7 @@ fn explicit_single_body_merges_disconnected_components() {
             faces: vec![3],
             wire_curves: BTreeSet::from([11, 12]),
         },
-    ]);
+    ])).expect("service component merge admitted");
 
     assert_eq!(
         merged,
