@@ -1293,14 +1293,12 @@ impl Graph {
 
     /// Resolve the exact witnesses of the unique edge carrying a curve.
     pub(crate) fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
-        let edges = self
+        let mut edges = self
             .of_kind(NodeKind::Edge)
             .filter_map(Node::edge_fields)
-            .filter(|edge| edge.curve.map(u32::from) == Some(curve_xmt))
-            .collect::<Vec<_>>();
-        let [edge] = edges.as_slice() else {
-            return None;
-        };
+            .filter(|edge| edge.curve.map(u32::from) == Some(curve_xmt));
+        let edge = edges.next()?;
+        edges.next().is_none().then_some(())?;
         let first_fin = self.get_target(NodeKind::Fin, edge.fin)?.fin_fields()?;
         let second_fin = self
             .get_target(NodeKind::Fin, first_fin.forward)?
@@ -1338,18 +1336,17 @@ impl Graph {
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.
-    pub(crate) fn body_shape_shells(&self) -> Vec<&Node> {
+    pub(crate) fn body_shape_shells(&self) -> impl Iterator<Item = &Node> + '_ {
         self.of_kind(NodeKind::Shell)
             .filter(|shell| self.is_body_shape_shell(shell))
-            .collect()
     }
 
     /// Return whether every body-shape face has a non-empty valid loop chain
     /// and every non-null radial FIN partner belongs to the same reachable
     /// body topology.
     pub(crate) fn has_complete_body_topology(&self) -> bool {
-        let shells = self.body_shape_shells();
-        if shells.is_empty() {
+        let mut shells = self.body_shape_shells().peekable();
+        if shells.peek().is_none() {
             return false;
         }
         let mut reachable_fins = BTreeSet::new();
@@ -1381,7 +1378,6 @@ impl Graph {
     /// Count faces owned by validated body-shape shells.
     pub(crate) fn body_shape_face_count(&self) -> usize {
         self.body_shape_shells()
-            .into_iter()
             .filter_map(|shell| self.shell_face_xmts(shell).map(|faces| faces.len()))
             .sum()
     }

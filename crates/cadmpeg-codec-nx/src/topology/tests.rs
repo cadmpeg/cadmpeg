@@ -81,7 +81,7 @@ fn topology_graph_parse_refuses_work_limit() {
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &valid)).unwrap();
-    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_shells().count(), 1);
 
     let mut broken = valid;
     let face = broken
@@ -91,7 +91,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
     put_ref(&mut broken, face + 24, 99);
     assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &broken)).unwrap()
         .body_shape_shells()
-        .is_empty());
+        .next().is_none());
 
     let mut independent_previous = topology_partition_stream();
     let face = independent_previous
@@ -102,7 +102,7 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
     assert_eq!(
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &independent_previous)).unwrap()
             .body_shape_shells()
-            .len(),
+            .count(),
         1
     );
 }
@@ -118,7 +118,7 @@ fn topology_retains_shell_body_identity_without_body_record() {
 
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert!(graph.get(NodeKind::Body, 2).is_none());
-    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_shells().count(), 1);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -147,7 +147,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
 
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
 
-    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_shells().count(), 1);
     assert_eq!(graph.body_shape_face_count(), 1);
     assert!(graph.has_complete_body_topology());
     assert!(graph
@@ -365,7 +365,7 @@ fn topology_accepts_cached_last_face_and_implicit_region_identity() {
 
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
     assert!(graph.get(NodeKind::Region, 12).is_none());
-    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_shells().count(), 1);
     assert_eq!(graph.body_shape_face_count(), 2);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -571,7 +571,7 @@ fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
         graph.get(NodeKind::Shell, 3).map(|node| node.pos),
         Some(shell)
     );
-    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_shells().count(), 1);
     assert_eq!(graph.body_shape_face_count(), 1);
 }
 

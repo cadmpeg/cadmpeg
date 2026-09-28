@@ -80,9 +80,7 @@ pub(super) fn emit_topology(
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
     let scope = IdScope::stream(stream_index);
-    let body_shape_shells = graph.body_shape_shells();
-    let valid_face_xmts: BTreeSet<u32> = body_shape_shells
-        .iter()
+    let valid_face_xmts: BTreeSet<u32> = graph.body_shape_shells()
         .filter_map(|shell| graph.shell_face_xmts(shell))
         .flatten()
         .collect();
@@ -137,8 +135,7 @@ pub(super) fn emit_topology(
         })
         .filter(|xmt| *xmt > 1)
         .collect();
-    let body_xmts: BTreeSet<_> = body_shape_shells
-        .iter()
+    let body_xmts: BTreeSet<_> = graph.body_shape_shells()
         .filter_map(|shell| {
             shell
                 .shell_fields()
@@ -150,7 +147,7 @@ pub(super) fn emit_topology(
         let id: BodyId = scope.id(&cadmpeg_ir::identity_component!("body"), body_xmt);
         if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
             annotate_node(annotations, &id, source_stream, node, "BODY");
-        } else if let Some(shell) = body_shape_shells.iter().find(|shell| {
+        } else if let Some(shell) = graph.body_shape_shells().find(|shell| {
             shell
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
@@ -174,7 +171,7 @@ pub(super) fn emit_topology(
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells = BTreeMap::new();
-    for node in body_shape_shells {
+    for node in graph.body_shape_shells() {
         let Some(fields) = node.shell_fields() else {
             continue;
         };
