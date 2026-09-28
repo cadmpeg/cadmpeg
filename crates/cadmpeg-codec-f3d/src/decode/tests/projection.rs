@@ -137,7 +137,8 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         )]),
     };
 
-    bind_mesh_feature_definitions(&mut features, &[scope], &projection).unwrap();
+    with_test_ctx(|ctx| bind_mesh_feature_definitions(ctx, &mut features, &[scope], &projection))
+        .unwrap();
 
     assert_eq!(
         *features[0].evaluation.definition(),
@@ -150,6 +151,74 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     assert!(!feature_definition_is_incomplete(
         features[0].evaluation.definition()
     ));
+}
+
+#[test]
+fn mesh_feature_tessellation_collection_refuses_limit() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
+    let scope = DesignParameterScope::empty(
+        scope_id,
+        crate::records::feature::scope::DesignFeatureKind::BaseMeshFeature,
+        10,
+    );
+    let mut features = vec![Feature {
+        id: FeatureId::mint("test:model:feature#mesh-import-limit").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Mesh Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Base Mesh Feature".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: Some(scope_id.into()),
+    }];
+    let projection = MeshProjection {
+        count: 1,
+        tessellations_by_scope: std::collections::HashMap::from([(
+            ("f3d:Design/BulkStream.dat".into(), 10),
+            vec!["tessellation:one".into()],
+        )]),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = bind_mesh_feature_definitions(&ctx, &mut features, &[scope], &projection)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh feature tessellations"));
+}
+
+#[test]
+fn mesh_feature_tessellation_lookup_refuses_scoped_limit() {
+    let projection = MeshProjection {
+        count: 0,
+        tessellations_by_scope: std::collections::HashMap::new(),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::super::mesh_feature_tessellations(
+        &ctx,
+        &projection,
+        "f3d:Design/BulkStream.dat",
+        10,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "look up F3D mesh feature tessellations"));
 }
 
 #[test]
