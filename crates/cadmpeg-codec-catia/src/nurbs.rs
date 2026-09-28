@@ -97,12 +97,17 @@ impl LaneRefusals {
     /// This is the sink for a solver that answers "no representation" without
     /// an IR carrier error, such as a jet whose stored samples do not lower to
     /// a B-spline.
-    pub(crate) fn push_solver(&mut self, record: impl std::fmt::Display, detail: &str) {
-        self.notes.push(
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+    pub(crate) fn push_solver(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        detail: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(ctx, &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+            format_args!(
                 "A CATIA carrier record states lanes the reader cannot lower: {record} {detail}"
-            )),
-        );
+            ), "catia_solver_refusal_loss")
     }
 
     /// Record a refused source-stated parameter range against the record that
@@ -840,6 +845,27 @@ mod tests {
         }).expect("service profile admits collision note");
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].message, collision.to_string());
+    }
+
+    #[test]
+    fn solver_refusal_note_refuses_retained_and_collection_limits() {
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_solver_refusal_loss"));
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_solver(ctx, "a5 record", "jet does not close")
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_solver_refusal_loss"));
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_solver(ctx, "a5 record", "jet does not close")?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        }).expect("service profile admits solver note");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("a5 record jet does not close"));
     }
 
     #[test]
