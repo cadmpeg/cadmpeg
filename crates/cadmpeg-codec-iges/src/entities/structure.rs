@@ -88,29 +88,39 @@ fn network_connect_points(
     first_pointer_index: usize,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     global_table: GlobalTable,
-) -> Option<Vec<Option<u32>>> {
-    let count = record.count(count_index)?;
-    (0..count)
-        .map(|index| {
-            let value = if matches!(global_table, GlobalTable::V4_0) {
-                record.integer(first_pointer_index + index)
-            } else {
-                record.integer_or(first_pointer_index + index, 0)
-            }?;
-            if value == 0 {
-                return (!matches!(global_table, GlobalTable::V4_0)).then_some(None);
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Option<Vec<Option<u32>>>, CodecError> {
+    let Some(count) = record.count(count_index) else {
+        return Ok(None);
+    };
+    let mut points = Vec::new();
+    for index in 0..count {
+        let value = if matches!(global_table, GlobalTable::V4_0) {
+            record.integer(first_pointer_index + index)
+        } else {
+            record.integer_or(first_pointer_index + index, 0)
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let point = if value == 0 {
+            if matches!(global_table, GlobalTable::V4_0) {
+                return Ok(None);
             }
-            let sequence = u32::try_from(value).ok()?;
-            (sequence % 2 == 1)
-                .then_some(sequence)
-                .filter(|sequence| {
-                    entries
-                        .get(sequence)
-                        .is_some_and(|entry| entry.entity_type == 132)
-                })
-                .map(Some)
-        })
-        .collect()
+            None
+        } else {
+            let Some(sequence) = u32::try_from(value).ok().filter(|sequence| {
+                sequence % 2 == 1 && entries.get(sequence).is_some_and(|entry| entry.entity_type == 132)
+            }) else {
+                return Ok(None);
+            };
+            Some(sequence)
+        };
+        reserve_vec_growth(ctx, &mut points, 1, operation)?;
+        points.push(point);
+    }
+    Ok(Some(points))
 }
 
 fn network_connectivity_valid(
@@ -3393,7 +3403,9 @@ pub(super) fn project(
             8 + member_count,
             &entries,
             global.global_table(),
-        ) else {
+            ctx,
+            "iges network definition connect points",
+        )? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition connect-point count is invalid"))?;
             continue;
         };
@@ -3453,8 +3465,10 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_points =
-            network_connect_points(record, 11, 12, &entries, global.global_table());
+        let connect_points = network_connect_points(
+            record, 11, 12, &entries, global.global_table(), ctx,
+            "iges network instance connect points",
+        )?;
         let placement_valid = match placement_affine(
             entry,
             record,

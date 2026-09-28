@@ -16,7 +16,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::{
     admitted_containing_network_file, associativity_definition_file, bounded_associativity_forms_file,
     bounded_associativity_forms_file_with_global, flow_associativity_forms_file,
-    label_display_without_leader_file, legacy_associativity_forms_file,
+    connected_network_subfigure_file, label_display_without_leader_file, legacy_associativity_forms_file,
     legacy_associativity_forms_file_with_global, legacy_generic_single_parent_file,
     legacy_perforated_plane_file, nested_subfigure_file, network_subfigure_file,
     units_data_file,
@@ -1622,6 +1622,35 @@ fn structure_projection_refuses_attribute_and_occurrence_nodes() {
         }
         assert!(reached, "structure index refusal was not reached: {operation}");
     }
+}
+
+#[test]
+fn network_connect_point_lists_refuse_per_item_storage() {
+    let bytes = connected_network_subfigure_file();
+    for operation in [
+        "iges network definition connect points",
+        "iges network instance connect points",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("expected network connect-point refusal at {operation}: {other:?}"),
+            }
+        }
+        assert!(reached, "network connect-point refusal was not reached: {operation}");
+    }
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
 }
 
 #[test]
