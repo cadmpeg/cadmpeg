@@ -3435,67 +3435,118 @@ pub(super) fn external_reference_record_children(
 }
 
 /// Decode the explicit NX arrangement table.
-pub(super) fn configurations(container: &Container) -> Vec<Configuration> {
-    if container
-        .entries
-        .iter()
-        .filter(|entry| entry.name == "/Root/part/arrangements")
-        .count()
-        != 1
-    {
-        return Vec::new();
-    }
-    container
+pub(super) fn configurations(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<Configuration>, CodecError> {
+    let mut matches = container
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| entry.name == "/Root/part/arrangements")
-        .filter_map(|(entry_index, entry)| {
-            let (offset, size) = entry.file_span()?;
-            let (offset_usize, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-            let payload = container
-                .data
-                .get(offset_usize..offset_usize.checked_add(size)?)?;
-            let xml = xml_stream_text(payload)?;
-            let document = roxmltree::Document::parse(xml).ok()?;
-            let root = document.root_element();
-            if root.tag_name().name() != "Arrangements" {
-                return None;
-            }
-
-            let mut active_count = 0usize;
-            let mut names = BTreeSet::new();
-            let mut configurations = Vec::new();
-            for (ordinal, node) in root
-                .children()
-                .filter(roxmltree::Node::is_element)
-                .enumerate()
-            {
-                if node.tag_name().name() != "Arrangement" {
-                    return None;
-                }
-                let name = node.attribute("Name")?;
-                if name.is_empty() || !names.insert(name) {
-                    return None;
-                }
-                let is_default = match node.attribute("Default")? {
-                    "YES" => true,
-                    "NO" => false,
-                    _ => return None,
-                };
-                active_count += usize::from(is_default);
-                configurations.push(Configuration {
-                    id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
-                    name: name.to_string(),
-                    is_default,
-                    source_entry: entry.name.clone(),
-                    source_offset: offset + node.range().start as u64,
-                });
-            }
-            (!configurations.is_empty() && active_count <= 1).then_some(configurations)
-        })
-        .flatten()
-        .collect()
+        .filter(|(_, entry)| entry.name == "/Root/part/arrangements");
+    let Some((entry_index, entry)) = matches.next() else {
+        return Ok(Vec::new());
+    };
+    if matches.next().is_some() {
+        return Ok(Vec::new());
+    }
+    let Some((offset, size)) = entry.file_span() else {
+        return Ok(Vec::new());
+    };
+    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+        return Ok(Vec::new());
+    };
+    let Some(end) = start.checked_add(size) else {
+        return Ok(Vec::new());
+    };
+    let Some(payload) = container.data.get(start..end) else {
+        return Ok(Vec::new());
+    };
+    let Some(xml) = xml_stream_text(payload) else {
+        return Ok(Vec::new());
+    };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(xml.len()), "nx arrangement XML scan")?;
+    let Ok(document) = roxmltree::Document::parse(xml) else {
+        return Ok(Vec::new());
+    };
+    let root = document.root_element();
+    if root.tag_name().name() != "Arrangements" {
+        return Ok(Vec::new());
+    }
+    let node_count = root.children().filter(roxmltree::Node::is_element).count();
+    let index_bytes = node_count
+        .checked_mul(std::mem::size_of::<&str>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement names", 0, 1))?;
+    let _names_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "nx arrangement names",
+    )?;
+    let mut names = BTreeSet::new();
+    let mut active_count = 0usize;
+    for node in root.children().filter(roxmltree::Node::is_element) {
+        ctx.charge_work(1, "nx arrangement records")?;
+        if node.tag_name().name() != "Arrangement" {
+            return Ok(Vec::new());
+        }
+        let Some(name) = node.attribute("Name") else {
+            return Ok(Vec::new());
+        };
+        if name.is_empty() || names.contains(name) {
+            return Ok(Vec::new());
+        }
+        ctx.charge_collection_items(1, "nx arrangement names")?;
+        names.insert(name);
+        let is_default = match node.attribute("Default") {
+            Some("YES") => true,
+            Some("NO") => false,
+            _ => return Ok(Vec::new()),
+        };
+        active_count += usize::from(is_default);
+    }
+    if node_count == 0 || active_count > 1 {
+        return Ok(Vec::new());
+    }
+    let count_u64 = cadmpeg_core::decode::u64_from_index(node_count);
+    ctx.charge_collection_items(count_u64, "nx arrangement configurations")?;
+    let record_bytes = node_count
+        .checked_mul(std::mem::size_of::<Configuration>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement configurations", 0, count_u64))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(record_bytes),
+        "nx arrangement configurations",
+    )?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(node_count).map_err(|_| {
+        ctx.refuse_codec_limit("nx arrangement configurations", 0, count_u64)
+    })?;
+    for (ordinal, node) in root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .enumerate()
+    {
+        let Some(name) = node.attribute("Name") else {
+            return Ok(Vec::new());
+        };
+        let is_default = node.attribute("Default") == Some("YES");
+        let source_offset = offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx arrangement source offset", 0, 1))?;
+        output.push(Configuration {
+            id: retained_om_index_id(
+                ctx,
+                "nx:arrangements-",
+                entry_index,
+                ":configuration#",
+                cadmpeg_core::decode::u64_from_index(ordinal),
+                "nx arrangement configuration id",
+            )?,
+            name: copy_om_retained_text(ctx, name, "nx arrangement configuration name")?,
+            is_default,
+            source_entry: copy_om_retained_text(ctx, &entry.name, "nx arrangement source entry")?,
+            source_offset,
+        });
+    }
+    Ok(output)
 }
 
 /// Join the two independently framed active-arrangement declarations.

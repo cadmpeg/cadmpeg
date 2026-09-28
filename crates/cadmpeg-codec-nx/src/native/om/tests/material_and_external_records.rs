@@ -603,7 +603,10 @@ fn active_configuration_join_result(
         crate::container::scan_bytes(ctx, file.as_slice())
     })
     .expect("arrangement container");
-    let configurations = super::super::configurations(&container);
+    let configurations = crate::test_support::with_decode_context(|ctx| {
+        super::super::configurations(ctx, &container)
+    })
+    .expect("arrangement table");
     let attributes = super::super::part_attributes(&container);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -645,6 +648,66 @@ fn active_configuration_join_route_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "nx active configuration join"), "{error:?}");
+}
+
+fn arrangement_configuration_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::Configuration>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("arrangement container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::configurations(&ctx, &container)
+}
+
+#[test]
+fn arrangement_configuration_route_preserves_order() {
+    let configurations = arrangement_configuration_result(|_| {}).expect("arrangement table");
+    assert_eq!(configurations.len(), 2);
+    assert_eq!(configurations[0].name, "Model");
+    assert_eq!(configurations[1].name, "Exploded");
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_collection_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("arrangement names exceed collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx arrangement names"), "{error:?}");
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_retained_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("arrangement records exceed retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx arrangement configurations"), "{error:?}");
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_scoped_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("arrangement names exceed scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx arrangement names"), "{error:?}");
+}
+
+#[test]
+fn arrangement_configuration_route_refuses_work_limit() {
+    let error = arrangement_configuration_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("arrangement XML exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx arrangement XML scan"), "{error:?}");
 }
 
 #[test]
