@@ -1775,14 +1775,14 @@ fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget(
     )
 }
 
-pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache(
+pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces: [&SurfaceId; 2],
+    surfaces: [&'a SurfaceId; 2],
     chart: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BTreeMap<SurfaceId, Option<Vec<(Point2, Point3)>>>,
+    blend_parameter_grids: &mut BTreeMap<&'a str, Option<Vec<(Point2, Point3)>>>,
 ) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
     if chart.len() < 2
         || surfaces[0] == surfaces[1]
@@ -1791,10 +1791,11 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     {
         return Ok(None);
     }
-    let mut fit_parameters = |surface: &SurfaceId,
+    let mut fit_parameters = |side: usize,
                               point: Point3,
                               seed: Option<Point2>|
      -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
+        let surface = surfaces[side];
         let Some(carrier) = index.surfaces(surface.as_str()) else {
             return Ok(None);
         };
@@ -1822,17 +1823,18 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                 if offset.is_some() {
                     return Ok(offset);
                 }
-                if !blend_parameter_grids.contains_key(surface) {
+                if !blend_parameter_grids.contains_key(surface.as_str()) {
                     let grid = blend_surface_parameter_grid_with_index_and_budget(
                         index,
                         surface,
                         0,
                         geometry_budget,
                     )?;
-                    blend_parameter_grids.insert(surface.clone(), grid);
+                    geometry_budget.charge_collection_items(1, "nx intersection blend grid cache")?;
+                    blend_parameter_grids.insert(surface.as_str(), grid);
                 }
                 let grid = blend_parameter_grids
-                    .get(surface)
+                    .get(surface.as_str())
                     .and_then(Option::as_deref)
                     .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
                 blend_surface_parameters_for_fit_with_grid_and_budget(
@@ -1851,8 +1853,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         }
     };
     let (Some(first0), Some(first1)) = (
-        fit_parameters(surfaces[0], chart[0], seeds[0])?,
-        fit_parameters(surfaces[1], chart[0], seeds[1])?,
+        fit_parameters(0, chart[0], seeds[0])?,
+        fit_parameters(1, chart[0], seeds[1])?,
     ) else {
         return Ok(None);
     };
@@ -1898,10 +1900,11 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     if Point3::distance(first_point.get(), chart[0]) > fit_tolerance {
         return Ok(None);
     }
-    let mut lanes = [
-        vec![Point2::new(current[0], current[1])],
-        vec![Point2::new(current[2], current[3])],
-    ];
+    let mut lanes = [Vec::new(), Vec::new()];
+    let _first_lane_reservation = geometry_budget.reserve_vec(&mut lanes[0], chart.len(), "nx intersection first parameter lane")?;
+    let _second_lane_reservation = geometry_budget.reserve_vec(&mut lanes[1], chart.len(), "nx intersection second parameter lane")?;
+    lanes[0].push(Point2::new(current[0], current[1]));
+    lanes[1].push(Point2::new(current[2], current[3]));
 
     for chart_pair in chart.windows(2) {
         let Some(jacobian) =
@@ -1932,12 +1935,12 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         );
         let (Some(target0), Some(target1)) = (
             fit_parameters(
-                surfaces[0],
+                0,
                 chart_pair[1],
                 Some(Point2::new(current[0], current[1])),
             )?,
             fit_parameters(
-                surfaces[1],
+                1,
                 chart_pair[1],
                 Some(Point2::new(current[2], current[3])),
             )?,
