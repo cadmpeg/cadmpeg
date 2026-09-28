@@ -1668,9 +1668,9 @@ pub(crate) fn project_marker_backed_sketches(
                 }
             }
             if let Some(rectangle) = encoded_rectangle {
-                let rectangle_marker_refs = object_markers
-                    .iter()
-                    .filter_map(|marker| {
+                let mut rectangle_marker_refs = HashSet::new();
+                for marker in &object_markers {
+                    let Some(marker_id) = (|| {
                         let offset = index_from_u64(marker.offset())?;
                         compact_legacy_curve_endpoint_indices(&lane.native_payload, offset)
                             .or_else(|| {
@@ -1701,16 +1701,24 @@ pub(crate) fn project_marker_backed_sketches(
                                 current_wide_rectangle_line_endpoints(&lane.native_payload, offset)
                             })?;
                         Some(marker.id())
-                    })
-                    .collect::<HashSet<_>>();
+                    })() else {
+                        continue;
+                    };
+                    if !rectangle_marker_refs.contains(marker_id) {
+                        ctx.charge_collection_items(1, "index SLDPRT rectangle marker references")?;
+                        rectangle_marker_refs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "index SLDPRT rectangle marker references", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    }
+                    rectangle_marker_refs.insert(marker_id);
+                }
                 projected.retain(|entity| {
                     entity
                         .native_ref
                         .as_deref()
                         .is_none_or(|native| !rectangle_marker_refs.contains(native))
                 });
-                let Some(corners) = rectangle
-                    .map(|point| {
+                let corners = rectangle.map(|point| {
                         let point = transform.apply(quantize(
                             Point2::new(point.u * NATIVE_TO_IR, point.v * NATIVE_TO_IR),
                             QUANTUM,
@@ -1719,50 +1727,38 @@ pub(crate) fn project_marker_backed_sketches(
                             point.0 as f64 * QUANTUM,
                             point.1 as f64 * QUANTUM,
                         ))
-                    })
-                    .into_iter()
-                    .collect::<Option<Vec<_>>>()
-                else {
+                    });
+                let [Some(first), Some(second), Some(third), Some(fourth)] = corners else {
                     continue;
                 };
+                let corners = [first, second, third, fourth];
                 let point_matches_corner = |point: Point2, corner: Point2| {
                     same_dimension_length(point.u, corner.u)
                         && same_dimension_length(point.v, corner.v)
                 };
-                let misplaced_points = projected
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, entity)| {
-                        let SketchGeometryDefinition::Point { position } =
-                            *entity.geometry.definition()
-                        else {
-                            return None;
-                        };
-                        corners
-                            .iter()
-                            .all(|corner| !point_matches_corner(position.get(), *corner))
-                            .then_some(index)
+                let mut misplaced_points = projected.iter().enumerate().filter_map(|(index, entity)| {
+                    let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
+                        return None;
+                    };
+                    corners.iter().all(|corner| !point_matches_corner(position.get(), *corner))
+                        .then_some(index)
+                });
+                let mut missing_corners = corners.iter().copied().filter(|corner| {
+                    projected.iter().all(|entity| {
+                        !matches!(entity.geometry.definition(),
+                            SketchGeometryDefinition::Point { position }
+                                if point_matches_corner(position.get(), *corner))
                     })
-                    .collect::<Vec<_>>();
-                let missing_corners = corners
-                    .iter()
-                    .copied()
-                    .filter(|corner| {
-                        projected.iter().all(|entity| {
-                            !matches!((
-                                entity.geometry).definition(),
-                                SketchGeometryDefinition::Point { position }
-                                    if point_matches_corner(position.get(), *corner)
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                if let ([point], [corner]) =
-                    (misplaced_points.as_slice(), missing_corners.as_slice())
-                {
-                    projected[*point].geometry =
+                });
+                if let (Some(point), None, Some(corner), None) = (
+                    misplaced_points.next(),
+                    misplaced_points.next(),
+                    missing_corners.next(),
+                    missing_corners.next(),
+                ) {
+                    projected[point].geometry =
                         match SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                            position: *corner,
+                            position: corner,
                         }) {
                             Ok(geometry) => geometry,
                             Err(_) => continue,
@@ -1797,16 +1793,15 @@ pub(crate) fn project_marker_backed_sketches(
                     else {
                         continue;
                     };
-                    let matching = corners
+                    let mut matching = corners
                         .iter()
                         .enumerate()
                         .filter(|(_, corner)| {
                             same_dimension_length(corner.u, endpoint.u)
                                 && same_dimension_length(corner.v, endpoint.v)
                         })
-                        .map(|(index, _)| index)
-                        .collect::<Vec<_>>();
-                    let [index] = matching.as_slice() else {
+                        .map(|(index, _)| index);
+                    let (Some(index), None) = (matching.next(), matching.next()) else {
                         continue;
                     };
                     entity.geometry =
@@ -1819,22 +1814,34 @@ pub(crate) fn project_marker_backed_sketches(
                         };
                 }
                 for (index, start) in corners.iter().enumerate() {
-                    projected.push(SketchEntity::new(
-                        match SketchEntityId::mint(format!(
+                    let id_text = ctx.format_retained(
+                        format_args!(
                             "sldprt:model:sketch-entity#markers:{lane_key}:{}:rectangle:{index}",
                             native_feature.ordinal
-                        )) {
-                            Ok(id) => id,
-                            Err(_) => continue,
-                        },
-                        sketch_id.clone(),
-                        match SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                            start: *start,
-                            end: corners[(index + 1) % corners.len()],
-                        }) {
-                            Ok(geometry) => geometry,
-                            Err(_) => continue,
-                        },
+                        ),
+                        "format SLDPRT rectangle edge identity",
+                    )?;
+                    let Ok(entity_id) = SketchEntityId::mint(id_text) else {
+                        continue;
+                    };
+                    let sketch_text = ctx.format_retained(
+                        format_args!("{}", sketch_id.as_str()),
+                        "copy SLDPRT rectangle sketch identity",
+                    )?;
+                    let Ok(owner) = SketchId::mint(sketch_text) else {
+                        continue;
+                    };
+                    let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                        start: *start,
+                        end: corners[(index + 1) % corners.len()],
+                    }) else {
+                        continue;
+                    };
+                    ctx.reserve_collection_vec(&mut projected, 1, "append SLDPRT rectangle edges")?;
+                    projected.push(SketchEntity::new(
+                        entity_id,
+                        owner,
+                        geometry,
                     ));
                 }
             }
