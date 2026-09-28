@@ -121,38 +121,41 @@ fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
 }
 
 pub(super) fn resolve_two_center_semicircle_profile(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     markers: &[&SketchInputEntity],
     entities: &mut Vec<SketchEntity>,
     tolerance: f64,
-) {
-    let records = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            usize::try_from(marker.offset())
-                .ok()
-                .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
-        })
-        .collect::<Vec<_>>();
+) -> Result<(), CodecError> {
+    let mut records = Vec::new();
+    for marker in markers {
+        if usize::try_from(marker.offset())
+            .ok()
+            .is_some_and(|offset| current_linked_semicircle_record(payload, offset))
+        {
+            ctx.reserve_collection_vec(&mut records, 1, "collect SLDPRT semicircle records")?;
+            records.push(*marker);
+        }
+    }
     let [first_record, second_record] = records.as_slice() else {
-        return;
+        return Ok(());
     };
     let record_refs = [first_record.id(), second_record.id()];
-    let curve_entities = entities
-        .iter()
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Line { .. }
-                    | SketchGeometryDefinition::Arc { .. }
-                    | SketchGeometryDefinition::Circle { .. }
-                    | SketchGeometryDefinition::Ellipse { .. }
-                    | SketchGeometryDefinition::Nurbs { .. }
-                    | SketchGeometryDefinition::Native { .. }
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut curve_entities = Vec::new();
+    for entity in entities.iter() {
+        if matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Line { .. }
+                | SketchGeometryDefinition::Arc { .. }
+                | SketchGeometryDefinition::Circle { .. }
+                | SketchGeometryDefinition::Ellipse { .. }
+                | SketchGeometryDefinition::Nurbs { .. }
+                | SketchGeometryDefinition::Native { .. }
+        ) {
+            ctx.reserve_collection_vec(&mut curve_entities, 1, "collect SLDPRT semicircle curves")?;
+            curve_entities.push(entity);
+        }
+    }
     if curve_entities.len() != 2
         || curve_entities.iter().any(|entity| {
             !entity
@@ -161,25 +164,29 @@ pub(super) fn resolve_two_center_semicircle_profile(
                 .is_some_and(|id| record_refs.contains(&id))
         })
     {
-        return;
+        return Ok(());
     }
-    let points = entities
-        .iter()
-        .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.clone()?, position.get()))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut points = Vec::new();
+    for entity in entities.iter() {
+        let SketchGeometryDefinition::Point { position } = *entity.geometry.definition() else {
+            continue;
+        };
+        let Some(native_ref) = entity.native_ref.as_deref() else {
+            continue;
+        };
+        let native_ref = ctx.format_retained(
+            format_args!("{native_ref}"),
+            "copy SLDPRT semicircle point identity",
+        )?;
+        ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT semicircle points")?;
+        points.push((native_ref, position.get()));
+    }
     if points.len() != 6 {
-        return;
+        return Ok(());
     }
-    let centers = points
-        .iter()
-        .enumerate()
-        .filter_map(|(center_index, (center_ref, center))| {
-            let pairs = points
+    let mut centers = Vec::new();
+    for (center_index, (center_ref, center)) in points.iter().enumerate() {
+            let mut pairs = points
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| *index != center_index)
@@ -202,49 +209,53 @@ pub(super) fn resolve_two_center_semicircle_profile(
                                 && first_radius > tolerance
                                 && same_dimension_length(first_radius, second_radius))
                             .then_some((
-                                [first.0.clone(), second.0.clone()],
+                                [first.0.as_str(), second.0.as_str()],
                                 [first.1, second.1],
                                 first_radius,
                             ))
                         })
-                })
-                .collect::<Vec<_>>();
-            let [(endpoint_refs, endpoints, radius)] = pairs.as_slice() else {
-                return None;
+                });
+            let Some((endpoint_refs, endpoints, radius)) = pairs.next() else {
+                continue;
             };
-            let linked_records = records
+            if pairs.next().is_some() {
+                continue;
+            }
+            let mut linked_records = records
                 .iter()
                 .copied()
                 .filter(|record| {
                     record
                         .links()
                         .iter()
-                        .any(|link| link.entity_ref == **center_ref)
-                })
-                .collect::<Vec<_>>();
-            let [record] = linked_records.as_slice() else {
-                return None;
+                        .any(|link| link.entity_ref.as_str() == center_ref.as_str())
+                });
+            let Some(record) = linked_records.next() else {
+                continue;
             };
-            Some((
+            if linked_records.next().is_some() {
+                continue;
+            }
+            ctx.reserve_collection_vec(&mut centers, 1, "collect SLDPRT semicircle centers")?;
+            centers.push((
                 record.id(),
-                (*center_ref).clone(),
+                center_ref.as_str(),
                 *center,
-                endpoint_refs.clone(),
-                *endpoints,
-                *radius,
-            ))
-        })
-        .collect::<Vec<_>>();
+                endpoint_refs,
+                endpoints,
+                radius,
+            ));
+    }
     let [first, second] = centers.as_slice() else {
-        return;
+        return Ok(());
     };
     if first.0 == second.0 || !same_dimension_length(first.5, second.5) {
-        return;
+        return Ok(());
     }
     let center_delta = Point2::new(second.2.u - first.2.u, second.2.v - first.2.v);
     let center_distance = center_delta.u.hypot(center_delta.v);
     if center_distance <= tolerance {
-        return;
+        return Ok(());
     }
     let direction = Point2::new(
         center_delta.u / center_distance,
@@ -256,9 +267,14 @@ pub(super) fn resolve_two_center_semicircle_profile(
     if (first_radial.u * direction.u + first_radial.v * direction.v).abs() > tolerance
         || (second_radial.u * direction.u + second_radial.v * direction.v).abs() > tolerance
     {
-        return;
+        return Ok(());
     }
-    let order_endpoints = |center: Point2, refs: &[String; 2], endpoints: [Point2; 2]| {
+    fn order_endpoints<'a>(
+        center: Point2,
+        refs: [&'a str; 2],
+        endpoints: [Point2; 2],
+        perpendicular: Point2,
+    ) -> ([&'a str; 2], [Point2; 2]) {
         let signed = endpoints.map(|point| {
             (
                 (point.u - center.u) * perpendicular.u + (point.v - center.v) * perpendicular.v,
@@ -267,60 +283,85 @@ pub(super) fn resolve_two_center_semicircle_profile(
         });
         if signed[0].0 > signed[1].0 {
             (
-                [refs[0].clone(), refs[1].clone()],
+                [refs[0], refs[1]],
                 [signed[0].1, signed[1].1],
             )
         } else {
             (
-                [refs[1].clone(), refs[0].clone()],
+                [refs[1], refs[0]],
                 [signed[1].1, signed[0].1],
             )
         }
-    };
-    let (first_refs, first_endpoints) = order_endpoints(first.2, &first.3, first.4);
-    let (second_refs, second_endpoints) = order_endpoints(second.2, &second.3, second.4);
+    }
+    let (first_refs, first_endpoints) = order_endpoints(first.2, first.3, first.4, perpendicular);
+    let (second_refs, second_endpoints) = order_endpoints(second.2, second.3, second.4, perpendicular);
     let arc =
-        |center: Point2, radius: f64, refs: &[String; 2], endpoints: [Point2; 2], reverse: bool| {
+        |center: Point2, radius: f64, refs: &[&str; 2], endpoints: [Point2; 2], reverse: bool| -> Result<Option<_>, CodecError> {
             let (start_ref, end_ref, start, end) = if reverse {
                 (&refs[1], &refs[0], endpoints[1], endpoints[0])
             } else {
                 (&refs[0], &refs[1], endpoints[0], endpoints[1])
             };
-            let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            let Some(radius) = Length::new(radius) else {
+                return Ok(None);
+            };
+            let Some(start_angle) = Angle::new((start.v - center.v).atan2(start.u - center.u)) else {
+                return Ok(None);
+            };
+            let Some(end_angle) = Angle::new((end.v - center.v).atan2(end.u - center.u)) else {
+                return Ok(None);
+            };
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center,
-                radius: Length::new(radius)?,
-                start_angle: Angle::new((start.v - center.v).atan2(start.u - center.u))?,
-                end_angle: Angle::new((end.v - center.v).atan2(end.u - center.u))?,
-            })
-            .ok()?;
-            Some((geometry, vec![start_ref.clone(), end_ref.clone()]))
+                radius,
+                start_angle,
+                end_angle,
+            }) else {
+                return Ok(None);
+            };
+            let mut endpoint_refs = Vec::new();
+            for endpoint in [start_ref, end_ref] {
+                let endpoint = ctx.format_retained(
+                    format_args!("{endpoint}"),
+                    "copy SLDPRT semicircle endpoint identity",
+                )?;
+                ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT semicircle endpoints")?;
+                endpoint_refs.push(endpoint);
+            }
+            Ok(Some((geometry, endpoint_refs)))
         };
     let Some((first_geometry, first_endpoint_refs)) =
-        arc(first.2, first.5, &first_refs, first_endpoints, false)
+        arc(first.2, first.5, &first_refs, first_endpoints, false)?
     else {
-        return;
+        return Ok(());
     };
     let Some((second_geometry, second_endpoint_refs)) =
-        arc(second.2, second.5, &second_refs, second_endpoints, true)
+        arc(second.2, second.5, &second_refs, second_endpoints, true)?
     else {
-        return;
+        return Ok(());
     };
 
     let Some(first_entity) = entities
         .iter_mut()
         .find(|entity| entity.native_ref.as_deref() == Some(first.0))
     else {
-        return;
+        return Ok(());
     };
     first_entity.construction = false;
     first_entity.endpoint_refs = first_endpoint_refs;
     first_entity.geometry = first_geometry;
-    let sketch = first_entity.sketch.clone();
+    let sketch_text = ctx.format_retained(
+        format_args!("{}", first_entity.sketch.as_str()),
+        "copy SLDPRT semicircle sketch identity",
+    )?;
+    let Ok(sketch) = SketchId::mint(sketch_text) else {
+        return Ok(());
+    };
     let Some(second_entity) = entities
         .iter_mut()
         .find(|entity| entity.native_ref.as_deref() == Some(second.0))
     else {
-        return;
+        return Ok(());
     };
     second_entity.construction = false;
     second_entity.endpoint_refs = second_endpoint_refs;
@@ -346,23 +387,36 @@ pub(super) fn resolve_two_center_semicircle_profile(
     .into_iter()
     .enumerate()
     {
-        entities.push(
-            SketchEntity::new(
-                match SketchEntityId::mint(format!(
-                    "sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"
-                )) {
-                    Ok(id) => id,
-                    Err(_) => continue,
-                },
-                sketch.clone(),
-                match SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }) {
-                    Ok(geometry) => geometry,
-                    Err(_) => continue,
-                },
-            )
-            .with_endpoint_refs(vec![start_ref.clone(), end_ref.clone()]),
-        );
+        let id_text = ctx.format_retained(
+            format_args!("sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"),
+            "format SLDPRT semicircle line identity",
+        )?;
+        let Ok(id) = SketchEntityId::mint(id_text) else {
+            continue;
+        };
+        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }) else {
+            continue;
+        };
+        let mut endpoint_refs = Vec::new();
+        for endpoint in [start_ref, end_ref] {
+            let endpoint = ctx.format_retained(
+                format_args!("{endpoint}"),
+                "copy SLDPRT semicircle line endpoint identity",
+            )?;
+            ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT semicircle line endpoints")?;
+            endpoint_refs.push(endpoint);
+        }
+        let sketch_copy = ctx.format_retained(
+            format_args!("{}", sketch.as_str()),
+            "copy SLDPRT semicircle line sketch identity",
+        )?;
+        let Ok(sketch_copy) = SketchId::mint(sketch_copy) else {
+            continue;
+        };
+        ctx.reserve_collection_vec(entities, 1, "append SLDPRT semicircle line")?;
+        entities.push(SketchEntity::new(id, sketch_copy, geometry).with_endpoint_refs(endpoint_refs));
     }
+    Ok(())
 }
 
 pub(super) fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
