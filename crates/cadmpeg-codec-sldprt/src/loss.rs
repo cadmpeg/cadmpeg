@@ -387,8 +387,7 @@ pub(crate) fn spline_lane_refusal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: impl std::fmt::Display,
 ) -> Result<LossNote, cadmpeg_core::CodecError> {
-    let message = crate::lane_refusal::format_retained(
-        ctx,
+    let message = ctx.format_retained(
         format_args!(
             "{record}; the carrier is not emitted and the entities that reference it fall back \
              to an untyped support."

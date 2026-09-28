@@ -11,7 +11,6 @@ use crate::records::{
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::fmt::{self, Write};
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
@@ -86,9 +85,9 @@ pub(crate) fn named_scalars_charged(
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
         let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = format_scalar_text(
-            ctx,
+        let id = ctx.format_retained(
             format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
+            "retain SLDPRT scalar identity",
         )?;
         let parent = copy_scalar_text(ctx, parent)?;
         let name_id = copy_scalar_text(ctx, &name.id)?;
@@ -114,31 +113,6 @@ fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Codec
     ctx.reserve_retained_string(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
     copy.push_str(text);
     Ok(copy)
-}
-
-struct ScalarTextSize(usize);
-
-impl Write for ScalarTextSize {
-    fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-fn format_scalar_text(
-    ctx: &DecodeContext<'_>,
-    message: fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    let mut size = ScalarTextSize(0);
-    fmt::write(&mut size, message).map_err(|_| {
-        ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX)
-    })?;
-    let mut text = String::new();
-    ctx.reserve_retained_string(&mut text, size.0, "retain SLDPRT scalar identity")?;
-    fmt::write(&mut text, message).map_err(|_| {
-        CodecError::Malformed("cannot format SLDPRT scalar identity".into())
-    })?;
-    Ok(text)
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -238,9 +212,9 @@ fn scalar_operands_charged(
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
         })?;
-        let reference_ref = format_scalar_text(
-            ctx,
+        let reference_ref = ctx.format_retained(
             format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
+            "retain SLDPRT scalar identity",
         )?;
         ctx.reserve_collection_vec(&mut operands, 1, "collect SLDPRT scalar operands")?;
         operands.push(FeatureInputOperand {
