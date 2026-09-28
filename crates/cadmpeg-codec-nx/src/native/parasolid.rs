@@ -1464,6 +1464,29 @@ trait ParasolidStreamRecords {
     fn id(record: &Self::Record) -> &str;
 }
 
+fn parasolid_record_id(
+    ctx: &DecodeContext<'_>,
+    stream_ordinal: usize,
+    stem: &'static str,
+    xmt: u32,
+) -> Result<String, CodecError> {
+    let id_len = "nx:s".len()
+        .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+        .and_then(|length| length.checked_add(1 + stem.len() + 1))
+        .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid record id", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "retain NX Parasolid record id",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(id_len)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid record id", 0, 1))?;
+    write!(&mut id, "nx:s{stream_ordinal}:{stem}#{xmt}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX Parasolid record id", 0, 1))?;
+    Ok(id)
+}
+
 /// Run the cached-view record skeleton for one family: map every cached row of
 /// every stream to a record, then sort by identity. Non-Parasolid streams hold
 /// empty views, so no per-stream guard is needed.
@@ -1484,22 +1507,7 @@ fn per_parasolid_stream<P: ParasolidStreamRecords>(
             records.try_reserve_exact(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX Parasolid cached records", 0, 1)
             })?;
-            let xmt = P::xmt(row);
-            let id_len = "nx:s".len()
-                .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
-                .and_then(|length| length.checked_add(1 + P::ID_STEM.len() + 1))
-                .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
-                .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid cached record id", 0, 1))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(id_len),
-                "retain NX Parasolid cached record id",
-            )?;
-            let mut id = String::new();
-            id.try_reserve_exact(id_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX Parasolid cached record id", 0, 1)
-            })?;
-            write!(&mut id, "nx:s{stream_ordinal}:{}#{xmt}", P::ID_STEM)
-                .map_err(|_| ctx.refuse_codec_limit("write NX Parasolid cached record id", 0, 1))?;
+            let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(row))?;
             records.push(P::record(id, ordinal, row));
         }
     }
@@ -1552,11 +1560,34 @@ fn per_parasolid_scan<P: ParasolidScanRecords>(
         if !stream.kind().is_parasolid() {
             continue;
         }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX Parasolid scan ordinal", 0, 1))?;
         for row in P::scan(ctx, &stream.inflated)? {
-            let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(&row));
-            records.push(P::record(id, stream_ordinal as u32, row));
+            ctx.charge_collection_items(1, "NX Parasolid scanned records")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<P::Record>()),
+                "retain NX Parasolid scanned records",
+            )?;
+            records.try_reserve_exact(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX Parasolid scanned records", 0, 1)
+            })?;
+            let id = parasolid_record_id(ctx, stream_ordinal, P::ID_STEM, P::xmt(&row))?;
+            records.push(P::record(id, ordinal, row));
         }
     }
+    let sort_factor = if records.len() < 2 {
+        1
+    } else {
+        usize::try_from(records.len().ilog2())
+            .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?
+            + 1
+    };
+    let sort_units = records.len().checked_mul(sort_factor)
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid scanned records", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_units),
+        "sort NX Parasolid scanned records",
+    )?;
     records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
     Ok(records)
 }
@@ -3979,6 +4010,61 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "NX Parasolid cached records"
+        ));
+    }
+
+    struct OneScannedRecord;
+
+    impl super::ParasolidScanRecords for OneScannedRecord {
+        type Row = u32;
+        type Record = String;
+        const ID_STEM: &'static str = "test-record";
+
+        fn scan(
+            _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            _bytes: &[u8],
+        ) -> Result<Vec<Self::Row>, cadmpeg_core::CodecError> {
+            Ok(vec![7])
+        }
+
+        fn xmt(row: &Self::Row) -> u32 {
+            *row
+        }
+
+        fn record(id: String, _stream_ordinal: u32, _row: Self::Row) -> Self::Record {
+            id
+        }
+
+        fn id(record: &Self::Record) -> &str {
+            record
+        }
+    }
+
+    #[test]
+    fn parasolid_scanned_records_refuse_collection_at_caller_limit() {
+        let bytes = crate::test_support::test_prt::prt_with_partition(&topology_partition_stream());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        let error = super::per_parasolid_scan::<OneScannedRecord>(&limited_ctx, &scan.streams)
+            .err()
+            .expect("scanned record refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX Parasolid scanned records"
         ));
     }
     #[test]
