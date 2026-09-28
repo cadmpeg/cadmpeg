@@ -32,6 +32,10 @@ fn numerical_0922_wide_domain_keeps_distinct_roots() {
 }
 #[test]
 fn numerical_0922_small_domain_keeps_fit_samples() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("test context");
     let mut s = bilinear([0., 1.], 1.);
     s.edit_control_points(|p| {
         p.z = p.x * p.y;
@@ -47,8 +51,8 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
             false,
         )
         .unwrap();
-        let samples = nurbs_curve_sample_parameters(&c, [0., d]).unwrap();
-        let (uv, error) = nurbs_degree_one_cache_lanes(&s, &c, [0., d])
+        let samples = nurbs_curve_sample_parameters(&ctx, &c, [0., d]).unwrap().unwrap();
+        let (uv, error) = nurbs_degree_one_cache_lanes(&ctx, &s, &c, [0., d])
             .expect("resource allocation did not fail")
             .unwrap();
         let observed = Point3::new(0.5, 0.5, 0.5).distance(
