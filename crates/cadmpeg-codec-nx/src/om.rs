@@ -2330,12 +2330,14 @@ pub(crate) fn operation_body_11_continuations(
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
 pub(crate) fn operation_body_reference_lanes(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Vec<OperationBodyReferenceLane> {
-    operation_body_reference_candidates(record)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(body_ordinal, reference)| {
+) -> Result<Vec<OperationBodyReferenceLane>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.bytes().len()), "scan NX operation body reference lanes")?;
+    let mut lanes = Vec::new();
+    for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
+        let mut failure = None;
+        let lane = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             let branch = discriminators::OperationBodyReferenceBranch::try_from(
@@ -2357,18 +2359,22 @@ pub(crate) fn operation_body_reference_lanes(
                 return None;
             }
             at += 2;
-            let compact =
-                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
+            let compact = match operation_body_reference_lane_values(ctx, record, at, count - 1, |bytes, offset| {
                     let atom = CompactIndexAtom::read(bytes)?;
                     let width = atom.raw().len();
                     Some((LocatedCompactIndex { atom, offset }, width))
-                });
-            let objects =
-                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
+                }) {
+                Ok(values) => values,
+                Err(error) => { failure = Some(error); return None; }
+            };
+            let objects = match operation_body_reference_lane_values(ctx, record, at, count - 1, |bytes, offset| {
                     let token = reference_index::PayloadIndexToken::read(bytes)?;
                     let width = token.raw().len();
                     Some((PayloadObjectReference { offset, token }, width))
-                });
+                }) {
+                Ok(values) => values,
+                Err(error) => { failure = Some(error); return None; }
+            };
             let values = match (compact, objects) {
                 (Some(values), None) => OperationBodyReferenceLaneValues::CompactIndex(values),
                 (None, Some(values)) => {
@@ -2382,23 +2388,31 @@ pub(crate) fn operation_body_reference_lanes(
                 branch,
                 values,
             })
-        })
-        .collect()
+        })();
+        if let Some(error) = failure { return Err(error); }
+        if let Some(lane) = lane {
+            reserve_om_retained_item(ctx, &mut lanes, "NX operation body reference lanes")?;
+            lanes.push(lane);
+        }
+    }
+    Ok(lanes)
 }
 
 fn operation_body_reference_lane_values<T>(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
     mut at: usize,
     count: usize,
     read: impl Fn(&[u8], usize) -> Option<(T, usize)>,
-) -> Option<Vec<T>> {
-    let mut values = Vec::with_capacity(count);
+) -> Result<Option<Vec<T>>, CodecError> {
+    let mut values = Vec::new();
     for _ in 0..count {
-        let (value, width) = read(record.bytes().get(at..)?, record.offset() + at)?;
+        let Some((value, width)) = record.bytes().get(at..).and_then(|bytes| read(bytes, record.offset() + at)) else { return Ok(None) };
         at += width;
+        reserve_om_retained_item(ctx, &mut values, "NX operation body lane values")?;
         values.push(value);
     }
-    (record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
+    Ok((record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values))
 }
 
 /// Decode one complete datum-plane descriptor block.
