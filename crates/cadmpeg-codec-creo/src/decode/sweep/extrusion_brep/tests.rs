@@ -1,8 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::sketch_profiles_cover_generated_extrusion_sides;
+use super::{copy_ring_coedges, sketch_profiles_cover_generated_extrusion_sides};
 use crate::decode::tests::surface_row;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
+
+fn ring_copy_at_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+    collection_operation: &'static str,
+    identity_operation: &'static str,
+) -> Result<Vec<cadmpeg_ir::ids::CoedgeId>, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ids = [cadmpeg_ir::ids::CoedgeId::mint("creo:brep:coedge#10:0")
+        .expect("valid coedge identity")];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    copy_ring_coedges(&ctx, &ids, collection_operation, identity_operation)
+}
+
+#[test]
+fn bottom_ring_copy_refuses_collection_limit() {
+    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+        "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion bottom ring coedge copies"));
+}
+
+#[test]
+fn bottom_ring_copy_refuses_retained_limit() {
+    assert!(matches!(ring_copy_at_limits(1, 0,
+        "creo extrusion bottom ring coedge copies", "creo extrusion bottom ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion bottom ring coedge identities"));
+}
+
+#[test]
+fn top_ring_copy_refuses_collection_limit() {
+    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+        "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion top ring coedge copies"));
+}
+
+#[test]
+fn top_ring_copy_refuses_retained_limit() {
+    assert!(matches!(ring_copy_at_limits(1, 0,
+        "creo extrusion top ring coedge copies", "creo extrusion top ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion top ring coedge identities"));
+}
+
+#[test]
+fn side_ring_copy_refuses_collection_limit() {
+    assert!(matches!(ring_copy_at_limits(0, u64::MAX,
+        "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion side ring coedge copies"));
+}
+
+#[test]
+fn side_ring_copy_refuses_retained_limit() {
+    assert!(matches!(ring_copy_at_limits(1, 0,
+        "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion side ring coedge identities"));
+}
+
+#[test]
+fn ring_copy_preserves_coedge_identity_order() {
+    let ids = ring_copy_at_limits(1, u64::MAX,
+        "creo extrusion side ring coedge copies", "creo extrusion side ring coedge identities")
+        .expect("admitted ring copy");
+    assert_eq!(ids[0].as_str(), "creo:brep:coedge#10:0");
+}
 
 fn definition() -> crate::feature::definitions::FeatureDefinition {
     crate::feature::definitions::FeatureDefinition {
