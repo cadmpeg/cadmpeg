@@ -118,7 +118,11 @@ pub(super) fn classify_members<'a>(
     scan: &ContainerScan<'a>,
 ) -> Result<ArchiveSession<'a>, CodecError> {
     let mut members = BTreeMap::new();
-    let mut layers = DialectLayers::of(scan.kind.dialect().clone());
+    let primary = scan
+        .kind
+        .dialect()
+        .clone_charged(ctx, "clone F3Z primary dialect layer")?;
+    let mut layers = DialectLayers::of(primary);
     let mut losses = Vec::new();
     for member_path in scan
         .entries
