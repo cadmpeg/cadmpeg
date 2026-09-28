@@ -450,16 +450,23 @@ pub(super) fn principal_plane_in_history(
 }
 
 pub(super) fn extrude_op(kind: &str) -> Option<BooleanOp> {
-    let kind = kind
+    if matches_alnum_ascii(kind, b"bossextrude") {
+        Some(BooleanOp::Join)
+    } else if matches_alnum_ascii(kind, b"cutextrude")
+        || matches_alnum_ascii(kind, b"cutextrudethin")
+    {
+        Some(BooleanOp::Cut)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn matches_alnum_ascii(value: &str, expected: &[u8]) -> bool {
+    value
         .bytes()
         .filter(u8::is_ascii_alphanumeric)
         .map(|byte| byte.to_ascii_lowercase())
-        .collect::<Vec<_>>();
-    match kind.as_slice() {
-        b"bossextrude" => Some(BooleanOp::Join),
-        b"cutextrude" | b"cutextrudethin" => Some(BooleanOp::Cut),
-        _ => None,
-    }
+        .eq(expected.iter().copied())
 }
 
 pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
