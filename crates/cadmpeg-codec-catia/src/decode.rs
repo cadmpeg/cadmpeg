@@ -234,7 +234,7 @@ fn finish_decode(
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
-    let consolidated_record_sources = container::consolidated_record_sources(scan);
+    let consolidated_record_sources = container::consolidated_record_sources(ctx, scan)?;
     let native = CatiaNative::decode_with_record_sources(
         ctx,
         &scan.data,

@@ -286,7 +286,10 @@ pub(super) fn try_decode_freeform_surfaces(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
-        let logical_streams = container::logical_record_streams(scan);
+        let logical_streams = match container::logical_record_streams(ctx, scan) {
+            Ok(streams) => streams,
+            Err(error) => return Some(Err(error)),
+        };
         let selection_budget =
             ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
         let object_selection = crate::families::b5::graph::select_object_stream_population(
@@ -336,10 +339,14 @@ pub(super) fn try_decode_freeform_surfaces(
                 run_count,
             } => (run_count, 1, false, source, frames, records, census_records),
         };
+        let sources = match container::consolidated_record_sources(ctx, scan) {
+            Ok(sources) => sources,
+            Err(error) => return Some(Err(error)),
+        };
         let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
             ctx,
             &scan.data,
-            container::consolidated_record_sources(scan),
+            sources,
         ) {
             Ok(records) => records,
             Err(error) => return Some(Err(error)),

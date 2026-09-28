@@ -2261,8 +2261,12 @@ fn try_decode_standard_population(
     if !work_budget.charge() {
         return None;
     }
+    let sources = match container::consolidated_record_sources(ctx, scan) {
+        Ok(sources) => sources,
+        Err(error) => return Some(Err(error)),
+    };
     let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
-        ctx, &scan.data, container::consolidated_record_sources(scan),
+        ctx, &scan.data, sources,
     ) {
         Ok(records) => records,
         Err(error) => return Some(Err(error)),
@@ -3790,7 +3794,7 @@ fn standard_object_evidence(
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut evidence = standard_object_evidence_from_streams(
         ctx,
-        container::logical_record_streams(scan),
+        container::logical_record_streams(ctx, scan)?,
         tags,
         edge_tags,
         refusal,
