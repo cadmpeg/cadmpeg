@@ -19,6 +19,33 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceObjectAssociation;
 
 #[test]
+fn pcurve_pair_continuity_refuses_at_matching_retained_limit() {
+    let counts = BTreeMap::from([
+        ("Curve2ds".to_owned(), 2),
+        ("Surfaces".to_owned(), 1),
+        ("Locations".to_owned(), 0),
+    ]);
+    assert_retained_refusal_at(&[], "FreeCAD B-rep edge continuity", |ctx| {
+        let tokens = ["1", "2", "CONTINUITY", "1", "0", "0", "10"];
+        let mut cursor = TokenCursor::new(ctx, &tokens);
+        super::super::parse_edge_representation(3, &mut cursor, &counts, 1)
+    });
+}
+
+#[test]
+fn edge_regularity_continuity_refuses_at_matching_retained_limit() {
+    let counts = BTreeMap::from([
+        ("Surfaces".to_owned(), 1),
+        ("Locations".to_owned(), 0),
+    ]);
+    assert_retained_refusal_at(&[], "FreeCAD B-rep edge continuity", |ctx| {
+        let tokens = ["CONTINUITY", "1", "0", "1", "0"];
+        let mut cursor = TokenCursor::new(ctx, &tokens);
+        super::super::parse_edge_representation(4, &mut cursor, &counts, 1)
+    });
+}
+
+#[test]
 fn binary_section_diagnostic_refuses_at_matching_retained_limit() {
     assert_retained_refusal_at(&[], "FreeCAD binary section diagnostic", |ctx| {
         let mut cursor = super::super::BinaryCursor::new(ctx, b"Wrong 0\n");

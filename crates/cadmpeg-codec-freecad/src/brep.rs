@@ -4748,7 +4748,10 @@ fn parse_edge_representation(
                     counts["Curve2ds"],
                 )?;
                 let continuity = joined_continuity
-                    .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?;
+                    .map_or_else(|| {
+                        let token = cursor.next("edge continuity")?;
+                        retained_string(cursor.ctx, token, "FreeCAD B-rep edge continuity")
+                    }, Ok)?;
                 Some((secondary, continuity))
             } else {
                 None
@@ -4785,7 +4788,8 @@ fn parse_edge_representation(
             })
         }
         4 => {
-            let continuity = cursor.next("edge continuity")?.to_owned();
+            let continuity_token = cursor.next("edge continuity")?;
+            let continuity = retained_string(cursor.ctx, continuity_token, "FreeCAD B-rep edge continuity")?;
             let first_surface =
                 parse_reference(cursor, "edge regularity surface", counts["Surfaces"], false)?;
             let location = parse_reference(
