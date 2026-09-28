@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
+pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::{DesignFeatureKind, DesignParameterScope},
