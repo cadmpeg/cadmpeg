@@ -190,12 +190,16 @@ impl CatiaNative {
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
-        let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
-            &entity_records,
-            &entities_by_graph_identity,
-            &entity_classes_by_graph_identity,
-            &terminal_nulls_by_graph,
-        );
+        let expected_schema_configuration_row_chains = crate::test_support::with_service_context(|ctx| {
+            derive_schema_configuration_row_chains(
+                ctx,
+                &entity_records,
+                &entities_by_graph_identity,
+                &entity_classes_by_graph_identity,
+                &terminal_nulls_by_graph,
+            )
+        })
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "schema-configuration-row chains do not match their successor links".to_string(),
