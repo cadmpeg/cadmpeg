@@ -4258,7 +4258,8 @@ fn extrusion_definition(
         taper_reverse: taper_angle(ctx, properties, "TaperAngleRev")?,
         taper_second,
     };
-    Ok(extrusion_shape(
+    extrusion_shape(
+        ctx,
         kind,
         properties,
         profile,
@@ -4266,10 +4267,11 @@ fn extrusion_definition(
         sketches,
         &drafts,
         face_maker_class,
-    ))
+    )
 }
 
 fn extrusion_shape(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     profile: ProfileRef,
@@ -4277,30 +4279,38 @@ fn extrusion_shape(
     sketches: &[Sketch],
     drafts: &ExtrudeDrafts,
     face_maker_class: Option<String>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    macro_rules! required {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     if kind == "Part::Extrusion" {
         let raw_direction = vector_property(properties, "Dir");
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
-        let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
+        let direction_mode = required!(enumeration_selector(properties, "DirMode", 0));
         let (mut direction, direction_source) = match direction_mode {
             0 => (
-                cadmpeg_ir::units::UnitVector3::normalized(raw_direction?.get())?,
+                required!(cadmpeg_ir::units::UnitVector3::normalized(required!(raw_direction).get())),
                 ExtrusionDirectionSource::Custom {},
             ),
             1 => {
-                let reference = property(properties, "DirLink")?;
+                let reference = required!(property(properties, "DirLink"));
                 if reference.links().len() != 1 {
-                    return None;
+                    return Ok(None);
                 }
                 (
-                    cadmpeg_ir::units::UnitVector3::normalized(raw_direction?.get())?,
+                    required!(cadmpeg_ir::units::UnitVector3::normalized(required!(raw_direction).get())),
                     ExtrusionDirectionSource::Edge {
-                        reference: PathRef::Native(reference.id.clone()),
+                        reference: PathRef::Native(retained_string(ctx, &reference.id, "fcstd extrusion direction link")?),
                     },
                 )
             }
             2 => {
-                let normal = match &profile {
+                let normal = required!(match &profile {
                     ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
@@ -4308,24 +4318,24 @@ fn extrusion_shape(
                         .map(|(_, normal, _)| normal.get())
                         .or(profile_normal),
                     _ => profile_normal,
-                }?;
+                });
                 (
-                    cadmpeg_ir::units::UnitVector3::normalized(normal)?,
+                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
                     ExtrusionDirectionSource::ProfileNormal {},
                 )
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         let signed_length = |name| match scalar_named(properties, name) {
             Some(value) => Some(value),
             None => Some(FiniteReal::ZERO),
         };
-        let mut forward = signed_length("LengthFwd")?.get();
-        let reverse = signed_length("LengthRev")?.get();
+        let mut forward = required!(signed_length("LengthFwd")).get();
+        let reverse = required!(signed_length("LengthRev")).get();
         if forward == 0.0 && reverse == 0.0 {
-            forward = direction_magnitude.filter(|value| value.is_finite() && *value > 0.0)?;
+            forward = required!(direction_magnitude.filter(|value| value.is_finite() && *value > 0.0));
         }
-        let symmetric = bool_selector(properties, "Symmetric", false)?;
+        let symmetric = required!(bool_selector(properties, "Symmetric", false));
         let (extent, reverse_direction) = if symmetric {
             // A symmetric extent mirrors one side across the profile plane, so
             // its single side carries the taper once (from `TaperAngle`).
@@ -4333,9 +4343,9 @@ fn extrusion_shape(
                 ExtrudeExtent::Symmetric {
                     side: ExtrudeSide {
                         termination: LinearTermination::Blind {
-                            length: cadmpeg_ir::scalar::NonZeroLength::new(
-                                (forward != 0.0).then_some(forward.abs())?,
-                            )?,
+                            length: required!(cadmpeg_ir::scalar::NonZeroLength::new(
+                                required!((forward != 0.0).then_some(forward.abs())),
+                            )),
                         },
                         draft: drafts.taper,
                     },
@@ -4349,7 +4359,7 @@ fn extrusion_shape(
                 .zip(reverse_travel)
                 .is_some_and(|((first, _), (second, _))| first.signum() == second.signum());
             if same_side && drafts.taper != drafts.taper_reverse {
-                return None;
+                return Ok(None);
             }
             let farthest = |positive: bool| {
                 [forward_travel, reverse_travel]
@@ -4365,7 +4375,7 @@ fn extrusion_shape(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(length)?,
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(length)),
                             },
                             draft,
                         },
@@ -4376,7 +4386,7 @@ fn extrusion_shape(
                     ExtrudeExtent::OneSided {
                         side: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(-length)?,
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-length)),
                             },
                             draft,
                         },
@@ -4387,47 +4397,47 @@ fn extrusion_shape(
                     ExtrudeExtent::TwoSided {
                         first: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(first)?,
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(first)),
                             },
                             draft: first_draft,
                         },
                         second: ExtrudeSide {
                             termination: LinearTermination::Blind {
-                                length: cadmpeg_ir::scalar::NonZeroLength::new(-second)?,
+                                length: required!(cadmpeg_ir::scalar::NonZeroLength::new(-second)),
                             },
                             draft: second_draft,
                         },
                     },
                     false,
                 ),
-                (None, None) => return None,
+                (None, None) => return Ok(None),
             }
         };
-        if reverse_direction ^ bool_selector(properties, "Reversed", false)? {
+        if reverse_direction ^ required!(bool_selector(properties, "Reversed", false)) {
             direction = direction.reversed();
         }
         let face_maker = if property(properties, "FaceMakerClass").is_some() {
-            let maker = FaceMaker::new(face_maker_class?)?;
+            let maker = required!(FaceMaker::new(required!(face_maker_class)));
             if property(properties, "FaceMakerMode").is_some()
-                && u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?
+                && required!(u32::try_from(required!(integer_property(properties, "FaceMakerMode"))).ok())
                     != maker.mode()
             {
-                return None;
+                return Ok(None);
             }
             Some(maker)
         } else {
             None
         };
         let inner_wire_taper = if property(properties, "InnerWireTaper").is_some() {
-            Some(match integer_property(properties, "InnerWireTaper")? {
+            Some(match required!(integer_property(properties, "InnerWireTaper")) {
                 0 => InnerWireTaper::Inverted,
                 1 => InnerWireTaper::SameAsOuter,
-                _ => return None,
+                _ => return Ok(None),
             })
         } else {
             None
         };
-        return Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        return Ok(Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
@@ -4436,15 +4446,15 @@ fn extrusion_shape(
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
             extent,
             op: BooleanOp::NewBody,
-            solid: Some(bool_selector(properties, "Solid", false)?),
+            solid: Some(required!(bool_selector(properties, "Solid", false))),
             face_maker,
             inner_wire_taper,
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
-        }));
+        })));
     }
     let legacy_two_lengths = legacy_two_length_extent(properties);
-    let termination = |side: u8| {
+    let termination = |side: u8| -> Result<Option<LinearTermination>, CodecError> {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
         let length_name = format!("Length{suffix}");
@@ -4454,41 +4464,41 @@ fn extrusion_shape(
         let termination_type = if legacy_two_lengths {
             0
         } else {
-            enumeration_selector(properties, &type_name, 0)?
+            required!(enumeration_selector(properties, &type_name, 0))
         };
         let offset = if property(properties, &offset_name).is_some() {
-            Some(Length::from_assigned_real(scalar_named(
+            Some(Length::from_assigned_real(required!(scalar_named(
                 properties,
                 &offset_name,
-            )?))
+            ))))
         } else {
             None
         };
-        match termination_type {
+        Ok(match termination_type {
             0 => Some(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(scalar_named(
+                length: required!(cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(required!(scalar_named(
                     properties,
                     &length_name,
-                )?)?,
+                )))),
             }),
             1 if kind.contains("Pocket") => Some(LinearTermination::ThroughAll {}),
             1 => Some(LinearTermination::ToLast {}),
             2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
-                    singular_operand(properties, &face_name)?.id.clone(),
+                    retained_string(ctx, &required!(singular_operand(properties, &face_name)).id, "fcstd extrusion face termination")?,
                 ),
                 offset,
             }),
             5 => Some(LinearTermination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
-                    singular_operand(properties, &shape_name)?.id.clone(),
+                    retained_string(ctx, &required!(singular_operand(properties, &shape_name)).id, "fcstd extrusion shape termination")?,
                 ),
             }),
             _ => None,
-        }
+        })
     };
-    let side_type = extrude_side_type(properties)?;
+    let side_type = required!(extrude_side_type(properties));
     // `TaperAngle2` describes a second, independent side and reaches the IR
     // only when the extent actually carries one (`SideType` 1 / two-sided). A
     // symmetric (Midplane) pad mirrors side one, so it has no second side to
@@ -4496,29 +4506,29 @@ fn extrusion_shape(
     let extent = match side_type {
         0 => ExtrudeExtent::OneSided {
             side: ExtrudeSide {
-                termination: termination(1)?,
+                termination: required!(termination(1)?),
                 draft: drafts.taper,
             },
         },
         1 => ExtrudeExtent::TwoSided {
             first: ExtrudeSide {
-                termination: termination(1)?,
+                termination: required!(termination(1)?),
                 draft: drafts.taper,
             },
             second: ExtrudeSide {
-                termination: termination(2)?,
+                termination: required!(termination(2)?),
                 draft: drafts.taper_second,
             },
         },
         2 => ExtrudeExtent::Symmetric {
             side: ExtrudeSide {
-                termination: termination(1)?,
+                termination: required!(termination(1)?),
                 draft: drafts.taper,
             },
         },
-        _ => return None,
+        _ => return Ok(None),
     };
-    let use_custom = bool_selector(properties, "UseCustomVector", false)?;
+    let use_custom = required!(bool_selector(properties, "UseCustomVector", false));
     let is_nonempty_link = |link: Option<&crate::native::LinkTarget>| {
         link.is_some_and(|link| link.document().is_some() || link.object().is_some())
     };
@@ -4536,26 +4546,26 @@ fn extrusion_shape(
             .count()
             != 1
     }) {
-        return None;
+        return Ok(None);
     }
     let mut direction = if use_custom {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
             vector: cadmpeg_ir::features::FeatureDirection3::from(
-                cadmpeg_ir::units::UnitVector3::normalized(
-                    vector_property(properties, "Direction")?.get(),
-                )?,
+                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    required!(vector_property(properties, "Direction")).get(),
+                )),
             ),
             source: Some(ExtrusionDirectionSource::Custom {}),
         }
     } else if let Some(reference_axis) = reference_axis {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
             vector: cadmpeg_ir::features::FeatureDirection3::from(
-                cadmpeg_ir::units::UnitVector3::normalized(
-                    vector_property(properties, "Direction")?.get(),
-                )?,
+                required!(cadmpeg_ir::units::UnitVector3::normalized(
+                    required!(vector_property(properties, "Direction")).get(),
+                )),
             ),
             source: Some(ExtrusionDirectionSource::Edge {
-                reference: PathRef::Native(reference_axis.id.clone()),
+                reference: PathRef::Native(retained_string(ctx, &reference_axis.id, "fcstd extrusion reference axis")?),
             }),
         }
     } else {
@@ -4567,7 +4577,7 @@ fn extrusion_shape(
                 .map(|(_, normal, _)| normal.get())
                 .or(profile_normal),
             ProfileRef::Planar(PlanarProfileRef::Native(_)) => profile_normal,
-            _ => return None,
+            _ => return Ok(None),
         }
         .and_then(cadmpeg_ir::units::UnitVector3::normalized);
         match normal {
@@ -4578,15 +4588,15 @@ fn extrusion_shape(
             None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
         }
     };
-    if bool_selector(properties, "Reversed", false)? {
+    if required!(bool_selector(properties, "Reversed", false)) {
         let cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } = &mut direction else {
-            return None;
+            return Ok(None);
         };
         *vector = vector.reversed();
     }
-    let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
-    let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
-    Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+    let length_along_profile_normal = Some(required!(bool_selector(properties, "AlongSketchNormal", true)));
+    let allow_multi_profile_faces = Some(required!(bool_selector(properties, "AllowMultiFace", false)));
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
         profile,
         direction,
         start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -4601,7 +4611,7 @@ fn extrusion_shape(
         inner_wire_taper: None,
         length_along_profile_normal,
         allow_multi_profile_faces,
-    }))
+    })))
 }
 
 fn dress_up_edge_selection(
