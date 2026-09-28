@@ -183,6 +183,7 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
+mod geometry_copy;
 mod offsets;
 mod presentation;
 mod splines;
