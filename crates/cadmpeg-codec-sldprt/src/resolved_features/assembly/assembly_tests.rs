@@ -21,12 +21,14 @@ fn legacy_sketch_object_stream_requires_a_sketch_and_entity_declaration() {
         bytes
     };
     let mut payload = declaration("sgSketch");
-    assert!(!super::legacy_sketch_object_stream(&payload));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    assert!(!super::legacy_sketch_object_stream(&ctx, &payload).unwrap());
 
     payload.extend_from_slice(&declaration("sgPointHandle"));
-    assert!(super::legacy_sketch_object_stream(&payload));
+    assert!(super::legacy_sketch_object_stream(&ctx, &payload).unwrap());
 
-    assert!(!super::legacy_sketch_object_stream(&declaration(
-        "sgPointHandle"
-    )));
+    assert!(!super::legacy_sketch_object_stream(&ctx, &declaration("sgPointHandle")).unwrap());
 }
