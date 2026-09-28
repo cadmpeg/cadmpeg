@@ -343,6 +343,10 @@ fn quintic_jet_refuses_before_each_control_and_knot_allocation() {
 
 #[test]
 fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits input limit");
     for (radius, sweep, tolerance) in [
         (f64::MAX, 1.0, f64::MAX),
         (1e308, 1e-155, 1e-4),
@@ -364,11 +368,13 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
             .expect("circular helix"),
         );
         let cache = circular_helix_cache(
+            &ctx,
             &definition,
             cadmpeg_ir::scalar::PositiveReal::new(tolerance).expect("positive fixture tolerance"),
             &mut LaneRefusals::new(),
             "large helix",
         )
+        .expect("service resource budget")
         .expect("finite cache and sagitta");
         assert!(cache.fit_tolerance.get() > 0.0 && cache.fit_tolerance.get() <= tolerance);
         let step = sweep / (cache.curve.control_points().len() - 1) as f64;
