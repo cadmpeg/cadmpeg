@@ -230,3 +230,42 @@ fn design_scope_candidate_headers_refuse_collection_limit() {
         .is_empty()
     );
 }
+
+#[test]
+fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let archive =
+        crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&[]);
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let decode = |policy: &DecodePolicy| {
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+            crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
+                &ctx, scan, &[], &[], &[], &[], &[], &[],
+            )
+        };
+        assert!(!decode(&DecodePolicy::default()).unwrap().is_empty());
+        for (dimension, operation, cap_max) in [
+            (ResourceDimension::CollectionItems, "f3d Design parameter scopes", 400),
+            (ResourceDimension::RetainedBytes, "f3d Design parameter scope ID", 1000),
+        ] {
+            let refuses = |cap| {
+                let mut policy = DecodePolicy::default();
+                match dimension {
+                    ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+                    ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+                    _ => return false,
+                }
+                matches!(
+                    decode(&policy),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                        if failure.dimension == dimension && failure.operation == operation
+                )
+            };
+            let refused_cap = (0..=cap_max).filter(|&cap| refuses(cap)).last();
+            let cap = refused_cap.expect("the allocation must refuse at the matching limit");
+            assert!(!refuses(cap + 1), "{operation} must be admitted above its boundary");
+        }
+    });
+}

@@ -804,11 +804,6 @@ native_record_id!(
     "design-parameter-owner"
 );
 native_record_id!(
-    /// The native design-parameter-scope record key.
-    native_design_parameter_scope_id,
-    "design-parameter-scope"
-);
-native_record_id!(
     /// The native ordered Design feature-timeline record key.
     native_design_feature_timeline_id,
     "design-feature-timeline"

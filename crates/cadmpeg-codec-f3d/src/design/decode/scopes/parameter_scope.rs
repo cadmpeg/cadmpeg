@@ -41,11 +41,11 @@ use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
 use crate::bytes::lp_ascii_filtered;
-use crate::design::decode::text::{lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
+use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::sketch::{native_scope_charged, IndexedRecordOffsets};
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids;
@@ -83,7 +83,7 @@ pub(crate) fn decode_parameter_scopes(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = ids::native_scope(&entry.name);
+        let stream = native_scope_charged(ctx, &entry.name)?;
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
         let stream_types = crate::design::decode::meta::stream_types_by_entity(ctx, types, &entry.name)?;
         let stream_scope_start = out.len();
@@ -98,7 +98,14 @@ pub(crate) fn decode_parameter_scopes(
             )? else {
                 continue;
             };
-            scope.id = ids::native_design_parameter_scope_id(&entry.name, scope.byte_offset());
+            scope.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-parameter-scope#",
+                scope.byte_offset(),
+                "f3d Design parameter scope ID",
+                "f3d Design parameter scope ID allocation",
+            )?;
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -107,19 +114,13 @@ pub(crate) fn decode_parameter_scopes(
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
-                let mut matches = Vec::new();
+                let mut unique_match = None;
+                let mut multiple_matches = false;
                 if let Some(frame) = frame {
                     // One pass over the frame: the first offset of every
                     // marked reference (a one byte, a u32 suffix, six zero
                     // bytes), then each eligible entity looks its suffix up.
-                    let mut first_at: HashMap<u32, usize> = HashMap::new();
-                    for at in memchr::memchr_iter(1, frame) {
-                        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
-                            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
-                                first_at.entry(suffix).or_insert(at);
-                            }
-                        }
-                    }
+                    let first_at = first_marked_reference_offsets(ctx, frame)?;
                     for entity in entities {
                         if native_stream(&entity.id) != Some(stream.as_str())
                             || !entity.in_sketch_module()
@@ -128,20 +129,23 @@ pub(crate) fn decode_parameter_scopes(
                             continue;
                         }
                         if let Some(at) = first_at.get(&(entity.entity_id.suffix() as u32)) {
-                            matches.push((entity, at + 1));
+                            if unique_match.replace((entity, at + 1)).is_some() {
+                                multiple_matches = true;
+                            }
                         }
                     }
                 }
-                if let [(entity, relative_offset)] = matches.as_slice() {
+                if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches) {
                     let entity_reference_offset =
-                        scope.byte_offset().saturating_add(*relative_offset as u64);
+                        scope.byte_offset().saturating_add(relative_offset as u64);
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)
                     | scope::DesignScopePayloadMut::Esboco(slot) = scope.payload_mut()
                     {
+                        let entity_id = copy_sketch_entity_id(ctx, &entity.entity_id)?;
                         *slot = Some(scope::DesignSketchEntityBinding {
-                            entity_id: entity.entity_id.clone(),
+                            entity_id,
                             entity_reference_offset,
                         });
                     }
@@ -428,6 +432,10 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
+            ctx.charge_collection_items(1, "f3d Design parameter scopes")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Design parameter scopes allocation", 0, 1)
+            })?;
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
@@ -436,6 +444,39 @@ pub(crate) fn decode_parameter_scopes(
     out.sort_by(|a, b| a.id.cmp(&b.id));
     out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
+}
+
+fn first_marked_reference_offsets(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    frame: &[u8],
+) -> Result<HashMap<u32, usize>, CodecError> {
+    let mut first_at = HashMap::new();
+    for at in memchr::memchr_iter(1, frame) {
+        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
+            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
+                if !first_at.contains_key(&suffix) {
+                    ctx.charge_collection_items(1, "f3d Sketch scope reference offsets")?;
+                    first_at.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d Sketch scope reference offsets allocation", 0, 1)
+                    })?;
+                    first_at.insert(suffix, at);
+                }
+            }
+        }
+    }
+    Ok(first_at)
+}
+
+fn copy_sketch_entity_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &crate::records::identity::DesignEntityId,
+) -> Result<crate::records::identity::DesignEntityId, CodecError> {
+    let text = String::from_utf8(ctx.copy_retained(
+        source.as_str().as_bytes(),
+        "f3d Sketch scope entity ID",
+    )?).map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    crate::records::identity::DesignEntityId::try_from(text)
+        .map_err(CodecError::NotImplemented)
 }
 
 /// Admit one envelope for every logical scope identity.
