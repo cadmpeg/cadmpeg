@@ -16,6 +16,8 @@ pub(crate) struct CatiaConsolidatedEdgeDefinition {
     pub(super) frame: ConsolidatedRawFrame<u64>,
     /// Edge-definition class in `0x23..=0x25`.
     pub(crate) class: ConsolidatedEdgeDefinitionClass,
+    /// Class-specific data admitted during binary decode or wire validation.
+    pub(super) data: Option<ConsolidatedEdgeDefinitionData>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -42,7 +44,6 @@ impl CatiaConsolidatedEdgeDefinition {
 
 impl From<CatiaConsolidatedEdgeDefinition> for EdgeDefinitionWire {
     fn from(value: CatiaConsolidatedEdgeDefinition) -> Self {
-        let data = value.data();
         Self {
             byte_offset: value.frame.pos,
             width: value.frame.width,
@@ -50,7 +51,7 @@ impl From<CatiaConsolidatedEdgeDefinition> for EdgeDefinitionWire {
             class: value.class,
             header_token: value.frame.header_token,
             payload: value.frame.payload,
-            data,
+            data: value.data,
         }
     }
 }
@@ -58,6 +59,7 @@ impl From<CatiaConsolidatedEdgeDefinition> for EdgeDefinitionWire {
 impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
     type Error = String;
     fn try_from(wire: EdgeDefinitionWire) -> Result<Self, Self::Error> {
+        let data = wire.data;
         let value = Self {
             frame: ConsolidatedRawFrame {
                 pos: wire.byte_offset,
@@ -67,8 +69,9 @@ impl TryFrom<EdgeDefinitionWire> for CatiaConsolidatedEdgeDefinition {
                 payload: wire.payload,
             },
             class: wire.class,
+            data,
         };
-        if wire.data != value.data() {
+        if value.data != value.data() {
             return Err("edge-definition data differs from its class and payload".to_owned());
         }
         Ok(value)
@@ -84,6 +87,27 @@ mod tests {
     use crate::wire::records::ConsolidatedRawFrame;
 
     #[test]
+    fn native_edge_definition_scalar_lane_refuses_before_retention() {
+        let mut payload = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+        for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let service = crate::test_support::with_service_context(|ctx| {
+            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
+                ctx, 0x25, &payload,
+            )
+        }).expect("service profile admits scalar lane");
+        assert!(service.is_some());
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            crate::families::consolidated::records::consolidated_edge_definition_data_charged(
+                ctx, 0x25, &payload,
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_edge_definition_scalars"));
+    }
+
+    #[test]
     fn wire_data_is_derived_and_conflicts_are_rejected() {
         let value = CatiaConsolidatedEdgeDefinition {
             frame: ConsolidatedRawFrame {
@@ -94,6 +118,7 @@ mod tests {
                 payload: vec![0x81, 0x05, 0x0f, 0x87],
             },
             class: ConsolidatedEdgeDefinitionClass::Class24,
+            data: Some(crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 { operand: 1 }),
         };
         let mut wire = serde_json::to_value(&value).expect("serialize definition");
         assert_eq!(wire["class"], serde_json::json!(0x24));
