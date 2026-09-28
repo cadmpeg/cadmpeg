@@ -571,11 +571,15 @@ fn named_prototype_parameter_body_cannot_start_a_surface_row() {
 #[test]
 fn signed_surface_dict_scalar_owns_its_tail() {
     let body = [0x73, 0xe4, 0x2f, 0x43, 0, 0xe3, 0xe0];
-    let tokens = scalar_tokens(
-        SurfaceKind::TorusOrSphere,
-        &body,
-        &scalar::ScalarCache::default(),
-    );
+    let tokens = crate::decode::with_test_decode_ctx(|ctx| {
+        scalar_tokens(
+            ctx,
+            SurfaceKind::TorusOrSphere,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
+    })
+    .expect("one torus scalar fits service limits");
 
     assert_eq!(tokens.len(), 1);
     assert_eq!(
