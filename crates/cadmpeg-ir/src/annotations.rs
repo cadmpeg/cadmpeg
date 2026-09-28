@@ -273,6 +273,50 @@ pub struct AnnotationBuilder {
 }
 
 impl AnnotationBuilder {
+    /// Copy a speculative annotation set under the active decode budget.
+    pub fn copy_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        fn copy_string(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            text: &str,
+            operation: &'static str,
+        ) -> Result<String, cadmpeg_core::CodecError> {
+            String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
+                .map_err(cadmpeg_core::CodecError::malformed)
+        }
+
+        let mut annotations = Annotations::default();
+        for (id, source) in &self.annotations.provenance {
+            ctx.charge_collection_items(1, operation)?;
+            let id = copy_string(ctx, id, operation)?;
+            annotations.provenance.insert(id, source.copy_charged(ctx, operation)?);
+        }
+        for (id, note) in &self.annotations.exactness {
+            ctx.charge_collection_items(1, operation)?;
+            let id = copy_string(ctx, id, operation)?;
+            let mut fields = BTreeMap::new();
+            for (field, exactness) in note.fields() {
+                ctx.charge_collection_items(1, operation)?;
+                let field = FieldName(copy_string(ctx, field.as_str(), operation)?);
+                fields.insert(field, *exactness);
+            }
+            let note = match note {
+                ExactnessNote::Entity { entity, .. } => ExactnessNote::Entity {
+                    entity: *entity,
+                    fields,
+                },
+                ExactnessNote::Fields { .. } => ExactnessNote::Fields {
+                    fields: NonEmptyMap(fields),
+                },
+            };
+            annotations.exactness.insert(id, note);
+        }
+        Ok(Self { annotations })
+    }
+
     /// Create an empty annotation builder.
     pub fn new() -> Self {
         Self::default()
@@ -531,6 +575,31 @@ impl ProvenanceNote<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn annotation_copy_charges_nested_entries_and_retained_text() {
+        let mut builder = super::AnnotationBuilder::new();
+        let stream = super::StreamHandle::new(crate::stream_name!("test"));
+        builder.note("test:point#0", &stream, 7).tag("point");
+        builder.derived("test:point#0", "position").expect("field path");
+
+        let run = |collection_limit: u64, retained_limit: u64| {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = collection_limit;
+            policy.limits.max_retained_bytes = retained_limit;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &[], &arena, &policy,
+            )
+            .expect("empty root");
+            builder.copy_charged(&ctx, "test_annotation_copy")
+        };
+        assert!(matches!(run(0, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_copy"));
+        assert!(matches!(run(u64::MAX, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_copy"));
+        assert_eq!(run(u64::MAX, u64::MAX).expect("service copy").build(), builder.clone().build());
+    }
+
     mod identity_merges;
 
     use std::collections::BTreeMap;
