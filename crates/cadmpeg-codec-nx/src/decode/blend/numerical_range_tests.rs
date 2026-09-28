@@ -22,7 +22,7 @@ fn periodic_circle_inverse_refuses_nonfinite_seeds() {
                 Some(seed),
                 &GeometryWorkBudget::new(100),
             ),
-            None
+            Ok(None)
         );
     }
 }
@@ -95,7 +95,7 @@ fn numerical_0922_large_ellipse_keeps_inverse() {
             "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
             scale * 0.5
         );
-        assert_eq!(r, Some(0.));
+        assert_eq!(r, Ok(Some(0.)));
     }
 }
 #[test]
@@ -117,7 +117,7 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
         &GeometryWorkBudget::new(10000),
     );
     println!("NX ordinary ellipse with query z1e200: {r:?}");
-    assert_eq!(r, Some(0.));
+    assert_eq!(r, Ok(Some(0.)));
 }
 
 #[test]
