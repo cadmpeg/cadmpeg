@@ -87,10 +87,15 @@ pub(super) fn model_root(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<(String, Option<String>), CodecError> {
-    let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
-        .map_err(|error| {
+    let manifest_bytes = scan.entry_bytes(MANIFEST_ENTRY)?;
+    let manifest = {
+        let bytes = u64::try_from(manifest_bytes.len())
+            .map_err(|_| ctx.refuse_codec_limit("parse F3Z manifest JSON", 0, u64::MAX))?;
+        let _reservation = ctx.reserve_scoped(bytes, "parse F3Z manifest JSON")?;
+        serde_json::from_slice::<ManifestJson>(manifest_bytes).map_err(|error| {
             CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
-        })?;
+        })?
+    };
     model_root_member(ctx, scan, &manifest.root)
 }
 
@@ -204,8 +209,16 @@ fn model_root_member(
         return Ok((copy_member_name(ctx, archive_root, "retain F3Z model root")?, None));
     }
 
+    let description_bytes = scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?;
+    crate::json_budget::preflight(
+        ctx,
+        description_bytes,
+        "preflight F3Z design description JSON",
+        "match F3Z derived model reference",
+        "collect F3Z model candidates",
+    )?;
     let description: DesignDescriptionJson =
-        serde_json::from_slice(scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?).map_err(|error| {
+        serde_json::from_slice(description_bytes).map_err(|error| {
             CodecError::malformed(format_args!(
                 "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
             ))

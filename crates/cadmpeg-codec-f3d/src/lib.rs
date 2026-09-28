@@ -97,6 +97,7 @@ mod f3z;
 mod history;
 mod history_records;
 mod ids;
+mod json_budget;
 /// Byte-offset constants generated from `docs/layouts/f3d.toml`.
 mod layout;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.

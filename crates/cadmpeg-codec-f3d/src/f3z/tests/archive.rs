@@ -113,6 +113,40 @@ fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
 }
 
 #[test]
+fn f3z_manifest_json_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = f3z_archive("model.f3d", &[("model.f3d", b"model")]);
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3Z manifest JSON"));
+}
+
+#[test]
+fn f3z_description_json_refuses_recursion_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let bytes = drawing_archive_for_root_limit_tests();
+    let arena = DecodeArena::new();
+    let (scan_context, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_context, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "match F3Z derived model reference"));
+}
+
+#[test]
 fn f3z_model_root_name_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
