@@ -8,6 +8,29 @@ use crate::report::{
 };
 
 #[test]
+fn owned_namespaced_loss_kind_keeps_taxonomy_and_rejects_reserved_namespace() {
+    let taxonomy = LossTaxonomy::TopologyNotTransferred;
+    let owned = NamespacedLossKind::new_owned(
+        "catia".to_owned(),
+        "topology.unresolved".to_owned(),
+        taxonomy,
+    )
+    .expect("codec namespace is admitted");
+    let borrowed = NamespacedLossKind::new(
+        LossNamespace::new("catia").expect("codec namespace"),
+        "topology.unresolved",
+        taxonomy,
+    );
+    assert_eq!(owned, borrowed);
+    assert!(NamespacedLossKind::new_owned(
+        "shared".to_owned(),
+        "topology.unresolved".to_owned(),
+        taxonomy,
+    )
+    .is_err());
+}
+
+#[test]
 fn loss_code_serializes_as_namespaced_object() {
     let note = LossNote::new(
         LossKind::shared(LossTaxonomy::TopologyNotTransferred),

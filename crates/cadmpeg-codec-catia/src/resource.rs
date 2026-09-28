@@ -10,6 +10,10 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
+use cadmpeg_ir::report::loss::LossNote;
+
+use crate::loss::CatiaLossCode;
 
 fn allocation_failed(
     used: usize,
@@ -234,6 +238,85 @@ mod collection_tests {
         .expect("service profile admits one report key");
         assert!(service.contains("entity"));
     }
+
+    #[test]
+    fn coverage_entry_refuses_collection_and_retained_limits() {
+        let key = cadmpeg_ir::report::decode::CoverageKey::new("decoded_entities");
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::record_coverage(
+                ctx,
+                &mut cadmpeg_ir::report::decode::Coverage::default(),
+                key,
+                3,
+                "catia_coverage_test",
+            )
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_coverage_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::record_coverage(
+                ctx,
+                &mut cadmpeg_ir::report::decode::Coverage::default(),
+                key,
+                3,
+                "catia_coverage_test",
+            )
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_coverage_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        let coverage = crate::test_support::with_service_context(|ctx| {
+            let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+            super::record_coverage(ctx, &mut coverage, key, 3, "catia_coverage_test")
+                .expect("service budget admits coverage entry");
+            coverage
+        });
+        assert_eq!(coverage.get("decoded_entities"), Some(&3));
+    }
+
+    #[test]
+    fn report_loss_refuses_retained_and_collection_limits() {
+        let code = crate::loss::CatiaLossCode::HistoryModelingScopeUnresolved;
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::push_loss(
+                ctx,
+                &mut Vec::new(),
+                code,
+                format_args!("one unresolved graph"),
+                "catia_report_loss_test",
+            )
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_loss_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::push_loss(
+                ctx,
+                &mut Vec::new(),
+                code,
+                format_args!("one unresolved graph"),
+                "catia_report_loss_test",
+            )
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_loss_test"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut notes = Vec::new();
+            super::push_loss(
+                ctx,
+                &mut notes,
+                code,
+                format_args!("one unresolved graph"),
+                "catia_report_loss_test",
+            )
+            .expect("service profile admits report loss");
+            notes
+        });
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].code, code.kind());
+    }
 }
 
 pub(crate) fn copy_retained_slice<T: Clone>(
@@ -274,6 +357,34 @@ pub(crate) fn copy_retained_str(
         .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
     text.push_str(value);
     Ok(text)
+}
+
+pub(crate) fn record_coverage(
+    ctx: &DecodeContext<'_>,
+    coverage: &mut Coverage,
+    key: CoverageKey,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !coverage.contains_key(key.as_str()) {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    let name = copy_retained_str(ctx, key.as_str(), operation)?;
+    coverage
+        .record_owned(key, name, count)
+        .map_err(CodecError::malformed)
+}
+
+pub(crate) fn push_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    code: CatiaLossCode,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let message = format_retained(ctx, args, operation)?;
+    let note = code.note_charged(ctx, message, operation)?;
+    push(ctx, losses, note, operation)
 }
 
 pub(crate) fn derived_annotation(
