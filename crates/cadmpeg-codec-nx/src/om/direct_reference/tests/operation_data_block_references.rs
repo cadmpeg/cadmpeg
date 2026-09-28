@@ -2,8 +2,15 @@
 
 use super::record;
 use crate::om::direct_reference::{
-    operation_reference_fields, DirectReferenceFrame, ReferenceFieldKind,
+    DirectReferenceFrame, ReferenceFieldKind,
 };
+
+fn operation_reference_fields(
+    record: crate::om::operation_record::OperationPayload<'_>,
+    kind: ReferenceFieldKind,
+) -> Vec<DirectReferenceFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::direct_reference::operation_reference_fields(ctx, record, kind)).unwrap()
+}
 
 fn data_block_field(index: &[u8]) -> Vec<u8> {
     [
