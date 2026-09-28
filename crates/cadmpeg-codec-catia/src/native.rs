@@ -9449,11 +9449,12 @@ impl CatiaNative {
         }
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
         let schema_configuration_row_chains = derive_schema_configuration_row_chains(
+            ctx,
             &entity_records,
             &entities_by_graph_identity,
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
-        );
+        )?;
         alias_rows.retain(|row| {
             // A marker inside the first four bytes of the image has no row
             // frame, so the row is not an independent alias core. Refuse it

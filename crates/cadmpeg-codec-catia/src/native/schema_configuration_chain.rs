@@ -2,10 +2,13 @@
 //! Ordered configuration-row paths and their compatible wire projection.
 
 use super::{
-    entity_reference, object_graph_derived_id, CatiaEntityClassByGraphIdentityIndex,
-    CatiaEntityReference, CatiaSchemaConfigurationRowLink, CatiaTerminalNullByGraphIndex,
+    CatiaEntityClassByGraphIdentityIndex, CatiaEntityReference,
+    CatiaSchemaConfigurationRowLink, CatiaTerminalNullByGraphIndex,
 };
 use crate::native::entity_record::CatiaEntityRecord;
+use crate::resource;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -137,105 +140,177 @@ impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
 }
 
 pub(super) fn derive_schema_configuration_row_chains(
+    ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
     entities: &HashMap<(String, u32), String>,
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
     terminal_nulls: &CatiaTerminalNullByGraphIndex,
-) -> Vec<CatiaSchemaConfigurationRowChain> {
-    let row_ids = records
-        .iter()
-        .filter(|entity| entity.schema_configuration_row_link().is_some())
-        .map(|entity| (entity.object_graph.as_str(), entity.entity_id))
-        .collect::<HashSet<_>>();
+) -> Result<Vec<CatiaSchemaConfigurationRowChain>, CodecError> {
+    let mut row_ids = HashSet::new();
     let mut groups = HashMap::<(&str, u32), Vec<(u32, &CatiaSchemaConfigurationRowLink)>>::new();
     for entity in records {
         let Some(link) = &entity.schema_configuration_row_link() else {
             continue;
         };
-        groups
-            .entry((
-                entity.object_graph.as_str(),
-                link.class_reference.entity_id(),
-            ))
-            .or_default()
-            .push((entity.entity_id, link));
+        resource::insert_set(
+            ctx,
+            &mut row_ids,
+            (entity.object_graph.as_str(), entity.entity_id),
+            "catia_configuration_row_ids",
+        )?;
+        let key = (entity.object_graph.as_str(), link.class_reference.entity_id());
+        resource::admit_map_entry(ctx, &mut groups, &key, "catia_configuration_groups")?;
+        resource::push(
+            ctx,
+            groups.entry(key).or_default(),
+            (entity.entity_id, link),
+            "catia_configuration_group_links",
+        )?;
     }
-    let mut groups = groups.into_iter().collect::<Vec<_>>();
+    let mut groups = resource::collect_vec(
+        ctx,
+        groups,
+        "catia_configuration_sorted_groups",
+    )?;
     groups.sort_by(
         |((left_graph, left_root), _), ((right_graph, right_root), _)| {
             left_graph.cmp(right_graph).then(left_root.cmp(right_root))
         },
     );
 
-    groups
-        .into_iter()
-        .filter_map(|((graph, root), links)| {
-            let successors = links.iter().copied().collect::<HashMap<_, _>>();
+    let mut chains = Vec::new();
+    for ((graph, root), links) in groups {
+        let mut successors = HashMap::new();
+        for (row, link) in &links {
+            resource::insert_map(
+                ctx,
+                &mut successors,
+                *row,
+                *link,
+                "catia_configuration_successors",
+            )?;
+        }
             if successors.len() != links.len() {
-                return None;
+                continue;
             }
-            let mut row_ids_in_order = Vec::with_capacity(links.len());
+            let mut row_ids_in_order = Vec::new();
             let mut visited = HashSet::new();
             let mut current = root;
             while let Some(link) = successors.get(&current).copied() {
-                if !visited.insert(current) {
-                    return None;
+                if !resource::insert_set(ctx, &mut visited, current, "catia_configuration_visited")? {
+                    break;
                 }
-                row_ids_in_order.push(current);
+                resource::push(ctx, &mut row_ids_in_order, current, "catia_configuration_order")?;
                 current = link.successor.entity_id();
             }
             if visited.len() != links.len() || row_ids.contains(&(graph, current)) {
-                return None;
+                continue;
             }
-            let terminal = successors.get(row_ids_in_order.last()?)?.successor.clone();
-            let links = row_ids_in_order
-                .into_iter()
-                .map(|row_id| {
-                    let link = successors[&row_id];
-                    let successor_id = link.successor.entity_id();
-                    CatiaSchemaConfigurationRowChainLink {
-                        row: entity_reference(
-                            graph,
-                            row_id,
-                            entities,
-                            entity_classes,
-                            terminal_nulls,
-                        ),
-                        successor_payload_offset: link.successor_payload_offset,
-                        intervening_entities: (row_id < successor_id).then(|| {
-                            records
-                                .iter()
-                                .filter(|entity| {
-                                    entity.object_graph == graph
-                                        && entity.entity_id > row_id
-                                        && entity.entity_id < successor_id
-                                })
-                                .map(|entity| {
-                                    entity_reference(
-                                        graph,
-                                        entity.entity_id,
-                                        entities,
-                                        entity_classes,
-                                        terminal_nulls,
-                                    )
-                                })
-                                .collect()
-                        }),
+            let Some(last_row) = row_ids_in_order.last() else {
+                continue;
+            };
+            let Some(last_link) = successors.get(last_row) else {
+                continue;
+            };
+            let terminal = copy_reference(ctx, &last_link.successor)?;
+            let mut chain_links = Vec::new();
+            for row_id in row_ids_in_order {
+                let link = successors[&row_id];
+                let successor_id = link.successor.entity_id();
+                let intervening_entities = if row_id < successor_id {
+                    let mut between = Vec::new();
+                    for entity in records.iter().filter(|entity| {
+                        entity.object_graph == graph
+                            && entity.entity_id > row_id
+                            && entity.entity_id < successor_id
+                    }) {
+                        let reference = charged_entity_reference(
+                            ctx, graph, entity.entity_id, entities, entity_classes, terminal_nulls,
+                        )?;
+                        resource::push(ctx, &mut between, reference, "catia_configuration_between")?;
                     }
-                })
-                .collect();
-            Some(CatiaSchemaConfigurationRowChain {
-                id: object_graph_derived_id(
-                    graph,
-                    "schema-configuration-row-chain",
-                    &root.to_string(),
-                )?,
-                object_graph: graph.to_string(),
-                links,
-                terminal,
-            })
-        })
-        .collect()
+                    Some(between)
+                } else {
+                    None
+                };
+                let row = charged_entity_reference(
+                    ctx, graph, row_id, entities, entity_classes, terminal_nulls,
+                )?;
+                resource::push(
+                    ctx,
+                    &mut chain_links,
+                    CatiaSchemaConfigurationRowChainLink {
+                        row,
+                        successor_payload_offset: link.successor_payload_offset,
+                        intervening_entities,
+                    },
+                    "catia_configuration_chain_links",
+                )?;
+            }
+            let Some((namespace, graph_key)) = graph.split_once('#') else {
+                continue;
+            };
+            let mut components = namespace.split(':');
+            let (Some(format), Some(scope), Some(_kind), None) = (
+                components.next(), components.next(), components.next(), components.next(),
+            ) else {
+                continue;
+            };
+            let id = resource::format_retained(
+                ctx,
+                format_args!("{format}:{scope}:schema-configuration-row-chain#{graph_key}:{root}"),
+                "catia_configuration_chain_id",
+            )?;
+            let object_graph = resource::copy_retained_str(ctx, graph, "catia_configuration_graph_id")?;
+            resource::push(
+                ctx,
+                &mut chains,
+                CatiaSchemaConfigurationRowChain { id, object_graph, links: chain_links, terminal },
+                "catia_configuration_chains",
+            )?;
+    }
+    Ok(chains)
+}
+
+fn copy_reference(
+    ctx: &DecodeContext<'_>,
+    reference: &CatiaEntityReference,
+) -> Result<CatiaEntityReference, CodecError> {
+    Ok(match reference {
+        CatiaEntityReference::Null { entity_id } => CatiaEntityReference::Null { entity_id: *entity_id },
+        CatiaEntityReference::Unresolved { entity_id } => CatiaEntityReference::Unresolved { entity_id: *entity_id },
+        CatiaEntityReference::Resolved { entity_id, entity, class_name } => CatiaEntityReference::Resolved {
+            entity_id: *entity_id,
+            entity: resource::copy_retained_str(ctx, entity, "catia_configuration_entity_id")?,
+            class_name: class_name.as_ref().map(|name| resource::copy_retained_str(ctx, name, "catia_configuration_class_name")).transpose()?,
+        },
+    })
+}
+
+fn charged_entity_reference(
+    ctx: &DecodeContext<'_>,
+    graph: &str,
+    entity_id: u32,
+    entities: &HashMap<(String, u32), String>,
+    entity_classes: &CatiaEntityClassByGraphIdentityIndex,
+    terminal_nulls: &CatiaTerminalNullByGraphIndex,
+) -> Result<CatiaEntityReference, CodecError> {
+    if terminal_nulls.get(graph).copied() == Some(entity_id) {
+        return Ok(CatiaEntityReference::Null { entity_id });
+    }
+    let entity = entities.iter().find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id);
+    let Some((_, entity)) = entity else {
+        return Ok(CatiaEntityReference::Unresolved { entity_id });
+    };
+    let class_name = entity_classes.iter()
+        .find(|((key_graph, key_id), _)| key_graph == graph && *key_id == entity_id)
+        .map(|(_, name)| resource::copy_retained_str(ctx, name, "catia_configuration_class_name"))
+        .transpose()?;
+    Ok(CatiaEntityReference::Resolved {
+        entity_id,
+        entity: resource::copy_retained_str(ctx, entity, "catia_configuration_entity_id")?,
+        class_name,
+    })
 }
 
 #[cfg(test)]

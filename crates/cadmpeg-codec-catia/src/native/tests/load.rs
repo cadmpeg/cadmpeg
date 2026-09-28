@@ -539,6 +539,34 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
 }
 
 #[test]
+fn configuration_chain_derivation_refuses_collection_limit() {
+    let native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let classes = super::super::entity_class_index(
+        native.object_graphs.iter().flat_map(|graph| &graph.records),
+    );
+    let (_, _, entities, terminal_nulls, _) =
+        super::super::semantic_entity_indices(&native.entity_records, &classes);
+    let derive = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::derive_schema_configuration_row_chains(
+            ctx,
+            &native.entity_records,
+            &entities,
+            &classes,
+            &terminal_nulls,
+        )
+    };
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, derive),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_configuration_row_ids"
+    ));
+    let chains = crate::test_support::with_service_context(derive)
+        .expect("service profile admits configuration chains");
+    assert_eq!(chains, native.schema_configuration_row_chains);
+}
+
+#[test]
 fn schema_configuration_productions_preserve_unresolved_identities() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 15, 16),
