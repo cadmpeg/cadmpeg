@@ -1487,16 +1487,23 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 /// The source entry scopes the exact bytes. Callers must only admit the value
 /// when this key is unique in that scope; equal records have no stable
 /// position-independent identity without another serialized owner.
-fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
-    let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 20);
-    seed.extend_from_slice(b"nx:om:object-record\0");
-    seed.extend_from_slice(source_entry.as_bytes());
-    seed.push(0);
-    seed.extend_from_slice(bytes);
-    format!(
-        "nx:om:object-record:{}",
-        cadmpeg_ir::hash::sha256_hex(&seed)
-    )
+fn stable_object_record_identity(
+    ctx: &DecodeContext<'_>,
+    source_entry: &str,
+    bytes: &[u8],
+) -> Result<String, CodecError> {
+    let work = source_entry.len()
+        .checked_add(bytes.len())
+        .and_then(|length| length.checked_add(b"nx:om:object-record\0".len() + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX object record identity digest", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX object record identity digest")?;
+    let mut digest = Sha256::new();
+    digest.update(b"nx:om:object-record\0");
+    digest.update(source_entry.as_bytes());
+    digest.update([0]);
+    digest.update(bytes);
+    let digest: [u8; 32] = digest.finalize().into();
+    data_block_hex(ctx, &digest, "nx:om:object-record:", "NX object record identity")
 }
 
 /// Return position-independent identities for one indexed object-record graph.
@@ -1529,20 +1536,20 @@ fn stable_object_record_identities(
         .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let mut graph_work = MAX_GRAPH_WORK;
 
-    Ok((0..records.len())
-        .map(|root| {
+    (0..records.len())
+        .map(|root| -> Result<Option<String>, CodecError> {
             if references[root].is_empty() {
-                return Some(stable_object_record_identity(source_entry, records[root]));
+                return Ok(Some(stable_object_record_identity(ctx, source_entry, records[root])?));
             }
-            stable_object_record_graph_identity(
+            Ok(stable_object_record_graph_identity(
                 source_entry,
                 records,
                 &references,
                 root,
                 &mut graph_work,
-            )
+            ))
         })
-        .collect())
+        .collect()
 }
 
 fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
@@ -8429,18 +8436,26 @@ mod object_record_identity_tests {
     #[test]
     fn stable_object_record_identity_excludes_position_and_scopes_entry() {
         let bytes = [0x04, 0x05, 0x06];
-        let identity = super::stable_object_record_identity("/Root/UG_PART/UG_PART", &bytes);
+        let identity = crate::test_support::with_decode_context(|ctx| {
+            super::stable_object_record_identity(ctx, "/Root/UG_PART/UG_PART", &bytes)
+        }).unwrap();
         assert_eq!(
             identity,
-            super::stable_object_record_identity("/Root/UG_PART/UG_PART", &bytes)
+            crate::test_support::with_decode_context(|ctx| {
+                super::stable_object_record_identity(ctx, "/Root/UG_PART/UG_PART", &bytes)
+            }).unwrap()
         );
         assert_ne!(
             identity,
-            super::stable_object_record_identity("/Root/other", &bytes)
+            crate::test_support::with_decode_context(|ctx| {
+                super::stable_object_record_identity(ctx, "/Root/other", &bytes)
+            }).unwrap()
         );
         assert_ne!(
             identity,
-            super::stable_object_record_identity("/Root/UG_PART/UG_PART", &[0x04, 0x05, 0x07])
+            crate::test_support::with_decode_context(|ctx| {
+                super::stable_object_record_identity(ctx, "/Root/UG_PART/UG_PART", &[0x04, 0x05, 0x07])
+            }).unwrap()
         );
     }
 
@@ -8458,6 +8473,23 @@ mod object_record_identity_tests {
             .iter()
             .all(|record| record.stable_identity.is_some()));
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
+    }
+
+    #[test]
+    fn object_record_identity_route_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let file = prt_with_indexed_om_section();
+        let scan_arena = DecodeArena::new();
+        let scan_policy = DecodePolicy::service();
+        let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+        let container = crate::container::scan_bytes(&scan_ctx, &file).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::object_records(&ctx, &container).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits));
     }
 
     fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
