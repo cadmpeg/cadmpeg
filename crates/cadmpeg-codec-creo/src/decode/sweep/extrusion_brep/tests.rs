@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, copy_ring_coedges, generated_extrusion_identity,
+    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges, generated_extrusion_identity,
     sketch_profiles_cover_generated_extrusion_sides,
 };
 use crate::decode::tests::surface_row;
@@ -44,6 +44,27 @@ fn generated_extrusion_identity_refuses_retained_limit() {
             &crate::identity::FEATURE_EXTRUSION,
             cadmpeg_ir::ids::IdentityKey::from(7).colon(cadmpeg_ir::identity_key!("body")),
         ).as_str());
+    });
+}
+
+#[test]
+fn extrusion_entity_id_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let source = cadmpeg_ir::ids::BodyId::compose(
+        &crate::identity::FEATURE_EXTRUSION,
+        cadmpeg_ir::ids::IdentityKey::from(7).colon(cadmpeg_ir::identity_key!("body")),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let result = copy_extrusion_identity::<cadmpeg_ir::ids::BodyId>(&ctx, source.as_str());
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion entity ID copies"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let copied = copy_extrusion_identity::<cadmpeg_ir::ids::BodyId>(ctx, source.as_str())
+            .expect("admitted identity copy");
+        assert_eq!(copied, source);
     });
 }
 
