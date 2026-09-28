@@ -3,9 +3,85 @@
 use super::{
     append_axial_test_component_operand, axial_test_alignment, axial_test_component_scope,
 };
-use crate::design::decode::scopes::axial_assembly::bind_axial_assembly_operand_targets;
+use crate::design::decode::scopes::axial_assembly::{
+    bind_axial_assembly_operand_targets, bind_joint_origin_frames_from_assemblies,
+};
 use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
-use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignJointOriginTransform, DesignParameterScope, DesignScopePayloadMut,
+};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+fn joint_origin_collection_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
+}
+
+#[test]
+fn joint_origin_frame_candidates_refuse_collection_limit() {
+    let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
+    let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    if let DesignScopePayloadMut::Assemble(slot) = assembly.payload_mut() {
+        *slot = Some(axial_test_alignment([identity, identity]));
+    }
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let error = bind_joint_origin_frames_from_assemblies(&ctx, &[], &mut [assembly]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d joint-origin frame candidates"));
+}
+
+#[test]
+fn joint_origin_assembly_envelopes_refuse_collection_limit() {
+    let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
+    assembly.class_tag = "276".to_owned().try_into().unwrap();
+    assembly.paired_class_tag = "258".to_owned().try_into().unwrap();
+    assembly.try_edit(|draft| {
+        draft.frame_length = 604;
+        draft.paired_byte_offset = 604;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let mut bytes = vec![0_u8; 604];
+    bytes[24] = 1;
+    bytes[25..29].copy_from_slice(&90_u32.to_le_bytes());
+    bytes[164] = 1;
+    bytes[165..169].copy_from_slice(&91_u32.to_le_bytes());
+    bytes[175..179].copy_from_slice(&1_u32.to_le_bytes());
+    for (ordinal, row) in crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+        .rows().into_iter().enumerate()
+    {
+        for (column, value) in row.into_iter().enumerate() {
+            let at = 36 + (ordinal * 4 + column) * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let error = bind_joint_origin_frames_from_assemblies(&ctx, &bytes, &mut [assembly]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d joint-origin assembly envelopes"));
+}
+
+#[test]
+fn resolved_joint_origins_refuse_collection_limit() {
+    let mut origin = DesignParameterScope::empty("origin", DesignFeatureKind::JointOrigin, 91);
+    if let DesignScopePayloadMut::JointOrigin(slot) = origin.payload_mut() {
+        *slot = Some(DesignJointOriginTransform {
+            joint_origin_transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            joint_origin_transform_offset: 0,
+            reference: None,
+        });
+    }
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let error = bind_joint_origin_frames_from_assemblies(&ctx, &[], &mut [origin]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d resolved joint origins"));
+}
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
