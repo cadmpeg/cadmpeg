@@ -623,7 +623,9 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     );
     assert_eq!(
         typed_loop_records(&bytes),
-        typed_loop_records_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_loop_records_from_records(ctx, &records).expect("service budget")
+        })
     );
     assert_eq!(
         typed_edge_records(&bytes),
@@ -1887,13 +1889,11 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
     )]);
 
     assert_eq!(
-        implicit_pcurve_bindings(
-            &records,
-            &by_id,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &surfaces,
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            implicit_pcurve_bindings(
+                ctx, &records, &by_id, &BTreeMap::new(), &BTreeMap::new(), &surfaces,
+            ).expect("service budget")
+        }),
         BTreeMap::from([(9, 11)])
     );
 }
@@ -1974,13 +1974,11 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
     )]);
 
     assert_eq!(
-        implicit_pcurve_bindings(
-            &records,
-            &by_id,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
-            &surfaces,
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            implicit_pcurve_bindings(
+                ctx, &records, &by_id, &BTreeMap::new(), &BTreeMap::new(), &surfaces,
+            ).expect("service budget")
+        }),
         BTreeMap::from([(9, 11)])
     );
 }
