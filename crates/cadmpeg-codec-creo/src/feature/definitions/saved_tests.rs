@@ -1255,7 +1255,7 @@ fn decodes_saved_spline_chord_parameter_lane() {
 fn decodes_zero_offset_positional_placement_instruction() {
     let payload = b"place_instruction_ptrs\0\xf8\x03\xf7\x0b\xfb\xe3\
             \xf1\xf7\x0b\xe3\xc0\x4e\x9f\x18\xf6\xf6\x02\xf6\x00\x00\x00\xe6";
-    let rows = placement_instruction_rows(payload, 1000);
+    let rows = placement_instruction_rows(payload, 1000).collect::<Vec<_>>();
     let [row] = rows.as_slice() else {
         panic!("placement row");
     };

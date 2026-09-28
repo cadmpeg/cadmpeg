@@ -1562,7 +1562,6 @@ pub(super) fn feature_placement_instruction_records(
         .iter()
         .flat_map(|definition| {
             crate::feature::definitions::placement_instructions(definition)
-                .into_iter()
                 .map(|instruction| CreoFeaturePlacementInstructionRecord {
                     id: format!(
                         "creo:featdefs:placement_instruction#{}:{}",

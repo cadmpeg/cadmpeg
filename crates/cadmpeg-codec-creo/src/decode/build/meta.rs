@@ -562,7 +562,7 @@ pub(super) fn source_meta(
         scan.features
             .definitions
             .iter()
-            .map(|definition| crate::feature::definitions::placement_instructions(definition).len())
+            .map(|definition| crate::feature::definitions::placement_instructions(definition).count())
             .sum::<usize>(),
     );
     coverage.record(
