@@ -29,7 +29,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{
-    loss::{LossCategory, LossNote, LossTaxonomy},
+    loss::{LossCategory, LossTaxonomy},
     Severity,
 };
 use cadmpeg_ir::units::{Tolerances, UnitVector3};
@@ -2999,8 +2999,8 @@ impl<'a> F3dDecodeSession<'a> {
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match crate::xref::decode_with_scopes(self.ctx, scan, &self.native.design_parameter_scopes) {
                     Ok(Some(table)) => {
-                        report_xref_placement_failures(&mut self.report, &table);
-                        report_xref_placement_overrides(&mut self.report, &table);
+                        report_xref_placement_failures(self.ctx, &mut self.report, &table)?;
+                        report_xref_placement_overrides(self.ctx, &mut self.report, &table)?;
                         self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, &table)?;
                         crate::xref::bind_component_insert_features(
                             &mut self.ir.model.features,
@@ -3012,7 +3012,7 @@ impl<'a> F3dDecodeSession<'a> {
                     }
                     Ok(None) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                    Err(error) => report_xref_parse_loss(self.ctx, &mut self.report, &error)?,
                 }
                 FinalizePath::Geometry(index)
             }
@@ -3036,8 +3036,8 @@ impl<'a> F3dDecodeSession<'a> {
                     other => other,
                 };
                 if let Ok(Some(table)) = &xref_table {
-                    report_xref_placement_failures(&mut self.report, table);
-                    report_xref_placement_overrides(&mut self.report, table);
+                        report_xref_placement_failures(self.ctx, &mut self.report, table)?;
+                        report_xref_placement_overrides(self.ctx, &mut self.report, table)?;
                     self.ir.model.occurrences = crate::xref::project_occurrences(self.ctx, table)?;
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
@@ -3137,7 +3137,7 @@ impl<'a> F3dDecodeSession<'a> {
                     }
                     Ok(None) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => self.report.losses.push(xref_parse_loss(&error)),
+                    Err(error) => report_xref_parse_loss(ctx, &mut self.report, &error)?,
                 }
                 let mut admitted_entities = self.admitted_entities;
                 return decode_result(
@@ -3256,7 +3256,7 @@ fn decode_scanned_document<'a>(
             Ok(Some(table)) => apply_assembly_classification(ctx, &mut report, scan, &table)?,
             Ok(None) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => report.losses.push(xref_parse_loss(&error)),
+                    Err(error) => report_xref_parse_loss(ctx, &mut report, &error)?,
         }
         return decode_result(
             ctx,
@@ -3866,14 +3866,28 @@ fn annotate_docstruct(
 }
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
-fn xref_parse_loss(error: &CodecError) -> LossNote {
-    F3dLossCode::XrefTableUndecoded
-        .note(format!("external-reference table was not decoded: {error}"))
+fn report_xref_parse_loss(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    error: &CodecError,
+) -> Result<(), CodecError> {
+    push_decode_loss(
+        ctx,
+        report,
+        F3dLossCode::XrefTableUndecoded,
+        format_args!("external-reference table was not decoded: {error}"),
+        "collect F3D xref parse losses",
+        "retain F3D xref parse loss",
+    )
 }
 
 /// Report typed occurrence placements whose role path was readable but whose
 /// generation-specific payload did not close and had no valid carrier.
-fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+fn report_xref_placement_failures(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    table: &crate::xref::XrefTable,
+) -> Result<(), CodecError> {
     for ordinal in &table.placement_failures {
         let Some(reference) = table
             .references
@@ -3882,19 +3896,22 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
         else {
             continue;
         };
-        report
-            .losses
-            .push(F3dLossCode::XrefPlacementUndecoded.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::XrefPlacementUndecoded, format_args!(
                 "external occurrence {} for role {} has a typed placement record that did not \
                  decode under its generation grammar; no valid placement carrier was available",
                 reference.relative_path, reference.neutron_role
-            )));
+            ), "collect F3D xref placement losses", "retain F3D xref placement loss")?;
     }
+    Ok(())
 }
 
 /// Report structured placements that were ignored because a scope-bound
 /// Component Insert carrier supplied the occurrence transform for the role.
-fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref::XrefTable) {
+fn report_xref_placement_overrides(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    table: &crate::xref::XrefTable,
+) -> Result<(), CodecError> {
     for override_ in &table.placement_overrides {
         let ordinal = override_.ordinal;
         let count = override_.count;
@@ -3905,13 +3922,12 @@ fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref:
         else {
             continue;
         };
-        report
-            .losses
-            .push(F3dLossCode::XrefPlacementSuperseded.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::XrefPlacementSuperseded, format_args!(
                 "{count} structured placement record(s) for external occurrence {} and role {} were superseded by scope-bound Component Insert carrier(s)",
                 reference.relative_path, reference.neutron_role
-            )));
+            ), "collect F3D xref placement losses", "retain F3D xref placement loss")?;
     }
+    Ok(())
 }
 
 /// Classify a mesh-body document.
