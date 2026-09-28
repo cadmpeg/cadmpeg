@@ -126,7 +126,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         let Some(span) =
-            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+            resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
             continue;
         };
