@@ -62,6 +62,69 @@ fn document_digest_attribute_refuses_collection_limit() {
     assert!(attributes.is_empty());
 }
 
+fn appearance_binding_ir(target: cadmpeg_ir::appearance::AppearanceTarget) -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+    use cadmpeg_ir::ids::AppearanceId;
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let appearance = AppearanceId::mint("f3d:test:appearance#one").unwrap();
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        textures: Vec::new(),
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color::from_rgba8(1, 2, 3, 255)),
+        properties: Default::default(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: cadmpeg_ir::ids::AppearanceBindingId::mint("f3d:test:binding#one").unwrap(),
+        target,
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    ir
+}
+
+#[test]
+fn appearance_color_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:test:body#one").unwrap();
+    let mut ir = appearance_binding_ir(cadmpeg_ir::appearance::AppearanceTarget::Body(body));
+    let error = super::super::apply_appearance_base_colors(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D appearance colors"));
+}
+
+#[test]
+fn body_appearance_color_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 1);
+    let body = cadmpeg_ir::ids::BodyId::mint("f3d:test:body#one").unwrap();
+    let mut ir = appearance_binding_ir(cadmpeg_ir::appearance::AppearanceTarget::Body(body));
+    let error = super::super::apply_appearance_base_colors(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D body appearance colors"));
+}
+
+#[test]
+fn face_appearance_color_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 1);
+    let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
+    let mut ir = appearance_binding_ir(cadmpeg_ir::appearance::AppearanceTarget::Face(face));
+    let error = super::super::apply_appearance_base_colors(&ctx, &mut ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D face appearance colors"));
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]

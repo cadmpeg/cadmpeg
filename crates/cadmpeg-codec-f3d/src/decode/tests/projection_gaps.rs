@@ -1105,7 +1105,7 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         binding("ambiguous-b", AppearanceTarget::Face(second_face)),
     ];
 
-    apply_appearance_base_colors(&mut ir);
+    apply_appearance_base_colors(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
     assert_eq!(ir.model.bodies[0].color, Some(direct));
     assert_eq!(ir.model.faces[0].color, Some(material));
     assert_eq!(ir.model.faces[1].color, None);

@@ -3223,7 +3223,7 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
-                apply_appearance_base_colors(&mut self.ir);
+                apply_appearance_base_colors(self.ctx, &mut self.ir)?;
                 self.ir
                     .model
                     .appearance_bindings
@@ -6118,37 +6118,56 @@ pub(crate) fn resolve_face_appearance_bindings(
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.
 /// Native RGB/truecolor attributes remain authoritative on the same target.
-fn apply_appearance_base_colors(ir: &mut CadIr) {
+fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
+    colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
+    id: &'a K,
+    color: cadmpeg_ir::topology::Color,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(existing) = colors.get_mut(id) {
+        *existing = None;
+    } else {
+        ctx.charge_collection_items(1, operation)?;
+        colors.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        colors.insert(id, Some(color));
+    }
+    Ok(())
+}
+
+fn apply_appearance_base_colors(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    let colors = ir
-        .model
-        .appearances
-        .iter()
-        .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut targets = std::collections::HashMap::new();
-    let mut ambiguous = std::collections::HashSet::new();
+    let colors = collect_decode_map(
+        ctx,
+        ir.model.appearances.iter().filter_map(|appearance| {
+            Some((&appearance.id, appearance.base_color?))
+        }),
+        "index F3D appearance colors",
+    )?;
+    let mut body_colors = std::collections::HashMap::new();
+    let mut face_colors = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
-        if targets.insert(binding.target.clone(), color).is_some() {
-            ambiguous.insert(binding.target.clone());
+        match &binding.target {
+            AppearanceTarget::Body(id) => insert_appearance_color(ctx, &mut body_colors, id, color, "index F3D body appearance colors")?,
+            AppearanceTarget::Face(id) => insert_appearance_color(ctx, &mut face_colors, id, color, "index F3D face appearance colors")?,
+            _ => {}
         }
     }
     for body in &mut ir.model.bodies {
-        let target = AppearanceTarget::Body(body.id.clone());
-        if body.color.is_none() && !ambiguous.contains(&target) {
-            body.color = targets.get(&target).copied();
+        if body.color.is_none() {
+            body.color = body_colors.get(&body.id).copied().flatten();
         }
     }
     for face in &mut ir.model.faces {
-        let target = AppearanceTarget::Face(face.id.clone());
-        if face.color.is_none() && !ambiguous.contains(&target) {
-            face.color = targets.get(&target).copied();
+        if face.color.is_none() {
+            face.color = face_colors.get(&face.id).copied().flatten();
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
