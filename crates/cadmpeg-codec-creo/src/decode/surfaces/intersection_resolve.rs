@@ -122,14 +122,11 @@ pub(in super::super) fn select_unique_curve_candidate(
     candidates: Vec<(CurveGeometry, &'static str)>,
     points: [[f64; 3]; 2],
 ) -> Option<(CurveGeometry, &'static str)> {
-    let candidates = candidates
+    let mut candidates = candidates
         .into_iter()
-        .filter(|(geometry, _)| curve_contains_points(geometry, points))
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+        .filter(|(geometry, _)| curve_contains_points(geometry, points));
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 pub(in super::super) fn resolve_curve_candidates(
@@ -139,10 +136,9 @@ pub(in super::super) fn resolve_curve_candidates(
     if let Some(points) = points {
         return select_unique_curve_candidate(candidates, points);
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    let mut candidates = candidates.into_iter();
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 pub(in super::super) fn fc14_held_coordinate(
@@ -154,17 +150,17 @@ pub(in super::super) fn fc14_held_coordinate(
         .filter(|record| record.curve_id == curve_id && record.subtype == 0x14);
     let record = records.next()?;
     records.next().is_none().then_some(())?;
-    let tokens = record
+    let mut tokens = record
         .tokens
         .iter()
-        .filter(|token| token.raw.first() == Some(&0x2d))
-        .collect::<Vec<_>>();
-    (tokens.len() >= 4).then_some(())?;
-    let first = tokens[0];
+        .filter(|token| token.raw.first() == Some(&0x2d));
+    let first = tokens.next()?;
+    for _ in 0..3 {
+        let token = tokens.next()?;
+        (token.raw == first.raw && token.value_mm == first.value_mm).then_some(())?;
+    }
     (first.value_mm.is_finite()
-        && tokens
-            .iter()
-            .all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
+        && tokens.all(|token| token.raw == first.raw && token.value_mm == first.value_mm))
     .then_some(first.value_mm)
 }
 
@@ -172,7 +168,7 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
     candidates: Vec<(CurveGeometry, &'static str)>,
     held_coordinate: f64,
 ) -> Option<(CurveGeometry, &'static str)> {
-    let matching = candidates
+    let mut matching = candidates
         .into_iter()
         .filter(|(geometry, tag)| {
             if *tag != "coaxial_cone_cylinder_secant_circle" {
@@ -199,12 +195,9 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
             let center = [center.x, center.y, center.z];
             let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
             (center[axis_index] - held_coordinate).abs() <= EPS_CENTER_AGREEMENT * scale
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = matching.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+        });
+    let candidate = matching.next()?;
+    matching.next().is_none().then_some(candidate)
 }
 
 #[cfg(test)]
