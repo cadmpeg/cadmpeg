@@ -12,6 +12,86 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn dress_up_edge_identity_refuses_at_retained_limit() {
+    let base = crate::native::PropertyRecord {
+        id: "base-edge-property".into(), owner: "fillet".into(), name: "Base".into(),
+        type_name: "App::PropertyLinkSub".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd dress-up edge selection", |ctx| {
+            super::dress_up_edge_selection(ctx, "PartDesign::Fillet", &[&base])
+        },
+    );
+}
+
+#[test]
+fn scale_base_identity_refuses_at_retained_limit() {
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None, document_attribute: None, object: Some("body".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let base = crate::native::PropertyRecord {
+        id: "base-body-property".into(), owner: "scale".into(), name: "Base".into(),
+        type_name: "App::PropertyLink".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(), links: vec![link], side_entries: Vec::new(), dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let factor = crate::native::PropertyRecord {
+        id: "scale-factor".into(), owner: "scale".into(), name: "UniformScale".into(),
+        type_name: "App::PropertyFloat".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 1,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Float value=\"2\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd scale base selection", |ctx| {
+            super::scale_definition(ctx, &[&base, &factor])
+        },
+    );
+}
+
+#[test]
+fn part_fillet_edge_values_refuse_at_collection_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "edge-values-property".into(), owner: "fillet".into(), name: "Edges".into(),
+        type_name: "Part::PropertyFilletEdges".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(), links: Vec::new(), side_entries: vec!["edges.bin".into()],
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let mut data = 1_u32.to_le_bytes().to_vec();
+    data.extend(0_u32.to_le_bytes());
+    data.extend(2_f64.to_le_bytes());
+    data.extend(2_f64.to_le_bytes());
+    let entry = crate::native::EntryRecord {
+        id: "entry".into(), name: "edges.bin".into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(), data,
+    };
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd fillet edge values", |ctx| {
+            super::part_fillet_edge_values(ctx, &[&property], std::slice::from_ref(&entry))
+        },
+    );
+}
+
+#[test]
 fn part_face_source_selection_refuses_at_retained_limit() {
     let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
         document: None,

@@ -209,7 +209,7 @@ pub(crate) fn transfer(
             )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Scale" {
-            scale_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            scale_definition(ctx, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_hole(&object.type_name) {
             hole_definition(
                 ctx,
@@ -281,11 +281,11 @@ pub(crate) fn transfer(
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_fillet(&object.type_name) {
-            fillet_definition(&object.type_name, &owned, entries)
+            fillet_definition(ctx, &object.type_name, &owned, entries)?
                 .or_else(|| cached_shape_definition(&owned))
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_chamfer(&object.type_name) {
-            chamfer_definition(&object.type_name, &owned, entries, program_version)
+            chamfer_definition(ctx, &object.type_name, &owned, entries, program_version)?
                 .or_else(|| cached_shape_definition(&owned))
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else {
@@ -4604,53 +4604,79 @@ fn extrusion_shape(
     }))
 }
 
-fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option<EdgeSelection> {
+fn dress_up_edge_selection(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Result<Option<EdgeSelection>, CodecError> {
     let use_all_edges = if matches!(kind, "PartDesign::Fillet" | "PartDesign::Chamfer") {
-        bool_selector(properties, "UseAllEdges", false)?
+        let Some(value) = bool_selector(properties, "UseAllEdges", false) else {
+            return Ok(None);
+        };
+        value
     } else {
         false
     };
-    Some(if use_all_edges {
-        EdgeSelection::All
-    } else {
-        property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
-            EdgeSelection::Native(property.id.clone())
-        })
-    })
-}
-
-fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let base = singular_operand(properties, "Base")?;
-    let factor = |name| {
-        scalar_named(properties, name).and_then(cadmpeg_ir::scalar::NonZeroReal::from_finite)
-    };
-    let factors = if bool_selector(properties, "Uniform", true)? {
-        ScaleFactors::Uniform {
-            factor: factor("UniformScale")?,
-        }
-    } else {
-        ScaleFactors::PerAxis {
-            factors: [factor("XScale")?, factor("YScale")?, factor("ZScale")?],
-        }
-    };
-    Some(FeatureDefinition::Operation(FeatureOperation::Scale {
-        bodies: BodySelection::Native(base.id.clone()),
-        center: Some(ScaleCenter::ModelOrigin),
-        factors,
+    if use_all_edges {
+        return Ok(Some(EdgeSelection::All));
+    }
+    Ok(Some(match property(properties, "Base") {
+        Some(property) => EdgeSelection::Native(retained_string(
+            ctx, &property.id, "fcstd dress-up edge selection",
+        )?),
+        None => EdgeSelection::Unresolved,
     }))
 }
 
+fn scale_definition(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(base) = singular_operand(properties, "Base") else { return Ok(None); };
+    let factor = |name| {
+        scalar_named(properties, name).and_then(cadmpeg_ir::scalar::NonZeroReal::from_finite)
+    };
+    let Some(uniform) = bool_selector(properties, "Uniform", true) else { return Ok(None); };
+    let factors = if uniform {
+        let Some(factor) = factor("UniformScale") else { return Ok(None); };
+        ScaleFactors::Uniform { factor }
+    } else {
+        let Some(x) = factor("XScale") else { return Ok(None); };
+        let Some(y) = factor("YScale") else { return Ok(None); };
+        let Some(z) = factor("ZScale") else { return Ok(None); };
+        ScaleFactors::PerAxis {
+            factors: [x, y, z],
+        }
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Scale {
+        bodies: BodySelection::Native(retained_string(
+            ctx, &base.id, "fcstd scale base selection",
+        )?),
+        center: Some(ScaleCenter::ModelOrigin),
+        factors,
+    })))
+}
+
 fn fillet_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
-) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(kind, properties)?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(edges) = dress_up_edge_selection(ctx, kind, properties)? else {
+        return Ok(None);
+    };
     if matches!(edges, EdgeSelection::Unresolved) {
-        return None;
+        return Ok(None);
     }
+    let part_values = if kind == "Part::Fillet" {
+        part_fillet_edge_values(ctx, properties, entries)?
+    } else {
+        None
+    };
+    Ok((|| {
     let radius = if kind == "Part::Fillet" {
-        let values = part_fillet_edge_values(properties, entries)?;
+        let values = part_values?;
         let radius = cadmpeg_ir::scalar::PositiveLength::new(values.first()?.1)?;
         values
             .iter()
@@ -4669,20 +4695,30 @@ fn fillet_definition(
             },
         ),
     }))
+    })())
 }
 
 fn chamfer_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(kind, properties)?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(edges) = dress_up_edge_selection(ctx, kind, properties)? else {
+        return Ok(None);
+    };
     if matches!(edges, EdgeSelection::Unresolved) {
-        return None;
+        return Ok(None);
     }
+    let part_values = if kind == "Part::Chamfer" {
+        part_fillet_edge_values(ctx, properties, entries)?
+    } else {
+        None
+    };
+    Ok((|| {
     let spec = if kind == "Part::Chamfer" {
-        let values = part_fillet_edge_values(properties, entries)?;
+        let values = part_values?;
         let (_, first_raw, second_raw) = *values.first()?;
         let first = cadmpeg_ir::scalar::PositiveLength::new(first_raw)?;
         let second = cadmpeg_ir::scalar::PositiveLength::new(second_raw)?;
@@ -4719,24 +4755,31 @@ fn chamfer_definition(
             flip_direction
         },
     }))
+    })())
 }
 
 fn part_fillet_edge_values(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
-) -> Option<Vec<(u32, f64, f64)>> {
-    let property = property(properties, "Edges")?;
-    let entry_name = property.side_entries().first()?;
-    let data = &entries.iter().find(|entry| entry.name == *entry_name)?.data;
+) -> Result<Option<Vec<(u32, f64, f64)>>, CodecError> {
+    let Some(property) = property(properties, "Edges") else { return Ok(None); };
+    let Some(entry_name) = property.side_entries().first() else { return Ok(None); };
+    let Some(data) = entries.iter().find(|entry| entry.name == *entry_name)
+        .map(|entry| entry.data.as_slice()) else { return Ok(None); };
     let mut view = View::over_retained(data);
-    let count = view.u32_le()?;
+    let Some(count) = view.u32_le() else { return Ok(None); };
     if count as usize > MAX_SKETCH_RECORDS {
-        return None;
+        return Ok(None);
     }
-    let values = view.read_counted(u64::from(count), 20, |view| {
-        Some((view.u32_le()?, view.f64_le()?, view.f64_le()?))
-    })?;
-    view.is_empty().then_some(values)
+    let Some(bounded) = view.counted(u64::from(count), 20) else { return Ok(None); };
+    let mut values = collection_vec(ctx, bounded.get(), "fcstd fillet edge values")?;
+    for _ in 0..count {
+        let Some(value) = (|| Some((view.u32_le()?, view.f64_le()?, view.f64_le()?)))()
+        else { return Ok(None); };
+        values.push(value);
+    }
+    Ok(view.is_empty().then_some(values))
 }
 
 fn shell_mode(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellMode> {
