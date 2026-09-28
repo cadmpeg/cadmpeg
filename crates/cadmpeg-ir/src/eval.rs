@@ -41,10 +41,12 @@ use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
 
+mod basis;
 mod depth;
 mod model_surface_point;
 mod polyline;
 mod rational;
+use basis::fill_bspline_basis;
 use depth::{ModelEvaluationDepthGuard, ModelEvaluationIdentity};
 use polyline::{polyline_point, polyline_samples, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};
@@ -1620,52 +1622,11 @@ fn bspline_basis(
     span: usize,
     t: f64,
 ) -> Result<Option<Vec<f64>>, ResourceLimit> {
-    let finite_t = FiniteReal::new(t);
     let Some(count) = degree.checked_add(1) else {
         return Ok(None);
     };
     let mut values = scratch::filled(count, 0.0, "IR B-spline basis")?;
-    Ok((|| {
-        values[0] = 1.0;
-        for j in 1..=degree {
-            let mut saved = 0.0;
-            for r in 0..j {
-                let value = values[r];
-                // Each knot distance is admitted where it is formed.
-                let right = FiniteReal::new(knots[span + r + 1] - t);
-                let left = FiniteReal::new(t - knots[span + 1 - j + r]);
-                // Two finite distances with a finite sum form the scaled ratio. A
-                // distance or a sum outside the finite range takes the exact knot
-                // differences instead.
-                let ratio_terms = right.zip(left).and_then(|(right, left)| {
-                    Some((right, left, FiniteReal::new(right.get() + left.get())?))
-                });
-                let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms
-                {
-                    scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
-                        .map(FiniteReal::get)
-                } else {
-                    let t = finite_t?;
-                    let [right_knot, left_knot] =
-                        FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
-                    [
-                        value
-                            * difference_quotient(right_knot, t, right_knot, left_knot)
-                                .ok()?
-                                .get(),
-                        value
-                            * difference_quotient(t, left_knot, right_knot, left_knot)
-                                .ok()?
-                                .get(),
-                    ]
-                };
-                values[r] = saved + right_term;
-                saved = left_term;
-            }
-            values[j] = saved;
-        }
-        Some(values)
-    })())
+    Ok(fill_bspline_basis(knots, degree, span, t, &mut values).map(|()| values))
 }
 
 /// The derivative basis uses degree + 1 scratch values, at most the admitted control count.
@@ -1909,6 +1870,31 @@ pub fn nurbs_curve_point_at(
     )
 }
 
+/// Evaluate a NURBS curve with a caller-owned basis buffer of `degree + 1`
+/// values. The caller admits the buffer before creating it.
+pub fn nurbs_curve_point_at_with_basis(
+    curve: &NurbsCurve,
+    t: f64,
+    basis: &mut [f64],
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let poles = curve.pole_rows();
+    let degree = usize::try_from(curve.degree()).map_err(|_| EvaluationFailure::NoValue)?;
+    if Some(basis.len()) != degree.checked_add(1) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    let at = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
+    let span = bspline_span(curve.knots(), degree, poles.count(), at.get())
+        .ok_or(EvaluationFailure::NoValue)?;
+    fill_bspline_basis(curve.knots(), degree, span, at.get(), basis)
+        .ok_or(EvaluationFailure::NonFinite(UNREACHED_POINT))?;
+    nurbs_curve_point_from_basis(
+        basis,
+        span,
+        |index| poles.point_at(index),
+        |index| poles.weight_at(index),
+    )
+}
+
 /// The point at `t` of a possibly-rational B-spline over `count` poles that
 /// `pole` hands out admitted, or why it has no finite point there.
 ///
@@ -1932,10 +1918,25 @@ fn nurbs_curve_point_evaluation(
     // At a finite parameter over finite knots, the basis is absent or not
     // finite only where one of its terms left the finite range.
     let basis = bspline_basis(knots, degree, span, t)?.ok_or(unreached)?;
+    nurbs_curve_point_from_basis(&basis, span, pole, weight)
+}
+
+fn nurbs_curve_point_from_basis(
+    basis: &[f64],
+    span: usize,
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+    weight: impl Fn(usize) -> Option<f64>,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let no_value = EvaluationFailure::NoValue;
+    let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     if !basis.iter().all(|value| value.is_finite()) {
         return Err(unreached);
     }
-    let base = homogeneous_curve_sum(&basis, pole, weight, span - degree).ok_or(no_value)?;
+    let first = span
+        .checked_add(1)
+        .and_then(|value| value.checked_sub(basis.len()))
+        .ok_or(no_value)?;
+    let base = homogeneous_curve_sum(basis, pole, weight, first).ok_or(no_value)?;
     let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(FinitePoint3::from_coordinates(x, y, z))

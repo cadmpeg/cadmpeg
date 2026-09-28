@@ -38,13 +38,23 @@ use cadmpeg_ir::scalar::PositiveI64;
 
 const UNSET_VARIABLE_BLEND_TANGENT: f64 = 1.0e37;
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 /// Decode an inline `cyl_spl_sur` translational-extrusion definition.
 pub(super) fn cyl_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["cyl_spl_sur", "cylsur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let scope = toks::subtype_span(toks, start)?;
     let span = scope.tokens();
     let mut cur = Cur::at(span, 2);
@@ -66,7 +76,8 @@ pub(super) fn cyl_spl_sur(
             sense
         };
         let table = resolver?;
-        let directrix = embedded_base_curve_resolving_refs(&mut cur, table)?;
+        let directrix =
+            propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
         let start = cur.take_optional_range_value()?.value();
         let end = cur.take_optional_range_value()?.value();
         let interval = [start?, end?];
@@ -76,9 +87,9 @@ pub(super) fn cyl_spl_sur(
             cache,
             discontinuities,
             tail_flag,
-        } = revision_surface_tail(&mut cur)?;
+        } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
         cur.at_scope_end().then_some(())?;
-        Some(DecodedProceduralSurface::revision(
+        Some(Ok(DecodedProceduralSurface::revision(
             DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix,
                 parameter_interval: interval,
@@ -104,22 +115,25 @@ pub(super) fn cyl_spl_sur(
                     trailing_flags: Vec::new(),
                 }),
             },
-        ))
+        )))
     } else {
-        let directrix = crate::nurbs::core::curve_cache(span)?;
+        let directrix = propagate_resource!(crate::nurbs::core::curve_cache(ctx, span)?);
         let interval = [cur.take_f64()?, cur.take_f64()?];
         let direction = cur.take_vector3()?;
         let native_position = cur.take_position()?;
-        let cache_fit_tolerance = scope
-            .owned_marker_positions()
+        let cache = propagate_resource!(scope.owned_marker_positions(ctx))
             .into_iter()
-            .filter_map(|at| surface_block(span, at))
-            .next_back()
-            .and_then(|(_, cache_end)| match span.get(cache_end) {
+            .rev()
+            .find_map(|at| surface_block(ctx, span, at));
+        let cache_fit_tolerance = match cache {
+            Some(Ok((_, cache_end))) => match span.get(cache_end) {
                 Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                 _ => None,
-            });
-        Some(DecodedProceduralSurface::legacy(
+            },
+            Some(Err(error)) => return Some(Err(error)),
+            None => None,
+        };
+        Some(Ok(DecodedProceduralSurface::legacy(
             DecodedProceduralSurfaceDefinition::Extrusion {
                 directrix,
                 parameter_interval: interval,
@@ -136,7 +150,7 @@ pub(super) fn cyl_spl_sur(
                 revision_form: None,
             },
             cache_fit_tolerance,
-        ))
+        )))
     }
 }
 
@@ -144,7 +158,12 @@ pub(super) fn decode_rolling_ball_side(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<
+    Result<
+        RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
+        cadmpeg_core::decode::ResourceLimit,
+    >,
+> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -385,9 +404,12 @@ pub(super) fn decode_rolling_ball_curve(
 /// Decode one rolling-ball support side. Token-space counterpart of
 /// [`decode_rolling_ball_side`].
 pub(super) fn rolling_ball_side(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<
+    Result<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>, cadmpeg_core::CodecError>,
+> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -397,37 +419,38 @@ pub(super) fn rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let surface = optional_rolling_ball_surface(cur, reference_context)?.value();
+    let surface =
+        propagate_resource!(optional_rolling_ball_surface(ctx, cur, reference_context)?).value();
     let saved = cur.pos();
     let curve = if cur.take_ident() == Some("null_curve") {
         None
     } else {
         cur.set_pos(saved);
-        Some(rolling_ball_curve(cur, reference_context)?)
+        Some(propagate_resource!(rolling_ball_curve(
+            ctx,
+            cur,
+            reference_context
+        )?))
     };
-    let curve = match curve {
-        Some(Ok(curve)) => Some(curve),
-        Some(Err(limit)) => return Some(Err(limit)),
-        None => None,
-    };
-    let pcurve = nullable_embedded_pcurve(cur)?.value();
+    let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
     let location = cur.take_position()?;
-    let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
+    let secondary_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
     let extension_start = cur.pos();
-    let extension_fields = (|| {
-        let extension = cur.take_long()?;
-        let tertiary = nullable_embedded_pcurve(cur)?.value();
-        Some(RollingBallSideExtension {
-            value: extension,
-            pcurve: tertiary,
-        })
-    })();
-    let extension = match extension_fields {
-        Some(extension) => Some(extension),
-        None => {
-            cur.set_pos(extension_start);
-            None
+    let extension = if let Some(value) = cur.take_long() {
+        match nullable_embedded_pcurve(ctx, cur) {
+            Some(Ok(tertiary)) => Some(RollingBallSideExtension {
+                value,
+                pcurve: tertiary.value(),
+            }),
+            Some(Err(error)) => return Some(Err(error)),
+            None => {
+                cur.set_pos(extension_start);
+                None
+            }
         }
+    } else {
+        cur.set_pos(extension_start);
+        None
     };
     Some(Ok(RollingBallSide {
         support_kind,
@@ -448,55 +471,60 @@ pub(super) fn rolling_ball_side(
 /// its parameter bounds. Token-space counterpart of
 /// [`decode_optional_rolling_ball_surface`].
 pub(super) fn optional_rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
+) -> Option<Result<Nullable<RollingBallSupportSurface<SurfaceGeometry>>, cadmpeg_core::CodecError>>
+{
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
-        return Some(Nullable::Null);
+        return Some(Ok(Nullable::Null));
     }
     cur.set_pos(saved);
-    rolling_ball_surface(cur, reference_context).map(|(surface, parameter_ranges)| {
-        Nullable::Value(RollingBallSupportSurface {
-            surface,
-            parameter_ranges,
-        })
-    })
+    rolling_ball_surface(ctx, cur, reference_context).map(|result| result.map(Nullable::Value))
 }
 
 /// Decode one rolling-ball support surface. Token-space counterpart of
 /// [`decode_rolling_ball_surface`].
 fn rolling_ball_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<(SurfaceGeometry, [[Option<f64>; 2]; 2])> {
+) -> Option<Result<RollingBallSupportSurface<SurfaceGeometry>, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident()?;
     if kind == "spline" {
         if toks::marker_at(toks, cur.pos()).is_some() {
-            let (surface, surface_end) = surface_block(toks, cur.pos())?;
+            let (surface, surface_end) = propagate_resource!(surface_block(ctx, toks, cur.pos())?);
             cur.set_pos(surface_end);
             let ranges = surface_ranges(cur)?;
-            return Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-                ranges,
-            ));
+            return Some(Ok(RollingBallSupportSurface {
+                surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+                parameter_ranges: ranges,
+            }));
         }
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
-        let surface = reference_context
-            .and_then(|table| crate::nurbs::core::owned_surface_cache_resolving_refs(scope, table))
-            .or_else(|| crate::nurbs::core::owned_surface_cache(scope))?;
+        let surface = propagate_resource!(reference_context
+            .and_then(
+                |table| crate::nurbs::core::owned_surface_cache_resolving_refs(ctx, scope, table)
+            )
+            .or_else(|| crate::nurbs::core::owned_surface_cache(ctx, scope))?);
         cur.set_pos(cur.pos() + scope.tokens().len());
         let ranges = surface_ranges(cur)?;
-        return Some((
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
-            ranges,
-        ));
+        return Some(Ok(RollingBallSupportSurface {
+            surface: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+            parameter_ranges: ranges,
+        }));
     }
     cur.set_pos(saved);
-    embedded_surface_with_ranges(cur)
+    embedded_surface_with_ranges(ctx, cur).map(|result| {
+        result.map(|surface| RollingBallSupportSurface {
+            surface: surface.surface,
+            parameter_ranges: surface.ranges,
+        })
+    })
 }
 
 /// Four optional U/V range bounds. Token-space counterpart of
@@ -517,12 +545,13 @@ pub(super) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]>
 /// Decode one rolling-ball curve slot. Token-space counterpart of
 /// [`decode_rolling_ball_curve`].
 pub(super) fn rolling_ball_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<RollingBallSupportCurve<CurveGeometry>, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     if toks::marker_at(toks, cur.pos()).is_some() {
-        let (curve, curve_end) = curve_block(toks, cur.pos())?;
+        let (curve, curve_end) = propagate_resource!(curve_block(ctx, toks, cur.pos())?);
         cur.set_pos(curve_end);
         let parameter_range = [
             cur.take_optional_range_value()?.value(),
@@ -538,10 +567,11 @@ pub(super) fn rolling_ball_curve(
         cur.take_bool()?;
         let scope = toks::subtype_span(toks, cur.pos())?;
         let curve = reference_context
-            .and_then(|table| crate::nurbs::core::owned_curve_cache_resolving_refs(scope, table))
-            .or_else(|| crate::nurbs::core::owned_curve_cache(scope))
-            .map(Ok)
-            .or_else(|| par_int_cur_isoline(scope.tokens(), reference_context))?;
+            .and_then(|table| {
+                crate::nurbs::core::owned_curve_cache_resolving_refs(ctx, scope, table)
+            })
+            .or_else(|| crate::nurbs::core::owned_curve_cache(ctx, scope))
+            .or_else(|| par_int_cur_isoline(ctx, scope.tokens(), reference_context))?;
         cur.set_pos(cur.pos() + scope.tokens().len());
         let parameter_range = [
             cur.take_optional_range_value()?.value(),
@@ -632,18 +662,25 @@ pub(super) fn rolling_ball_curve(
     }))
 }
 
-fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThirdSide> {
-    let label = cur.take_str()?.to_string();
-    let surface = embedded_surface(cur)?;
-    let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+fn rolling_ball_third_side(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+) -> Option<Result<EmbeddedRollingBallThirdSide, cadmpeg_core::CodecError>> {
+    let label = propagate_resource!(crate::decode_alloc::copy_string(
+        ctx,
+        cur.take_str()?,
+        "ASM rolling ball third-side label"
+    ));
+    let surface = propagate_resource!(embedded_surface(ctx, cur)?);
+    let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
-    let pcurve = nullable_embedded_pcurve(cur)?.value();
+    let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
     let direction = cur.take_vector3()?;
-    let secondary_pcurve = nullable_embedded_pcurve(cur)?.value();
+    let secondary_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
     let extension = cur.take_long()?;
-    let tertiary_pcurve = nullable_embedded_pcurve(cur)?.value();
+    let tertiary_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
     let flag = cur.take_bool()?;
-    Some(EmbeddedRollingBallThirdSide {
+    Some(Ok(EmbeddedRollingBallThirdSide {
         label,
         surface,
         curve,
@@ -653,16 +690,16 @@ fn rolling_ball_third_side(cur: &mut Cur<'_>) -> Option<EmbeddedRollingBallThird
         extension,
         tertiary_pcurve,
         flag,
-    })
+    }))
 }
 
-fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
+fn blend_value_name<'a>(cur: &mut Cur<'a>) -> Option<&'a str> {
     let saved = cur.pos();
     if let Some(value) = cur.take_str() {
-        return Some(value.to_string());
+        return Some(value);
     }
     cur.set_pos(saved);
-    cur.take_ident().map(str::to_string)
+    cur.take_ident()
 }
 
 fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry> {
@@ -676,13 +713,15 @@ fn radius_function_geometry(mut function: PcurveNurbs) -> Option<PcurveGeometry>
 }
 
 fn variable_blend_value(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     depth: usize,
-) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
+) -> Option<Result<cadmpeg_ir::geometry::VariableBlendValue, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::{
         EdgeOffsetDiscriminator, VariableBlendInterpolationPoint, VariableBlendTerminal,
         VariableBlendValue, VariableBlendValuePayload,
     };
+    let _depth_guard = propagate_resource!(ctx.enter_nested("decode ASM variable blend value"));
     if depth > 32 {
         return None;
     }
@@ -694,7 +733,7 @@ fn variable_blend_value(
     };
     let calibrated = cur.take_enum()?;
     let modern_flag = cur.take_bool()?;
-    let payload = match name.as_str() {
+    let payload = match name {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
             discriminator,
             parameters: [cur.take_f64()?, cur.take_f64()?],
@@ -717,12 +756,17 @@ fn variable_blend_value(
         "functional" => {
             let parameter = cur.take_f64()?;
             let radius = cur.take_f64()? * LEN_TO_MM;
-            let (function, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+            let (function, end) =
+                propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(end);
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
                 VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                VariableBlendTerminal::Text(blend_value_name(cur)?)
+                VariableBlendTerminal::Text(propagate_resource!(crate::decode_alloc::copy_string(
+                    ctx,
+                    blend_value_name(cur)?,
+                    "ASM variable blend terminal text",
+                )))
             };
             VariableBlendValuePayload::Functional {
                 discriminator,
@@ -738,12 +782,16 @@ fn variable_blend_value(
             radius: cur.take_f64()? * LEN_TO_MM,
             variable_chamfer: cur.take_enum()?,
             chamfer_type: cur.take_enum()?,
-            nested: Box::new(variable_blend_value(cur, depth + 1)?),
+            nested: Box::new(match variable_blend_value(ctx, cur, depth + 1)? {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }),
         },
         "interp" => {
             let parameter = cur.take_f64()?;
             let radius = cur.take_f64()? * LEN_TO_MM;
-            let (function, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
+            let (function, end) =
+                propagate_resource!(pcurve_block_with_end(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(end);
             // The extension enum precedes the radius-point count and gates
             // nothing. Revision-gated streams store it as a 0x15 enum token;
@@ -758,7 +806,19 @@ fn variable_blend_value(
             if count > 100_000 {
                 return None;
             }
-            let mut points = Vec::with_capacity(count);
+            if let Err(error) = ctx
+                .charge_collection_items(count as u64, "decode variable blend interpolation points")
+            {
+                return Some(Err(error));
+            }
+            let mut points = Vec::new();
+            if points.try_reserve(count).is_err() {
+                return Some(Err(ctx.refuse_codec_limit(
+                    "reserve variable blend interpolation points",
+                    count as u64,
+                    count as u64,
+                )));
+            }
             for _ in 0..count {
                 let parameter = cur.take_f64()?;
                 let radius = cur.take_f64()? * LEN_TO_MM;
@@ -792,20 +852,107 @@ fn variable_blend_value(
         }
         _ => return None,
     };
-    Some(VariableBlendValue {
+    Some(Ok(VariableBlendValue {
         modern_flag,
         calibrated,
         payload,
-    })
+    }))
 }
 
 #[cfg(test)]
 mod variable_blend_value_tests {
-    use super::{variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
+    use super::{rolling_ball_third_side, variable_blend_value, UNSET_VARIABLE_BLEND_TANGENT};
     use crate::kernel_header::RefWidth;
     use crate::nurbs::toks::Cur;
+    use crate::sab::Token;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::VariableBlendValuePayload;
+
+    #[test]
+    fn rolling_ball_third_side_label_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [Token::Str("label".into())];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = rolling_ball_third_side(&ctx, &mut cur)
+        else {
+            panic!("label copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM rolling ball third-side label");
+    }
+
+    #[test]
+    fn variable_blend_terminal_text_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("functional".into()),
+            Token::Enum(0),
+            Token::True,
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Ident("nubs".into()),
+            Token::Long(1),
+            Token::Enum(0),
+            Token::Long(2),
+            Token::Double(0.0),
+            Token::Long(1),
+            Token::Double(1.0),
+            Token::Long(1),
+            Token::Double(0.0),
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(0.0),
+            Token::Str("terminal".into()),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 7;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("terminal text copy must refuse retained limit");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "ASM variable blend terminal text");
+    }
+
+    #[test]
+    fn variable_blend_value_refuses_recursion_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens = [
+            Token::Str("fixed_width".into()),
+            Token::Enum(0),
+            Token::True,
+            Token::Double(0.0),
+            Token::Double(1.0),
+            Token::Double(2.0),
+        ];
+        let mut cur = Cur::at(&tokens, 0);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let Some(Err(CodecError::ResourceLimit(refusal))) = variable_blend_value(&ctx, &mut cur, 0)
+        else {
+            panic!("variable blend depth must refuse");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(refusal.operation, "decode ASM variable blend value");
+    }
 
     fn text(bytes: &mut Vec<u8>, value: &str) {
         bytes.push(0x07);
@@ -835,12 +982,21 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_two_ends_and_recursive_const_values() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
         let mut direct = Vec::new();
         two_ends(&mut direct);
         let toks = crate::nurbs::toks::lex_test_span(&direct, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated two-ends value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated two-ends value")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
         assert_eq!(decoded.payload.discriminator(), 7);
@@ -866,7 +1022,9 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&recursive, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated recursive const value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated recursive const value")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::Constant { radius, nested, .. } = decoded.payload else {
             panic!("expected constant payload")
@@ -880,6 +1038,13 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_fixed_width_value() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
         let mut bytes = Vec::new();
         text(&mut bytes, "fixed_width");
         integer(&mut bytes, 0x15, 0);
@@ -891,7 +1056,9 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0).expect("generated fixed-width value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated fixed-width value")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len());
         let VariableBlendValuePayload::FixedWidth {
             parameters, width, ..
@@ -905,6 +1072,13 @@ mod variable_blend_value_tests {
 
     #[test]
     fn decodes_generated_enum_tagged_interp_counts() {
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
         let mut bytes = Vec::new();
         text(&mut bytes, "interp");
         integer(&mut bytes, 0x15, 0);
@@ -947,8 +1121,9 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded =
-            variable_blend_value(&mut cur, 0).expect("generated enum-tagged interp value");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated enum-tagged interp value")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated {
             enum_count,
@@ -977,9 +1152,67 @@ mod variable_blend_value_tests {
     }
 
     #[test]
+    fn variable_blend_interpolation_points_refuse_collection_limit() {
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        integer(&mut bytes, 0x15, 2);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x13);
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let tokens = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
+            .expect("valid interpolation value");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("input is within the root byte limit");
+        let mut cur = Cur::at(&tokens, 0);
+        let result = variable_blend_value(&ctx, &mut cur, 0)
+            .expect("interpolation grammar reaches its point collection");
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
     fn decodes_interp_point_with_unset_derivatives() {
-        // Sentinel value marking an unset first/second derivative.
-        const UNSET: f64 = UNSET_VARIABLE_BLEND_TANGENT;
+        let asm_decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (asm_decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &asm_decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
         let mut bytes = Vec::new();
         text(&mut bytes, "interp");
         integer(&mut bytes, 0x15, 0);
@@ -1005,8 +1238,8 @@ mod variable_blend_value_tests {
         integer(&mut bytes, 0x04, 1);
         double(&mut bytes, 0.5);
         double(&mut bytes, 1.5);
-        double(&mut bytes, UNSET);
-        double(&mut bytes, UNSET);
+        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
+        double(&mut bytes, UNSET_VARIABLE_BLEND_TANGENT);
         bytes.push(0x13);
         for value in [1.0f64, 2.0, 3.0] {
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -1020,8 +1253,9 @@ mod variable_blend_value_tests {
         let toks = crate::nurbs::toks::lex_test_span(&bytes, RefWidth::Eight)
             .expect("valid single-record byte fixture");
         let mut cur = Cur::at(&toks, 0);
-        let decoded = variable_blend_value(&mut cur, 0)
-            .expect("generated interp value with unset derivatives");
+        let decoded = variable_blend_value(&asm_decode_ctx, &mut cur, 0)
+            .expect("generated interp value with unset derivatives")
+            .expect("resource allocation did not fail");
         assert_eq!(cur.pos(), toks.len() - 1);
         let VariableBlendValuePayload::Interpolated { points, .. } = decoded.payload else {
             panic!("expected interpolated payload")
@@ -1032,9 +1266,10 @@ mod variable_blend_value_tests {
 }
 
 pub(super) fn var_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     reference_context: Option<&SubtypeTable>,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     use cadmpeg_ir::geometry::VariableBlendCrossSection;
     let names = [
         "var_blend_spl_sur",
@@ -1048,7 +1283,7 @@ pub(super) fn var_blend_spl_sur(
         "sfcv_free_bl_spl_sur",
         "sfcvfreeblndsur",
     ];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let subtype = match name {
         "var_blend_spl_sur" | "varblendsplsur" => {
             cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
@@ -1070,16 +1305,16 @@ pub(super) fn var_blend_spl_sur(
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let first = match rolling_ball_side(&mut cur, reference_context)? {
+    let first = match rolling_ball_side(ctx, &mut cur, reference_context)? {
         Ok(side) => side,
         Err(limit) => return Some(Err(limit)),
     };
-    let second = match rolling_ball_side(&mut cur, reference_context)? {
+    let second = match rolling_ball_side(ctx, &mut cur, reference_context)? {
         Ok(side) => side,
         Err(limit) => return Some(Err(limit)),
     };
     let sides = Box::new([first, second]);
-    let slice = match rolling_ball_curve(&mut cur, reference_context)? {
+    let slice = match rolling_ball_curve(ctx, &mut cur, reference_context)? {
         Ok(curve) => curve,
         Err(limit) => return Some(Err(limit)),
     };
@@ -1089,11 +1324,17 @@ pub(super) fn var_blend_spl_sur(
         1 => true,
         _ => return None,
     };
-    let first_value = variable_blend_value(&mut cur, 0)?;
+    let first_value = match variable_blend_value(ctx, &mut cur, 0)? {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     let radii = if two_radii {
         cadmpeg_ir::geometry::VariableBlendRadii::Two {
             first: first_value,
-            second: variable_blend_value(&mut cur, 0)?,
+            second: match variable_blend_value(ctx, &mut cur, 0)? {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            },
         }
     } else {
         cadmpeg_ir::geometry::VariableBlendRadii::Single { value: first_value }
@@ -1112,7 +1353,10 @@ pub(super) fn var_blend_spl_sur(
             }),
             3 => {
                 let radius = if cur.take_bool()? {
-                    Some(Box::new(variable_blend_value(&mut cur, 0)?))
+                    Some(Box::new(match variable_blend_value(ctx, &mut cur, 0)? {
+                        Ok(value) => value,
+                        Err(error) => return Some(Err(error)),
+                    }))
                 } else {
                     None
                 };
@@ -1148,14 +1392,14 @@ pub(super) fn var_blend_spl_sur(
         cache,
         discontinuities,
         tail_flag,
-    } = revision_surface_tail(&mut cur)?;
+    } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
     let secondary_curve = if cur.take_ident() == Some("null_curve") {
         None
     } else {
         cur.set_pos(saved);
-        match rolling_ball_curve(&mut cur, reference_context)? {
+        match rolling_ball_curve(ctx, &mut cur, reference_context)? {
             Ok(curve) => Some(curve),
             Err(limit) => return Some(Err(limit)),
         }
@@ -1179,11 +1423,11 @@ pub(super) fn var_blend_spl_sur(
         None
     } else {
         cur.set_pos(saved);
-        let (post, post_end) = curve_block(span, cur.pos())?;
+        let (post, post_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
         cur.set_pos(post_end);
         Some(post)
     };
-    let post_pcurve = nullable_embedded_pcurve(&mut cur)?.value();
+    let post_pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, &mut cur)?).value();
     cur.at_scope_end().then_some(())?;
     Some(Ok(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(EmbeddedVariableBlend {
@@ -1230,16 +1474,19 @@ pub(super) fn var_blend_spl_sur(
     )))
 }
 
-fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundary> {
-    let kind = cur.take_str()?.to_string();
+fn vertex_blend_boundary(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    cur: &mut Cur<'_>,
+) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
+    let kind = cur.take_str()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_position()?;
     let u_smoothing = cur.take_bool()?;
     let v_smoothing = cur.take_bool()?;
     let fullness = cur.take_f64()?;
-    let geometry = match kind.as_str() {
+    let geometry = match kind {
         "circle" => {
-            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+            let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(curve_end);
             let form = cur.take_enum()?;
             let mut read_twist = || {
@@ -1287,8 +1534,8 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
             }
         }
         "pcurve" => {
-            let surface = embedded_surface(cur)?;
-            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let surface = propagate_resource!(embedded_surface(ctx, cur)?);
+            let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let sense = cur.take_bool()?;
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
@@ -1303,7 +1550,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
         "plane" => {
             let normal = cur.take_vector3()?;
             let parameters = [cur.take_f64()?, cur.take_f64()?];
-            let (curve, curve_end) = curve_block(cur.toks(), cur.pos())?;
+            let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
             cur.set_pos(curve_end);
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
@@ -1314,7 +1561,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
         }
         _ => return None,
     };
-    Some(EmbeddedVertexBlendBoundary {
+    Some(Ok(EmbeddedVertexBlendBoundary {
         boundary_type,
         // The magic item is a unit direction or the zero vector, not a
         // length-bearing location, so it takes no unit conversion.
@@ -1323,7 +1570,7 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
         v_smoothing,
         fullness,
         geometry,
-    })
+    }))
 }
 
 /// Decode one revision-gated vertex-blend boundary: ident-token type name,
@@ -1331,19 +1578,20 @@ fn vertex_blend_boundary(cur: &mut Cur<'_>) -> Option<EmbeddedVertexBlendBoundar
 /// type-selected payload with bound-carrying supports and endpoint-carrying
 /// curves.
 fn revision_vertex_blend_boundary(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
-) -> Option<EmbeddedVertexBlendBoundary> {
+) -> Option<Result<EmbeddedVertexBlendBoundary, cadmpeg_core::CodecError>> {
     let table = resolver?;
-    let kind = cur.take_ident()?.to_string();
+    let kind = cur.take_ident()?;
     let boundary_type = cur.take_bool()?;
     let magic = cur.take_vector3()?;
     let u_smoothing = cur.take_bool()?;
     let v_smoothing = cur.take_bool()?;
     let fullness = cur.take_f64()?;
-    let geometry = match kind.as_str() {
+    let geometry = match kind {
         "circle" => {
-            let curve = embedded_base_curve_resolving_refs(cur, table)?;
+            let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
             let curve_endpoints = [
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
@@ -1394,8 +1642,12 @@ fn revision_vertex_blend_boundary(
             }
         }
         "pcurve" => {
-            let (surface, support_bounds) = optional_embedded_surface_with_bounds(cur, table)?;
-            let pcurve = nullable_embedded_pcurve(cur)?.value();
+            let (surface, support_bounds) =
+                match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+                    Ok(surface) => surface,
+                    Err(error) => return Some(Err(error)),
+                };
+            let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let sense = cur.take_bool()?;
             let fit_tolerance =
                 cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()?).ok()?;
@@ -1410,7 +1662,7 @@ fn revision_vertex_blend_boundary(
         "plane" => {
             let normal = cur.take_vector3()?;
             let parameters = [cur.take_f64()?, cur.take_f64()?];
-            let curve = embedded_base_curve_resolving_refs(cur, table)?;
+            let curve = propagate_resource!(embedded_base_curve_resolving_refs(ctx, cur, table)?);
             let curve_endpoints = [
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
@@ -1424,7 +1676,7 @@ fn revision_vertex_blend_boundary(
         }
         _ => return None,
     };
-    Some(EmbeddedVertexBlendBoundary {
+    Some(Ok(EmbeddedVertexBlendBoundary {
         boundary_type,
         // The magic item is a unit direction or the zero vector, not a
         // length-bearing location, so it takes no unit conversion.
@@ -1433,15 +1685,16 @@ fn revision_vertex_blend_boundary(
         v_smoothing,
         fullness,
         geometry,
-    })
+    }))
 }
 
 pub(super) fn vertex_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     resolver: Option<&SubtypeTable>,
-) -> Option<DecodedProceduralSurface> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["VBL_SURF", "vertexblendsur"];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     // The revision-gated layout stores the revision integer before the
@@ -1464,18 +1717,25 @@ pub(super) fn vertex_blend_spl_sur(
     if count > 100_000 {
         return None;
     }
-    let mut boundaries = Vec::with_capacity(count);
+    let mut boundaries =
+        match crate::decode_alloc::counted_vec(ctx, count, "ASM vertex blend boundaries") {
+            Ok(boundaries) => boundaries,
+            Err(error) => return Some(Err(error)),
+        };
     for _ in 0..count {
         boundaries.push(if revision.is_some() {
-            revision_vertex_blend_boundary(&mut cur, resolver)?
+            match revision_vertex_blend_boundary(ctx, &mut cur, resolver)? {
+                Ok(boundary) => boundary,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
-            vertex_blend_boundary(&mut cur)?
+            propagate_resource!(vertex_blend_boundary(ctx, &mut cur)?)
         });
     }
     let grid_size = cur.take_long()?;
     let fit_tolerance =
         cadmpeg_ir::geometry::FitTolerance::try_new(cur.take_f64()? * LEN_TO_MM).ok()?;
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(EmbeddedVertexBlend {
             revision,
             boundaries,
@@ -1483,13 +1743,14 @@ pub(super) fn vertex_blend_spl_sur(
             fit_tolerance,
         })),
         None,
-    ))
+    )))
 }
 
 pub(super) fn full_rb_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     table: &SubtypeTable,
-) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::decode::ResourceLimit>> {
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = [
         "rb_blend_spl_sur",
         "rbblnsur",
@@ -1498,21 +1759,21 @@ pub(super) fn full_rb_blend_spl_sur(
         "sss_blend_spl_sur",
         "sssblndsur",
     ];
-    let (start, name) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, name) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let has_third = name == "sss_blend_spl_sur" || name == "sssblndsur";
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let revision = PositiveI64::new(cur.take_long()?)?;
-    let first = match rolling_ball_side(&mut cur, Some(table))? {
+    let first = match rolling_ball_side(ctx, &mut cur, Some(table))? {
         Ok(side) => side,
         Err(limit) => return Some(Err(limit)),
     };
-    let second = match rolling_ball_side(&mut cur, Some(table))? {
+    let second = match rolling_ball_side(ctx, &mut cur, Some(table))? {
         Ok(side) => side,
         Err(limit) => return Some(Err(limit)),
     };
     let sides = Box::new([first, second]);
-    let slice = match rolling_ball_curve(&mut cur, Some(table))? {
+    let slice = match rolling_ball_curve(ctx, &mut cur, Some(table))? {
         Ok(curve) => curve,
         Err(limit) => return Some(Err(limit)),
     };
@@ -1542,9 +1803,11 @@ pub(super) fn full_rb_blend_spl_sur(
         cache,
         discontinuities,
         tail_flag,
-    } = revision_surface_tail(&mut cur)?;
+    } = propagate_resource!(revision_surface_tail(ctx, &mut cur)?);
     let third = if has_third {
-        Some(Box::new(rolling_ball_third_side(&mut cur)?))
+        Some(Box::new(propagate_resource!(rolling_ball_third_side(
+            ctx, &mut cur
+        )?)))
     } else {
         None
     };
@@ -1554,7 +1817,9 @@ pub(super) fn full_rb_blend_spl_sur(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
             spine: match &slice.curve {
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve.clone()),
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(
+                    propagate_resource!(curve.try_clone_for_decode(ctx, "ASM rolling ball spine")),
+                ),
                 _ => None,
             },
             radius_offsets: offsets,
@@ -1584,9 +1849,12 @@ pub(super) fn full_rb_blend_spl_sur(
 /// Decode the compact rolling-ball carrier emitted without the native side
 /// graph. Every field is positional; nested construction members are not
 /// searched by token kind.
-pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
+pub(super) fn compact_rb_blend_spl_sur(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+) -> Option<Result<DecodedProceduralSurface, cadmpeg_core::CodecError>> {
     let names = ["rb_blend_spl_sur", "rbblnsur", "pipe_spl_sur", "pipesur"];
-    let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
+    let (start, _) = propagate_resource!(toks::find_owned_subtype_marker(ctx, toks, &names)?);
     let span = toks::subtype_span(toks, start)?.tokens();
     let mut cur = Cur::at(span, 2);
     let mut supports = [None, None];
@@ -1602,14 +1870,14 @@ pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
         }
         let payload_start = cur.pos();
         let support = if !has_outer_kind {
-            let (_, end) = surface_block(span, cur.pos())?;
+            let (_, end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
             cur.set_pos(end);
             None
-        } else if let Some(surface) = embedded_surface(&mut cur) {
-            Some(surface)
+        } else if let Some(surface) = embedded_surface(ctx, &mut cur) {
+            Some(propagate_resource!(surface))
         } else {
             cur.set_pos(payload_start);
-            let (surface, end) = surface_block(span, cur.pos())?;
+            let (surface, end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
             cur.set_pos(end);
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 surface,
@@ -1618,11 +1886,11 @@ pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
         supports[support_count] = support;
         support_count += 1;
     }
-    let (spine, spine_end) = curve_block(span, cur.pos())?;
+    let (spine, spine_end) = propagate_resource!(curve_block(ctx, span, cur.pos())?);
     cur.set_pos(spine_end);
     let offsets = [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM];
     (cur.take_enum()? == -1).then_some(())?;
-    let (_, cache_end) = surface_block(span, cur.pos())?;
+    let (_, cache_end) = propagate_resource!(surface_block(ctx, span, cur.pos())?);
     cur.set_pos(cache_end);
     let cache_fit_tolerance = if matches!(cur.peek(), Some(Token::Double(_))) {
         Some(cur.take_f64()? * LEN_TO_MM)
@@ -1631,7 +1899,7 @@ pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
     };
     cur.at_scope_end().then_some(())?;
 
-    Some(DecodedProceduralSurface::legacy(
+    Some(Ok(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),
             spine: Some(spine),
@@ -1640,5 +1908,5 @@ pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
             native: None,
         },
         cache_fit_tolerance,
-    ))
+    )))
 }

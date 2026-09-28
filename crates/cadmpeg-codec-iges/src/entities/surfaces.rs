@@ -2146,21 +2146,25 @@ pub(super) fn project(
             .map_or(cached_interval, |geometry| {
                 source_parameter_interval(geometry, cached_interval)
             });
-        let mut placed_directrix = directrix;
-        if entry.transform != 0
-            && placed_directrix
-                .map_control_points_in_place(|point| transform.apply_point(point.get()).ok_or(()))
-                .is_err()
-        {
-            super::push_optional_attributed_loss(
-                ctx,
-                &mut losses,
-                entry,
-                IgesLossCode::NurbsTransformNonFinite,
-                format_args!("{}", "IGES placement produces non-finite directrix poles"),
-            )?;
-            continue;
-        }
+        let placed_directrix = if entry.transform == 0 {
+            directrix
+        } else {
+            match directrix
+                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
+            {
+                Ok(placed) => placed,
+                Err(()) => {
+                    super::push_optional_attributed_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        IgesLossCode::NurbsTransformNonFinite,
+                        format_args!("{}", "IGES placement produces non-finite directrix poles"),
+                    )?;
+                    continue;
+                }
+            }
+        };
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
             &placed_directrix,
             cached_interval[0],
@@ -2850,20 +2854,21 @@ pub(super) fn project(
         } else if let Some(orientation) = similarity_orientation(transform) {
             // This arm is the transformed route, so the generatrix is placed
             // here rather than carried past the untransformed one.
-            let mut placed_generatrix = generatrix;
-            if placed_generatrix
-                .map_control_points_in_place(|point| transform.apply_point(point.get()).ok_or(()))
-                .is_err()
+            let placed_generatrix = match generatrix
+                .try_map_owned_control_points(|point| transform.apply_point(point.get()).ok_or(()))
             {
-                super::push_optional_attributed_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    IgesLossCode::NurbsTransformNonFinite,
-                    format_args!("{}", "IGES placement produces non-finite generatrix poles"),
-                )?;
-                continue;
-            }
+                Ok(placed) => placed,
+                Err(()) => {
+                    super::push_optional_attributed_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        IgesLossCode::NurbsTransformNonFinite,
+                        format_args!("{}", "IGES placement produces non-finite generatrix poles"),
+                    )?;
+                    continue;
+                }
+            };
             procedural_directrix = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedGeneratrix),

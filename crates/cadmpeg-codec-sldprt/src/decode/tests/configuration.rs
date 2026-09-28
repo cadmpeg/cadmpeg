@@ -141,7 +141,12 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
 
     let mut report = super::empty_report(true);
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity is unresolved; 0 of 1 configuration records are active."
@@ -190,7 +195,12 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     assert!(configuration.active);
 
     let mut report = super::empty_report(false);
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
     assert!(!report.losses.iter().any(|loss| {
         loss.message
             == "active configuration identity does not resolve to active geometry partition 3."
@@ -218,7 +228,12 @@ fn duplicate_configuration_partition_identities_are_reported() {
     }
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "2 configuration record(s) share non-unique geometry partition identities."
@@ -250,7 +265,12 @@ fn incomplete_configuration_names_are_reported() {
     }
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -286,7 +306,12 @@ fn active_configuration_partition_disagreement_is_reported() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -334,7 +359,12 @@ fn incoherent_configuration_bodies_are_reported() {
     ];
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration record(s) have unresolved body membership; 2 configuration record(s) contain missing or repeated body references."
@@ -378,7 +408,12 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(!report.losses.iter().any(|loss| {
         loss.message
@@ -435,7 +470,12 @@ fn configuration_suppression_and_override_references_are_coherent() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message == "1 configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; 1 configuration(s) reference missing parameter overrides."

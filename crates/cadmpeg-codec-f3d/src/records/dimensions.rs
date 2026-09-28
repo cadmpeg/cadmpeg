@@ -4,8 +4,10 @@
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
+use super::serde_column::SliceColumn;
 use super::sketch_relations::{
-    constraint_kinds_from_state, SketchConstraintKind, SKETCH_CONSTRAINT_MASK,
+    constraint_kinds_from_state, constraint_kinds_iter, SketchConstraintKind,
+    SKETCH_CONSTRAINT_MASK,
 };
 use cadmpeg_ir::ids::{EdgeId, FaceId};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -95,11 +97,9 @@ pub(crate) struct DesignRecipeReference {
 /// One frame shape covers both source forms: the two-locus form, which carries
 /// the opaque index that precedes its loci, and the null-locus form, whose
 /// first locus is the fixed zero reference and which carries no opaque index.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionLocusPairWire",
-    into = "DesignDimensionLocusPairWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignDimensionLocusPairWire")]
 pub(crate) struct DesignDimensionLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -118,6 +118,31 @@ pub(crate) struct DesignDimensionLocusPair {
     roles: [u32; 2],
     /// Per-file paired class tag.
     pub(crate) paired_class_tag: DesignClassTag,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_LOCUS_PAIR_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignDimensionLocusPair {
+    fn clone(&self) -> Self {
+        DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            first: self.first,
+            second_geometry_record_index: self.second_geometry_record_index,
+            roles: self.roles,
+            paired_class_tag: self.paired_class_tag.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +301,7 @@ impl DesignDimensionLocusPair {
     }
 
     /// Recover the payload with derived frame and locus offsets.
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignDimensionLocusPairDraft {
         let opaque_index = self.opaque_index();
         let loci = self.loci();
@@ -329,6 +355,59 @@ pub(super) struct DesignDimensionLocusPairWire {
     pub(super) paired_byte_offset: u64,
 }
 
+impl Serialize for DesignDimensionLocusPair {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            companion_record_index: u32,
+            governing_companion_record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            frame_length: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            opaque_index: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            opaque_index_offset: Option<u64>,
+            first_geometry_record_index: u32,
+            first_geometry_reference_offset: u64,
+            first_role: u32,
+            first_role_offset: u64,
+            second_geometry_record_index: u32,
+            second_geometry_reference_offset: u64,
+            second_role: u32,
+            second_role_offset: u64,
+            paired_class_tag: &'a str,
+            paired_byte_offset: u64,
+        }
+        let opaque = self.opaque_index();
+        let [first, second] = self.loci();
+        WireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            opaque_index: opaque.map(|field| field.value),
+            opaque_index_offset: opaque.map(|field| field.offset),
+            first_geometry_record_index: first.geometry_index(),
+            first_geometry_reference_offset: first.geometry_reference_offset,
+            first_role: first.role,
+            first_role_offset: first.role_offset,
+            second_geometry_record_index: second.geometry_index(),
+            second_geometry_reference_offset: second.geometry_reference_offset,
+            second_role: second.role,
+            second_role_offset: second.role_offset,
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
     type Error = String;
 
@@ -369,6 +448,7 @@ impl TryFrom<DesignDimensionLocusPairWire> for DesignDimensionLocusPair {
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
     fn from(pair: DesignDimensionLocusPair) -> Self {
         let pair = pair.into_draft();
@@ -465,11 +545,8 @@ fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(
 }
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionAnnotationFrameWire",
-    into = "DesignDimensionAnnotationFrameWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignDimensionAnnotationFrameWire")]
 pub(crate) struct DesignDimensionAnnotationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -500,6 +577,34 @@ pub(crate) struct DesignDimensionAnnotationFrame {
     paired_class_tag: DesignClassTag,
     /// Numeric design-entity suffix of the owning sketch.
     pub(crate) owner_reference: u32,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_ANNOTATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignDimensionAnnotationFrame {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        DIMENSION_ANNOTATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: self.operands.clone(),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: self.annotation_bytes.clone(),
+            governing_owner_record_index: self.governing_owner_record_index,
+            return_members: self.return_members.clone(),
+            paired_class_tag: self.paired_class_tag.clone(),
+            owner_reference: self.owner_reference,
+        }
+    }
 }
 
 /// Nullable annotation geometry and its dimension role.
@@ -687,6 +792,7 @@ impl DesignDimensionAnnotationFrame {
     }
 
     /// Recover the payload with its derived offsets.
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignDimensionAnnotationFrameDraft {
         let annotation_byte_offset = self.annotation_byte_offset();
         let governing_owner_reference_offset = self.governing_owner_reference_offset();
@@ -781,6 +887,91 @@ struct DesignDimensionAnnotationFrameWire {
     owner_reference_offset: u64,
 }
 
+struct AnnotationOperands<'a>(&'a DesignDimensionAnnotationFrame);
+
+impl Serialize for AnnotationOperands<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(
+            self.0
+                .operands
+                .iter()
+                .enumerate()
+                .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
+                    geometry_record_index: operand.geometry_record_index,
+                    geometry_reference_offset: self.0.byte_offset + 25 + ordinal as u64 * 15,
+                    role: operand.role,
+                    role_offset: self.0.byte_offset + 35 + ordinal as u64 * 15,
+                }),
+        )
+    }
+}
+
+struct AnnotationReturnOffsets<'a>(&'a DesignDimensionAnnotationFrame);
+
+impl Serialize for AnnotationReturnOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let start = self.0.governing_owner_reference_offset() + 15;
+        serializer.collect_seq(
+            self.0
+                .return_members
+                .iter()
+                .enumerate()
+                .map(|(ordinal, _)| start + ordinal as u64 * 11),
+        )
+    }
+}
+
+#[derive(Serialize)]
+struct DesignDimensionAnnotationFrameWireRef<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    companion_record_index: Option<u32>,
+    governing_companion_record_index: u32,
+    byte_offset: u64,
+    class_tag: &'a str,
+    record_index: u32,
+    frame_length: u64,
+    operands: AnnotationOperands<'a>,
+    entity_genesis: u64,
+    annotation_bytes: &'a [u8],
+    annotation_byte_offset: u64,
+    governing_owner_record_index: u32,
+    governing_owner_reference_offset: u64,
+    return_members: SliceColumn<'a, NonZeroU32, u32>,
+    return_member_offsets: AnnotationReturnOffsets<'a>,
+    paired_class_tag: &'a str,
+    paired_byte_offset: u64,
+    owner_reference: u32,
+    owner_reference_offset: u64,
+}
+
+impl Serialize for DesignDimensionAnnotationFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignDimensionAnnotationFrameWireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            governing_companion_record_index: self.governing_companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            operands: AnnotationOperands(self),
+            entity_genesis: self.entity_genesis,
+            annotation_bytes: &self.annotation_bytes,
+            annotation_byte_offset: self.annotation_byte_offset(),
+            governing_owner_record_index: self.governing_owner_record_index,
+            governing_owner_reference_offset: self.governing_owner_reference_offset(),
+            return_members: SliceColumn::new(&self.return_members, |member| member.get()),
+            return_member_offsets: AnnotationReturnOffsets(self),
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset(),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFrame {
     type Error = String;
     fn try_from(wire: DesignDimensionAnnotationFrameWire) -> Result<Self, Self::Error> {
@@ -819,6 +1010,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
         let value = value.into_draft();
@@ -904,11 +1096,8 @@ pub(crate) struct DesignDimensionLocus {
 }
 
 /// Counted-locus frame nested under a dimensional parameter companion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignDimensionLocusGroupWire",
-    into = "DesignDimensionLocusGroupWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignDimensionLocusGroupWire")]
 pub(crate) struct DesignDimensionLocusGroup {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -942,6 +1131,36 @@ pub(crate) struct DesignDimensionLocusGroup {
     pub(crate) next_record_index: u32,
     /// Byte offset of the immediately following indexed record.
     pub(crate) next_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static DIMENSION_LOCUS_GROUP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignDimensionLocusGroup {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            companion_record_index: self.companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            loci: self.loci.clone(),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset,
+            owner_role: self.owner_role,
+            owner_role_offset: self.owner_role_offset,
+            state: self.state,
+            state_offset: self.state_offset,
+            next_class_tag: self.next_class_tag.clone(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
 }
 
 /// One typed geometry locus and its dimension-role code.
@@ -1010,13 +1229,72 @@ impl DesignDimensionLocusGroup {
     }
 
     #[must_use]
-    fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
-        constraint_kinds_from_state(u64::from(self.state)).0
-    }
-
-    #[must_use]
     fn unknown_constraint_bits(&self) -> u32 {
         self.state & !(SKETCH_CONSTRAINT_MASK as u32)
+    }
+}
+
+struct ConstraintKinds(u32);
+
+impl Serialize for ConstraintKinds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(constraint_kinds_iter(u64::from(self.0)))
+    }
+}
+
+impl Serialize for DesignDimensionLocusGroup {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            companion_record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            record_index: u32,
+            frame_length: u64,
+            loci: SliceColumn<'a, DesignDimensionLocus, DesignDimensionLocusWire>,
+            owner_reference: u32,
+            owner_reference_offset: u64,
+            owner_role: u32,
+            owner_role_offset: u64,
+            state: u32,
+            state_offset: u64,
+            constraint_kinds: ConstraintKinds,
+            unknown_constraint_bits: u32,
+            return_members: SliceColumn<'a, DesignDimensionLocus, u32>,
+            return_member_offsets: SliceColumn<'a, DesignDimensionLocus, u64>,
+            next_class_tag: &'a str,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            id: &self.id,
+            companion_record_index: self.companion_record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index,
+            frame_length: self.frame_length,
+            loci: SliceColumn::new(&self.loci, |locus| DesignDimensionLocusWire {
+                geometry_record_index: locus.geometry_record_index,
+                geometry_reference_offset: locus.geometry_reference_offset,
+                role: locus.role,
+                role_offset: locus.role_offset,
+            }),
+            owner_reference: self.owner_reference,
+            owner_reference_offset: self.owner_reference_offset,
+            owner_role: self.owner_role,
+            owner_role_offset: self.owner_role_offset,
+            state: self.state,
+            state_offset: self.state_offset,
+            constraint_kinds: ConstraintKinds(self.state),
+            unknown_constraint_bits: self.unknown_constraint_bits(),
+            return_members: SliceColumn::new(&self.loci, |locus| locus.returned.value),
+            return_member_offsets: SliceColumn::new(&self.loci, |locus| locus.returned.offset),
+            next_class_tag: self.next_class_tag.as_str(),
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -1073,11 +1351,12 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
     }
 }
 
+#[cfg(test)]
 impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
     fn from(value: DesignDimensionLocusGroup) -> Self {
-        let constraint_kinds = value.constraint_kinds();
+        let constraint_kinds = constraint_kinds_from_state(u64::from(value.state)).0;
         let unknown_constraint_bits = value.unknown_constraint_bits();
         let mut loci = Vec::with_capacity(value.loci.len());
         let mut return_members = Vec::with_capacity(value.loci.len());

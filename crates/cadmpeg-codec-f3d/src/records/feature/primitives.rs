@@ -64,7 +64,7 @@ pub(crate) struct DesignBoxPrimitive {
 }
 
 /// Exact `Cylinder` primitive construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignCylinderPrimitiveWire",
     into = "DesignCylinderPrimitiveWire"

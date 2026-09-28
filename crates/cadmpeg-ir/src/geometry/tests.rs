@@ -9,6 +9,8 @@ use crate::ids::UnknownId;
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 
+mod decode_copy;
+
 #[test]
 fn numerical_audit_large_finite_axis_keeps_an_orthogonal_reference() {
     let axis = crate::math::Vector3::new(f64::MAX, f64::MAX, 0.0);

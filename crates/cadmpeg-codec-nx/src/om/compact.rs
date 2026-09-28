@@ -11,6 +11,16 @@ enum Encoding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CompactIndexAtom(Encoding);
 
+/// Serialize one retained compact token as its exact byte sequence.
+#[derive(Clone, Copy)]
+pub(crate) struct RawCompactIndex(pub(crate) CompactIndexAtom);
+
+impl serde::Serialize for RawCompactIndex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(self.0.raw(), serializer)
+    }
+}
+
 /// Reads one wire compact index, naming the field in the rejection message.
 pub(crate) fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAtom, String> {
     CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))

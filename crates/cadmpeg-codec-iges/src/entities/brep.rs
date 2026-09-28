@@ -1632,13 +1632,13 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(
+                        let ring = match cadmpeg_ir::topology::LoopRing::try_new_for_decode(
+                            ctx,
                             coedge_ids,
                             vertex_uses,
-                            ctx,
-                        ) {
+                        )? {
                             Ok(ring) => ring,
-                            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
+                            Err(_) => {
                                 super::push_optional_entity_loss(
                                     Some(ctx),
                                     &mut losses,
@@ -1647,9 +1647,6 @@ pub(super) fn project(
                                 )?;
                                 valid = false;
                                 break;
-                            }
-                            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => {
-                                return Err(error)
                             }
                         };
                         LoopBoundary::Ring(ring)

@@ -18,7 +18,7 @@ fn admitted_pcurve_parts_keep_rational_pole_storage() {
         panic!("fixture must be rational");
     };
     let storage = points.as_ptr();
-    let rebuilt = PcurveNurbs::from_admitted_parts(
+    let rebuilt = PcurveNurbs::from_admitted_rows(
         original.degree(),
         original.knots().clone(),
         poles,
@@ -30,6 +30,38 @@ fn admitted_pcurve_parts_keep_rational_pole_storage() {
     };
     assert_eq!(points.as_ptr(), storage);
     assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn pcurve_copy_refuses_knot_and_pole_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = pcurve();
+    let knot_count = u64::try_from(source.knots().len()).unwrap();
+    for (dimension, limit) in [
+        (ResourceDimension::CollectionItems, knot_count - 1),
+        (ResourceDimension::CollectionItems, knot_count + 1),
+        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unexpected test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = source
+            .try_clone_for_decode(&ctx, "copy pcurve")
+            .expect_err("copy exceeds resource limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, dimension);
+        assert_eq!(refusal.operation, "copy pcurve");
+    }
 }
 
 #[test]

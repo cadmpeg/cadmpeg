@@ -9,6 +9,77 @@ use crate::records::{
 };
 use std::num::NonZeroU32;
 
+fn locus_group(state: u32, count: usize) -> super::DesignDimensionLocusGroup {
+    super::DesignDimensionLocusGroup {
+        id: "locus-group".into(),
+        companion_record_index: 2,
+        byte_offset: 100,
+        class_tag: "256".to_owned().try_into().unwrap(),
+        record_index: 3,
+        frame_length: 200,
+        loci: (0..count)
+            .map(|index| super::DesignDimensionLocus {
+                returned: Located {
+                    value: 30 + index as u32,
+                    offset: 140 + index as u64 * 8,
+                },
+                geometry_record_index: 10 + index as u32,
+                geometry_reference_offset: 120 + index as u64 * 8,
+                role: 1,
+                role_offset: 124 + index as u64 * 8,
+            })
+            .collect(),
+        owner_reference: 4,
+        owner_reference_offset: 180,
+        owner_role: 1,
+        owner_role_offset: 184,
+        state,
+        state_offset: 188,
+        next_class_tag: "259".to_owned().try_into().unwrap(),
+        next_record_index: 5,
+        next_byte_offset: 300,
+    }
+}
+
+#[test]
+fn dimension_locus_group_borrowed_wire_matches_owned_wire_bytes() {
+    for (state, count) in [(0, 0), (0x8000_0001, 1), (0x0000_1010, 3)] {
+        let group = locus_group(state, count);
+        let owned = super::DesignDimensionLocusGroupWire::from(group.clone());
+        assert_eq!(
+            serde_json::to_vec(&group).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+        assert_eq!(
+            serde_json::from_slice::<super::DesignDimensionLocusGroup>(
+                &serde_json::to_vec(&group).unwrap()
+            )
+            .unwrap(),
+            group
+        );
+    }
+}
+
+#[test]
+fn dimension_locus_group_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignDimensionLocusGroup,
+    }
+    let group = locus_group(0x1010, 3);
+    let record = NestedRecord {
+        id: "f3d:native:locus-group#0",
+        value: &group,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_LOCUS_GROUP_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 fn draft(base: u64) -> Draft {
     Draft {
         id: "annotation".into(),
@@ -74,6 +145,40 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
 }
 
 #[test]
+fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
+    for companion in [None, Some(1)] {
+        let mut input = draft(100);
+        input.companion_record_index = companion;
+        let frame = Frame::try_new(input).unwrap();
+        let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
+        assert_eq!(
+            serde_json::to_vec(&frame).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn annotation_frame_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a Frame,
+    }
+    let frame = Frame::try_new(draft(100)).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:annotation-frame#0",
+        value: &frame,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::DIMENSION_ANNOTATION_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_ANNOTATION_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     let frame = Frame::try_new(draft(100)).unwrap();
     let wire = serde_json::to_value(&frame).unwrap();
@@ -134,4 +239,60 @@ fn annotation_frame_rejects_unrepresentable_extents() {
     assert!(Frame::try_new(overflow)
         .unwrap_err()
         .contains("annotation_byte_offset"));
+}
+
+fn locus_pair(has_first: bool) -> super::DesignDimensionLocusPair {
+    let prefix = if has_first { 40 } else { 25 };
+    super::DesignDimensionLocusPair::try_new(super::DesignDimensionLocusPairDraft {
+        id: "f3d:native:locus-pair#0".into(),
+        companion_record_index: 2,
+        governing_companion_record_index: 3,
+        byte_offset: 100,
+        class_tag: "256".to_owned().try_into().unwrap(),
+        record_index: 4,
+        frame_length: 100,
+        opaque_index: has_first.then_some(Located {
+            value: 7,
+            offset: 135,
+        }),
+        loci: [
+            Operand {
+                geometry_record_index: has_first.then(|| NonZeroU32::new(7).unwrap()),
+                geometry_reference_offset: 100 + prefix,
+                role: 1,
+                role_offset: 110 + prefix,
+            },
+            Operand {
+                geometry_record_index: NonZeroU32::new(8),
+                geometry_reference_offset: 115 + prefix,
+                role: 2,
+                role_offset: 125 + prefix,
+            },
+        ],
+        paired_class_tag: "257".to_owned().try_into().unwrap(),
+        paired_byte_offset: 200,
+    })
+    .unwrap()
+}
+
+#[test]
+fn dimension_locus_pair_borrowed_wire_matches_owned_wire_bytes() {
+    for record in [locus_pair(false), locus_pair(true)] {
+        let owned = super::DesignDimensionLocusPairWire::from(record.clone());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn dimension_locus_pair_native_retained_limit_refuses_before_record_clone() {
+    let record = locus_pair(true);
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_dimension_locus_pairs",
+        || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(0)),
+        || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }

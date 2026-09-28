@@ -5,6 +5,39 @@
 //! record vectors into domain sub-structs. JT graph admission rejects
 //! inconsistent owners before attachment.
 
+use crate::native::features::draft::feature_draft_construction_binary32_lanes;
+use crate::native::features::draft::feature_draft_construction_fixed_lanes;
+use crate::native::features::draft::feature_draft_construction_graph_payloads;
+use crate::native::features::draft::feature_draft_construction_graph_strings;
+use crate::native::features::draft::feature_draft_construction_identity_frames;
+use crate::native::features::draft::feature_draft_construction_index_lanes;
+use crate::native::features::draft::feature_draft_construction_payloads;
+use crate::native::features::draft::feature_draft_construction_references;
+use crate::native::features::draft::feature_draft_construction_terminal_lanes;
+use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
+use crate::native::features::draft::FeatureDraftConstructionFixedLane;
+use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
+use crate::native::features::draft::FeatureDraftConstructionGraphString;
+use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
+use crate::native::features::draft::FeatureDraftConstructionIndexLane;
+use crate::native::features::draft::FeatureDraftConstructionReference;
+use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
+use crate::native::features::pattern::feature_identical_instance_output_lanes;
+use crate::native::features::pattern::feature_multi_instance_output_lanes;
+use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
+use crate::native::features::pattern::feature_pattern_construction_payloads;
+use crate::native::features::pattern::feature_pattern_construction_strings;
+use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
+use crate::native::features::pattern::feature_pattern_references;
+use crate::native::features::pattern::feature_pattern_transform_lanes;
+use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
+use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
+use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
+use crate::native::features::pattern::FeaturePatternConstructionString;
+use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
+use crate::native::features::pattern::FeaturePatternReference;
+use crate::native::features::pattern::FeaturePatternTransformLane;
+
 use super::display_jt::admission::{DisplayJtGraph, DisplayJtGraphWire};
 use super::display_jt::{
     display_jt_base_node_data, display_jt_compressed_element_sequences, display_jt_documents,
@@ -20,10 +53,10 @@ use super::display_jt::{
     DisplayJtGeometricTransformAttribute, DisplayJtGroupNodeData, DisplayJtIndex,
     DisplayJtInitialFaceDegreeSymbols, DisplayJtInstanceNode, DisplayJtMaterialAttribute,
     DisplayJtPartitionNode, DisplayJtPolygonMesh, DisplayJtRangeLodNode, DisplayJtShapeLodBinding,
-    DisplayJtStringPropertyAtom, DisplayJtTopologyPacketSequence, DisplayJtTriStripLodHeader,
-    DisplayJtTriStripShapeNode, DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
-    DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
-    DisplayJtVertexTextureCoordinates,
+    DisplayJtStringPropertyAtom, DisplayJtTopologyArrays, DisplayJtTopologyPacketSequence,
+    DisplayJtTriStripLodHeader, DisplayJtTriStripShapeNode, DisplayJtVertexColors,
+    DisplayJtVertexCoordinateArrayHeader, DisplayJtVertexCoordinates, DisplayJtVertexFlagInputs,
+    DisplayJtVertexFlags, DisplayJtVertexNormals, DisplayJtVertexTextureCoordinates,
 };
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
@@ -176,6 +209,22 @@ use crate::native::features::extrude_32::{
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
+use crate::native::features::holes::feature_hole_package_construction_group_lanes;
+use crate::native::features::holes::feature_hole_package_construction_group_uses;
+use crate::native::features::holes::feature_simple_hole_construction_groups;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
+use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
+use crate::native::features::holes::feature_simple_hole_templates;
+use crate::native::features::holes::feature_symbolic_threads;
+use crate::native::features::holes::feature_threaded_hole_templates;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
+use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
+use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
+use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
+use crate::native::features::holes::FeatureSimpleHoleTemplate;
+use crate::native::features::holes::FeatureSymbolicThread;
+use crate::native::features::holes::FeatureThreadedHoleTemplate;
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::payload_name::FeaturePayloadName;
 use crate::native::features::point_scalar_lane::FeaturePointConstructionScalarLane;
@@ -207,8 +256,10 @@ use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
 use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 
 /// Records extracted from the `display_jt` domain.
 #[allow(clippy::struct_field_names)]
@@ -535,8 +586,12 @@ pub(crate) struct SegmentLineage {
 }
 
 /// Extract the bounded feature-history inputs used by terminal body lineage.
-pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream]) -> SegmentLineage {
-    let bindings = segment_body_bindings(container, streams);
+pub(crate) fn extract_segment_lineage(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+    streams: &[Stream],
+) -> Result<SegmentLineage, CodecError> {
+    let bindings = segment_body_bindings(ctx, container, streams)?;
     let labels = feature_operation_labels(container);
     let references = feature_body_references(container);
     let blocks = data_blocks(container);
@@ -563,7 +618,7 @@ pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream])
         &inputs,
     )
     .unwrap_or_default();
-    SegmentLineage {
+    Ok(SegmentLineage {
         bindings,
         labels,
         references,
@@ -575,46 +630,80 @@ pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream])
         operands,
         booleans,
         statuses,
-    }
+    })
 }
 
 /// Select emitted body images whose complete segment binding has a terminal
 /// status. The mapping must cover every emitted body image before selection is
 /// admitted; a partial mapping is not a body-selection proof.
 pub(crate) fn terminal_feature_body_ids(
+    ctx: &DecodeContext<'_>,
     emitted: &BTreeSet<BodyId>,
     bindings: &[SegmentBodyBinding],
     statuses: &[SegmentBodyLineageStatus],
-) -> Option<BTreeSet<BodyId>> {
+) -> Result<Option<BTreeSet<BodyId>>, CodecError> {
     let mut statuses_by_binding = BTreeMap::new();
     for status in statuses {
-        if statuses_by_binding
-            .insert(status.segment_body_binding.as_str(), status)
-            .is_some()
-        {
-            return None;
+        if statuses_by_binding.contains_key(status.segment_body_binding.as_str()) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "nx terminal body status index")?;
+        statuses_by_binding.insert(status.segment_body_binding.as_str(), status);
     }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
     for binding in bindings {
-        let status = statuses_by_binding.remove(binding.id.as_str())?;
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let stream_bodies = emitted
+        let Some(status) = statuses_by_binding.remove(binding.id.as_str()) else {
+            return Ok(None);
+        };
+        let mut ordinal = binding.stream_ordinal;
+        let mut digits = 1_u64;
+        while ordinal >= 10 {
+            ordinal /= 10;
+            digits += 1;
+        }
+        let prefix_len = 5_u64 + digits;
+        let _prefix_reservation = ctx.reserve_scoped(prefix_len, "nx terminal body prefix")?;
+        let mut prefix = String::new();
+        prefix
+            .try_reserve_exact(
+                cadmpeg_core::decode::index_from_u64(prefix_len).ok_or_else(|| {
+                    ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len)
+                })?,
+            )
+            .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
+        write!(&mut prefix, "nx:s{}:", binding.stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx terminal body prefix", 0, prefix_len))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(emitted.len()),
+            "nx terminal body scan",
+        )?;
+        for body in emitted
             .iter()
             .filter(|body| body.as_str().starts_with(&prefix))
-            .cloned()
-            .collect::<Vec<_>>();
-        if stream_bodies.is_empty() {
-            continue;
-        }
-        mapped.extend(stream_bodies.iter().cloned());
-        if status.terminal {
-            selected.extend(stream_bodies);
+        {
+            if !mapped.contains(body) {
+                ctx.charge_collection_items(1, "nx mapped terminal body")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+                    "nx mapped terminal body identity",
+                )?;
+                mapped.insert(body.clone());
+            }
+            if status.terminal && !selected.contains(body) {
+                ctx.charge_collection_items(1, "nx selected terminal body")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+                    "nx selected terminal body identity",
+                )?;
+                selected.insert(body.clone());
+            }
         }
     }
-    (statuses_by_binding.is_empty() && mapped == *emitted && !selected.is_empty())
-        .then_some(selected)
+    Ok(
+        (statuses_by_binding.is_empty() && mapped == *emitted && !selected.is_empty())
+            .then_some(selected),
+    )
 }
 
 impl NativeModel {
@@ -649,22 +738,33 @@ impl NativeModel {
             operands: feature_operation_body_operands,
             booleans: feature_boolean_operations,
             statuses: segment_body_lineage_statuses,
-        } = precomputed_lineage.unwrap_or_else(|| extract_segment_lineage(container, streams));
+        } = match precomputed_lineage {
+            Some(lineage) => lineage,
+            None => extract_segment_lineage(ctx, container, streams)?,
+        };
         let data_block_object_frames = data_block_object_frames(container);
-        let segment_index_rows = segment_index_rows(container);
+        let segment_index_rows = segment_index_rows(ctx, container)?;
         let segment_om_links = segment_om_links(container);
-        let segment_stream_links = segment_stream_links(container, streams);
-        let linked_deltas = segment_stream_links
+        let segment_stream_links = segment_stream_links(ctx, container, streams)?;
+        let mut linked_deltas = BTreeSet::new();
+        for link in segment_stream_links
             .iter()
             .filter(|link| link.stream_kind == crate::parasolid::StreamKind::Deltas)
-            .map(|link| link.stream_ordinal as usize)
-            .collect::<BTreeSet<_>>();
+        {
+            let ordinal = usize::try_from(link.stream_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("nx linked delta ordinal", 0, u64::MAX))?;
+            if !linked_deltas.contains(&ordinal) {
+                ctx.charge_collection_items(1, "nx linked delta index")?;
+                linked_deltas.insert(ordinal);
+            }
+        }
         let delta_pairs = pair_stream_indices(
+            ctx,
             streams,
             (!segment_stream_links.is_empty()).then_some(&linked_deltas),
-        );
+        )?;
         let deltas_events =
-            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
+            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses(ctx)?);
         let parasolid_group_records =
             parasolid_group_records(streams, &delta_pairs, &deltas_events.records);
         let parasolid_group_members = parasolid_group_members(streams, &delta_pairs, parsed);
@@ -827,53 +927,59 @@ impl NativeModel {
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
-        let display_jt_indices = display_jt_indices(container);
-        let display_jt_documents = display_jt_documents(container, &display_jt_indices);
+        let display_jt_indices = display_jt_indices(Some(ctx), container)?;
+        let display_jt_documents = display_jt_documents(Some(ctx), container, &display_jt_indices)?;
         let budget = Some((ctx, root));
-        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents);
+        let display_jt_segments = display_jt_segments(budget, container, &display_jt_documents)?;
         let display_jt_shape_lod_elements =
-            display_jt_shape_lod_elements(container, &display_jt_segments);
+            display_jt_shape_lod_elements(budget, container, &display_jt_segments)?;
         let display_jt_tri_strip_lod_headers =
-            display_jt_tri_strip_lod_headers(container, &display_jt_shape_lod_elements);
+            display_jt_tri_strip_lod_headers(ctx, container, &display_jt_shape_lod_elements)?;
         let display_jt_initial_face_degree_symbols =
-            display_jt_initial_face_degree_symbols(container, &display_jt_shape_lod_elements);
-        let (
-            display_jt_topology_packet_sequences,
-            display_jt_vertex_records_headers,
-            display_jt_coordinate_array_headers,
-        ) = display_jt_topology_packet_sequences(container, &display_jt_shape_lod_elements);
+            display_jt_initial_face_degree_symbols(ctx, container, &display_jt_shape_lod_elements)?;
+        let DisplayJtTopologyArrays {
+            sequences: display_jt_topology_packet_sequences,
+            vertex_headers: display_jt_vertex_records_headers,
+            coordinate_headers: display_jt_coordinate_array_headers,
+        } = display_jt_topology_packet_sequences(ctx, container, &display_jt_shape_lod_elements)?;
         let display_jt_vertex_coordinates =
-            display_jt_vertex_coordinates(container, &display_jt_coordinate_array_headers);
+            display_jt_vertex_coordinates(ctx, container, &display_jt_coordinate_array_headers)?;
         let display_jt_vertex_normals = display_jt_vertex_normals(
+            ctx,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
-        );
+        )?;
         let display_jt_vertex_colors = display_jt_vertex_colors(
+            ctx,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
             &display_jt_vertex_normals,
-        );
+        )?;
         let display_jt_vertex_texture_coordinates = display_jt_vertex_texture_coordinates(
+            ctx,
             container,
             &display_jt_vertex_records_headers,
             &display_jt_coordinate_array_headers,
             &display_jt_vertex_coordinates,
             &display_jt_vertex_normals,
             &display_jt_vertex_colors,
-        );
+        )?;
         let display_jt_vertex_flags = display_jt_vertex_flags(
-            container,
-            &display_jt_vertex_records_headers,
-            &display_jt_coordinate_array_headers,
-            &display_jt_vertex_coordinates,
-            &display_jt_vertex_normals,
-            &display_jt_vertex_colors,
-            &display_jt_vertex_texture_coordinates,
-        );
+            ctx,
+            DisplayJtVertexFlagInputs {
+                container,
+                vertex_headers: &display_jt_vertex_records_headers,
+                coordinate_headers: &display_jt_coordinate_array_headers,
+                coordinates: &display_jt_vertex_coordinates,
+                normals: &display_jt_vertex_normals,
+                colors: &display_jt_vertex_colors,
+                texture_coordinates: &display_jt_vertex_texture_coordinates,
+            },
+        )?;
         let display_jt_polygon_meshes = display_jt_polygon_meshes(
             ctx,
             &display_jt_topology_packet_sequences,
@@ -882,57 +988,57 @@ impl NativeModel {
         let (display_jt_compressed_elements, display_jt_compressed_element_sequences) =
             display_jt_compressed_element_sequences(budget, container, &display_jt_segments)?;
         let display_jt_string_property_atoms =
-            display_jt_string_property_atoms(budget, container, &display_jt_segments);
+            display_jt_string_property_atoms(budget, container, &display_jt_segments)?;
         let display_jt_shape_lod_bindings =
-            display_jt_shape_lod_bindings(budget, container, &display_jt_segments);
+            display_jt_shape_lod_bindings(budget, container, &display_jt_segments)?;
         let display_jt_base_node_data = display_jt_base_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_group_node_data = display_jt_group_node_data(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_instance_nodes = display_jt_instance_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_geometric_transform_attributes = display_jt_geometric_transform_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_material_attributes = display_jt_material_attributes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_partition_nodes = display_jt_partition_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_range_lod_nodes = display_jt_range_lod_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let display_jt_tri_strip_shape_nodes = display_jt_tri_strip_shape_nodes(
             budget,
             container,
             &display_jt_segments,
             &display_jt_documents,
-        );
+        )?;
         let feature_datum_csys_constructions = feature_datum_csys_constructions(container);
         let feature_datum_csys_payloads =
             feature_datum_csys_payloads(container, &feature_datum_csys_constructions);
@@ -1154,7 +1260,15 @@ impl NativeModel {
         let object_records = object_records(container);
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
-                Some((table, object_ids)) => (vec![table], object_ids),
+                Some((table, object_ids)) => {
+                    ctx.charge_collection_items(1, "nx RMFastLoad object ID tables")?;
+                    let mut tables = Vec::new();
+                    tables.try_reserve_exact(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx RMFastLoad object ID tables", 0, 1)
+                    })?;
+                    tables.push(table);
+                    (tables, object_ids)
+                }
                 None => (Vec::new(), Vec::new()),
             };
         let data_block_control_forms = data_block_control_forms(container);
@@ -1258,17 +1372,19 @@ impl NativeModel {
             fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
         );
-        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
+        let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {
-                graph: DisplayJtGraphWire {
-                    documents: display_jt_documents,
-                    segments: display_jt_segments,
-                    shape_lod_elements: display_jt_shape_lod_elements,
-                    compressed_elements: display_jt_compressed_elements,
-                    compressed_element_sequences: display_jt_compressed_element_sequences,
-                }
-                .try_into()?,
+                graph: DisplayJtGraph::from_wire_with_context(
+                    ctx,
+                    DisplayJtGraphWire {
+                        documents: display_jt_documents,
+                        segments: display_jt_segments,
+                        shape_lod_elements: display_jt_shape_lod_elements,
+                        compressed_elements: display_jt_compressed_elements,
+                        compressed_element_sequences: display_jt_compressed_element_sequences,
+                    },
+                )?,
                 display_jt_indices,
                 display_jt_tri_strip_lod_headers,
                 display_jt_initial_face_degree_symbols,
@@ -1545,56 +1661,6 @@ impl NativeModel {
         super::catalogue::NATIVE_CATALOGUE.is_empty(self)
     }
 }
-
-use crate::native::features::draft::feature_draft_construction_binary32_lanes;
-use crate::native::features::draft::feature_draft_construction_fixed_lanes;
-use crate::native::features::draft::feature_draft_construction_graph_payloads;
-use crate::native::features::draft::feature_draft_construction_graph_strings;
-use crate::native::features::draft::feature_draft_construction_identity_frames;
-use crate::native::features::draft::feature_draft_construction_index_lanes;
-use crate::native::features::draft::feature_draft_construction_payloads;
-use crate::native::features::draft::feature_draft_construction_references;
-use crate::native::features::draft::feature_draft_construction_terminal_lanes;
-use crate::native::features::draft::FeatureDraftConstructionBinary32Lane;
-use crate::native::features::draft::FeatureDraftConstructionFixedLane;
-use crate::native::features::draft::FeatureDraftConstructionGraphPayload;
-use crate::native::features::draft::FeatureDraftConstructionGraphString;
-use crate::native::features::draft::FeatureDraftConstructionIdentityFrame;
-use crate::native::features::draft::FeatureDraftConstructionIndexLane;
-use crate::native::features::draft::FeatureDraftConstructionReference;
-use crate::native::features::draft::FeatureDraftConstructionTerminalLane;
-use crate::native::features::pattern::feature_identical_instance_output_lanes;
-use crate::native::features::pattern::feature_multi_instance_output_lanes;
-use crate::native::features::pattern::feature_pattern_construction_fixed_lanes;
-use crate::native::features::pattern::feature_pattern_construction_payloads;
-use crate::native::features::pattern::feature_pattern_construction_strings;
-use crate::native::features::pattern::feature_pattern_counted_reference_lanes;
-use crate::native::features::pattern::feature_pattern_references;
-use crate::native::features::pattern::feature_pattern_transform_lanes;
-use crate::native::features::pattern::FeatureIdenticalInstanceOutputLane;
-use crate::native::features::pattern::FeatureMultiInstanceOutputLane;
-use crate::native::features::pattern::FeaturePatternConstructionFixedLane;
-use crate::native::features::pattern::FeaturePatternConstructionString;
-use crate::native::features::pattern::FeaturePatternCountedReferenceLane;
-use crate::native::features::pattern::FeaturePatternReference;
-use crate::native::features::pattern::FeaturePatternTransformLane;
-
-use crate::native::features::holes::feature_hole_package_construction_group_lanes;
-use crate::native::features::holes::feature_hole_package_construction_group_uses;
-use crate::native::features::holes::feature_simple_hole_construction_groups;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lane_block_references;
-use crate::native::features::holes::feature_simple_hole_repeated_scalar_lanes;
-use crate::native::features::holes::feature_simple_hole_templates;
-use crate::native::features::holes::feature_symbolic_threads;
-use crate::native::features::holes::feature_threaded_hole_templates;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
-use crate::native::features::holes::FeatureHolePackageConstructionGroupUse;
-use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
-use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences;
-use crate::native::features::holes::FeatureSimpleHoleTemplate;
-use crate::native::features::holes::FeatureSymbolicThread;
-use crate::native::features::holes::FeatureThreadedHoleTemplate;
 
 #[cfg(test)]
 mod tests;

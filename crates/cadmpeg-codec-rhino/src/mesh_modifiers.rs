@@ -272,11 +272,12 @@ pub(crate) struct ShutLiningModifier {
 
 /// Reads the first matching mesh-modifier items from an object-attributes userdata stream.
 pub(crate) fn parse_attribute_userdata(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     descriptors: &[AttributeUserdataDescriptor],
     archive: ArchiveVersion,
     warnings: &mut Diagnostics,
-) -> Option<MeshModifiers> {
+) -> Result<Option<MeshModifiers>, FramingError> {
     let displacement_descriptor =
         first_matching_descriptor(descriptors, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM);
     let edge_softening_descriptor =
@@ -293,75 +294,65 @@ pub(crate) fn parse_attribute_userdata(
         && curve_piping_descriptor.is_none()
         && shut_lining_descriptor.is_none()
     {
-        return None;
+        return Ok(None);
     }
 
-    let displacement = displacement_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_displacement(bytes, payload_range, archive) {
-            Ok(displacement) => Some(displacement),
-            Err(error) => {
-                warnings.push(format!(
-                    "displacement userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_edge_softening(bytes, payload_range) {
-            Ok(edge_softening) => Some(edge_softening),
-            Err(error) => {
-                warnings.push(format!(
-                    "edge-softening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let thickening = thickening_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_thickening(bytes, payload_range) {
-            Ok(thickening) => Some(thickening),
-            Err(error) => {
-                warnings.push(format!(
-                    "thickening userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_curve_piping(bytes, payload_range) {
-            Ok(curve_piping) => Some(curve_piping),
-            Err(error) => {
-                warnings.push(format!(
-                    "curve-piping userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
-        let payload_range = descriptor.payload_range.clone();
-        match parse_shut_lining(bytes, payload_range) {
-            Ok(shut_lining) => Some(shut_lining),
-            Err(error) => {
-                warnings.push(format!(
-                    "shut-lining userdata at {} dropped: {error}",
-                    descriptor.range.start
-                ));
-                None
-            }
-        }
-    });
-    (displacement.is_some()
+    let displacement = if let Some(descriptor) = displacement_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_displacement(bytes, descriptor.payload_range.clone(), archive),
+            "displacement",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let edge_softening = if let Some(descriptor) = edge_softening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_edge_softening(bytes, descriptor.payload_range.clone()),
+            "edge-softening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let thickening = if let Some(descriptor) = thickening_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_thickening(bytes, descriptor.payload_range.clone()),
+            "thickening",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let curve_piping = if let Some(descriptor) = curve_piping_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_curve_piping(bytes, descriptor.payload_range.clone()),
+            "curve-piping",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    let shut_lining = if let Some(descriptor) = shut_lining_descriptor {
+        optional_modifier(
+            ctx,
+            warnings,
+            parse_shut_lining(bytes, descriptor.payload_range.clone()),
+            "shut-lining",
+            descriptor.range.start,
+        )?
+    } else {
+        None
+    };
+    Ok((displacement.is_some()
         || edge_softening.is_some()
         || thickening.is_some()
         || curve_piping.is_some()
@@ -372,7 +363,27 @@ pub(crate) fn parse_attribute_userdata(
         thickening,
         curve_piping,
         shut_lining,
-    })
+    }))
+}
+
+fn optional_modifier<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    warnings: &mut Diagnostics,
+    parsed: Result<T, FramingError>,
+    label: &str,
+    offset: usize,
+) -> Result<Option<T>, FramingError> {
+    match parsed {
+        Ok(value) => Ok(Some(value)),
+        Err(error @ FramingError::Resource(_)) => Err(error),
+        Err(error) => {
+            warnings.push_admitted(
+                ctx,
+                format_args!("{label} userdata at {offset} dropped: {error}"),
+            )?;
+            Ok(None)
+        }
+    }
 }
 
 fn first_matching_descriptor(
@@ -886,15 +897,53 @@ fn same_name(node: roxmltree::Node<'_, '_>, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        field_uuid, parse_attribute_userdata, parse_xml, CapType, CURVE_PIPING_CLASS,
-        CURVE_PIPING_ITEM, DISPLACEMENT_CLASS, DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS,
-        EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN, SHUT_LINING_CLASS, SHUT_LINING_ITEM,
-        THICKENING_CLASS, THICKENING_ITEM, XML_USERDATA_VERSION,
+        field_uuid, parse_xml, CapType, CURVE_PIPING_CLASS, CURVE_PIPING_ITEM, DISPLACEMENT_CLASS,
+        DISPLACEMENT_ITEM, EDGE_SOFTENING_CLASS, EDGE_SOFTENING_ITEM, MESH_MODIFIER_PLUGIN,
+        SHUT_LINING_CLASS, SHUT_LINING_ITEM, THICKENING_CLASS, THICKENING_ITEM,
+        XML_USERDATA_VERSION,
     };
     use crate::chunks::{ArchiveVersion, FramingError};
     use crate::loss::Diagnostics;
     use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
     use crate::wire::Uuid;
+
+    fn parse_attribute_userdata(
+        bytes: &[u8],
+        descriptors: &[AttributeUserdataDescriptor],
+        archive: ArchiveVersion,
+        warnings: &mut Diagnostics,
+    ) -> Option<super::MeshModifiers> {
+        super::parse_attribute_userdata(
+            &cadmpeg_test_support::service_decode_context(),
+            bytes,
+            descriptors,
+            archive,
+            warnings,
+        )
+        .expect("service profile admits modifier diagnostics")
+    }
+
+    #[test]
+    fn malformed_modifier_diagnostic_refuses_collection_limit() {
+        let payload = v2_payload("<xml><new-displacement-object-data><on type=\"bool\">maybe</on></new-displacement-object-data></xml>");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root bytes admitted");
+        let refused = super::parse_attribute_userdata(
+            &ctx,
+            &payload,
+            &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut Diagnostics::new(),
+        )
+        .expect_err("modifier diagnostic exceeds zero collection items");
+        assert!(
+            matches!(refused, FramingError::Resource(limit) if limit.operation == "Rhino diagnostics")
+        );
+    }
 
     fn descriptor(payload: &[u8], application_uuid: Option<Uuid>) -> AttributeUserdataDescriptor {
         descriptor_with_ids(

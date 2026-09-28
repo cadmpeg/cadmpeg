@@ -342,8 +342,9 @@ impl DesignCanvasScopeForm {
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignCanvasImageWire", into = "DesignCanvasImageWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignCanvasImageWire")]
 pub(crate) struct DesignCanvasImage {
     /// Globally unique native binding identity.
     pub(crate) id: String,
@@ -356,6 +357,27 @@ pub(crate) struct DesignCanvasImage {
     geometry: DesignCanvasGeometry,
     asset: DesignCanvasAsset,
     scope_form: DesignCanvasScopeForm,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static CANVAS_IMAGE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignCanvasImage {
+    fn clone(&self) -> Self {
+        CANVAS_IMAGE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            plane_entity_suffix: self.plane_entity_suffix,
+            component_entity_suffix: self.component_entity_suffix,
+            geometry: self.geometry.clone(),
+            asset: self.asset.clone(),
+            scope_form: self.scope_form,
+        }
+    }
 }
 impl DesignCanvasImage {
     pub(crate) fn new(
@@ -484,6 +506,89 @@ struct DesignCanvasImageWire {
     v_axis: Vector3,
     /// Uninterpreted fixed geometry payload between the plane reference and scope link.
     geometry_payload: Vec<u8>,
+}
+
+#[derive(Serialize)]
+struct DesignCanvasImageWireRef<'a> {
+    id: &'a str,
+    scope_record_index: u32,
+    scope_reference_offset: u64,
+    geometry_class_tag: &'a str,
+    geometry_record_index: u32,
+    geometry_reference_offset: u64,
+    geometry_byte_offset: u64,
+    geometry_prologue: [u8; 15],
+    visible: bool,
+    visibility_offset: u64,
+    geometry_frame_length: u64,
+    paired_geometry_class_tag: &'a str,
+    paired_geometry_byte_offset: u64,
+    paired_component_reference_offset: u64,
+    boundary_segments: [[Point2; 2]; 2],
+    boundary_coordinate_offsets: [u64; 8],
+    second_boundary_present_offset: u64,
+    plane_entity_suffix: u32,
+    plane_reference_offset: u64,
+    component_entity_suffix: u32,
+    component_reference_offset: u64,
+    asset_class_tag: &'a str,
+    asset_record_index: u32,
+    asset_reference_offset: u64,
+    asset_byte_offset: u64,
+    asset_name: &'a str,
+    asset_name_offset: u64,
+    label: &'a str,
+    label_offset: u64,
+    opacity: f32,
+    origin: Point3,
+    u_axis: Vector3,
+    v_axis: Vector3,
+    geometry_payload: &'a [u8],
+}
+
+impl Serialize for DesignCanvasImage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (opacity, frame) = self.geometry.payload.decoded();
+        let geometry_payload = self.geometry.payload.bytes();
+        let [geometry_class_tag, paired_geometry_class_tag] = &self.geometry.class_tags;
+        DesignCanvasImageWireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_offset: self.geometry.scope_reference_offset(),
+            geometry_class_tag,
+            geometry_record_index: self.geometry.record_index,
+            geometry_reference_offset: self.geometry_reference_offset(),
+            geometry_byte_offset: self.geometry.byte_offset,
+            geometry_prologue: self.geometry.prologue.bytes(),
+            visible: self.geometry.prologue.visible(),
+            visibility_offset: self.geometry.visibility_offset(),
+            geometry_frame_length: self.geometry.frame_length(),
+            paired_geometry_class_tag,
+            paired_geometry_byte_offset: self.geometry.paired_byte_offset(),
+            paired_component_reference_offset: self.geometry.paired_component_reference_offset(),
+            boundary_segments: self.geometry.boundary.segments(),
+            boundary_coordinate_offsets: self.geometry.boundary_coordinate_offsets(),
+            second_boundary_present_offset: self.geometry.second_boundary_present_offset(),
+            plane_entity_suffix: self.plane_entity_suffix,
+            plane_reference_offset: self.geometry.plane_reference_offset(),
+            component_entity_suffix: self.component_entity_suffix,
+            component_reference_offset: self.geometry.component_reference_offset(),
+            asset_class_tag: self.asset.class_tag.as_str(),
+            asset_record_index: self.asset.record_index,
+            asset_reference_offset: self.geometry.asset_reference_offset(),
+            asset_byte_offset: self.asset_byte_offset(),
+            asset_name: &self.asset.name,
+            asset_name_offset: self.asset_name_offset(),
+            label: &self.geometry.label,
+            label_offset: self.geometry.label_offset(),
+            opacity,
+            origin: frame.origin().get(),
+            u_axis: *frame.u_axis().as_raw(),
+            v_axis: *frame.v_axis().as_raw(),
+            geometry_payload: &geometry_payload,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
@@ -624,6 +729,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
     }
 }
 
+#[cfg(test)]
 impl From<DesignCanvasImage> for DesignCanvasImageWire {
     fn from(value: DesignCanvasImage) -> Self {
         let (opacity, frame) = value.geometry.payload.decoded();

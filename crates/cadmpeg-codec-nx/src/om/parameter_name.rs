@@ -47,6 +47,7 @@ impl<S: AsRef<str>, I: Copy> ParameterName<S, I> {
             .map(|start| &self.spelling.as_ref()[start..])
     }
 
+    #[cfg(test)]
     pub(crate) fn into_spelling(self) -> S {
         self.spelling
     }

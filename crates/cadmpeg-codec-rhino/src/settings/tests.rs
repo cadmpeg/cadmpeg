@@ -10,6 +10,7 @@ use crate::test_support::test_dump::{
     metadata_record, short_chunk, utf16_bytes, uuid_bytes,
 };
 use crate::wire::Uuid;
+use std::sync::OnceLock;
 
 fn parse_test_metadata(
     data: &[u8],
@@ -99,6 +100,60 @@ fn decodes_bounded_utf8_and_utf16_strings() {
 }
 
 #[test]
+fn retained_utf16_charges_exact_utf8_length_and_preserves_surrogates() {
+    let bytes = utf16_bytes("é😀");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited = cadmpeg_core::decode::DecodePolicy::service();
+    limited.limits.max_retained_bytes = 5;
+    let (limited_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &limited)
+            .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    let error = settings::utf16_retained(&limited_ctx, &mut reader, "Rhino test UTF-16 text")
+        .expect_err("six UTF-8 bytes exceed five retained bytes");
+    assert!(matches!(
+        error,
+        crate::chunks::FramingError::Resource(refusal)
+            if refusal.operation == "Rhino test UTF-16 text"
+    ));
+
+    let mut admitted = cadmpeg_core::decode::DecodePolicy::service();
+    admitted.limits.max_retained_bytes = 6;
+    let (admitted_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &admitted)
+            .expect("root bytes admitted");
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    assert_eq!(
+        settings::utf16_retained(&admitted_ctx, &mut reader, "Rhino test UTF-16 text")
+            .expect("exact UTF-8 length admitted"),
+        "é😀"
+    );
+}
+
+#[test]
+fn retained_utf16_preserves_invalid_surrogate_error() {
+    let mut bytes = Vec::new();
+    bytes.extend(2_u32.to_le_bytes());
+    bytes.extend(0xd83d_u16.to_le_bytes());
+    bytes.extend(0_u16.to_le_bytes());
+    let mut original = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    let expected = settings::utf16(&mut original).expect_err("unpaired surrogate is invalid");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root bytes admitted");
+    let mut retained = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded UTF-16 reader");
+    assert_eq!(
+        settings::utf16_retained(&ctx, &mut retained, "Rhino test UTF-16 text")
+            .expect_err("unpaired surrogate is invalid"),
+        expected
+    );
+}
+
+#[test]
 fn maps_standard_units_to_millimeters() {
     assert_eq!(settings::standard_scale(2), Some(1.0));
     assert_eq!(settings::standard_scale(8), Some(25.4));
@@ -163,7 +218,12 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     body.extend(0.01_f64.to_le_bytes());
     body.extend(0.001_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
-    let units = settings::parse_units(&data, &record).expect("required invariant");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("required invariant");
     assert_eq!(units.millimeters_per_unit(), Some(25.4));
     assert_eq!(units.absolute_tolerance, crate::test_support::positive(0.5));
     assert_eq!(
@@ -188,7 +248,12 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     legacy.extend(0.002_f64.to_le_bytes());
     legacy.extend(0.01_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, legacy);
-    let units = settings::parse_units(&data, &record).expect("required invariant");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("required invariant");
     assert_eq!(
         units.relative_tolerance,
         crate::test_support::positive(0.002)
@@ -213,7 +278,12 @@ fn accepts_future_units_version_with_source_prefix_and_bounded_suffix() {
     body.extend(0_u32.to_le_bytes());
     body.extend([0xde, 0xad]);
     let (data, record) = metadata_record(0x2000_8031, body);
-    let units = settings::parse_units(&data, &record).expect("future units version");
+    let units = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("future units version");
     assert_eq!(
         units.unit,
         settings::UnitSystem::Standard(settings::StandardUnit::Inches)
@@ -235,8 +305,12 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     revision_body.extend(7_i32.to_le_bytes());
     revision_body.extend([0xde, 0xad]);
     let (revision_data, revision_record) = metadata_record(0x2000_8021, revision_body);
-    let revision = settings::parse_revision(&revision_data, &revision_record)
-        .expect("revision-history future minor");
+    let revision = settings::parse_revision(
+        &cadmpeg_test_support::service_decode_context(),
+        &revision_data,
+        &revision_record,
+    )
+    .expect("revision-history future minor");
     assert_eq!(revision.created_by, "creator");
     assert_eq!(revision.last_edited_by, "editor");
     assert_eq!(revision.revision_count, 7);
@@ -249,7 +323,12 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     notes_body.push(1);
     notes_body.extend([0xbe, 0xef]);
     let (notes_data, notes_record) = metadata_record(0x2000_8022, notes_body);
-    let notes = settings::parse_notes(&notes_data, &notes_record).expect("notes future minor");
+    let notes = settings::parse_notes(
+        &cadmpeg_test_support::service_decode_context(),
+        &notes_data,
+        &notes_record,
+    )
+    .expect("notes future minor");
     assert_eq!(notes.text, "notes");
     assert!(notes.locked);
 
@@ -259,11 +338,218 @@ fn property_readers_follow_source_version_gates_and_boundaries() {
     application_body.extend(utf16_bytes("details"));
     application_body.extend([0xaa, 0xbb]);
     let (application_data, application_record) = metadata_record(0x2000_8024, application_body);
-    let application = settings::parse_application(&application_data, &application_record)
-        .expect("application future major");
+    let application = settings::parse_application(
+        &cadmpeg_test_support::service_decode_context(),
+        &application_data,
+        &application_record,
+    )
+    .expect("application future major");
     assert_eq!(application.name, "app");
     assert_eq!(application.url, "https://example.test");
     assert_eq!(application.details, "details");
+}
+
+fn retained_limit_context<'a>(
+    bytes: &'a [u8],
+    arena: &'a cadmpeg_core::decode::DecodeArena,
+    policy: &'a cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::decode::DecodeContext<'a> {
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, arena, policy)
+        .expect("metadata root admitted")
+        .0
+}
+
+fn property_text_refusal(kind: &str, limit: u64) -> crate::chunks::FramingError {
+    let (typecode, body) = match kind {
+        "revision" => {
+            let mut body = vec![0x10];
+            body.extend(utf16_bytes("creator"));
+            body.extend([0; 32]);
+            body.extend(utf16_bytes("editor"));
+            body.extend([0; 32]);
+            body.extend(1_i32.to_le_bytes());
+            (0x2000_8021, body)
+        }
+        "notes" => {
+            let mut body = vec![0x10];
+            body.extend(0_i32.to_le_bytes());
+            body.extend(utf16_bytes("notes"));
+            body.extend(0_i32.to_le_bytes());
+            body.extend([0; 16]);
+            (0x2000_8022, body)
+        }
+        "application" => {
+            let mut body = vec![0x10];
+            body.extend(utf16_bytes("app"));
+            body.extend(utf16_bytes("url"));
+            body.extend(utf16_bytes("details"));
+            (0x2000_8024, body)
+        }
+        _ => panic!("unknown property fixture: {kind}"),
+    };
+    let (data, record) = metadata_record(typecode, body);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    match kind {
+        "revision" => {
+            settings::parse_revision(&ctx, &data, &record).expect_err("revision text exceeds limit")
+        }
+        "notes" => {
+            settings::parse_notes(&ctx, &data, &record).expect_err("notes text exceeds limit")
+        }
+        "application" => settings::parse_application(&ctx, &data, &record)
+            .expect_err("application text exceeds limit"),
+        _ => panic!("unknown property fixture: {kind}"),
+    }
+}
+
+macro_rules! property_text_limit {
+    ($name:ident, $kind:literal, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(property_text_refusal($kind, $limit), crate::chunks::FramingError::Resource(refusal) if refusal.operation == $operation));
+        }
+    };
+}
+
+property_text_limit!(
+    revision_creator_refuses_retained_limit,
+    "revision",
+    0,
+    "Rhino revision creator"
+);
+property_text_limit!(
+    revision_editor_refuses_retained_limit,
+    "revision",
+    7,
+    "Rhino revision editor"
+);
+property_text_limit!(
+    document_notes_refuse_retained_limit,
+    "notes",
+    0,
+    "Rhino document notes"
+);
+property_text_limit!(
+    application_name_refuses_retained_limit,
+    "application",
+    0,
+    "Rhino application name"
+);
+property_text_limit!(
+    application_url_refuses_retained_limit,
+    "application",
+    3,
+    "Rhino application URL"
+);
+property_text_limit!(
+    application_details_refuse_retained_limit,
+    "application",
+    6,
+    "Rhino application details"
+);
+
+fn custom_units_body() -> Vec<u8> {
+    let mut body = 102_i32.to_le_bytes().to_vec();
+    body.extend(11_i32.to_le_bytes());
+    body.extend(0.5_f64.to_le_bytes());
+    body.extend(0.01_f64.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    body.extend(0_i32.to_le_bytes());
+    body.extend(3_i32.to_le_bytes());
+    body.extend(0.001_f64.to_le_bytes());
+    body.extend(utf16_bytes("custom"));
+    body
+}
+
+#[test]
+fn custom_unit_name_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8031, custom_units_body());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 5;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let error = settings::parse_units(&ctx, &data, &record)
+        .expect_err("custom unit name exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino custom unit name")
+    );
+    let admitted = settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+    )
+    .expect("custom unit name fits service profile");
+    assert_eq!(admitted.millimeters_per_unit(), Some(1.0));
+}
+
+#[test]
+fn discarded_page_units_custom_name_uses_no_retained_budget() {
+    let data = custom_units_body();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let mut reader = BoundedReader::new(&data, 0, data.len()).expect("unit bounds");
+    let units = settings::parse_units_reader(&ctx, &mut reader, false)
+        .expect("discarded custom name needs no retained budget");
+    assert_eq!(units.millimeters_per_unit(), Some(1.0));
+}
+
+#[test]
+fn as_file_name_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8027, utf16_bytes("file.3dm"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 7;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let error = settings::utf16_record(&ctx, &data, &record, "Rhino as-file name")
+        .expect_err("as-file name exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino as-file name")
+    );
+    assert_eq!(
+        settings::utf16_record(
+            &cadmpeg_test_support::service_decode_context(),
+            &data,
+            &record,
+            "Rhino as-file name",
+        )
+        .expect("as-file name fits service profile"),
+        "file.3dm"
+    );
+}
+
+#[test]
+fn model_url_refuses_retained_limit() {
+    let (data, record) = metadata_record(0x2000_8131, utf16_bytes("model URL"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    let mut settings_value = settings::DocumentSettings::default();
+    let error = settings::parse_setting(
+        &ctx,
+        &data,
+        &record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect_err("model URL exceeds retained limit");
+    assert!(
+        matches!(error, crate::chunks::FramingError::Resource(refusal) if refusal.operation == "Rhino model URL")
+    );
+    settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        &mut settings_value,
+        ArchiveVersion::V8,
+    )
+    .expect("model URL fits service profile");
+    assert_eq!(settings_value.model_url.as_deref(), Some("model URL"));
 }
 
 #[test]
@@ -381,7 +667,13 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8134, body);
-    settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
+    settings::parse_settings_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        archive,
+    )
+    .expect("attributes");
 }
 
 #[test]
@@ -413,9 +705,16 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
     let (data, render_record) = metadata_record(0x2000_8032, body.clone());
     let (analysis_data, analysis_record) = metadata_record(0x2000_8033, body);
     let mut settings_value = settings::DocumentSettings::default();
-    settings::parse_setting(&data, &render_record, &mut settings_value, archive)
-        .expect("render mesh settings");
     settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &render_record,
+        &mut settings_value,
+        archive,
+    )
+    .expect("render mesh settings");
+    settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
         &analysis_data,
         &analysis_record,
         &mut settings_value,
@@ -442,7 +741,12 @@ fn nonfinite_unit_tolerances_are_refused_at_the_value_first_byte() {
             body.extend(value.to_le_bytes());
         }
         let (data, record) = metadata_record(0x2000_8031, body);
-        let error = settings::parse_units(&data, &record).expect_err("nonfinite tolerance");
+        let error = settings::parse_units(
+            &cadmpeg_test_support::service_decode_context(),
+            &data,
+            &record,
+        )
+        .expect_err("nonfinite tolerance");
         assert_eq!(
             error,
             crate::chunks::FramingError::structural(
@@ -567,8 +871,14 @@ fn nonfinite_mesh_tolerance_is_refused_at_the_value_first_byte() {
 
     let (data, record) = metadata_record(0x2000_8032, body);
     let mut settings_value = settings::DocumentSettings::default();
-    let error = settings::parse_setting(&data, &record, &mut settings_value, archive)
-        .expect_err("nonfinite mesh tolerance");
+    let error = settings::parse_setting(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record,
+        &mut settings_value,
+        archive,
+    )
+    .expect_err("nonfinite mesh tolerance");
     assert_eq!(
         error,
         crate::chunks::FramingError::structural(tolerance_offset, "mesh tolerance is not finite")
@@ -590,7 +900,12 @@ fn rejects_invalid_unit_tolerances_and_trailing_bytes() {
     body.extend(b"m\0");
     body.extend(1_u8.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, body);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 }
 
 #[test]
@@ -607,7 +922,12 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     scale_overflow.extend(1_u32.to_le_bytes());
     scale_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, scale_overflow);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 
     let mut tolerance_overflow = Vec::new();
     tolerance_overflow.extend(102_i32.to_le_bytes());
@@ -621,7 +941,12 @@ fn rejects_custom_scale_and_tolerance_products_that_overflow() {
     tolerance_overflow.extend(1_u32.to_le_bytes());
     tolerance_overflow.extend([0_u8, 0]);
     let (data, record) = metadata_record(0x2000_8031, tolerance_overflow);
-    assert!(settings::parse_units(&data, &record).is_err());
+    assert!(settings::parse_units(
+        &cadmpeg_test_support::service_decode_context(),
+        &data,
+        &record
+    )
+    .is_err());
 }
 
 #[test]
@@ -758,6 +1083,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let (data, record) = metadata_record(0x2000_8050, class);
     let mut wrapper_warnings = Diagnostics::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
+        &cadmpeg_test_support::service_decode_context(),
         &data,
         record.body(),
         archive,
@@ -868,6 +1194,19 @@ fn layer_metadata_with_record_count_and_id(
     record_count: usize,
     id: [u8; 16],
 ) -> (settings::DocumentMetadata, Diagnostics) {
+    let (data, tables) = layer_fixture(extension, writer_version, record_count, id, &[]);
+    let mut warnings = Diagnostics::new();
+    let metadata = parse_test_metadata(&data, ArchiveVersion::V8, &tables, &mut warnings);
+    (metadata, warnings)
+}
+
+fn layer_fixture(
+    extension: &[u8],
+    writer_version: Option<i64>,
+    record_count: usize,
+    id: [u8; 16],
+    userdata: &[u8],
+) -> (Vec<u8>, Vec<crate::container::Table>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -911,6 +1250,7 @@ fn layer_metadata_with_record_count_and_id(
         &[
             long_chunk(archive, 0x0002_fffb, &uuid_body),
             crc_chunk(archive, 0x0002_fffc, &payload),
+            userdata.to_vec(),
             short_chunk(archive, 0x8002_7fff, 0),
         ]
         .concat(),
@@ -926,10 +1266,240 @@ fn layer_metadata_with_record_count_and_id(
         ));
     }
     tables.push(table);
-    let mut warnings = Diagnostics::new();
-    let metadata = parse_test_metadata(&data, archive, &tables, &mut warnings);
-    (metadata, warnings)
+    (data, tables)
 }
+
+fn metadata_limit_operations(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    source_id: [u8; 16],
+    extension: &[u8],
+    userdata: &[u8],
+) -> Vec<&'static str> {
+    let (data, mut layer_tables) =
+        layer_fixture(extension, Some(200_912_010), 1, source_id, userdata);
+    layer_tables.remove(0);
+    let mut tables = vec![
+        metadata_table(
+            super::PROPERTIES,
+            0,
+            vec![
+                crate::container::Record::short(super::WRITER_VERSION, 0..0, 200_912_010),
+                crate::container::Record::long(super::PREVIEW, 0..0, 0..0),
+            ],
+        ),
+        metadata_table(
+            super::SETTINGS,
+            0,
+            vec![
+                crate::container::Record::short(super::CURRENT_LAYER, 0..0, 3),
+                crate::container::Record::long(0x2000_ffff, 0..0, 0..0),
+            ],
+        ),
+    ];
+    tables.append(&mut layer_tables);
+    let mut limit = 0_u64;
+    let mut operations = Vec::new();
+    for _ in 0..128 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        match dimension {
+            cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                policy.limits.max_collection_items = limit;
+            }
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes => {
+                policy.limits.max_materialized_bytes = limit;
+            }
+            other => panic!("unsupported metadata test dimension: {other:?}"),
+        }
+        let ctx = retained_limit_context(&data, &arena, &policy);
+        match settings::parse_metadata(
+            &ctx,
+            &data,
+            ArchiveVersion::V8,
+            &tables,
+            &mut Diagnostics::new(),
+        ) {
+            Ok(metadata) => {
+                assert_eq!(metadata.layers.len(), 1);
+                return operations;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension =>
+            {
+                operations.push(refusal.operation);
+                let next = refusal.used + refusal.additional;
+                limit = next.max(limit + 1);
+            }
+            Err(error) => panic!("unexpected metadata error: {error}"),
+        }
+    }
+    panic!("metadata limit ladder did not terminate");
+}
+
+fn metadata_collection_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_materialized_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            [0x44; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_opaque_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0; 16],
+            &[0],
+            &[],
+        )
+    })
+}
+
+fn metadata_extension_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let mut extension = vec![37];
+        extension.extend(utf16_bytes("description"));
+        extension.push(0);
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &extension,
+            &[],
+        )
+    })
+}
+
+fn metadata_userdata_operations() -> &'static [&'static str] {
+    static OPERATIONS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    OPERATIONS.get_or_init(|| {
+        let archive = ArchiveVersion::V8;
+        let mut entry = super::LAYER_PER_VIEWPORT_ID.to_le_bytes().to_vec();
+        entry.extend(Uuid::from_canonical([1; 16]).to_wire());
+        let mut outer_body = 1_i32.to_le_bytes().to_vec();
+        outer_body.extend(anonymous_chunk(archive, 2, &entry));
+        let userdata = class_userdata_with_payload(
+            archive,
+            settings::LAYER_EXTENSIONS.to_wire(),
+            [0; 16],
+            &outer_body,
+        );
+        metadata_limit_operations(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            [0x44; 16],
+            &[0],
+            &userdata,
+        )
+    })
+}
+
+macro_rules! metadata_limit_test {
+    ($name:ident, $operations:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let operations = $operations();
+            assert!(operations.contains(&$operation), "reached {operations:?}");
+        }
+    };
+}
+
+metadata_limit_test!(
+    property_previews_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino property previews"
+);
+metadata_limit_test!(
+    property_singletons_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino property singleton keys"
+);
+metadata_limit_test!(
+    unsupported_settings_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino unsupported settings"
+);
+metadata_limit_test!(
+    setting_singletons_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino setting singleton keys"
+);
+metadata_limit_test!(
+    layer_uuid_keys_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer UUID keys"
+);
+metadata_limit_test!(
+    metadata_layers_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino metadata layers"
+);
+metadata_limit_test!(
+    layer_index_counts_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer index counts"
+);
+metadata_limit_test!(
+    layer_parent_counts_refuse_collection_limit,
+    metadata_collection_operations,
+    "Rhino layer parent counts"
+);
+metadata_limit_test!(
+    metadata_opaque_records_refuse_collection_limit,
+    metadata_opaque_operations,
+    "Rhino metadata opaque records"
+);
+metadata_limit_test!(
+    property_singleton_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino property singleton workspace"
+);
+metadata_limit_test!(
+    setting_singleton_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino setting singleton workspace"
+);
+metadata_limit_test!(
+    layer_uuid_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer UUID workspace"
+);
+metadata_limit_test!(
+    layer_index_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer index workspace"
+);
+metadata_limit_test!(
+    layer_parent_workspace_refuses_materialized_limit,
+    metadata_materialized_operations,
+    "Rhino layer parent workspace"
+);
+metadata_limit_test!(
+    layer_extension_items_refuse_collection_limit,
+    metadata_extension_operations,
+    "Rhino layer extension items"
+);
+metadata_limit_test!(
+    layer_userdata_resource_refusal_propagates,
+    metadata_userdata_operations,
+    "Rhino layer extension entries"
+);
 
 /// The layer parent link rests on the stamp, so the loss follows the stamp.
 #[test]
@@ -980,6 +1550,36 @@ fn unstamped_layer_charges_the_parent_link_stamp_loss() {
             .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
         "{stamped:?}"
     );
+}
+
+#[test]
+fn unstamped_layer_loss_refuses_collection_limit() {
+    let (data, tables) = layer_fixture(&[0], None, 1, [0; 16], &[]);
+    let mut limit = 0_u64;
+    for _ in 0..32 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let ctx = retained_limit_context(&data, &arena, &policy);
+        match settings::parse_metadata(
+            &ctx,
+            &data,
+            ArchiveVersion::V8,
+            &tables,
+            &mut Diagnostics::new(),
+        ) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino layer losses" =>
+            {
+                return
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) => {
+                limit = (refusal.used + refusal.additional).max(limit + 1);
+            }
+            other => panic!("expected a layer loss refusal, got {other:?}"),
+        }
+    }
+    panic!("layer loss boundary was not reached");
 }
 
 #[test]
@@ -1037,7 +1637,12 @@ fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     metadata.layers.push(duplicate);
 
     let mut warnings = Diagnostics::new();
-    super::report_layer_parent_references(&metadata.layers, &mut warnings);
+    super::report_layer_parent_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &metadata.layers,
+        &mut warnings,
+    )
+    .expect("parent count map fits service profile");
 
     assert!(
         warnings.iter().any(|warning| {
@@ -1049,11 +1654,105 @@ fn duplicate_layer_parent_uuid_is_reported_as_ambiguous() {
     );
 }
 
+#[test]
+fn missing_layer_parent_diagnostic_refuses_collection_limit() {
+    let (mut metadata, _) = layer_metadata(&[0], Some(200_912_010));
+    metadata.layers[0].id = None;
+    metadata.layers[0].hierarchy = Some(settings::LayerHierarchy {
+        parent_id: Uuid::from_canonical([0x44; 16]),
+        expanded: false,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let refusal =
+        super::report_layer_parent_references(&ctx, &metadata.layers, &mut Diagnostics::new())
+            .expect_err("one missing-parent warning exceeds zero collection items");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "Rhino diagnostics"
+    ));
+    let mut warnings = Diagnostics::new();
+    super::report_layer_parent_references(
+        &cadmpeg_test_support::service_decode_context(),
+        &metadata.layers,
+        &mut warnings,
+    )
+    .expect("service profile admits warning");
+    assert_eq!(warnings.iter().count(), 1);
+}
+
 fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {
     let mut extension = vec![37];
     extension.extend(utf16_bytes(description));
     extension.push(0);
     layer_metadata_with_extension(&extension)
+}
+
+fn layer_text_refusal(extension: &[u8], limit: u64) -> cadmpeg_core::CodecError {
+    let (data, tables) = layer_fixture(extension, None, 1, [0; 16], &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let ctx = retained_limit_context(&data, &arena, &policy);
+    settings::parse_metadata(
+        &ctx,
+        &data,
+        ArchiveVersion::V8,
+        &tables,
+        &mut Diagnostics::new(),
+    )
+    .expect_err("layer text exceeds retained limit")
+}
+
+#[test]
+fn layer_name_refuses_retained_limit() {
+    let error = layer_text_refusal(&[0], 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer name")
+    );
+}
+
+#[test]
+fn layer_description_refuses_retained_limit() {
+    let mut extension = vec![37];
+    extension.extend(utf16_bytes(" description "));
+    extension.push(0);
+    let error = layer_text_refusal(&extension, 1);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal) if refusal.operation == "Rhino layer loss text")
+    );
+    let mut limit = 1;
+    let mut found_description = false;
+    for _ in 0..32 {
+        let cadmpeg_core::CodecError::ResourceLimit(refusal) =
+            layer_text_refusal(&extension, limit)
+        else {
+            panic!("expected a retained resource refusal at limit {limit}");
+        };
+        if refusal.operation == "Rhino layer description" {
+            found_description = true;
+            break;
+        }
+        let next = refusal
+            .used
+            .checked_add(refusal.additional)
+            .expect("fixture budget fits");
+        assert!(next > limit, "retained limit must advance");
+        limit = next;
+    }
+    assert!(
+        found_description,
+        "description was not refused at its own admission"
+    );
+    let admitted = layer_metadata_with_description(" description ");
+    assert_eq!(
+        admitted.layers[0].description.as_deref(),
+        Some("description")
+    );
 }
 
 #[test]
@@ -1091,6 +1790,7 @@ fn rendering_attributes_accept_layer_future_minor_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
     let mut warnings = Diagnostics::new();
     let range = settings::parse_rendering_attributes(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -1159,6 +1859,7 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("rendering chunk");
         let mut warnings = Diagnostics::new();
         let result = settings::parse_rendering_attributes(
+            &cadmpeg_test_support::service_decode_context(),
             &bytes,
             &mut reader,
             ArchiveVersion::V8,
@@ -1172,606 +1873,7 @@ fn rendering_attributes_reject_negative_version_minors_at_each_nested_gate() {
     }
 }
 
-#[test]
-fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
-    let archive = ArchiveVersion::V8;
-    let first_viewport = Uuid::from_canonical([
-        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
-        0x1f,
-    ]);
-    let second_viewport = Uuid::from_canonical([
-        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e,
-        0x2f,
-    ]);
-    let mut full_entry = 63_u32.to_le_bytes().to_vec();
-    full_entry.extend(second_viewport.to_wire());
-    full_entry.extend([10, 20, 30, 40]);
-    full_entry.extend([50, 60, 70, 80]);
-    full_entry.extend(1.25_f64.to_le_bytes());
-    full_entry.extend([2, 2, 2]);
-    full_entry.extend([0xde, 0xad]);
-    let mut color_entry = 3_u32.to_le_bytes().to_vec();
-    color_entry.extend(first_viewport.to_wire());
-    color_entry.extend([90, 100, 110, 120]);
-    let entries = [
-        anonymous_chunk(archive, 2, &full_entry),
-        anonymous_chunk(archive, 2, &color_entry),
-    ]
-    .concat();
-    let mut outer_body = 2_i32.to_le_bytes().to_vec();
-    outer_body.extend(entries);
-    outer_body.extend([0xbe, 0xef]);
-    let payload = anonymous_chunk(archive, 0, &outer_body);
-    let descriptor = ClassUserdata {
-        range: 0..payload.len(),
-        version: (2, 2),
-        class_uuid: settings::LAYER_EXTENSIONS,
-        item_uuid: settings::LAYER_EXTENSIONS,
-        copy_count: 1,
-        transform_range: 0..0,
-        application_uuid: None,
-        save_context: None,
-        payload_range: 0..payload.len(),
-    };
-    let values = parse_test_extensions(
-        &payload,
-        &descriptor,
-        archive,
-        Some(Uuid::from_canonical([1; 16])),
-    )
-    .expect("layer extensions payload");
-    assert_eq!(values.len(), 2);
-    assert_eq!(values[0].viewport_id, first_viewport);
-    assert_eq!(values[0].settings_mask(), 3);
-    assert_eq!(values[0].color, Some([90, 100, 110, 120]));
-    assert_eq!(values[1].viewport_id, second_viewport);
-    assert_eq!(values[1].settings_mask(), 63);
-    assert_eq!(
-        values[1].plot_weight_mm.map(settings::LayerPlotWeight::get),
-        Some(1.25)
-    );
-    assert_eq!(
-        values[1].visible.map(settings::LayerVisibility::as_u8),
-        Some(2)
-    );
-    assert_eq!(
-        values[1]
-            .persistent_visibility
-            .map(settings::LayerVisibility::as_u8),
-        Some(2)
-    );
-
-    let root_values = parse_test_extensions(&payload, &descriptor, archive, None)
-        .expect("root layer extensions payload");
-    assert_eq!(root_values[1].settings_mask(), 31);
-    assert_eq!(root_values[1].persistent_visibility, None);
-}
-
-fn single_viewport_extension(bits: u32, field_bytes: &[u8]) -> (Vec<u8>, ClassUserdata) {
-    let archive = ArchiveVersion::V8;
-    let mut entry = bits.to_le_bytes().to_vec();
-    entry.extend(Uuid::from_canonical([1; 16]).to_wire());
-    entry.extend(field_bytes);
-    let mut outer_body = 1_i32.to_le_bytes().to_vec();
-    outer_body.extend(anonymous_chunk(archive, 2, &entry));
-    let payload = anonymous_chunk(archive, 0, &outer_body);
-    let descriptor = ClassUserdata {
-        range: 0..payload.len(),
-        version: (2, 2),
-        class_uuid: settings::LAYER_EXTENSIONS,
-        item_uuid: settings::LAYER_EXTENSIONS,
-        copy_count: 1,
-        transform_range: 0..0,
-        application_uuid: None,
-        save_context: None,
-        payload_range: 0..payload.len(),
-    };
-    (payload, descriptor)
-}
-
-#[test]
-fn layer_extension_entries_refuse_cumulative_collection_limit() {
-    let (payload, descriptor) = single_viewport_extension(
-        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_COLOR,
-        &[1, 2, 3, 4],
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-        .expect("test input fits the service profile");
-    assert_eq!(
-        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
-            .expect("first layer entry fits the limit")
-            .len(),
-        1
-    );
-    let refusal =
-        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
-            .expect_err("second layer entry exceeds the cumulative limit");
-    assert!(
-        matches!(refusal, crate::chunks::FramingError::Resource(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
-    );
-
-    let service = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &service)
-        .expect("test input fits the service profile");
-    for _ in 0..2 {
-        assert_eq!(
-            settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
-                .expect("service profile admits both layer entries")
-                .len(),
-            1
-        );
-    }
-}
-
-fn assert_malformed_viewport_visibility(bits: u32, field_bytes: &[u8]) {
-    let (payload, descriptor) = single_viewport_extension(bits, field_bytes);
-    let error = parse_test_extensions(
-        &payload,
-        &descriptor,
-        ArchiveVersion::V8,
-        Some(Uuid::from_canonical([2; 16])),
-    )
-    .expect_err("malformed visibility-only entry");
-    assert!(error.to_string().contains("visibility"), "{error}");
-}
-
-#[test]
-fn malformed_present_viewport_visibility_is_reported() {
-    assert_malformed_viewport_visibility(
-        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_VISIBLE,
-        &[3, 1],
-    );
-}
-
-#[test]
-fn malformed_present_viewport_persistent_visibility_is_reported() {
-    assert_malformed_viewport_visibility(
-        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY,
-        &[3],
-    );
-}
-
-fn assert_malformed_viewport_plot_weight(weight: f64) {
-    let (payload, descriptor) = single_viewport_extension(
-        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PLOT_WEIGHT,
-        &weight.to_le_bytes(),
-    );
-    let error = parse_test_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
-        .expect_err("malformed weight-only entry");
-    assert!(error.to_string().contains("plot weight"), "{error}");
-}
-
-#[test]
-fn negative_viewport_plot_weight_is_reported() {
-    assert_malformed_viewport_plot_weight(-2.0);
-}
-
-#[test]
-fn nonfinite_viewport_plot_weight_is_reported() {
-    assert_malformed_viewport_plot_weight(f64::NAN);
-}
-
-#[test]
-fn viewport_plot_weight_keeps_the_exact_unset_sentinel() {
-    let (payload, descriptor) = single_viewport_extension(
-        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PLOT_WEIGHT,
-        &(-1.0_f64).to_le_bytes(),
-    );
-    let values = parse_test_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
-        .expect("unset plot weight");
-    assert_eq!(
-        values[0].plot_weight_mm,
-        Some(settings::LayerPlotWeight::Unset)
-    );
-    assert_eq!(
-        serde_json::to_value(values[0].plot_weight_mm).expect("serialized plot weight"),
-        serde_json::json!(-1.0)
-    );
-}
-
-#[test]
-fn layer_extensions_reject_negative_count() {
-    let archive = ArchiveVersion::V8;
-    let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
-    let descriptor = ClassUserdata {
-        range: 0..payload.len(),
-        version: (2, 2),
-        class_uuid: settings::LAYER_EXTENSIONS,
-        item_uuid: settings::LAYER_EXTENSIONS,
-        copy_count: 1,
-        transform_range: 0..0,
-        application_uuid: None,
-        save_context: None,
-        payload_range: 0..payload.len(),
-    };
-    assert!(parse_test_extensions(&payload, &descriptor, archive, None).is_err());
-}
-
-#[test]
-fn rendering_attributes_parse_object_mapping_and_future_suffix() {
-    let mut channel_body = 7_i32.to_le_bytes().to_vec();
-    channel_body.extend(uuid_bytes());
-    for value in 0..16 {
-        channel_body.extend((value as f64).to_le_bytes());
-    }
-    let channel = anonymous_chunk(ArchiveVersion::V8, 1, &channel_body);
-    let mut mapping_body = uuid_bytes();
-    mapping_body.extend(1_i32.to_le_bytes());
-    mapping_body.extend(channel);
-    let mut mapping_payload = 1_i32.to_le_bytes().to_vec();
-    mapping_payload.extend(0_i32.to_le_bytes());
-    let channel_start = mapping_payload.len() + 16 + 4;
-    mapping_payload.extend(mapping_body);
-    #[allow(clippy::single_range_in_vec_init)] // One nested mapping-channel range.
-    let mapping = crc_chunk_excluding(
-        ArchiveVersion::V8,
-        0x4000_8000,
-        &mapping_payload,
-        &[channel_start..mapping_payload.len()],
-    );
-
-    let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0];
-    rendering_body.extend(0_i32.to_le_bytes());
-    rendering_body.extend(1_i32.to_le_bytes());
-    let mapping_start = rendering_body.len();
-    rendering_body.extend(mapping);
-    let mapping_end = rendering_body.len();
-    rendering_body.extend([1, 0, 1]);
-    rendering_body.extend([0xaa, 0xbb]);
-    #[allow(clippy::single_range_in_vec_init)] // The range is one direct child.
-    let bytes = crc_chunk_excluding(
-        ArchiveVersion::V8,
-        0x4000_8000,
-        &rendering_body,
-        &[mapping_start..mapping_end],
-    );
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded chunk reader");
-    let mut warnings = Diagnostics::new();
-    let range = settings::parse_rendering_attributes(
-        &bytes,
-        &mut reader,
-        ArchiveVersion::V8,
-        settings::RenderingAttributesKind::Object,
-        &mut warnings,
-    )
-    .expect("object reader consumes mapping channels and leaves the suffix bounded");
-    assert_eq!(range, 0..bytes.len());
-    assert!(warnings.is_empty());
-}
-
-#[test]
-fn rendering_attributes_accept_nonempty_obsolete_material_mapping_channels() {
-    let archive = ArchiveVersion::V8;
-    let mut channel_body = 7_i32.to_le_bytes().to_vec();
-    channel_body.extend([0x33; 16]);
-    channel_body.extend(
-        (0..16)
-            .map(|index| if index % 5 == 0 { 1.0 } else { 0.0 })
-            .flat_map(f64::to_le_bytes),
-    );
-    let channel = anonymous_chunk(archive, 1, &channel_body);
-
-    let mut material_body = vec![1, 0, 0, 0, 1, 0, 0, 0];
-    material_body.extend([0x11; 16]);
-    material_body.extend([0x22; 16]);
-    material_body.extend(1_i32.to_le_bytes());
-    let channel_start = material_body.len();
-    material_body.extend(channel);
-    let channel_end = material_body.len();
-    material_body.extend([0x44; 16]);
-    material_body.extend([3, 0, 0, 0]);
-    let material = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &material_body,
-        std::slice::from_ref(&(channel_start..channel_end)),
-    );
-
-    let mut rendering_body = vec![1, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0];
-    let material_start = rendering_body.len();
-    rendering_body.extend(material);
-    let material_end = rendering_body.len();
-    rendering_body.extend(0_i32.to_le_bytes());
-    rendering_body.extend([1, 1, 0]);
-    let bytes = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &rendering_body,
-        std::slice::from_ref(&(material_start..material_end)),
-    );
-
-    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded rendering chunk");
-    let mut warnings = Diagnostics::new();
-    let range = settings::parse_rendering_attributes(
-        &bytes,
-        &mut reader,
-        archive,
-        settings::RenderingAttributesKind::Object,
-        &mut warnings,
-    )
-    .expect("valid obsolete material mapping channels are consumed");
-    assert_eq!(range, 0..bytes.len());
-    assert!(warnings.is_empty(), "{warnings:?}");
-}
-
-#[test]
-fn future_linetype_extension_stops_at_unknown_code() {
-    let archive = ArchiveVersion::V8;
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(2_i32.to_le_bytes());
-    body.extend(4_i32.to_le_bytes());
-    body.extend(&model_attributes);
-    body.extend(0_i32.to_le_bytes());
-    body.extend([7, 0xaa, 0xbb, 0, 0xde]);
-    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-    let chunk = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(8..8 + model_attributes.len())),
-    );
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
-    let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
-        .expect("future linetype code is bounded by the anonymous chunk");
-    assert_eq!(descriptor.version, (2, 4));
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty());
-}
-
-#[test]
-fn embedded_linetype_accepts_unset_and_future_segment_tags() {
-    let archive = ArchiveVersion::V8;
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(2_i32.to_le_bytes());
-    body.extend(4_i32.to_le_bytes());
-    body.extend(&model_attributes);
-    body.extend(2_i32.to_le_bytes());
-    body.extend(1.5_f64.to_le_bytes());
-    body.extend(0xffff_ffff_u32.to_le_bytes());
-    body.extend(2.5_f64.to_le_bytes());
-    body.extend(7_u32.to_le_bytes());
-    body.push(0);
-    let chunk = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(8..8 + model_attributes.len())),
-    );
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
-    let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
-        .expect("documented unset and future segment tags are admitted");
-    assert_eq!(descriptor.version, (2, 4));
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty(), "{warnings:?}");
-}
-
-#[test]
-fn legacy_embedded_linetype_accepts_unset_and_future_segment_tags() {
-    let archive = ArchiveVersion::V5;
-    let mut body = Vec::new();
-    body.extend(1_i32.to_le_bytes());
-    body.extend(1_i32.to_le_bytes());
-    body.extend(7_i32.to_le_bytes());
-    body.extend(utf16_bytes("legacy-linetype"));
-    body.extend(2_i32.to_le_bytes());
-    body.extend(1.5_f64.to_le_bytes());
-    body.extend(0xffff_ffff_u32.to_le_bytes());
-    body.extend(2.5_f64.to_le_bytes());
-    body.extend(7_u32.to_le_bytes());
-    body.extend([0x55; 16]);
-    let chunk = crc_chunk(archive, 0x4000_8000, &body);
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded legacy linetype");
-    let mut warnings = Diagnostics::new();
-    let descriptor = settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
-        .expect("legacy documented segment tags are admitted");
-    assert_eq!(descriptor.version, (1, 1));
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty(), "{warnings:?}");
-}
-
-#[test]
-fn linetype_out_of_order_id_leaves_value_at_boundary() {
-    let archive = ArchiveVersion::V8;
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(2_i32.to_le_bytes());
-    body.extend(4_i32.to_le_bytes());
-    body.extend(&model_attributes);
-    body.extend(0_i32.to_le_bytes());
-    body.push(3);
-    body.extend(2.0_f64.to_le_bytes());
-    // Item 1 follows item 3. The source cascade consumes the ID and closes;
-    // the one-byte value has no generic width.
-    body.extend([1, 0xaa]);
-    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-    let chunk = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(8..8 + model_attributes.len())),
-    );
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded linetype");
-    let mut warnings = Diagnostics::new();
-    settings::parse_direct_linetype(&chunk, &mut reader, archive, &mut warnings)
-        .expect("source ordered cascade leaves out-of-order value bounded");
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty());
-}
-
-#[test]
-fn future_section_style_extension_stops_at_unknown_code() {
-    let archive = ArchiveVersion::V8;
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(1_i32.to_le_bytes());
-    body.extend(4_i32.to_le_bytes());
-    body.extend(&model_attributes);
-    body.extend([12, 0xaa, 0xbb, 0, 0xde]);
-    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-    let chunk = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(8..8 + model_attributes.len())),
-    );
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
-    let mut warnings = Diagnostics::new();
-    let descriptor =
-        settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
-            .expect("future section-style code is bounded by the anonymous chunk");
-    assert_eq!(descriptor.version, (1, 4));
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty());
-}
-
-#[test]
-fn section_style_out_of_order_id_leaves_value_at_boundary() {
-    let archive = ArchiveVersion::V8;
-    let model_attributes = crc_chunk(archive, 0x4000_8002, &[]);
-    let mut body = Vec::new();
-    body.extend(1_i32.to_le_bytes());
-    body.extend(1_i32.to_le_bytes());
-    body.extend(&model_attributes);
-    body.push(5);
-    body.extend(2.0_f64.to_le_bytes());
-    // The source reader has passed item 1 after consuming item 5. It reads
-    // this ID and closes the anonymous chunk; the value has no generic width.
-    body.extend([1, 0xaa]);
-    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
-    let chunk = crc_chunk_excluding(
-        archive,
-        0x4000_8000,
-        &body,
-        std::slice::from_ref(&(8..8 + model_attributes.len())),
-    );
-    let mut reader = BoundedReader::new(&chunk, 0, chunk.len()).expect("bounded section style");
-    let mut warnings = Diagnostics::new();
-    settings::parse_direct_section_style(&chunk, &mut reader, archive, &mut warnings)
-        .expect("source ordered cascade leaves out-of-order value bounded");
-    assert_eq!(reader.remaining(), 0);
-    assert!(warnings.is_empty());
-}
-
-#[test]
-fn parses_selector_widths_and_skips_direct_suffix() {
-    let mut settings_value = settings::DocumentSettings::default();
-    let mut material_data = 42_i32.to_le_bytes().to_vec();
-    material_data.extend(3_i32.to_le_bytes());
-    material_data.extend([0xaa, 0xbb]);
-    let material_record =
-        crate::container::Record::long(0x2000_8039, 0..material_data.len(), 0..material_data.len());
-    settings::parse_setting(
-        &material_data,
-        &material_record,
-        &mut settings_value,
-        ArchiveVersion::V8,
-    )
-    .expect("required invariant");
-    assert_eq!(
-        settings_value
-            .current_material
-            .map(|selection| selection.value),
-        Some(42)
-    );
-    assert_eq!(
-        settings_value
-            .current_material
-            .map(|selection| selection.source),
-        Some(3)
-    );
-
-    let mut color_data = vec![1, 2, 3, 4];
-    color_data.extend(2_i32.to_le_bytes());
-    color_data.extend([0xcc, 0xdd]);
-    let color_record =
-        crate::container::Record::long(0x2000_803a, 0..color_data.len(), 0..color_data.len());
-    settings::parse_setting(
-        &color_data,
-        &color_record,
-        &mut settings_value,
-        ArchiveVersion::V8,
-    )
-    .expect("required invariant");
-    assert_eq!(
-        settings_value
-            .current_color
-            .map(|selection| selection.value),
-        Some([1, 2, 3, 4])
-    );
-    assert_eq!(
-        settings_value
-            .current_color
-            .map(|selection| selection.source),
-        Some(2)
-    );
-
-    for (typecode, value) in [
-        (0xa000_0038, 3),
-        (0xa000_003c, 5),
-        (0xa000_0132, 7),
-        (0xa000_0133, 9),
-    ] {
-        let record = crate::container::Record::short(typecode, 0..0, value);
-        settings::parse_setting(&[], &record, &mut settings_value, ArchiveVersion::V8)
-            .expect("required invariant");
-    }
-    assert_eq!(settings_value.current_layer, Some(3));
-    assert_eq!(settings_value.current_wire_density, Some(5));
-    assert_eq!(settings_value.current_font, Some(7));
-    assert_eq!(settings_value.current_dimstyle, Some(9));
-}
-
-#[test]
-fn current_material_accepts_the_source_reader_i32_range() {
-    let mut data = (-2_i32).to_le_bytes().to_vec();
-    data.extend(3_i32.to_le_bytes());
-    let record = crate::container::Record::long(0x2000_8039, 0..data.len(), 0..data.len());
-    let mut settings_value = settings::DocumentSettings::default();
-
-    settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
-        .expect("source reader accepts every signed i32 material index");
-
-    assert_eq!(
-        settings_value
-            .current_material
-            .map(|selection| selection.value),
-        Some(-2)
-    );
-    assert_eq!(
-        settings_value
-            .current_material
-            .map(|selection| selection.source),
-        Some(3)
-    );
-}
-
-#[test]
-fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
-    let table = metadata_table(
-        0x1000_0015,
-        0,
-        vec![
-            crate::container::Record::short(0xa000_0038, 0..0, 3),
-            crate::container::Record::short(0xa000_0038, 0..0, 7),
-        ],
-    );
-    let mut warnings = Diagnostics::new();
-    let metadata = parse_test_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
-    assert_eq!(metadata.settings.current_layer, Some(7));
-    assert_eq!(
-        warnings.messages().collect::<Vec<_>>(),
-        ["duplicate singleton metadata record 0xa0000038; later record wins"]
-    );
-}
-
+mod embedded_records;
 mod rendering_checksums;
 
 #[test]

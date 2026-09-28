@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native terminal discriminator wire adapter.
 
-use crate::om::compact::CompactIndexAtom;
+use crate::iter_wire::IterWire;
+use crate::om::compact::{CompactIndexAtom, RawCompactIndex};
 use crate::om::terminal_discriminator::OperationTerminalDiscriminator;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationTerminalDiscriminatorWire",
-    into = "FeatureOperationTerminalDiscriminatorWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationTerminalDiscriminatorWire")]
 pub(in crate::native) struct FeatureOperationTerminalDiscriminator {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -40,6 +39,53 @@ struct FeatureOperationTerminalDiscriminatorWire {
     source_offset: u64,
 }
 
+impl Serialize for FeatureOperationTerminalDiscriminator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_map(None)?;
+        wire.serialize_entry("id", &self.id)?;
+        wire.serialize_entry("operation_label", &self.operation_label)?;
+        wire.serialize_entry(
+            "type_indices",
+            &self.frame.type_indices().map(|(token, _)| token.value()),
+        )?;
+        wire.serialize_entry(
+            "raw_type_indices",
+            &self
+                .frame
+                .type_indices()
+                .map(|(token, _)| RawCompactIndex(token)),
+        )?;
+        wire.serialize_entry(
+            "type_index_source_offsets",
+            &self.frame.type_indices().map(|(_, offset)| offset),
+        )?;
+        wire.serialize_entry("flags", &self.frame.flags())?;
+        wire.serialize_entry(
+            "trailing_indices",
+            &IterWire(
+                self.frame
+                    .trailing_indices()
+                    .map(|(token, _)| token.value()),
+            ),
+        )?;
+        wire.serialize_entry(
+            "raw_trailing_indices",
+            &IterWire(
+                self.frame
+                    .trailing_indices()
+                    .map(|(token, _)| RawCompactIndex(token)),
+            ),
+        )?;
+        wire.serialize_entry(
+            "trailing_index_source_offsets",
+            &IterWire(self.frame.trailing_indices().map(|(_, offset)| offset)),
+        )?;
+        wire.serialize_entry("source_offset", &self.frame.origin())?;
+        wire.end()
+    }
+}
+
+#[cfg(test)]
 impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDiscriminatorWire {
     fn from(lane: FeatureOperationTerminalDiscriminator) -> Self {
         Self {
@@ -124,7 +170,25 @@ impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerm
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureOperationTerminalDiscriminator;
+    use super::{FeatureOperationTerminalDiscriminator, FeatureOperationTerminalDiscriminatorWire};
+
+    #[test]
+    fn terminal_discriminator_borrowed_wire_matches_owned_bytes_and_retained_limit() {
+        let json = r#"{"id":"nx:feature:terminal-discriminator#0","operation_label":"o","type_indices":[0,0],"raw_type_indices":[[0],[128,0]],"type_index_source_offsets":[103,104],"flags":[0,255,128,1],"trailing_indices":[],"raw_trailing_indices":[],"trailing_index_source_offsets":[],"source_offset":100}"#;
+        let record: FeatureOperationTerminalDiscriminator = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeatureOperationTerminalDiscriminatorWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn terminal_wire_derives_positions_and_keeps_empty_trailing_arrays() {

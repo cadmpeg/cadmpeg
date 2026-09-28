@@ -5,7 +5,8 @@ use super::ParasolidDeltasTransmitHeader;
 use crate::deltas::transmit_state::TransmitState;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct TransmitHeaderWire {
     id: String,
     stream_ordinal: u32,
@@ -16,6 +17,32 @@ pub(super) struct TransmitHeaderWire {
     inflated_offset: u64,
 }
 
+#[derive(Serialize)]
+struct TransmitHeaderRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    #[serde(flatten)]
+    state: &'a TransmitState,
+    byte_len: u64,
+    sha256: &'a crate::native::hex::Sha256Hex,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasTransmitHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        TransmitHeaderRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            state: &self.state,
+            byte_len: self.byte_len,
+            sha256: &self.sha256,
+            inflated_offset: 0,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidDeltasTransmitHeader> for TransmitHeaderWire {
     fn from(header: ParasolidDeltasTransmitHeader) -> Self {
         Self {
@@ -54,12 +81,26 @@ mod tests {
         let json = r#"{"id":"header","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
         let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&header).unwrap(),
+            serde_json::to_vec(&super::TransmitHeaderWire::from(header.clone())).unwrap()
+        );
         let displaced = json.replace("\"inflated_offset\":0", "\"inflated_offset\":1");
         assert!(
             serde_json::from_str::<ParasolidDeltasTransmitHeader>(&displaced)
                 .unwrap_err()
                 .to_string()
                 .contains("inflated_offset")
+        );
+    }
+
+    #[test]
+    fn transmit_header_native_limit_refuses_before_state_copy() {
+        let json = r#"{"id":"nx:parasolid:transmit-header#0","stream_ordinal":0,"description":"Transmit (deltas)","schema":"SCH_1","references":[2,3],"byte_len":42,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","inflated_offset":0}"#;
+        let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &header,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
         );
     }
 }
