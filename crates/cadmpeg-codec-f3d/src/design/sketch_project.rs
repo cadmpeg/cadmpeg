@@ -22,12 +22,57 @@ use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 const EPS_SPATIAL_OWNER_DEPTH: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
 const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1.0e-12;
+
+fn insert_project_index<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !index.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate index keys retain the last source record.
+    let _ = index.insert(key, value);
+    Ok(())
+}
+
+fn record_spline_segment<'a>(
+    ctx: Option<&DecodeContext<'_>>,
+    segments: &mut HashMap<(&'a str, u32), Option<[Point3; 2]>>,
+    scope: &'a str,
+    record: u32,
+    points: [Point3; 2],
+) -> Result<(), CodecError> {
+    if !segments.contains_key(&(scope, record)) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d spatial sketch spline segment index")?;
+            segments.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d spatial sketch spline segment allocation", 0, 1)
+            })?;
+        }
+    }
+    segments
+        .entry((scope, record))
+        .and_modify(|existing| {
+            if *existing != Some(points) {
+                *existing = None;
+            }
+        })
+        .or_insert(Some(points));
+    Ok(())
+}
 
 fn spatial_geometry_owners<'a>(
     ctx: Option<&DecodeContext<'_>>,
@@ -183,18 +228,17 @@ pub(crate) fn project_sketch_design(
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
     let text_frame_curves = text_frame_curve_records(ctx, relations, curves, texts)?;
-    let placements_by_suffix = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (
-                    native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_id.suffix()).ok()?,
-                ),
-                placement,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut placements_by_suffix = HashMap::new();
+    for placement in placements {
+        let (Some(scope), Ok(owner)) = (
+            native_stream(&placement.id),
+            u32::try_from(placement.entity_id.suffix()),
+        ) else { continue; };
+        insert_project_index(
+            ctx, &mut placements_by_suffix, (scope, owner), placement,
+            "f3d planar sketch placement index",
+        )?;
+    }
     let spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
     let mut sketches = placements
         .iter()
@@ -444,18 +488,17 @@ pub(crate) fn project_spatial_sketch_design(
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
-    let placements_by_suffix = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (
-                    native_stream(&placement.id)?,
-                    u32::try_from(placement.entity_id.suffix()).ok()?,
-                ),
-                placement,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut placements_by_suffix = HashMap::new();
+    for placement in placements {
+        let (Some(scope), Ok(owner)) = (
+            native_stream(&placement.id),
+            u32::try_from(placement.entity_id.suffix()),
+        ) else { continue; };
+        insert_project_index(
+            ctx, &mut placements_by_suffix, (scope, owner), placement,
+            "f3d spatial sketch placement index",
+        )?;
+    }
     let mut spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
     for surface in surfaces {
         let (Some(scope), Some(owner)) = (native_stream(&surface.id), surface.owner_reference) else {
@@ -471,10 +514,14 @@ pub(crate) fn project_spatial_sketch_design(
             spatial_owners.insert((scope, owner));
         }
     }
-    let curves_by_record = curves
-        .iter()
-        .filter_map(|curve| Some(((native_stream(&curve.id)?, curve.record_index), curve)))
-        .collect::<HashMap<_, _>>();
+    let mut curves_by_record = HashMap::new();
+    for curve in curves {
+        let Some(scope) = native_stream(&curve.id) else { continue; };
+        insert_project_index(
+            ctx, &mut curves_by_record, (scope, curve.record_index), curve,
+            "f3d spatial sketch curve index",
+        )?;
+    }
     let mut spline_segments = HashMap::new();
     for relation in relations {
         // Only the second reference run of a relation record is in semantic
@@ -527,14 +574,7 @@ pub(crate) fn project_spatial_sketch_design(
             .collect::<Option<Vec<_>>>();
         let Some(segments) = segments else { continue };
         for (record, points) in segments {
-            spline_segments
-                .entry((scope, record))
-                .and_modify(|existing| {
-                    if *existing != Some(points) {
-                        *existing = None;
-                    }
-                })
-                .or_insert(Some(points));
+            record_spline_segment(ctx, &mut spline_segments, scope, record, points)?;
         }
     }
     let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
@@ -806,13 +846,14 @@ pub(crate) fn project_spatial_sketch_design(
 
 /// Project exact aggregate relations owned by model-space spatial sketches.
 pub(crate) fn project_spatial_sketch_constraints(
+    ctx: Option<&DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     relations: &[SketchRelation],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
+) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchConstraint>, CodecError> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput as Definition,
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
@@ -822,9 +863,9 @@ pub(crate) fn project_spatial_sketch_constraints(
         .iter()
         .map(|entity| entity.sketch.clone())
         .collect::<HashSet<_>>();
-    let sketches = placements
-        .iter()
-        .filter_map(|placement| {
+    let mut sketches = HashMap::new();
+    for placement in placements {
+        let Some((key, value)) = (|| {
             let id = neutral_spatial_sketch_id(placement);
             spatial_sketches.contains(&id).then_some((
                 (
@@ -833,32 +874,30 @@ pub(crate) fn project_spatial_sketch_constraints(
                 ),
                 (id, placement),
             ))
-        })
-        .collect::<HashMap<_, _>>();
-    let record_indices = curves
-        .iter()
-        .map(|curve| (curve.id.as_str(), curve.record_index))
-        .chain(
-            points
-                .iter()
-                .map(|point| (point.id.as_str(), point.record_index)),
-        )
-        .chain(
-            surfaces
-                .iter()
-                .map(|surface| (surface.id.as_str(), surface.record_index)),
-        )
-        .collect::<HashMap<_, _>>();
-    let projected = entities
-        .iter()
-        .filter_map(|entity| {
+        })() else { continue; };
+        insert_project_index(ctx, &mut sketches, key, value, "f3d spatial constraint sketch index")?;
+    }
+    let mut record_indices = HashMap::new();
+    for (native_ref, record_index) in curves.iter().map(|curve| (curve.id.as_str(), curve.record_index))
+        .chain(points.iter().map(|point| (point.id.as_str(), point.record_index)))
+        .chain(surfaces.iter().map(|surface| (surface.id.as_str(), surface.record_index)))
+    {
+        insert_project_index(
+            ctx, &mut record_indices, native_ref, record_index,
+            "f3d spatial constraint native record index",
+        )?;
+    }
+    let mut projected = HashMap::new();
+    for entity in entities {
+        let Some((key, value)) = (|| {
             let native_ref = entity.native_ref.as_deref()?;
             Some((
                 (native_stream(native_ref)?, *record_indices.get(native_ref)?),
                 entity,
             ))
-        })
-        .collect::<HashMap<_, _>>();
+        })() else { continue; };
+        insert_project_index(ctx, &mut projected, key, value, "f3d spatial constraint entity index")?;
+    }
     let mut constraints = relations
         .iter()
         .filter_map(|relation| {
@@ -1045,7 +1084,7 @@ pub(crate) fn project_spatial_sketch_constraints(
         })
         .collect::<Vec<_>>();
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
-    constraints
+    Ok(constraints)
 }
 
 #[cfg(test)]

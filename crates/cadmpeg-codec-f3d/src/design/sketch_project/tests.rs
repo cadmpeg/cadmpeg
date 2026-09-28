@@ -1197,13 +1197,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
     let constraints = project_spatial_sketch_constraints(
+        None,
         &[placement],
         &relations,
         &points,
         &curves,
         &surfaces,
         &entities,
-    );
+    ).unwrap();
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
@@ -1324,6 +1325,129 @@ fn owner_limit_curve(spatial: bool) -> SketchCurveIdentity {
                 Vector3::new(1.0, 0.0, 0.0),
             ).unwrap()
         }),
+    }
+}
+
+fn owner_limit_placement() -> DesignSketchPlacement {
+    DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0, crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        ).unwrap(),
+        id: "f3d:BulkStream.dat:placement#0".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned()).unwrap(),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap(),
+    }
+}
+
+#[test]
+fn sketch_placement_indices_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let placement = owner_limit_placement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        project_sketch_design(Some(&ctx), std::slice::from_ref(&placement), &[], &[], &[], &[], 1.0e-6),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d planar sketch placement index"
+    ));
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        project_spatial_sketch_design(Some(&ctx), &[placement], &[], &[], &[], &[], 1.0e-6),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial sketch placement index"
+    ));
+}
+
+#[test]
+fn spatial_sketch_curve_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let curve = owner_limit_curve(false);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        project_spatial_sketch_design(Some(&ctx), &[], &[], &[curve], &[], &[], 1.0e-6),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial sketch curve index"
+    ));
+}
+
+#[test]
+fn spline_segment_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut segments = std::collections::HashMap::new();
+    assert!(matches!(
+        super::record_spline_segment(Some(&ctx), &mut segments, "Design", 10, points),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial sketch spline segment index"
+    ));
+    assert!(segments.is_empty());
+    let mut segments = std::collections::HashMap::new();
+    super::record_spline_segment(None, &mut segments, "Design", 10, points).unwrap();
+    super::record_spline_segment(None, &mut segments, "Design", 10, points).unwrap();
+    assert_eq!(segments.get(&("Design", 10)), Some(&Some(points)));
+    super::record_spline_segment(
+        None, &mut segments, "Design", 10,
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+    ).unwrap();
+    assert_eq!(segments.get(&("Design", 10)), Some(&None));
+}
+
+#[test]
+fn spatial_constraint_indices_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let placement = owner_limit_placement();
+    let curve = owner_limit_curve(false);
+    let sketch = crate::ids::neutral_spatial_sketch_id(&placement);
+    let entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
+        crate::ids::neutral_spatial_sketch_record_id(&sketch, curve.record_index),
+        sketch,
+        cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+            cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        ).unwrap(),
+    ).with_native_ref(Some(curve.id.clone()));
+    for (limit, placements, entities, operation) in [
+        (0, std::slice::from_ref(&placement), std::slice::from_ref(&entity),
+            "f3d spatial constraint sketch index"),
+        (0, &[][..], &[][..], "f3d spatial constraint native record index"),
+        (1, &[][..], std::slice::from_ref(&entity),
+            "f3d spatial constraint entity index"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            project_spatial_sketch_constraints(
+                Some(&ctx), placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
+            ),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "operation {operation}");
     }
 }
 
