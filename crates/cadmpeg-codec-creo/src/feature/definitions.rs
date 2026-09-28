@@ -5375,39 +5375,45 @@ fn positional_relation_triples(
 }
 
 fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
-    let mut values = Vec::with_capacity(12);
+    let mut values = [None; 14];
+    let mut filled = 0;
     let mut cursor = 0;
-    while cursor < bytes.len() && values.len() < 12 {
+    while cursor < bytes.len() && filled < 12 {
         match bytes[cursor] {
             0xe4 => {
-                values.push(Some(1));
+                values[filled] = Some(1);
+                filled += 1;
                 cursor += 1;
             }
             0xe5 => {
-                values.extend([Some(0); 2]);
+                values[filled..filled + 2].fill(Some(0));
+                filled += 2;
                 cursor += 1;
             }
             0xe6 => {
-                values.extend([Some(0); 3]);
+                values[filled..filled + 3].fill(Some(0));
+                filled += 3;
                 cursor += 1;
             }
             0xf6 => {
-                values.push(None);
+                filled += 1;
                 cursor += 1;
             }
             _ => {
                 let value = next_solver_int(bytes, &mut cursor)?;
-                values.push(Some(value));
+                values[filled] = Some(value);
+                filled += 1;
             }
         }
     }
-    if cursor != bytes.len() {
+    if cursor != bytes.len() || filled != 12 {
         return None;
     }
-    let ([first, second, third], []) = values.as_chunks::<4>() else {
-        return None;
-    };
-    Some([*first, *second, *third])
+    Some([
+        [values[0], values[1], values[2], values[3]],
+        [values[4], values[5], values[6], values[7]],
+        [values[8], values[9], values[10], values[11]],
+    ])
 }
 
 fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
@@ -5769,15 +5775,17 @@ fn saved_line_block(
             continue;
         }
         cursor = next + 1;
-        let mut values = Vec::with_capacity(6);
-        while cursor < segment_end && values.len() < 6 {
+        let mut values = [None; 8];
+        let mut filled = 0;
+        while cursor < segment_end && filled < 6 {
             if payload.get(cursor) == Some(&0xe3)
                 || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             {
                 break;
             }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
+                filled += 3;
                 cursor += 2;
                 continue;
             }
@@ -5818,7 +5826,8 @@ fn saved_line_block(
             if next <= cursor {
                 break;
             }
-            values.push(value);
+            values[filled] = value;
+            filled += 1;
             cursor = next;
         }
         loop {
@@ -5862,7 +5871,6 @@ fn saved_line_block(
         if row_separator {
             cursor += 1;
         }
-        values.resize(6, None);
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
