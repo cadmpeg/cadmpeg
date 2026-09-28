@@ -3424,18 +3424,20 @@ impl EndpointIndex {
         for &index in profile_entities {
             ctx.charge_work(1, "FCStd profile endpoint extraction")?;
             if let Some((start, end)) = endpoints(&entities[index]) {
-                ctx.charge_collection_items(2, "FCStd profile endpoint index")?;
                 for (at_start, point) in [(true, start), (false, end)] {
-                    by_scale
-                        .entry(endpoint_scale_bucket(point))
-                        .or_default()
-                        .push(IndexedEndpoint {
-                            locus: EndpointLocus {
-                                entity: index,
-                                start: at_start,
-                            },
-                            point,
-                        });
+                    let scale = endpoint_scale_bucket(point);
+                    let bucket = match by_scale.entry(scale) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            ctx.charge_collection_items(1, "FCStd profile endpoint buckets")?;
+                            entry.insert(Vec::new())
+                        }
+                    };
+                    reserve_vec_items(ctx, bucket, 1, "FCStd profile endpoint index")?;
+                    bucket.push(IndexedEndpoint {
+                        locus: EndpointLocus { entity: index, start: at_start },
+                        point,
+                    });
                 }
             }
         }
@@ -7261,6 +7263,23 @@ mod profile_tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
         ));
+    }
+
+    #[test]
+    fn profile_endpoint_buckets_refuse_at_matching_collection_limits() {
+        let entities = [entity(
+            "test:test:entity#bucket",
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            }).expect("line geometry"),
+        )];
+        let profile_entities = std::collections::BTreeSet::from([0]);
+        for operation in ["FCStd profile endpoint buckets", "FCStd profile endpoint index"] {
+            crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+                super::EndpointIndex::new(ctx, &profile_entities, &entities)
+            });
+        }
     }
 
     #[test]
