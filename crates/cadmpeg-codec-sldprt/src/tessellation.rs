@@ -438,7 +438,7 @@ fn probe_table(
         if end > bytes.len() {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "decode display-list channels")?;
+        ctx.reserve_collection_vec(&mut channels, 1, "decode display-list channels")?;
         let Ok(channel) = TessellationChannel::new(
             cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
             item_size as u32,
@@ -450,16 +450,15 @@ fn probe_table(
         };
         channels.push(channel);
         if index == 0 && item_size == 4 && kind == 8 {
-            ctx.charge_collection_items(count as u64, "decode display-list strips")?;
-            let Some(parsed) = (0..count)
-                .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
-                .collect::<Option<Vec<_>>>()
-            else {
-                return Ok(None);
-            };
-            strips = parsed;
+            ctx.reserve_collection_vec(&mut strips, count, "decode display-list strips")?;
+            for i in 0..count {
+                let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
+                    return Ok(None);
+                };
+                strips.push(length as usize);
+            }
         } else if index == 1 && item_size == 12 && kind == 100 {
-            ctx.charge_collection_items(count as u64, "decode display-list vertices")?;
+            ctx.reserve_collection_vec(&mut vertices, count, "decode display-list vertices")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -473,7 +472,7 @@ fn probe_table(
                 vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
         } else if index == 2 && item_size == 12 && kind == 100 {
-            ctx.charge_collection_items(count as u64, "decode display-list normals")?;
+            ctx.reserve_collection_vec(&mut normals, count, "decode display-list normals")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -540,8 +539,9 @@ fn parse_table(
     else {
         return Ok(None);
     };
-    ctx.charge_collection_items(strips.len() as u64, "pair display-list strip spans")?;
-    let spans: Vec<u32> = strips.into_iter().map(|length| length as u32).collect();
+    let mut spans = Vec::new();
+    ctx.reserve_collection_vec(&mut spans, strips.len(), "pair display-list strip spans")?;
+    spans.extend(strips.into_iter().map(|length| length as u32));
     if normals.len() == vertices.len() {
         ctx.charge_collection_items(vertices.len() as u64, "pair display-list shaded vertices")?;
         ctx.charge_collection_items(
@@ -625,7 +625,7 @@ pub(crate) fn section_display_faces(
             else {
                 continue;
             };
-            ctx.charge_collection_items(1, "collect display-list faces")?;
+            ctx.reserve_collection_vec(&mut faces, 1, "collect display-list faces")?;
             faces.push(DisplayFace {
                 mesh,
                 table,
@@ -685,8 +685,9 @@ fn parse_table_sequence(
     if mesh.vertex_count() == 0 {
         return Ok(None);
     }
-    ctx.charge_collection_items(1, "collect display-list tables")?;
-    let mut meshes = vec![(first_start, at, mesh)];
+    let mut meshes = Vec::new();
+    ctx.reserve_collection_vec(&mut meshes, 1, "collect display-list tables")?;
+    meshes.push((first_start, at, mesh));
     while at + 16 <= limit {
         let Some(relative) = payload[at..limit]
             .windows(4)
@@ -698,7 +699,7 @@ fn parse_table_sequence(
         let start = at;
         if let Some((next, end)) = parse_table(ctx, payload, at)? {
             if end <= limit && next.vertex_count() > 0 {
-                ctx.charge_collection_items(1, "collect display-list tables")?;
+                ctx.reserve_collection_vec(&mut meshes, 1, "collect display-list tables")?;
                 meshes.push((start, end, next));
                 at = end;
             } else {
@@ -738,22 +739,37 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        ctx.charge_collection_items(count as u64, "decode display-list reference units")?;
-        let Some(units) = raw
-            .chunks_exact(2)
-            .enumerate()
-            .map(|(index, _)| View::u16_le_at(raw, index * 2))
-            .collect::<Option<Vec<_>>>()
-        else {
+        let mut units = Vec::new();
+        ctx.reserve_collection_vec(&mut units, count, "decode display-list reference units")?;
+        for (index, _) in raw.chunks_exact(2).enumerate() {
+            let Some(unit) = View::u16_le_at(raw, index * 2) else {
+                break;
+            };
+            units.push(unit);
+        }
+        if units.len() != count {
             at = end;
             continue;
-        };
+        }
         let _text_reservation =
             ctx.reserve_scoped((count * 3) as u64, "decode display-list reference text")?;
-        let Ok(text) = String::from_utf16(&units) else {
+        let mut text = String::new();
+        text.try_reserve(count * 3).map_err(|_| {
+            ctx.refuse_codec_limit("decode display-list reference text", u64::MAX - 1, u64::MAX)
+        })?;
+        let mut malformed_text = false;
+        for character in std::char::decode_utf16(units.into_iter()) {
+            if let Ok(character) = character {
+                text.push(character);
+            } else {
+                malformed_text = true;
+                break;
+            }
+        }
+        if malformed_text {
             at = end;
             continue;
-        };
+        }
         let mut fields = text.trim().split(',');
         let Some(_class_name) = fields
             .next()
@@ -777,7 +793,7 @@ fn persistent_surface_references(
         };
         let mut trailing_fields = Vec::new();
         for field in fields {
-            ctx.charge_collection_items(1, "scan display-list reference fields")?;
+            ctx.reserve_collection_vec(&mut trailing_fields, 1, "scan display-list reference fields")?;
             trailing_fields.push(field);
         }
         if trailing_fields
@@ -792,12 +808,12 @@ fn persistent_surface_references(
                 numeric_fields = None;
                 break;
             };
-            ctx.charge_collection_items(1, "decode display-list reference fields")?;
             if let Some(values) = &mut numeric_fields {
+                ctx.reserve_collection_vec(values, 1, "decode display-list reference fields")?;
                 values.push(u32::from_ne_bytes(value.to_ne_bytes()));
             }
         }
-        ctx.charge_collection_items(1, "collect display-list references")?;
+        ctx.reserve_collection_vec(&mut references, 1, "collect display-list references")?;
         references.push(match numeric_fields {
             Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
                 feature_source_id,
