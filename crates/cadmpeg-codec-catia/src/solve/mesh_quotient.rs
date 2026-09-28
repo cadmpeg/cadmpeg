@@ -5767,77 +5767,89 @@ fn deduplicate_mesh_quotient_assignments(
 }
 
 pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     budget: Option<&WorkBudget<'_>>,
     candidates: impl Fn(usize) -> Option<MeshEndpointCandidates<'a>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
 
     fn endpoint_adjacency(
+        ctx: &DecodeContext<'_>,
         candidates: impl IntoIterator<Item = [usize; 2]>,
         allowed: impl Fn([usize; 2]) -> bool,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Option<HashMap<usize, Vec<usize>>> {
+    ) -> Result<Option<HashMap<usize, Vec<usize>>>, CodecError> {
         let mut adjacency = HashMap::<usize, Vec<usize>>::new();
         let mut count = 0usize;
         for pair @ [left, right] in candidates {
             if budget.is_some_and(|budget| !budget.charge()) {
-                return None;
+                return Ok(None);
             }
-            count = count.checked_add(1)?;
+            let Some(next_count) = count.checked_add(1) else { return Ok(None) };
+            count = next_count;
             if count > MAX_LOCAL_ENDPOINT_STATES {
-                return None;
+                return Ok(None);
             }
             if !allowed(pair) {
                 continue;
             }
-            adjacency.entry(left).or_default().push(right);
+            crate::resource::admit_map_entry(ctx, &mut adjacency, &left, "catia_endpoint_viability_adjacency")?;
+            crate::resource::push(ctx, adjacency.entry(left).or_default(), right,
+                "catia_endpoint_viability_neighbors")?;
             if right != left {
-                adjacency.entry(right).or_default().push(left);
+                crate::resource::admit_map_entry(ctx, &mut adjacency, &right, "catia_endpoint_viability_adjacency")?;
+                crate::resource::push(ctx, adjacency.entry(right).or_default(), left,
+                    "catia_endpoint_viability_neighbors")?;
             }
         }
         for neighbors in adjacency.values_mut() {
             neighbors.sort_unstable();
             neighbors.dedup();
         }
-        (!adjacency.is_empty()).then_some(adjacency)
+        Ok((!adjacency.is_empty()).then_some(adjacency))
     }
 
     for boundary in &assignment.boundaries {
         if boundary.is_empty() {
-            return Some(false);
+            return Ok(Some(false));
         }
         let mut prepared = HashMap::<usize, HashMap<usize, Vec<usize>>>::new();
         for use_ in boundary {
             if prepared.contains_key(&use_.edge) {
                 continue;
             }
-            let adjacency = match candidates(use_.edge)? {
+            let Some(candidate) = candidates(use_.edge) else { return Ok(None) };
+            let adjacency = match candidate {
                 MeshEndpointCandidates::Explicit(values) => endpoint_adjacency(
+                    ctx,
                     values.iter().copied(),
                     |pair| allowed(use_.edge, pair),
                     budget,
                 ),
                 MeshEndpointCandidates::Implicit(values) => {
-                    endpoint_adjacency(values, |pair| allowed(use_.edge, pair), budget)
+                    endpoint_adjacency(ctx, values, |pair| allowed(use_.edge, pair), budget)
                 }
                 MeshEndpointCandidates::Selected(value) => {
-                    endpoint_adjacency([value], |pair| allowed(use_.edge, pair), budget)
+                    endpoint_adjacency(ctx, [value], |pair| allowed(use_.edge, pair), budget)
                 }
-            };
-            prepared.insert(use_.edge, adjacency?);
+            }?;
+            let Some(adjacency) = adjacency else { return Ok(None) };
+            crate::resource::insert_map(ctx, &mut prepared, use_.edge, adjacency,
+                "catia_endpoint_viability_prepared")?;
         }
         let mut states = HashSet::new();
         for (&left, neighbors) in &prepared[&boundary[0].edge] {
             for &right in neighbors {
                 if budget.is_some_and(|budget| !budget.charge()) {
-                    return None;
+                    return Ok(None);
                 }
-                states.insert((left, right));
+                crate::resource::insert_set(ctx, &mut states, (left, right),
+                    "catia_endpoint_viability_states")?;
             }
             if states.len() > MAX_LOCAL_ENDPOINT_STATES {
-                return None;
+                return Ok(None);
             }
         }
         for use_ in &boundary[1..] {
@@ -5845,33 +5857,36 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable_by<'a>(
             for &(start, current) in &states {
                 for &next_point in prepared[&use_.edge].get(&current).into_iter().flatten() {
                     if budget.is_some_and(|budget| !budget.charge()) {
-                        return None;
+                        return Ok(None);
                     }
-                    next.insert((start, next_point));
+                    crate::resource::insert_set(ctx, &mut next, (start, next_point),
+                        "catia_endpoint_viability_next_states")?;
                     if next.len() > MAX_LOCAL_ENDPOINT_STATES {
-                        return None;
+                        return Ok(None);
                     }
                 }
             }
             states = next;
             if states.is_empty() {
-                return Some(false);
+                return Ok(Some(false));
             }
         }
         if !states.into_iter().any(|(start, current)| start == current) {
-            return Some(false);
+            return Ok(Some(false));
         }
     }
-    Some(true)
+    Ok(Some(true))
 }
 
 pub(super) fn mesh_assignment_endpoint_cycles_viable_where(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     budget: Option<&WorkBudget<'_>>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     mesh_assignment_endpoint_cycles_viable_by(
+        ctx,
         assignment,
         budget,
         |edge| {
@@ -6239,12 +6254,14 @@ pub(super) fn mesh_assignment_endpoint_cycle_support_by<'a>(
 }
 
 fn mesh_assignment_endpoint_cycles_viable_with(
+    ctx: &DecodeContext<'_>,
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     required: Option<(usize, [usize; 2])>,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     mesh_assignment_endpoint_cycles_viable_where(
+        ctx,
         assignment,
         edge_candidates,
         budget,
@@ -6261,8 +6278,11 @@ pub(super) fn mesh_assignment_endpoint_cycles_viable(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> bool {
-    mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None, None)
-        .unwrap_or(true)
+    crate::test_support::with_service_context(|ctx| {
+        mesh_assignment_endpoint_cycles_viable_with(ctx, assignment, edge_candidates, None, None)
+            .expect("service resource budget")
+            .unwrap_or(true)
+    })
 }
 
 pub(super) fn mesh_face_endpoint_configurations(
@@ -9107,15 +9127,20 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
         let mut changed = false;
         for face in assignments.iter_mut() {
             let before = face.len();
+            let mut refusal = None;
             face.retain(|assignment| {
-                mesh_assignment_endpoint_cycles_viable_with(
+                match mesh_assignment_endpoint_cycles_viable_with(
+                    ctx,
                     assignment,
                     edge_candidates,
                     None,
                     Some(&budget),
-                )
-                .unwrap_or(true)
+                ) {
+                    Ok(result) => result.unwrap_or(true),
+                    Err(error) => { refusal = Some(error); true }
+                }
             });
+            if let Some(error) = refusal { return Err(error) }
             if budget.exhausted() {
                 // Pair-support pruning is optional. Every removal made before
                 // exhaustion was proved locally; the independently bounded
@@ -9141,6 +9166,7 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
             }
             let before = edge_candidates[edge].len();
             let snapshot = crate::resource::copy_retained_rows(ctx, edge_candidates, "catia_prune_snapshot_rows", "catia_prune_snapshot_pairs")?;
+            let mut refusal = None;
             edge_candidates[edge].retain(|pair| {
                 incident_faces.iter().all(|face| {
                     assignments[*face].iter().any(|assignment| {
@@ -9150,15 +9176,18 @@ pub(super) fn prune_mesh_endpoint_pair_support_with_limit(
                             .flatten()
                             .any(|use_| use_.edge == edge)
                             && mesh_assignment_endpoint_cycles_viable_with(
+                                ctx,
                                 assignment,
                                 &snapshot,
                                 Some((edge, *pair)),
                                 Some(&budget),
                             )
-                            .unwrap_or(true)
+                            .map(|result| result.unwrap_or(true))
+                            .unwrap_or_else(|error| { refusal = Some(error); true })
                     })
                 })
             });
+            if let Some(error) = refusal { return Err(error) }
             if budget.exhausted() {
                 // Do not turn incomplete propagation into a contradiction.
                 return Ok(true);
@@ -13853,6 +13882,7 @@ fn endpoint_configuration_directions_refuse_before_state_and_prefix_growth() {
 
 #[test]
 fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -13865,6 +13895,7 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
 
     assert_eq!(
         mesh_assignment_endpoint_cycles_viable_by(
+            &ctx,
             &assignment,
             Some(&budget),
             |_| {
@@ -13882,10 +13913,44 @@ fn endpoint_cycle_adjacency_charges_implicit_candidate_enumeration() {
                 ))
             },
             |_, _| true,
-        ),
+        ).expect("service resource budget"),
         None
     );
     assert!(budget.exhausted());
+}
+
+#[test]
+fn endpoint_cycle_viability_refuses_adjacency_and_state_growth() {
+    let assignment = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![
+            MeshBoundaryEdgeCandidate { edge: 0, start: 0, end: 1, reversed: None },
+            MeshBoundaryEdgeCandidate { edge: 1, start: 1, end: 0, reversed: None },
+        ]],
+    };
+    let candidates = [vec![[0, 1]], vec![[1, 0]]];
+    let run = |ctx: &DecodeContext<'_>| {
+        mesh_assignment_endpoint_cycles_viable_where(ctx, &assignment, &candidates, None, |_, _| true)
+    };
+    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(true));
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for cap in 0..=32 {
+        match crate::test_support::with_collection_limit(cap, run) {
+            Err(CodecError::ResourceLimit(limit)) => { operations.insert(limit.operation); }
+            Ok(Some(true)) => { completed = true; break; }
+            _ => panic!("unexpected endpoint viability result"),
+        }
+    }
+    assert!(completed);
+    for operation in [
+        "catia_endpoint_viability_adjacency",
+        "catia_endpoint_viability_neighbors",
+        "catia_endpoint_viability_prepared",
+        "catia_endpoint_viability_states",
+        "catia_endpoint_viability_next_states",
+    ] {
+        assert!(operations.contains(operation), "no refusal at {operation}");
+    }
 }
 
 #[test]

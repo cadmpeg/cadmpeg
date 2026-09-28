@@ -2746,6 +2746,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 let Some(domain) = mesh_assignments.get(face) else {
                     return Ok(false);
                 };
+                let mut refusal = None;
                 let viable = match domain {
                     MeshFaceBoundaryDomain::Ordered(assignments) => self
                         .face_configuration_domains
@@ -2756,6 +2757,7 @@ impl IncidenceComponentSearch<'_, '_> {
                         .unwrap_or_else(|| {
                             assignments.iter().any(|assignment| {
                                 mesh_assignment_endpoint_cycles_viable_by(
+                                    self.ctx,
                                     assignment,
                                     Some(self.boundary_propagation_budget),
                                     |candidate_edge| {
@@ -2799,7 +2801,8 @@ impl IncidenceComponentSearch<'_, '_> {
                                         })
                                     },
                                 )
-                                .unwrap_or(true)
+                                .map(|result| result.unwrap_or(true))
+                                .unwrap_or_else(|error| { refusal = Some(error); true })
                             })
                         }),
                     _ => compact_boundary_domain_viable(
@@ -2809,6 +2812,7 @@ impl IncidenceComponentSearch<'_, '_> {
                         Some((edge, pair)),
                     )?,
                 };
+                if let Some(error) = refusal { return Err(error) }
                 if !viable {
                     return Ok(false);
                 }
@@ -3044,6 +3048,7 @@ impl IncidenceComponentSearch<'_, '_> {
             let Some(domain) = mesh_assignments.get(face) else {
                 return Ok(None);
             };
+            let mut refusal = None;
             let viable = match domain {
                 MeshFaceBoundaryDomain::Ordered(assignments) => self
                     .face_configuration_domains
@@ -3052,6 +3057,7 @@ impl IncidenceComponentSearch<'_, '_> {
                     .unwrap_or_else(|| {
                         assignments.iter().any(|assignment| {
                             mesh_assignment_endpoint_cycles_viable_where(
+                                self.ctx,
                                 assignment,
                                 self.choices,
                                 Some(self.boundary_propagation_budget),
@@ -3060,11 +3066,13 @@ impl IncidenceComponentSearch<'_, '_> {
                                         .is_none_or(|selected| same_unordered_pair(selected, pair))
                                 },
                             )
-                            .unwrap_or(true)
+                            .map(|result| result.unwrap_or(true))
+                            .unwrap_or_else(|error| { refusal = Some(error); true })
                         })
                     }),
                 _ => compact_boundary_domain_viable(self.ctx, domain, &self.assignment, None)?,
             };
+            if let Some(error) = refusal { return Err(error) }
             if !viable {
                 return Ok(None);
             }
@@ -4054,10 +4062,12 @@ fn component_incidence_faces_viable(
         let Some(domain) = domains.and_then(|domains| domains.get(face)) else {
             continue;
         };
+        let mut refusal = None;
         let viable = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
                 assignments.iter().any(|boundary_assignment| {
                     mesh_assignment_endpoint_cycles_viable_where(
+                        ctx,
                         boundary_assignment,
                         choices,
                         None,
@@ -4066,7 +4076,8 @@ fn component_incidence_faces_viable(
                                 .is_none_or(|selected| same_unordered_pair(selected, pair))
                         },
                     )
-                    .unwrap_or(true)
+                    .map(|result| result.unwrap_or(true))
+                    .unwrap_or_else(|error| { refusal = Some(error); true })
                 })
             }
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
@@ -4076,6 +4087,7 @@ fn component_incidence_faces_viable(
                 deferred_boundary_closes(ctx, domain, &points)?
             }
         };
+        if let Some(error) = refusal { return Err(error) }
         if !viable {
             return Ok(false);
         }

@@ -1014,6 +1014,7 @@ fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
 
 #[test]
 fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
+    catia_test_context!(ctx);
     let dense = (0..10)
         .flat_map(|left| ((left + 1)..10).map(move |right| [left, right]))
         .collect::<Vec<_>>();
@@ -1035,11 +1036,12 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
 
     assert_eq!(
         crate::solve::mesh_quotient::mesh_assignment_endpoint_cycles_viable_where(
+            &ctx,
             &assignment,
             &candidates,
             Some(&budget),
             |_, _| true,
-        ),
+        ).expect("service resource budget"),
         Some(true),
     );
     assert!(!budget.exhausted());
