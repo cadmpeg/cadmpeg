@@ -71,6 +71,11 @@ fn copy_attribute_target(ctx: &DecodeContext<'_>, target: &AttributeTarget) -> R
     })
 }
 
+pub(crate) fn copy_body_id(ctx: &DecodeContext<'_>, body: &BodyId) -> Result<BodyId, CodecError> {
+    BodyId::mint(copy_brep_text(ctx, body.as_str(), "copy F3D BREP body ID" )?)
+        .map_err(CodecError::malformed)
+}
+
 struct BrepFormatLength(usize);
 
 impl std::fmt::Write for BrepFormatLength {
@@ -148,24 +153,26 @@ impl Brep {
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(&self) -> HashMap<BodyId, u64> {
+    pub(crate) fn body_selectors(&self, ctx: &DecodeContext<'_>) -> Result<HashMap<BodyId, u64>, CodecError> {
         let ordinal_mode = self
             .asm
             .body_native_keys
             .iter()
             .all(|body| body.asm_body_key.is_none());
-        self.asm
-            .body_native_keys
-            .iter()
-            .filter_map(|body| {
+        let mut selectors = HashMap::new();
+        for body in &self.asm.body_native_keys {
                 let selector = if ordinal_mode {
                     Some(u64::from(body.body_ordinal))
                 } else {
                     body.asm_body_key
-                }?;
-                Some((body.body.clone(), selector))
-            })
-            .collect()
+                };
+                let Some(selector) = selector else { continue; };
+                let id = copy_body_id(ctx, &body.body)?;
+                ctx.charge_collection_items(1, "index F3D BREP body selectors")?;
+                selectors.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D BREP body selectors", 0, 1))?;
+                selectors.insert(id, selector);
+        }
+        Ok(selectors)
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
@@ -173,15 +180,18 @@ impl Brep {
     /// selects the body with the same zero-based ordinal.
     pub(crate) fn body_selectors_for(
         &self,
+        ctx: &DecodeContext<'_>,
         selectors: &HashSet<u64>,
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
-        let body_keys = self.asm.body_native_keys.iter().collect::<Vec<_>>();
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) = resolve_body_selector(&body_keys, *selector)? else {
+            let Some(body) = resolve_body_selector(self.asm.body_native_keys.iter(), *selector)? else {
                 continue;
             };
-            if let Some(previous) = resolved.insert(body.clone(), *selector) {
+            let id = copy_body_id(ctx, body)?;
+            ctx.charge_collection_items(1, "index F3D selected BREP bodies")?;
+            resolved.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D selected BREP bodies", 0, 1))?;
+            if let Some(previous) = resolved.insert(id, *selector) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
                     body.as_str()
@@ -195,6 +205,7 @@ impl Brep {
     /// for one BREP blob.
     pub(crate) fn retain_body_keys(
         &mut self,
+        ctx: &DecodeContext<'_>,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
@@ -214,7 +225,7 @@ impl Brep {
             .map(|native| native.body.as_str())
             .collect::<HashSet<_>>();
         let mut roots = self
-            .body_selectors_for(selected_keys)?
+            .body_selectors_for(ctx, selected_keys)?
             .into_keys()
             .map(cadmpeg_ir::ids::BodyId::into_string)
             .collect::<HashSet<_>>();
@@ -393,38 +404,25 @@ pub(crate) fn decode_history_topology(
 
 /// Resolve one Design body selector within one BREP blob. Exact native keys
 /// take precedence; an absent key falls back to the zero-based body ordinal.
-pub(crate) fn resolve_body_selector(
-    body_keys: &[&BodyNativeKey],
+pub(crate) fn resolve_body_selector<'a>(
+    body_keys: impl Iterator<Item = &'a BodyNativeKey> + Clone,
     selector: u64,
-) -> Result<Option<BodyId>, cadmpeg_core::CodecError> {
-    let direct = body_keys
-        .iter()
-        .filter(|body| body.asm_body_key == Some(selector))
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match direct.as_slice() {
-        [body] => return Ok(Some(body.clone())),
-        [] => {}
-        _ => {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "F3D body selector {selector} matches multiple native body keys"
-            )));
+) -> Result<Option<&'a BodyId>, cadmpeg_core::CodecError> {
+    let mut direct = body_keys.clone().filter(|body| body.asm_body_key == Some(selector));
+    if let Some(body) = direct.next() {
+        if direct.next().is_some() {
+            return Err(cadmpeg_core::CodecError::malformed(format_args!("F3D body selector {selector} matches multiple native body keys")));
         }
+        return Ok(Some(&body.body));
     }
     let Some(ordinal) = u32::try_from(selector).ok() else {
         return Ok(None);
     };
-    let ordinal = body_keys
-        .iter()
-        .filter(|body| body.body_ordinal == ordinal)
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match ordinal.as_slice() {
-        [body] => Ok(Some(body.clone())),
-        [] => Ok(None),
-        _ => Err(cadmpeg_core::CodecError::malformed(format_args!(
-            "F3D body selector {selector} matches multiple body ordinals"
-        ))),
+    let mut matches = body_keys.filter(|body| body.body_ordinal == ordinal);
+    match matches.next() {
+        Some(body) if matches.next().is_none() => Ok(Some(&body.body)),
+        None => Ok(None),
+        _ => Err(cadmpeg_core::CodecError::malformed(format_args!("F3D body selector {selector} matches multiple body ordinals"))),
     }
 }
 
@@ -1010,7 +1008,7 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.retain_body_keys(&HashSet::from([20]))
+        with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([20])))
             .expect("retain body graph");
 
         assert_eq!(brep.asm.bodies.len(), 1);
@@ -1133,7 +1131,7 @@ mod tests {
             ],
         };
 
-        brep.retain_body_keys(&HashSet::from([10]))
+        with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([10])))
             .expect("retain body graph");
 
         assert_eq!(brep.sketch_curve_links.len(), 1);
@@ -1186,7 +1184,7 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.retain_body_keys(&HashSet::from([10]))
+        with_context(|ctx| brep.retain_body_keys(ctx, &HashSet::from([10])))
             .expect("retain body graph");
 
         assert_eq!(brep.asm.bodies.len(), 2);
@@ -1213,20 +1211,62 @@ mod tests {
             ..Brep::default()
         };
 
-        assert_eq!(brep.body_selectors().len(), 2);
+        assert_eq!(with_context(|ctx| brep.body_selectors(ctx).unwrap()).len(), 2);
         assert_eq!(
-            brep.body_selectors()[&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
+            with_context(|ctx| brep.body_selectors(ctx).unwrap())[&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
             1
         );
 
         brep.asm.body_native_keys[1].asm_body_key = Some(7);
         assert_eq!(
-            brep.body_selectors(),
+            with_context(|ctx| brep.body_selectors(ctx).unwrap()),
             HashMap::from([(
                 BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
                 7
             )])
         );
+    }
+
+    #[test]
+    fn body_selector_id_copy_refuses_retained_limit() {
+        let brep = Brep {
+            asm: AsmBrep {
+                body_native_keys: vec![BodyNativeKey {
+                    source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                    body: BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    record_index: 1,
+                    body_ordinal: 0,
+                    source_brep: None,
+                    asm_body_key: Some(7),
+                }],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        };
+        let error = with_limits(u64::MAX, 0, |ctx| brep.body_selectors(ctx).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D BREP body ID"));
+    }
+
+    #[test]
+    fn body_selector_index_refuses_collection_limit() {
+        let brep = Brep {
+            asm: AsmBrep {
+                body_native_keys: vec![BodyNativeKey {
+                    source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                    body: BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    record_index: 1,
+                    body_ordinal: 0,
+                    source_brep: None,
+                    asm_body_key: Some(7),
+                }],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| brep.body_selectors(ctx).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D BREP body selectors"));
     }
 
     #[test]
@@ -1250,7 +1290,7 @@ mod tests {
         };
 
         assert_eq!(
-            brep.body_selectors_for(&HashSet::from([0])).unwrap(),
+            with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
             HashMap::from([(
                 BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
                 0
@@ -1259,11 +1299,34 @@ mod tests {
 
         brep.asm.body_native_keys = vec![native_key(0, 436)];
         assert_eq!(
-            brep.body_selectors_for(&HashSet::from([0])).unwrap(),
+            with_context(|ctx| brep.body_selectors_for(ctx, &HashSet::from([0])).unwrap()),
             HashMap::from([(
                 BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
                 0
             )])
         );
+    }
+
+    #[test]
+    fn selected_body_index_refuses_collection_limit() {
+        let brep = Brep {
+            asm: AsmBrep {
+                body_native_keys: vec![BodyNativeKey {
+                    source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+                    body: BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    record_index: 1,
+                    body_ordinal: 0,
+                    source_brep: None,
+                    asm_body_key: Some(7),
+                }],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| {
+            brep.body_selectors_for(ctx, &HashSet::from([7])).unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D selected BREP bodies"));
     }
 }

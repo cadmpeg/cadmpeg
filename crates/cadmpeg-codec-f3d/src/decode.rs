@@ -3216,11 +3216,11 @@ fn decode_scanned_document<'a>(
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
             if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(keys)?;
+                part.retain_body_keys(ctx, keys)?;
             }
             let mut body_selectors = match selected_body_keys.get(blob_name) {
-                Some(keys) => part.body_selectors_for(keys)?,
-                None => part.body_selectors(),
+                Some(keys) => part.body_selectors_for(ctx, keys)?,
+                None => part.body_selectors(ctx)?,
             };
             for body in &mut part.asm.bodies {
                 if let Some(visibility) = body_selectors.get(&body.id).and_then(|selector| {
@@ -3238,8 +3238,8 @@ fn decode_scanned_document<'a>(
                 })?;
                 part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
                 body_selectors = match selected_body_keys.get(blob_name) {
-                    Some(keys) => part.body_selectors_for(keys)?,
-                    None => part.body_selectors(),
+                    Some(keys) => part.body_selectors_for(ctx, keys)?,
+                    None => part.body_selectors(ctx)?,
                 };
             }
             for body in &part.asm.bodies {
