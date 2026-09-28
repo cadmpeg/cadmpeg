@@ -232,7 +232,10 @@ fn require_text(value: &str, field: impl std::fmt::Display) -> Result<(), CodecE
 /// are application-defined extension data: the codec validates the envelope,
 /// preserves the original ZIP entry byte-for-byte, and performs no semantic
 /// projection without a separately identified field contract.
-fn validate_component_reference_data(scan: &ContainerScan) -> Result<(), CodecError> {
+fn validate_component_reference_data(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<(), CodecError> {
     if !scan
         .entries
         .iter()
@@ -240,11 +243,21 @@ fn validate_component_reference_data(scan: &ContainerScan) -> Result<(), CodecEr
     {
         return Ok(());
     }
-    parse_component_reference_data(scan.entry_bytes(COMPONENT_REFERENCE_ENTRY)?)?;
+    parse_component_reference_data(ctx, scan.entry_bytes(COMPONENT_REFERENCE_ENTRY)?)?;
     Ok(())
 }
 
-fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, CodecError> {
+fn parse_component_reference_data(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<serde_json::Value, CodecError> {
+    crate::json_budget::preflight(
+        ctx,
+        bytes,
+        "preflight F3D component reference JSON",
+        "scan F3D component reference JSON",
+        "parse F3D component reference JSON",
+    )?;
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
         CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
@@ -273,9 +286,11 @@ pub(crate) fn decode_with_scopes(
     // Validate the extension document independently of whether a redirections
     // table is present. Its members are application-defined and retained by
     // source fidelity, so no field-level semantics are guessed here.
-    validate_component_reference_data(scan)?;
-    let Ok(bytes) = scan.entry_bytes(REDIRECTIONS_ENTRY) else {
-        return Ok(None);
+    validate_component_reference_data(ctx, scan)?;
+    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => bytes,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
     let mut table = parse(ctx, bytes)?;
     bind_occurrences(ctx, scan, &mut table, scopes)?;
@@ -293,11 +308,16 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
-    let parsed: RedirectionsJson = serde_json::from_slice(bytes).map_err(|error| {
-        CodecError::malformed(format_args!(
-            "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
-        ))
-    })?;
+    let parsed = {
+        let length = u64::try_from(bytes.len())
+            .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
+        let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
+        serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
+            ))
+        })?
+    };
     if parsed.name != "RedirectionsStream" {
         return Err(redirections_error(format_args!(
             "name must be RedirectionsStream"
