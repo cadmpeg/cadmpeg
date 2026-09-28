@@ -43,6 +43,26 @@ fn decode_payload(data: &[u8]) -> Option<super::ObjectPayload> {
 }
 
 #[test]
+fn native_payload_copy_refuses_nested_retained_and_collection_limits() {
+    use cadmpeg_core::CodecError;
+    use super::{ObjectPayload, PayloadField};
+
+    let payload = ObjectPayload {
+        size: 2,
+        fields: vec![PayloadField::Blob { bytes: vec![0xa5, 0x5a], offset: 0 }],
+    };
+    let retained = crate::test_support::with_retained_limit(1, |ctx| payload.copy_charged(ctx));
+    assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_payload_blob"));
+    let collection = crate::test_support::with_collection_limit(2, |ctx| payload.copy_charged(ctx));
+    assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_payload_fields"));
+    let copied = crate::test_support::with_service_context(|ctx| payload.copy_charged(ctx))
+        .expect("service profile admits one payload field");
+    assert_eq!(copied, payload);
+}
+
+#[test]
 fn object_graph_head_tokens_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

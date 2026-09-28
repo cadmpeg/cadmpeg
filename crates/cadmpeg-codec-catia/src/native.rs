@@ -4249,62 +4249,62 @@ fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
 fn payload_references(
     payload: &ObjectPayload,
 ) -> impl Iterator<Item = (u32, usize, CatiaObjectRecordReferenceSource)> + '_ {
-    payload.fields.iter().flat_map(|field| match field {
-        PayloadField::Reference { value, offset } => {
-            vec![(*value, *offset, CatiaObjectRecordReferenceSource::Field)]
-        }
-        PayloadField::List {
-            declared_count,
-            items,
-            offset: list_offset,
-        } if usize::try_from(*declared_count).ok() == Some(items.len()) => items
-            .iter()
-            .enumerate()
-            .filter_map(|(item_ordinal, item)| match item {
-                ListItem::Reference { value, offset } => Some((
-                    *value,
-                    *offset,
-                    CatiaObjectRecordReferenceSource::ListItem {
-                        list_payload_offset: *list_offset as u64,
-                        item_ordinal: item_ordinal as u64,
-                    },
-                )),
-                ListItem::Atom { .. } => None,
+    payload.fields.iter().flat_map(|field| {
+        let single = match field {
+            PayloadField::Reference { value, offset } => {
+                Some((*value, *offset, CatiaObjectRecordReferenceSource::Field))
+            }
+            _ => None,
+        };
+        let list = match field {
+            PayloadField::List { declared_count, items, offset }
+                if usize::try_from(*declared_count).ok() == Some(items.len()) =>
+            {
+                Some((items.as_slice(), *offset))
+            }
+            _ => None,
+        };
+        single.into_iter().chain(list.into_iter().flat_map(|(items, list_offset)| {
+            items.iter().enumerate().filter_map(move |(item_ordinal, item)| {
+                match item {
+                    ListItem::Reference { value, offset } => Some((
+                        *value,
+                        *offset,
+                        CatiaObjectRecordReferenceSource::ListItem {
+                            list_payload_offset: list_offset as u64,
+                            item_ordinal: item_ordinal as u64,
+                        },
+                    )),
+                    ListItem::Atom { .. } => None,
+                }
             })
-            .collect(),
-        PayloadField::List { .. } => Vec::new(),
-        PayloadField::Atom { .. }
-        | PayloadField::Scalar { .. }
-        | PayloadField::Blob { .. }
-        | PayloadField::BulkTable { .. }
-        | PayloadField::Sentinel { .. }
-        | PayloadField::Terminator => Vec::new(),
+        }))
     })
 }
 
 fn resolved_payload_references(
+    ctx: &DecodeContext<'_>,
     payload: &ObjectPayload,
-    record_ids: &[String],
-    record_design_objects: &[Option<String>],
+    records: &[CatiaObjectRecord],
     record_indices: &HashMap<u32, usize>,
     terminal_null_entity_id: Option<u32>,
-) -> Vec<CatiaObjectRecordReference> {
-    payload_references(payload)
-        .map(|(entity_id, payload_offset, source)| {
-            let index = record_indices.get(&entity_id).copied();
-            CatiaObjectRecordReference::from_parts(
-                entity_id,
-                payload_offset as u64,
-                source,
-                Some(entity_id) == terminal_null_entity_id,
-                index.and_then(|index| record_ids.get(index)).cloned(),
-                index
-                    .and_then(|index| record_design_objects.get(index))
-                    .cloned()
-                    .flatten(),
-            )
-        })
-        .collect()
+) -> Result<Vec<CatiaObjectRecordReference>, CodecError> {
+    let mut references = Vec::new();
+    for (entity_id, payload_offset, source) in payload_references(payload) {
+        let target = record_indices.get(&entity_id).and_then(|index| records.get(*index));
+        let record = CatiaObjectRecordReference::from_parts(
+            entity_id,
+            payload_offset as u64,
+            source,
+            Some(entity_id) == terminal_null_entity_id,
+            target.map(|record| crate::resource::copy_retained_str(ctx, &record.id, "catia_native_reference_target")).transpose()?,
+            target.and_then(|record| record.design_object.as_deref())
+                .map(|id| crate::resource::copy_retained_str(ctx, id, "catia_native_reference_design_object"))
+                .transpose()?,
+        );
+        crate::resource::push(ctx, &mut references, record, "catia_native_payload_references")?;
+    }
+    Ok(references)
 }
 
 fn terminal_null_entity_id(record_indices: &HashMap<u32, usize>) -> Option<u32> {
@@ -4312,19 +4312,22 @@ fn terminal_null_entity_id(record_indices: &HashMap<u32, usize>) -> Option<u32> 
 }
 
 fn resolved_storage_link(
+    ctx: &DecodeContext<'_>,
     storage_ref: Option<u32>,
-    record_ids: &[String],
-    record_design_objects: &[Option<String>],
+    records: &[CatiaObjectRecord],
     record_indices: &HashMap<u32, usize>,
-) -> (Option<String>, Option<String>) {
+) -> Result<(Option<String>, Option<String>), CodecError> {
     let Some(index) = storage_ref.and_then(|identity| record_indices.get(&identity).copied())
     else {
-        return (None, None);
+        return Ok((None, None));
     };
-    (
-        record_ids.get(index).cloned(),
-        record_design_objects.get(index).cloned().flatten(),
-    )
+    let target = records.get(index);
+    Ok((
+        target.map(|record| crate::resource::copy_retained_str(ctx, &record.id, "catia_native_storage_record")).transpose()?,
+        target.and_then(|record| record.design_object.as_deref())
+            .map(|id| crate::resource::copy_retained_str(ctx, id, "catia_native_storage_design_object"))
+            .transpose()?,
+    ))
 }
 
 fn definition_schema_selections(
@@ -9342,9 +9345,8 @@ impl CatiaNative {
             })
             , "catia_native_entity_runs")?;
         let mut entity_records = Vec::new();
-        let mut object_graphs = parsed_object_graphs
-            .into_iter()
-            .map(|graph| {
+        let mut object_graphs = Vec::new();
+        for graph in parsed_object_graphs {
                 let entities = entity_runs
                     .remove(&(graph.pos, graph.records.len()))
                     .unwrap_or_default();
@@ -9353,7 +9355,8 @@ impl CatiaNative {
                     graph.total_len as u64,
                     &finjpl_segments,
                 )
-                .map(str::to_owned);
+                .map(|id| crate::resource::copy_retained_str(ctx, id, "catia_native_graph_finjpl"))
+                .transpose()?;
                 let outer_container = outer_directory
                     .as_ref()
                     .and_then(|outer| {
@@ -9364,13 +9367,16 @@ impl CatiaNative {
                             graph.total_len as u64,
                         )
                     })
-                    .map(CatiaOuterContainerBinding::from);
+                    .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
+                    .transpose()?;
                 let (graph, mut entities) =
-                    native_object_graph(graph, entities, finjpl_segment, outer_container);
+                    native_object_graph(ctx, graph, entities, finjpl_segment, outer_container)?;
+                crate::resource::reserve_vec(ctx, &mut entity_records, entities.len(),
+                    "catia_native_entity_records")?;
                 entity_records.append(&mut entities);
-                graph
-            })
-            .collect::<Vec<_>>();
+                crate::resource::push(ctx, &mut object_graphs, graph,
+                    "catia_native_object_graphs")?;
+        }
         for graph in &mut object_graphs {
             let catalog = graph.catalog_byte_offset.and_then(|offset| {
                 catalogs
@@ -9553,7 +9559,8 @@ impl CatiaNative {
                         run.byte_len,
                     )
                 })
-                .map(CatiaOuterContainerBinding::from);
+                .map(|container| CatiaOuterContainerBinding::from_source(ctx, container))
+                .transpose()?;
         }
         let consolidated_circles = consolidated_circles(ctx, bytes, consolidated_records)?;
         let consolidated_class61_records =
@@ -9857,33 +9864,36 @@ impl CatiaCatalog {
 }
 
 fn native_object_graph(
+    ctx: &DecodeContext<'_>,
     graph: object_graph::ObjectGraph,
     entity_records: Vec<entity_table::EntityRecord>,
     finjpl_segment: Option<String>,
     outer_container: Option<CatiaOuterContainerBinding>,
-) -> (CatiaObjectGraph, Vec<CatiaEntityRecord>) {
-    let id = format!("catia:outer:object-graph#{:010}", graph.pos);
-    let mut records = graph
-        .records
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, record)| {
+) -> Result<(CatiaObjectGraph, Vec<CatiaEntityRecord>), CodecError> {
+    let id = crate::resource::format_retained(ctx,
+        format_args!("catia:outer:object-graph#{:010}", graph.pos), "catia_native_graph_id")?;
+    let mut records = Vec::new();
+    for (ordinal, record) in graph.records.into_iter().enumerate() {
             let entity = entity_records.get(ordinal);
             let roles = record.roles();
-            CatiaObjectRecord {
-                id: format!("catia:outer:object-record#{:010}", record.pos),
-                parent: id.clone(),
+            let row = CatiaObjectRecord {
+                id: crate::resource::format_retained(ctx,
+                    format_args!("catia:outer:object-record#{:010}", record.pos), "catia_native_record_id")?,
+                parent: crate::resource::copy_retained_str(ctx, &id, "catia_native_record_parent")?,
                 design_object: None,
-                entity: entity.map(|entity| CatiaObjectEntity {
-                    record: format!("catia:outer:entity-record#{:010}", entity.pos),
+                entity: entity.map(|entity| -> Result<CatiaObjectEntity, CodecError> { Ok(CatiaObjectEntity {
+                    record: crate::resource::format_retained(ctx,
+                        format_args!("catia:outer:entity-record#{:010}", entity.pos), "catia_native_record_entity_id")?,
                     id: entity.entity_id,
-                }),
+                }) }).transpose()?,
                 ordinal: ordinal as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
                 lead: record.lead,
-                head: record.head().to_vec(),
-                inline_body: record.inline_body().map(<[u8]>::to_vec),
+                head: crate::resource::copy_retained_slice(ctx, record.head(), "catia_native_record_head")?,
+                inline_body: record.inline_body()
+                    .map(|bytes| crate::resource::copy_retained_slice(ctx, bytes, "catia_native_record_inline_body"))
+                    .transpose()?,
                 owner: roles.owner.map(CatiaObjectOwner::from),
                 class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                     class_ref,
@@ -9895,55 +9905,46 @@ fn native_object_graph(
                     storage_record: None,
                     storage_design_object: None,
                 }),
-                payload: record.payload().clone(),
+                payload: record.payload().copy_charged(ctx)?,
                 repeated_reference_schema_selection: None,
                 references: Vec::new(),
-            }
-        })
-        .collect::<Vec<_>>();
+            };
+            crate::resource::push(ctx, &mut records, row, "catia_native_graph_records")?;
+    }
     for record in &mut records {
         record.design_object = record
             .owner_entity_id()
-            .map(|owner| design_object_id(graph.pos as u64, owner));
+            .map(|owner| crate::resource::format_retained(ctx,
+                format_args!("catia:outer:design-object#{:010}-{owner:010}", graph.pos),
+                "catia_native_record_design_object"))
+            .transpose()?;
     }
-    let record_ids = records
-        .iter()
-        .map(|record| record.id.clone())
-        .collect::<Vec<_>>();
-    let record_design_objects = records
-        .iter()
-        .map(|record| record.design_object.clone())
-        .collect::<Vec<_>>();
-    let record_indices = records
+    let record_indices = crate::resource::collect_map(ctx, records
         .iter()
         .enumerate()
-        .filter_map(|(index, record)| Some((record.entity_id()?, index)))
-        .collect::<HashMap<_, _>>();
+        .filter_map(|(index, record)| Some((record.entity_id()?, index))),
+        "catia_native_graph_record_indices")?;
     let terminal_null_entity_id = terminal_null_entity_id(&record_indices);
-    for record in &mut records {
-        if let Some(storage) = &mut record.storage {
-            let (storage_record, storage_design_object) = resolved_storage_link(
-                Some(storage.storage_ref),
-                &record_ids,
-                &record_design_objects,
+    for index in 0..records.len() {
+        let storage_ref = records[index].storage.as_ref().map(|storage| storage.storage_ref);
+        let (storage_record, storage_design_object) = resolved_storage_link(
+                ctx, storage_ref, &records,
                 &record_indices,
-            );
+            )?;
+        let references = resolved_payload_references(
+            ctx, &records[index].payload, &records, &record_indices,
+            terminal_null_entity_id,
+        )?;
+        let record = &mut records[index];
+        if let Some(storage) = &mut record.storage {
             storage.storage_record = storage_record;
             storage.storage_design_object = storage_design_object;
         }
-        record.references = resolved_payload_references(
-            &record.payload,
-            &record_ids,
-            &record_design_objects,
-            &record_indices,
-            terminal_null_entity_id,
-        );
+        record.references = references;
     }
-    let entities = entity_records
-        .into_iter()
-        .enumerate()
-        .filter_map(|(ordinal, entity)| {
-            let object_record = records.get(ordinal)?;
+    let mut entities = Vec::new();
+    for (ordinal, entity) in entity_records.into_iter().enumerate() {
+            let Some(object_record) = records.get(ordinal) else { continue };
             let reference_signature = entity.reference_signature();
             let body = match entity.body {
                 entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
@@ -9960,10 +9961,11 @@ fn native_object_graph(
                     record_suffix,
                 },
             };
-            Some(CatiaEntityRecord {
-                id: format!("catia:outer:entity-record#{:010}", entity.pos),
-                object_graph: id.clone(),
-                object_record: object_record.id.clone(),
+            let row = CatiaEntityRecord {
+                id: crate::resource::format_retained(ctx,
+                    format_args!("catia:outer:entity-record#{:010}", entity.pos), "catia_native_entity_id")?,
+                object_graph: crate::resource::copy_retained_str(ctx, &id, "catia_native_entity_graph")?,
+                object_record: crate::resource::copy_retained_str(ctx, &object_record.id, "catia_native_entity_object")?,
                 ordinal: ordinal as u64,
                 byte_offset: entity.pos as u64,
                 lead: entity.lead,
@@ -9983,10 +9985,10 @@ fn native_object_graph(
                 }),
                 suffix: None,
                 suffix_schema_selection: None,
-            })
-        })
-        .collect();
-    (
+            };
+            crate::resource::push(ctx, &mut entities, row, "catia_native_graph_entities")?;
+    }
+    Ok((
         CatiaObjectGraph {
             id,
             byte_offset: graph.pos as u64,
@@ -9998,18 +10000,21 @@ fn native_object_graph(
             records,
         },
         entities,
-    )
+    ))
 }
 
-impl From<&container::OuterContainerDeclaration> for CatiaOuterContainerBinding {
-    fn from(declaration: &container::OuterContainerDeclaration) -> Self {
-        Self {
+impl CatiaOuterContainerBinding {
+    fn from_source(ctx: &DecodeContext<'_>, declaration: &container::OuterContainerDeclaration)
+        -> Result<Self, CodecError> {
+        Ok(Self {
             data_offset: declaration.data_offset as u64,
             ordinal: declaration.ordinal,
-            class_name: declaration.class_name.clone(),
-            base_class: declaration.base_class.clone(),
-            stream_name: declaration.stream_name.clone(),
-        }
+            class_name: crate::resource::copy_retained_str(ctx, &declaration.class_name, "catia_native_outer_class")?,
+            base_class: crate::resource::copy_retained_str(ctx, &declaration.base_class,
+                "catia_native_outer_base_class")?,
+            stream_name: crate::resource::copy_retained_str(ctx, &declaration.stream_name,
+                "catia_native_outer_stream_name")?,
+        })
     }
 }
 
