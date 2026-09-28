@@ -139,15 +139,16 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             );
             continue;
         };
-        let boundaries = profile
-            .iter()
-            .enumerate()
-            .map(|(index, segment)| {
-                let next = (index + 1) % profile.len();
-                if vertex_curves[index].is_none() && vertex_curves[next].is_none() {
-                    return None;
-                }
-                [
+        let mut boundary_rows = Vec::new();
+        let mut complete = true;
+        for (index, segment) in profile.iter().enumerate() {
+            let next = (index + 1) % profile.len();
+            if vertex_curves[index].is_none() && vertex_curves[next].is_none() {
+                complete = false;
+                break;
+            }
+            let mut segment_boundaries = Vec::new();
+            for (section_point, present, boundary) in [
                     (
                         segment.start(),
                         vertex_curves[index].is_some(),
@@ -158,29 +159,38 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         vertex_curves[next].is_some(),
                         RevolutionBoundary::End,
                     ),
-                ]
-                .into_iter()
-                .filter(|(_, present, _)| *present)
-                .map(|(section_point, _, boundary)| {
-                    let record = format!(
-                        "revolution feature {feature_id} profile segment {index} boundary {}",
-                        boundary.key()
-                    );
-                    let mut diagnostics =
-                        crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
-                    PrevalidatedRevolutionBoundary::new(
-                        transform,
-                        segment,
-                        &surface_geometries[index],
-                        &axis,
-                        section_point,
-                        boundary,
-                        &mut diagnostics,
-                    )
-                })
-                .collect::<Option<Vec<_>>>()
-            })
-            .collect::<Option<Vec<_>>>();
+            ] {
+                if !present {
+                    continue;
+                }
+                let record = format!(
+                    "revolution feature {feature_id} profile segment {index} boundary {}",
+                    boundary.key()
+                );
+                let mut diagnostics =
+                    crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
+                let Some(row) = PrevalidatedRevolutionBoundary::new(
+                    transform,
+                    segment,
+                    &surface_geometries[index],
+                    &axis,
+                    section_point,
+                    boundary,
+                    &mut diagnostics,
+                ) else {
+                    complete = false;
+                    break;
+                };
+                ctx.try_reserve_items(&mut segment_boundaries, 1, "creo revolution segment boundaries")?;
+                segment_boundaries.push(row);
+            }
+            if !complete {
+                break;
+            }
+            ctx.try_reserve_items(&mut boundary_rows, 1, "creo revolution boundary rows")?;
+            boundary_rows.push(segment_boundaries);
+        }
+        let boundaries = complete.then_some(boundary_rows);
         let Some(boundaries) = boundaries else {
             let records = refusal.take_records();
             losses.push(
@@ -197,12 +207,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             );
             continue;
         };
-        let face_senses = profile
-            .iter()
-            .zip(&surface_geometries)
-            .enumerate()
-            .map(|(index, (segment, surface))| {
-                revolution_face_sense(
+        let mut face_senses = Vec::new();
+        let mut complete = true;
+        for (index, (segment, surface)) in profile.iter().zip(&surface_geometries).enumerate() {
+            let Some(sense) = revolution_face_sense(
                     transform,
                     segment,
                     surface,
@@ -210,9 +218,14 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     area.get(),
                     &format!("revolution feature {feature_id} profile segment {index} face sense"),
                     &mut refusal,
-                )
-            })
-            .collect::<Option<Vec<_>>>();
+                ) else {
+                    complete = false;
+                    break;
+                };
+            ctx.try_reserve_items(&mut face_senses, 1, "creo revolution face senses")?;
+            face_senses.push(sense);
+        }
+        let face_senses = complete.then_some(face_senses);
         let Some(face_senses) = face_senses else {
             let records = refusal.take_records();
             losses.push(
@@ -385,14 +398,25 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     transform.offset,
                     pcurve_geometry,
                 )?;
+                let mut ring_coedges = Vec::new();
+                ctx.try_reserve_items(&mut ring_coedges, 1, "creo revolution ring coedges")?;
+                ring_coedges.push(coedge_id.clone());
                 ctx.charge_entities(1, "admit Creo model loops")?;
+                ctx.try_reserve_items(&mut ir.model.loops, 1, "creo model revolution loops")?;
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                        cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new())
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                });
+                let mut pcurve_uses = Vec::new();
+                ctx.try_reserve_items(&mut pcurve_uses, 1, "creo revolution coedge pcurves")?;
+                pcurve_uses.push(PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                    parameter_range: None,
                 });
                 ctx.charge_entities(1, "admit Creo model coedges")?;
                 source_carriers.admit_coedge(
@@ -412,14 +436,11 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                                 )
                         ),
                         sense,
-                        pcurves: vec![PcurveUse {
-                            pcurve,
-                            isoparametric: None,
-                            parameter_range: None,
-                        }],
+                        pcurves: pcurve_uses,
                         use_curve: None,
                     },
                 )?;
+                ctx.try_reserve_items(&mut loops, 1, "creo revolution face loop IDs")?;
                 loops.push(loop_id);
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
@@ -437,11 +458,10 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     tolerance: None,
                 },
             )?;
+            ctx.try_reserve_items(&mut faces, 1, "creo revolution shell face IDs")?;
             faces.push(face_id);
         }
-        ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(
-            match Shell::new(
+        let shell = match Shell::new(
                 shell_id.clone(),
                 region_id.clone(),
                 faces,
@@ -452,14 +472,23 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 Err(_) => {
                     continue;
                 }
-            },
-        );
+            };
+        ctx.charge_entities(1, "admit Creo model shells")?;
+        ctx.try_reserve_items(&mut ir.model.shells, 1, "creo model revolution shells")?;
+        ir.model.shells.push(shell);
+        let mut region_shells = Vec::new();
+        ctx.try_reserve_items(&mut region_shells, 1, "creo revolution region shell IDs")?;
+        region_shells.push(shell_id);
         ctx.charge_entities(1, "admit Creo model regions")?;
+        ctx.try_reserve_items(&mut ir.model.regions, 1, "creo model revolution regions")?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
-            shells: vec![shell_id],
+            shells: region_shells,
         });
+        let mut body_regions = Vec::new();
+        ctx.try_reserve_items(&mut body_regions, 1, "creo revolution body region IDs")?;
+        body_regions.push(region_id);
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ctx,
@@ -467,7 +496,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: vec![region_id],
+                regions: body_regions,
                 transform: None,
                 name: None,
                 color: None,
