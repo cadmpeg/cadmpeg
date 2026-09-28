@@ -833,18 +833,22 @@ pub(in crate::families) struct B5LoopMetadataExtension {
 }
 
 impl B5Loop {
-    pub(super) fn edge_senses(&self) -> Vec<bool> {
-        self.members
-            .iter()
-            .map(|member| member.controls[0] == -1)
-            .collect()
+    pub(super) fn edge_senses(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<bool>, CodecError> {
+        crate::resource::collect_vec(ctx,
+            self.members.iter().map(|member| member.controls[0] == -1),
+            "catia_b5_loop_edge_senses")
     }
 
-    pub(super) fn pcurve_senses(&self) -> Vec<bool> {
-        self.members
-            .iter()
-            .map(|member| member.controls[2] == -1)
-            .collect()
+    pub(super) fn pcurve_senses(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<bool>, CodecError> {
+        crate::resource::collect_vec(ctx,
+            self.members.iter().map(|member| member.controls[2] == -1),
+            "catia_b5_loop_pcurve_senses")
     }
 }
 

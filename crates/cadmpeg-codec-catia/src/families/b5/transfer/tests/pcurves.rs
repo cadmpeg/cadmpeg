@@ -1120,7 +1120,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         .expect("service decode")
         .is_some());
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
-    let senses = graph.loops[&3].edge_senses();
+    let senses = graph.loops[&3].edge_senses(&ctx).expect("service budget");
     assert!(
         orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
             .expect("service decode")
