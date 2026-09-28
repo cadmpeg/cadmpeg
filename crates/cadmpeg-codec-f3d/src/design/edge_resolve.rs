@@ -287,31 +287,25 @@ pub(super) fn resolved_edge_flange_group(
     };
     let stream = native_stream(&group.id);
     let mut members = HashSet::new();
-    let candidate_sets = group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .map(|member| {
-            if !members.insert(*member) {
-                return None;
-            }
-            let matching = operands
-                .iter()
-                .filter(|operand| {
+    let mut candidate_sets = Vec::new();
+    for member in group.members() {
+        if !insert_edge_set(ctx, &mut members, member.value,
+            "f3d edge flange member index")? {
+            return Ok(selection);
+        }
+            let mut matching = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
-                        && operand.record_index() == *member
-                })
-                .collect::<Vec<_>>();
-            let [operand] = matching.as_slice() else {
-                return None;
+                        && operand.record_index() == member.value
+                });
+            let Some(operand) = matching.next() else { return Ok(selection); };
+            if matching.next().is_some() { return Ok(selection); }
+            let Some(candidate) = edge_flange_updated_edge_candidate(operand) else {
+                return Ok(selection);
             };
-            edge_flange_updated_edge_candidate(operand)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(candidate_sets) = candidate_sets else {
-        return Ok(selection);
-    };
+            push_edge_item(ctx, &mut candidate_sets, candidate,
+                "f3d edge flange candidate set")?;
+    }
     let Some(edges) = unique_bipartite_assignment(&candidate_sets, ctx)? else {
         return Ok(selection);
     };
@@ -320,20 +314,22 @@ pub(super) fn resolved_edge_flange_group(
     }
     let feature_key = feature_id.key();
     let state = feature_input_topology_id(feature_id, previous_state_id);
-    Ok(EdgeSelection::historical(
-        state,
-        edges
-            .into_iter()
-            .map(|edge_slot| {
-                ids::history_input_edge_id(
-                    &ids::history_input_prefix(&feature_key, previous_state_id),
-                    edge_slot,
-                )
-            })
-            .collect(),
-        group.id.clone(),
-    )
-    .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())))
+    let mut historical_edges = Vec::new();
+    for edge_slot in edges {
+        let id = ids::history_input_edge_id(
+            &ids::history_input_prefix(&feature_key, previous_state_id), edge_slot,
+        );
+        push_edge_item(ctx, &mut historical_edges, id,
+            "f3d edge flange historical edge")?;
+    }
+    let native = copy_edge_text(ctx, &group.id,
+        "f3d edge flange historical group id")?;
+    let historical = EdgeSelection::historical(state, historical_edges, native);
+    Ok(match historical {
+        Ok(selection) => selection,
+        Err(_) => EdgeSelection::Native(copy_edge_text(ctx, &group.id,
+            "f3d edge flange fallback group id")?),
+    })
 }
 
 fn edge_flange_updated_edge_candidate(operand: &DesignEdgeOperand) -> Option<Vec<i64>> {
