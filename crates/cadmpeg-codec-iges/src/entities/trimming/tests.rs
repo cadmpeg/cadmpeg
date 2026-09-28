@@ -150,6 +150,14 @@ fn trimming_model_index_refuses_identity_storage_before_lookup() {
 }
 
 #[test]
+fn support_bound_walk_refuses_surface_identity_and_node() {
+    let bytes = bounded_plane_file();
+    assert_trimming_retained_refusal(&bytes, "iges support-bound visiting surface ID");
+    assert_trimming_collection_refusal(&bytes, "iges support-bound visiting surface nodes");
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn trimming_projection_refuses_retained_boundary_source_text() {
     let bytes = bounded_plane_file();
     for operation in [
