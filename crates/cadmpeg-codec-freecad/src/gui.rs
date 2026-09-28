@@ -1338,7 +1338,7 @@ fn append_native_provider(
                 "ViewProvider {name}.{property_name} has no type"
             ))
         })?;
-        validate_gui_property(property, property_name, type_name)?;
+        validate_gui_property(ctx, property, property_name, type_name)?;
         let value_count = property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
@@ -1408,6 +1408,7 @@ fn append_native_provider(
 }
 
 fn validate_gui_property(
+    ctx: &DecodeContext<'_>,
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
     type_name: &str,
@@ -1427,6 +1428,7 @@ fn validate_gui_property(
         }
         "TechDraw::PropertyGeomFormatList" => {
             return validate_gui_techdraw_list(
+                ctx,
                 property,
                 property_name,
                 "GeomFormatList",
@@ -1436,6 +1438,7 @@ fn validate_gui_property(
         }
         "TechDraw::PropertyCosmeticVertexList" => {
             return validate_gui_techdraw_list(
+                ctx,
                 property,
                 property_name,
                 "CosmeticVertexList",
@@ -1445,6 +1448,7 @@ fn validate_gui_property(
         }
         "TechDraw::PropertyCosmeticEdgeList" => {
             return validate_gui_techdraw_list(
+                ctx,
                 property,
                 property_name,
                 "CosmeticEdgeList",
@@ -1454,6 +1458,7 @@ fn validate_gui_property(
         }
         "TechDraw::PropertyCenterLineList" => {
             return validate_gui_techdraw_list(
+                ctx,
                 property,
                 property_name,
                 "CenterLineList",
@@ -2250,11 +2255,12 @@ fn validate_gui_points_transform(
 }
 
 fn validate_gui_techdraw_list(
+    ctx: &DecodeContext<'_>,
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
     list_tag: &str,
     record_tag: &str,
-    mut validate: impl FnMut(roxmltree::Node<'_, '_>, &str) -> Result<(), CodecError>,
+    mut validate: impl FnMut(&DecodeContext<'_>, roxmltree::Node<'_, '_>, &str) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     let mut roots = property.children().filter(roxmltree::Node::is_element);
     let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
@@ -2291,19 +2297,28 @@ fn validate_gui_techdraw_list(
                 &format!("{list_tag} has an invalid record type"),
             ));
         }
-        validate(record, property_name)?;
+        validate(ctx, record, property_name)?;
     }
     Ok(())
 }
 
+fn gui_record_fields<'a, 'input>(
+    ctx: &DecodeContext<'_>,
+    record: roxmltree::Node<'a, 'input>,
+    operation: &'static str,
+) -> Result<Vec<roxmltree::Node<'a, 'input>>, CodecError> {
+    let count = record.children().filter(roxmltree::Node::is_element).count();
+    let mut fields = collection_vec(ctx, count, operation)?;
+    fields.extend(record.children().filter(roxmltree::Node::is_element));
+    Ok(fields)
+}
+
 fn validate_gui_geom_format_record(
+    ctx: &DecodeContext<'_>,
     record: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let fields = record
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    let fields = gui_record_fields(ctx, record, "FCStd GUI GeomFormat fields")?;
     if !(5..=6).contains(&fields.len()) {
         return Err(gui_techdraw_error(
             property_name,
@@ -2373,13 +2388,11 @@ fn validate_gui_geom_format_record(
 }
 
 fn validate_gui_center_line_record(
+    ctx: &DecodeContext<'_>,
     record: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let fields = record
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    let fields = gui_record_fields(ctx, record, "FCStd GUI CenterLine fields")?;
     let prefix = [
         "Start",
         "End",
@@ -2507,17 +2520,13 @@ fn validate_gui_center_line_string_collection(
         .map_err(|_| {
             gui_techdraw_error(property_name, "CenterLine collection has an invalid count")
         })?;
-    let items = field
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if items.len() != count {
+    if field.children().filter(roxmltree::Node::is_element).count() != count {
         return Err(gui_techdraw_error(
             property_name,
             "CenterLine collection count does not match its records",
         ));
     }
-    for item in items {
+    for item in field.children().filter(roxmltree::Node::is_element) {
         if !item.has_tag_name(item_tag)
             || item.attribute("value").is_none()
             || item.children().any(|node| node.is_element())
@@ -2532,13 +2541,11 @@ fn validate_gui_center_line_string_collection(
 }
 
 fn validate_gui_cosmetic_edge_record(
+    ctx: &DecodeContext<'_>,
     record: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let fields = record
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    let fields = gui_record_fields(ctx, record, "FCStd GUI CosmeticEdge fields")?;
     if fields.len() < 16 {
         return Err(gui_techdraw_error(
             property_name,
@@ -2836,17 +2843,13 @@ fn validate_gui_techdraw_points(
         .ok_or_else(|| gui_techdraw_error(property_name, "TechDraw Points has no count"))?
         .parse::<usize>()
         .map_err(|_| gui_techdraw_error(property_name, "TechDraw Points has an invalid count"))?;
-    let points = field
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if points.len() != count {
+    if field.children().filter(roxmltree::Node::is_element).count() != count {
         return Err(gui_techdraw_error(
             property_name,
             "TechDraw Points count does not match its records",
         ));
     }
-    for point in points {
+    for point in field.children().filter(roxmltree::Node::is_element) {
         if !point.has_tag_name("Point") || point.children().any(|node| node.is_element()) {
             return Err(gui_techdraw_error(
                 property_name,
@@ -2859,13 +2862,11 @@ fn validate_gui_techdraw_points(
 }
 
 fn validate_gui_cosmetic_vertex_record(
+    ctx: &DecodeContext<'_>,
     record: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let fields = record
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
+    let fields = gui_record_fields(ctx, record, "FCStd GUI CosmeticVertex fields")?;
     if !(15..=16).contains(&fields.len()) {
         return Err(gui_techdraw_error(
             property_name,
@@ -3109,11 +3110,8 @@ fn validate_visual_layer_list(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires exactly one VisualLayerList value"
         )));
@@ -3136,20 +3134,15 @@ fn validate_visual_layer_list(
                 "GUI property {property_name} VisualLayerList has an invalid count"
             ))
         })?;
-    let layers = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if layers.len() != count
-        || layers
-            .iter()
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element)
             .any(|layer| !layer.has_tag_name("VisualLayer"))
     {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} VisualLayerList count or record tag is invalid"
         )));
     }
-    for layer in layers {
+    for layer in root.children().filter(roxmltree::Node::is_element) {
         if !matches!(layer.attribute("visible"), Some("true" | "false")) {
             return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} VisualLayer has an invalid visible value"
@@ -3241,11 +3234,8 @@ fn validate_gui_expression_engine(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ExpressionEngine value"
         )));
@@ -3255,13 +3245,9 @@ fn validate_gui_expression_engine(
             "GUI property {property_name} requires a leading ExpressionEngine value"
         )));
     }
-    let count = gui_list_count(*root, property_name, "ExpressionEngine")?;
-    let expressions = root
-        .children()
-        .filter(|child| child.is_element() && child.has_tag_name("Expression"))
-        .collect::<Vec<_>>();
-    if expressions.len() != count
-        || expressions.iter().any(|expression| {
+    let count = gui_list_count(root, property_name, "ExpressionEngine")?;
+    if root.children().filter(|child| child.is_element() && child.has_tag_name("Expression")).count() != count
+        || root.children().filter(|child| child.is_element() && child.has_tag_name("Expression")).any(|expression| {
             expression.attribute("path").is_none() || expression.attribute("expression").is_none()
         })
     {
@@ -3276,11 +3262,8 @@ fn validate_gui_material_reference(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one PropertyMaterial value"
         )));
@@ -3297,15 +3280,10 @@ fn validate_gui_part_shape(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if (roots.is_empty() || roots[0].has_tag_name("Part"))
-        && roots
-            .iter()
-            .skip(1)
-            .all(|root| root.has_tag_name("ElementMap"))
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let first = roots.next();
+    if first.is_none_or(|root| root.has_tag_name("Part"))
+        && roots.all(|root| root.has_tag_name("ElementMap"))
     {
         return Ok(());
     }
@@ -3318,11 +3296,8 @@ fn validate_gui_geometry_list(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one GeometryList value"
         )));
@@ -3332,14 +3307,9 @@ fn validate_gui_geometry_list(
             "GUI property {property_name} requires a leading GeometryList value"
         )));
     }
-    let count = gui_list_count(*root, property_name, "GeometryList")?;
-    let geometries = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if geometries.len() != count
-        || geometries
-            .iter()
+    let count = gui_list_count(root, property_name, "GeometryList")?;
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element)
             .any(|geometry| !geometry.has_tag_name("Geometry"))
     {
         return Err(CodecError::malformed(format_args!(
@@ -3353,11 +3323,8 @@ fn validate_gui_filletedges(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one FilletEdges value"
         )));
@@ -3374,11 +3341,8 @@ fn validate_gui_shape_list(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ShapeList value"
         )));
@@ -3388,13 +3352,9 @@ fn validate_gui_shape_list(
             "GUI property {property_name} requires a leading ShapeList value"
         )));
     }
-    let count = gui_list_count(*root, property_name, "ShapeList")?;
-    let shapes = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if shapes.len() != count
-        || shapes.iter().any(|shape| {
+    let count = gui_list_count(root, property_name, "ShapeList")?;
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element).any(|shape| {
             !shape.has_tag_name("TopoShape")
                 || (shape.attribute("file").is_none()
                     && shape.attribute("binary").is_none()
@@ -3412,11 +3372,8 @@ fn validate_gui_constraint_list(
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ConstraintList value"
         )));
@@ -3426,14 +3383,9 @@ fn validate_gui_constraint_list(
             "GUI property {property_name} requires a leading ConstraintList value"
         )));
     }
-    let count = gui_list_count(*root, property_name, "ConstraintList")?;
-    let constraints = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if constraints.len() != count
-        || constraints
-            .iter()
+    let count = gui_list_count(root, property_name, "ConstraintList")?;
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element)
             .any(|constraint| !constraint.has_tag_name("Constrain"))
     {
         return Err(CodecError::malformed(format_args!(
