@@ -1499,7 +1499,7 @@ fn typed_body_records(
         reserve_graph_set_key(ctx, &mut bridge_attrs, &attr, "index Parasolid body bridges")?;
         bridge_attrs.insert(attr);
     }
-    let Some(hierarchies) = facts.hierarchies(&bridge_attrs) else {
+    let Some(hierarchies) = facts.hierarchies(ctx, &bridge_attrs)? else {
         return Ok(None);
     };
     let mut records = Vec::new();
@@ -7427,7 +7427,8 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
         assert_eq!(records[0].regions[1].shells[0].refs, vec![100]);
         assert_eq!(
             facts
-                .hierarchies(&HashSet::from([100]))
+                .hierarchies(&ctx, &HashSet::from([100]))
+                .expect("hierarchy allocation")
                 .expect("typed hierarchy")[0]
                 .body
                 .kind,

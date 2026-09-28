@@ -9,6 +9,7 @@
 //! grammar and ownership invariants pass.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -89,6 +90,25 @@ impl BodyCandidate {
 }
 
 impl BodyNode {
+    fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut ownership_refs = Vec::new();
+        ctx.reserve_collection_vec(
+            &mut ownership_refs,
+            self.ownership_refs.len(),
+            "copy typed Parasolid body ownership references",
+        )?;
+        ownership_refs.extend_from_slice(&self.ownership_refs);
+        Ok(Self {
+            attr: self.attr,
+            node_id: self.node_id,
+            topology_refs: self.topology_refs,
+            ownership_refs,
+            kind: self.kind,
+            offset: self.offset,
+            end: self.end,
+        })
+    }
+
     /// First shell reference in the body topology fields.
     fn shell(&self) -> u32 {
         self.topology_refs[0]
@@ -168,6 +188,34 @@ type OwnershipMaps = (
     HashMap<u16, FaceNode>,
 );
 
+fn reserve_map_key<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    map: &mut HashMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !map.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+        map.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    Ok(())
+}
+
+fn reserve_set_key<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    set: &mut HashSet<T>,
+    key: &T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !set.contains(key) {
+        ctx.charge_collection_items(1, operation)?;
+        set.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    Ok(())
+}
+
 impl Facts {
     pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut bodies = Vec::new();
@@ -221,8 +269,8 @@ impl Facts {
     /// tests that assert closure without naming the attributes, and
     /// `valid_ownership_maps` is private to this module.
     #[cfg(test)]
-    fn has_valid_ownership(&self) -> bool {
-        self.valid_ownership_maps().is_some()
+    fn has_valid_ownership(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
+        Ok(self.valid_ownership_maps(ctx)?.is_some())
     }
 
     /// Return FACE attributes from a closed typed BODY ownership set. Raw FACE
@@ -232,16 +280,13 @@ impl Facts {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<HashSet<u16>>, CodecError> {
-        let Some((_, _, _, faces)) = self.valid_ownership_maps() else {
+        let Some((_, _, _, faces)) = self.valid_ownership_maps(ctx)? else {
             return Ok(None);
         };
         let mut attrs = HashSet::new();
         for attr in faces.keys().copied() {
             ctx.charge_work(1, "select typed Parasolid face attributes")?;
-            ctx.charge_collection_items(1, "collect typed Parasolid face attributes")?;
-            attrs.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect typed Parasolid face attributes", u64::MAX - 1, u64::MAX)
-            })?;
+            reserve_set_key(ctx, &mut attrs, &attr, "collect typed Parasolid face attributes")?;
             attrs.insert(attr);
         }
         Ok(Some(attrs))
@@ -249,145 +294,182 @@ impl Facts {
 
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
-    pub(super) fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
-        let (bodies, regions, shells, all_faces) = self.ownership_maps()?;
-        let faces = if bridge_attrs.is_empty() {
-            all_faces
-        } else {
-            unique_map_for_attrs(
-                &all_faces.values().cloned().collect::<Vec<_>>(),
-                bridge_attrs,
-                |node| node.attr,
-            )?
+    pub(super) fn hierarchies(
+        &self,
+        ctx: &DecodeContext<'_>,
+        bridge_attrs: &HashSet<u16>,
+    ) -> Result<Option<Vec<Hierarchy>>, CodecError> {
+        let Some((bodies, regions, shells, mut faces)) = self.ownership_maps(ctx)? else {
+            return Ok(None);
         };
+        if !bridge_attrs.is_empty() {
+            faces.retain(|attr, _| bridge_attrs.contains(attr));
+            if faces.len() != bridge_attrs.len() {
+                return Ok(None);
+            }
+        }
         if bodies.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let mut face_shells = HashMap::<u16, u16>::new();
         for attr in bridge_attrs {
-            let face = faces.get(attr)?;
-            let shell = u16_from_ref(face.refs[3])?;
+            ctx.charge_work(1, "match typed Parasolid face bridges")?;
+            let Some(face) = faces.get(attr) else {
+                return Ok(None);
+            };
+            let Some(shell) = u16_from_ref(face.refs[3]) else {
+                return Ok(None);
+            };
+            reserve_map_key(ctx, &mut face_shells, attr, "index typed Parasolid face shells")?;
             if face_shells.insert(*attr, shell).is_some() {
-                return None;
+                return Ok(None);
             }
         }
         if face_shells
             .values()
             .any(|shell_attr| !shells.contains_key(shell_attr))
         {
-            return None;
+            return Ok(None);
         }
         let mut relevant_shells = HashSet::new();
         let mut relevant_regions_by_body = HashMap::<u16, HashSet<u16>>::new();
         let mut relevant_bodies = HashSet::new();
         for shell_attr in face_shells.values().copied() {
+            reserve_set_key(ctx, &mut relevant_shells, &shell_attr, "track relevant typed Parasolid shells")?;
             if !relevant_shells.insert(shell_attr) {
                 continue;
             }
-            let shell = shells.get(&shell_attr)?;
-            let region = u16_from_ref(shell.refs[6])?;
+            let Some(shell) = shells.get(&shell_attr) else {
+                return Ok(None);
+            };
+            let Some(region) = u16_from_ref(shell.refs[6]) else {
+                return Ok(None);
+            };
             if region <= 1 || !regions.contains_key(&region) {
-                return None;
+                return Ok(None);
             }
-            let region_node = regions.get(&region)?;
-            let region_body = u16_from_ref(region_node.refs[1])?;
+            let Some(region_node) = regions.get(&region) else {
+                return Ok(None);
+            };
+            let Some(region_body) = u16_from_ref(region_node.refs[1]) else {
+                return Ok(None);
+            };
             if region_body <= 1 || !bodies.contains_key(&region_body) {
-                return None;
+                return Ok(None);
             }
+            reserve_set_key(ctx, &mut relevant_bodies, &region_body, "track relevant typed Parasolid bodies")?;
             relevant_bodies.insert(region_body);
-            relevant_regions_by_body
-                .entry(region_body)
-                .or_default()
-                .insert(region);
+            reserve_map_key(ctx, &mut relevant_regions_by_body, &region_body, "index relevant typed Parasolid regions")?;
+            let body_regions = relevant_regions_by_body.entry(region_body).or_default();
+            reserve_set_key(ctx, body_regions, &region, "track relevant typed Parasolid regions")?;
+            body_regions.insert(region);
             if shell.refs[1] > 1 {
-                let shell_body = u16_from_ref(shell.refs[1])?;
+                let Some(shell_body) = u16_from_ref(shell.refs[1]) else {
+                    return Ok(None);
+                };
                 if shell_body != region_body {
-                    return None;
+                    return Ok(None);
                 }
             }
         }
         if bridge_attrs.is_empty() {
-            relevant_bodies.extend(bodies.keys().copied());
+            for body_attr in bodies.keys().copied() {
+                reserve_set_key(ctx, &mut relevant_bodies, &body_attr, "track relevant typed Parasolid bodies")?;
+                relevant_bodies.insert(body_attr);
+            }
         }
 
         let mut out = Vec::new();
         let mut assigned_faces = HashSet::new();
         for body_attr in relevant_bodies {
-            let body = bodies.get(&body_attr)?;
+            ctx.charge_work(1, "assemble typed Parasolid hierarchy")?;
+            let Some(body) = bodies.get(&body_attr) else {
+                return Ok(None);
+            };
             let body_attr = body.attr;
             if !null_like_or_existing(body.shell(), &shells) {
-                return None;
+                return Ok(None);
             }
 
-            let body_regions = region_chain(body, &regions)?;
-            let body_region_attrs = body_regions
-                .iter()
-                .map(|region| region.attr)
-                .collect::<HashSet<_>>();
+            let Some(body_regions) = region_chain(ctx, body, &regions)? else {
+                return Ok(None);
+            };
+            let mut body_region_attrs = HashSet::new();
+            for region in &body_regions {
+                reserve_set_key(ctx, &mut body_region_attrs, &region.attr, "index typed Parasolid body regions")?;
+                body_region_attrs.insert(region.attr);
+            }
             if !bridge_attrs.is_empty()
                 && !relevant_regions_by_body
                     .get(&body_attr)
                     .is_some_and(|regions| regions.is_subset(&body_region_attrs))
             {
-                return None;
+                return Ok(None);
             }
-            let body_shells = shells
-                .values()
-                .filter(|shell| {
-                    (bridge_attrs.is_empty() || relevant_shells.contains(&shell.attr))
-                        && body_region_attrs
-                            .contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
-                        && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+            let mut body_shells = Vec::new();
+            for shell in shells.values().filter(|shell| {
+                (bridge_attrs.is_empty() || relevant_shells.contains(&shell.attr))
+                    && body_region_attrs
+                        .contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
+                    && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
+            }) {
+                ctx.reserve_collection_vec(&mut body_shells, 1, "collect typed Parasolid body shells")?;
+                body_shells.push(shell.clone());
+            }
 
             let mut hierarchy_faces = Vec::new();
             for (face_attr, shell_attr) in &face_shells {
                 let Some(shell) = body_shells.iter().find(|shell| shell.attr == *shell_attr) else {
                     continue;
                 };
+                reserve_set_key(ctx, &mut assigned_faces, face_attr, "track assigned typed Parasolid faces")?;
                 if !assigned_faces.insert(*face_attr) {
-                    return None;
+                    return Ok(None);
                 }
+                ctx.reserve_collection_vec(&mut hierarchy_faces, 1, "collect typed Parasolid hierarchy faces")?;
                 hierarchy_faces.push((*face_attr, shell.attr));
             }
 
+            ctx.reserve_collection_vec(&mut out, 1, "collect typed Parasolid hierarchies")?;
             out.push(Hierarchy {
-                body: body.clone(),
+                body: body.try_clone(ctx)?,
                 regions: body_regions,
                 shells: body_shells,
                 faces: hierarchy_faces,
             });
         }
         if assigned_faces != *bridge_attrs {
-            return None;
+            return Ok(None);
         }
-        Some(out)
+        Ok(Some(out))
     }
 
-    fn ownership_maps(&self) -> Option<OwnershipMaps> {
-        let body_attrs = self
-            .bodies
-            .iter()
-            .map(|body| body.attr)
-            .collect::<HashSet<_>>();
+    fn ownership_maps(&self, ctx: &DecodeContext<'_>) -> Result<Option<OwnershipMaps>, CodecError> {
+        let mut body_attrs = HashSet::new();
+        for body in &self.bodies {
+            ctx.charge_work(1, "index typed Parasolid ownership bodies")?;
+            reserve_set_key(ctx, &mut body_attrs, &body.attr, "index typed Parasolid ownership bodies")?;
+            body_attrs.insert(body.attr);
+        }
         let mut regions = HashMap::new();
         for region in &self.regions {
+            ctx.charge_work(1, "index typed Parasolid ownership regions")?;
             let Some(body) = u16_from_ref_or_none(region.refs[1]) else {
                 continue;
             };
             if !body_attrs.contains(&body) {
                 continue;
             }
+            reserve_map_key(ctx, &mut regions, &region.attr, "index typed Parasolid ownership regions")?;
             if regions.insert(region.attr, region.clone()).is_some() {
-                return None;
+                return Ok(None);
             }
         }
 
         let mut shell_candidates = Vec::new();
         for shell in &self.shells {
+            ctx.charge_work(1, "select typed Parasolid ownership shells")?;
             let Some(region) = u16_from_ref_or_none(shell.refs[6]) else {
                 continue;
             };
@@ -408,120 +490,146 @@ impl Facts {
             if shell_body.is_some_and(|shell_body| shell_body != body) {
                 continue;
             }
+            ctx.reserve_collection_vec(&mut shell_candidates, 1, "collect typed Parasolid shell candidates")?;
             shell_candidates.push(shell.clone());
         }
 
         let mut shells = HashMap::new();
         for shell in &shell_candidates {
-            let region = u16_from_ref(shell.refs[6])?;
-            let region_node = regions.get(&region)?;
-            if !shell_is_reachable_from_region(region_node, shell.attr, &shell_candidates) {
+            let Some(region) = u16_from_ref(shell.refs[6]) else {
+                return Ok(None);
+            };
+            let Some(region_node) = regions.get(&region) else {
+                return Ok(None);
+            };
+            if !shell_is_reachable_from_region(ctx, region_node, shell.attr, &shell_candidates)? {
                 continue;
             }
+            reserve_map_key(ctx, &mut shells, &shell.attr, "index typed Parasolid ownership shells")?;
             if shells.insert(shell.attr, shell.clone()).is_some() {
-                return None;
+                return Ok(None);
             }
         }
 
         let mut faces = HashMap::new();
         for face in &self.faces {
+            ctx.charge_work(1, "index typed Parasolid ownership faces")?;
             let shell = u16_from_ref_or_none(face.refs[3]);
             if !shell.is_some_and(|shell| shells.contains_key(&shell)) {
                 continue;
             }
+            reserve_map_key(ctx, &mut faces, &face.attr, "index typed Parasolid ownership faces")?;
             if faces.insert(face.attr, face.clone()).is_some() {
-                return None;
+                return Ok(None);
             }
         }
-        let bodies = self
-            .bodies
-            .iter()
-            .filter(|body| {
-                null_like_or_existing(body.shell(), &shells)
-                    && region_chain(body, &regions).is_some()
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let bodies = unique_map(&bodies, |node| node.attr)?;
-        Some((bodies, regions, shells, faces))
+        let mut bodies = HashMap::new();
+        for body in &self.bodies {
+            ctx.charge_work(1, "select typed Parasolid ownership bodies")?;
+            if !null_like_or_existing(body.shell(), &shells)
+                || region_chain(ctx, body, &regions)?.is_none()
+            {
+                continue;
+            }
+            reserve_map_key(ctx, &mut bodies, &body.attr, "index valid typed Parasolid bodies")?;
+            if bodies.insert(body.attr, body.try_clone(ctx)?).is_some() {
+                return Ok(None);
+            }
+        }
+        Ok(Some((bodies, regions, shells, faces)))
     }
 
-    fn valid_ownership_maps(&self) -> Option<OwnershipMaps> {
-        let (bodies, regions, shells, faces) = self.ownership_maps()?;
-        if bodies.is_empty()
-            || !bodies.values().all(|body| {
-                null_like_or_existing(body.shell(), &shells)
-                    && region_chain(body, &regions).is_some()
-            })
-        {
-            return None;
+    fn valid_ownership_maps(&self, ctx: &DecodeContext<'_>) -> Result<Option<OwnershipMaps>, CodecError> {
+        let Some(maps) = self.ownership_maps(ctx)? else {
+            return Ok(None);
+        };
+        if maps.0.is_empty() {
+            return Ok(None);
         }
-        Some((bodies, regions, shells, faces))
+        Ok(Some(maps))
     }
 }
 
 fn shell_is_reachable_from_region(
+    ctx: &DecodeContext<'_>,
     region: &RegionNode,
     target: u16,
     candidates: &[ShellNode],
-) -> bool {
+) -> Result<bool, CodecError> {
     let Some(mut next) = u16_from_ref_or_none(region.refs[4]) else {
-        return false;
+        return Ok(false);
     };
     let mut seen = HashSet::new();
+    let scan_work = u64::try_from(candidates.len()).map_err(|_| {
+        ctx.refuse_codec_limit("scan typed Parasolid shell candidates", u64::MAX - 1, u64::MAX)
+    })?;
     loop {
+        ctx.charge_work(1, "walk typed Parasolid shell chain")?;
+        reserve_set_key(ctx, &mut seen, &next, "track typed Parasolid shell chain")?;
         if !seen.insert(next) {
-            return false;
+            return Ok(false);
         }
+        ctx.charge_work(scan_work, "scan typed Parasolid shell candidates")?;
         let mut matches = candidates.iter().filter(|shell| shell.attr == next);
         let Some(shell) = matches.next() else {
-            return false;
+            return Ok(false);
         };
         if matches.next().is_some() {
-            return false;
+            return Ok(false);
         }
         if next == target {
-            return true;
+            return Ok(true);
         }
         let Some(following) = u16_from_ref_or_none(shell.refs[2]) else {
-            return false;
+            return Ok(false);
         };
         next = following;
     }
 }
 
-fn region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<Vec<RegionNode>> {
-    let mut chains = Vec::new();
+fn region_chain(
+    ctx: &DecodeContext<'_>,
+    body: &BodyNode,
+    regions: &HashMap<u16, RegionNode>,
+) -> Result<Option<Vec<RegionNode>>, CodecError> {
+    let mut nonempty: Option<Vec<RegionNode>> = None;
+    let mut saw_empty = false;
     for head in body.region_head_candidates() {
-        if let Some(chain) = region_chain_from_head(body, regions, head) {
-            if !chains.iter().any(|previous: &Vec<RegionNode>| {
-                previous
-                    .iter()
-                    .map(|region| region.attr)
-                    .eq(chain.iter().map(|region| region.attr))
-            }) {
-                chains.push(chain);
+        ctx.charge_work(1, "select typed Parasolid region chain")?;
+        let Some(chain) = region_chain_from_head(ctx, body, regions, head)? else {
+            continue;
+        };
+        if chain.is_empty() {
+            saw_empty = true;
+            continue;
+        }
+        if let Some(previous) = &nonempty {
+            if !previous
+                .iter()
+                .map(|region| region.attr)
+                .eq(chain.iter().map(|region| region.attr))
+            {
+                return Ok(None);
             }
+        } else {
+            nonempty = Some(chain);
         }
     }
-    let nonempty = chains
-        .iter()
-        .filter(|chain| !chain.is_empty())
-        .collect::<Vec<_>>();
-    match nonempty.as_slice() {
-        [chain] => Some((*chain).clone()),
-        [] if chains.iter().any(Vec::is_empty) => Some(Vec::new()),
-        _ => None,
+    match nonempty {
+        Some(chain) => Ok(Some(chain)),
+        None if saw_empty => Ok(Some(Vec::new())),
+        None => Ok(None),
     }
 }
 
 fn region_chain_from_head(
+    ctx: &DecodeContext<'_>,
     body: &BodyNode,
     regions: &HashMap<u16, RegionNode>,
     head: u32,
-) -> Option<Vec<RegionNode>> {
+) -> Result<Option<Vec<RegionNode>>, CodecError> {
     if head <= 1 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
 
     // A BODY may store either the first REGION attribute or the predecessor
@@ -530,20 +638,31 @@ fn region_chain_from_head(
     // in the sentinel form, and each later region points back to its source.
     let (mut next, first_previous) =
         if let Some(attr) = u16_from_ref(head).filter(|attr| regions.contains_key(attr)) {
-            let first = regions.get(&attr)?;
+            let Some(first) = regions.get(&attr) else {
+                return Ok(None);
+            };
             // A direct region head names the first node.  A later region in
             // the chain is not another valid head: its previous pointer must
             // point back to the preceding region.  The sentinel form below
             // is the only form that admits a non-null first previous link.
-            (first.refs[3] <= 1).then_some((attr, None))?
+            let Some(head) = (first.refs[3] <= 1).then_some((attr, None)) else {
+                return Ok(None);
+            };
+            head
         } else {
+            let scan_work = u64::try_from(regions.len()).map_err(|_| {
+                ctx.refuse_codec_limit("scan typed Parasolid region predecessors", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(scan_work, "scan typed Parasolid region predecessors")?;
             let mut candidates = regions
                 .values()
                 .filter(|region| region.refs[3] == head)
                 .map(|region| region.attr);
-            let attr = candidates.next()?;
+            let Some(attr) = candidates.next() else {
+                return Ok(None);
+            };
             if candidates.next().is_some() {
-                return None;
+                return Ok(None);
             }
             (attr, Some(head))
         };
@@ -552,29 +671,38 @@ fn region_chain_from_head(
     let mut seen = HashSet::new();
     let mut expected_previous = first_previous;
     loop {
+        ctx.charge_work(1, "walk typed Parasolid region chain")?;
+        reserve_set_key(ctx, &mut seen, &next, "track typed Parasolid region chain")?;
         if !seen.insert(next) {
-            return None;
+            return Ok(None);
         }
-        let region = regions.get(&next)?.clone();
+        let Some(region) = regions.get(&next) else {
+            return Ok(None);
+        };
         if region.refs[1] != u32::from(body.attr)
             || expected_previous.is_some_and(|previous| region.refs[3] != previous)
         {
-            return None;
+            return Ok(None);
         }
         let following = region.refs[2];
+        ctx.reserve_collection_vec(&mut out, 1, "collect typed Parasolid region chain")?;
         out.push(region.clone());
         if following <= 1 {
             break;
         }
-        let following_attr = u16_from_ref(following)?;
-        let following_region = regions.get(&following_attr)?;
+        let Some(following_attr) = u16_from_ref(following) else {
+            return Ok(None);
+        };
+        let Some(following_region) = regions.get(&following_attr) else {
+            return Ok(None);
+        };
         if following_region.refs[3] != u32::from(region.attr) {
-            return None;
+            return Ok(None);
         }
         expected_previous = Some(u32::from(region.attr));
         next = following_attr;
     }
-    Some(out)
+    Ok(Some(out))
 }
 
 /// One validated typed body hierarchy.
@@ -610,43 +738,6 @@ where
         }
     }
     Ok(())
-}
-
-fn unique_map<T, F>(nodes: &[T], key: F) -> Option<HashMap<u16, T>>
-where
-    T: Clone,
-    F: Fn(&T) -> u16,
-{
-    let mut out = HashMap::new();
-    for node in nodes {
-        let attr = key(node);
-        if out.insert(attr, node.clone()).is_some() {
-            return None;
-        }
-    }
-    Some(out)
-}
-
-fn unique_map_for_attrs<T, F>(nodes: &[T], attrs: &HashSet<u16>, key: F) -> Option<HashMap<u16, T>>
-where
-    T: Clone,
-    F: Fn(&T) -> u16,
-{
-    let mut out = HashMap::new();
-    for node in nodes {
-        let attr = key(node);
-        if !attrs.contains(&attr) {
-            continue;
-        }
-        if out.insert(attr, node.clone()).is_some() {
-            return None;
-        }
-    }
-    if attrs.iter().any(|attr| !out.contains_key(attr)) {
-        None
-    } else {
-        Some(out)
-    }
 }
 
 fn u16_from_ref(value: u32) -> Option<u16> {
@@ -989,6 +1080,70 @@ mod tests {
     use std::collections::HashSet;
     use std::io::Cursor;
 
+    fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
+        f(&ctx)
+    }
+
+    fn test_hierarchies(facts: &Facts, attrs: &HashSet<u16>) -> Option<Vec<super::Hierarchy>> {
+        with_test_context(|ctx| facts.hierarchies(ctx, attrs).expect("hierarchy allocation"))
+    }
+
+    fn test_has_valid_ownership(facts: &Facts) -> bool {
+        with_test_context(|ctx| facts.has_valid_ownership(ctx).expect("ownership allocation"))
+    }
+
+    fn test_region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<Vec<RegionNode>> {
+        with_test_context(|ctx| region_chain(ctx, body, regions).expect("region chain allocation"))
+    }
+
+    #[test]
+    fn typed_ownership_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body = triangle_body();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service())
+            .expect("root");
+        let facts = scan(&body, &ctx).expect("typed facts");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        assert!(matches!(
+            facts.valid_ownership_face_attrs(&limited),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "index typed Parasolid ownership bodies"
+        ));
+    }
+
+    #[test]
+    fn typed_ownership_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body = triangle_body();
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service())
+            .expect("root");
+        let facts = scan(&body, &ctx).expect("typed facts");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (limited, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        assert!(matches!(
+            facts.valid_ownership_face_attrs(&limited),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "index typed Parasolid ownership bodies"
+        ));
+    }
+
     #[test]
     fn semantic_writer_emits_typed_body_ownership_nodes() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -1004,7 +1159,7 @@ mod tests {
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
         let facts = scan(&body, &ctx).expect("typed scan");
 
-        assert!(facts.has_valid_ownership());
+        assert!(test_has_valid_ownership(&facts));
         assert_eq!(facts.bodies.len(), 1);
         assert!(!facts.shells.is_empty());
         assert!(!facts.regions.is_empty());
@@ -1299,8 +1454,7 @@ mod tests {
         bytes.extend(typed_face(FACE, 10, [1, 1, 1, SHELL, 12]));
 
         let facts = scan(&bytes, &ctx).expect("typed scan");
-        let hierarchy = facts
-            .hierarchies(&HashSet::from([FACE]))
+        let hierarchy = test_hierarchies(&facts, &HashSet::from([FACE]))
             .expect("extended typed references close the ownership graph");
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].body.attr, BODY as u16);
@@ -1395,8 +1549,7 @@ mod tests {
         bytes.extend(typed_face(100, 900, [1, 1, 49, 7, 8]));
 
         let facts = scan(&bytes, &ctx).expect("typed scan");
-        let hierarchy = facts
-            .hierarchies(&HashSet::from([100]))
+        let hierarchy = test_hierarchies(&facts, &HashSet::from([100]))
             .expect("closed typed hierarchy");
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].body.kind, BodyKind::Solid);
@@ -1456,8 +1609,7 @@ mod tests {
             }],
         };
 
-        let hierarchy = facts
-            .hierarchies(&HashSet::from([100]))
+        let hierarchy = test_hierarchies(&facts, &HashSet::from([100]))
             .expect("the invalid byte-window candidate is not an ownership node");
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].shells.len(), 1);
@@ -1505,9 +1657,8 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(facts.has_valid_ownership());
-        let hierarchy = facts
-            .hierarchies(&HashSet::new())
+        assert!(test_has_valid_ownership(&facts));
+        let hierarchy = test_hierarchies(&facts, &HashSet::new())
             .expect("the body with no closed shell or region is not an ownership node");
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].body.attr, 3);
@@ -1567,8 +1718,8 @@ mod tests {
             facts.valid_ownership_face_attrs(&ctx).expect("face attributes"),
             Some(HashSet::from([101]))
         );
-        assert!(facts.hierarchies(&HashSet::from([100])).is_none());
-        assert!(facts.hierarchies(&HashSet::from([101])).is_some());
+        assert!(test_hierarchies(&facts, &HashSet::from([100])).is_none());
+        assert!(test_hierarchies(&facts, &HashSet::from([101])).is_some());
     }
 
     #[test]
@@ -1609,8 +1760,7 @@ mod tests {
             ..Default::default()
         };
 
-        let hierarchy = facts
-            .hierarchies(&HashSet::new())
+        let hierarchy = test_hierarchies(&facts, &HashSet::new())
             .expect("all shells reachable from the region head are retained");
         assert_eq!(hierarchy.len(), 1);
         let mut shell_attrs = hierarchy[0]
@@ -1652,8 +1802,8 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(!facts.has_valid_ownership());
-        assert!(facts.hierarchies(&HashSet::new()).is_none());
+        assert!(!test_has_valid_ownership(&facts));
+        assert!(test_hierarchies(&facts, &HashSet::new()).is_none());
     }
 
     #[test]
@@ -1677,7 +1827,7 @@ mod tests {
                 end: 4,
             },
         )]);
-        let chain = region_chain(&body, &regions).expect("sentinel-linked region");
+        let chain = test_region_chain(&body, &regions).expect("sentinel-linked region");
         assert_eq!(
             chain.iter().map(|region| region.attr).collect::<Vec<_>>(),
             vec![35]
@@ -1724,8 +1874,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let hierarchy = facts
-            .hierarchies(&HashSet::new())
+        let hierarchy = test_hierarchies(&facts, &HashSet::new())
             .expect("typed wire hierarchy");
         assert_eq!(hierarchy.len(), 1);
         assert_eq!(hierarchy[0].body.kind, BodyKind::Wire);
