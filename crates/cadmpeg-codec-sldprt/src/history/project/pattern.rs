@@ -24,14 +24,27 @@ pub(in crate::history) enum NativePatternClass {
 }
 
 pub(in crate::history) fn pattern_form(feature: &Feature) -> Option<NativePatternClass> {
-    let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
-        "linear" | "linearpattern" | "lpattern" => Some(NativePatternClass::Linear),
-        "circular" | "circularpattern" | "cirpattern" => Some(NativePatternClass::Circular),
-        "crvpattern" | "curvepattern" | "curvedrivenpattern" => {
+    let parse = |form: &str| {
+        if ["linear", "linearpattern", "lpattern"]
+            .iter()
+            .any(|name| form.eq_ignore_ascii_case(name))
+        {
+            Some(NativePatternClass::Linear)
+        } else if ["circular", "circularpattern", "cirpattern"]
+            .iter()
+            .any(|name| form.eq_ignore_ascii_case(name))
+        {
+            Some(NativePatternClass::Circular)
+        } else if ["crvpattern", "curvepattern", "curvedrivenpattern"]
+            .iter()
+            .any(|name| form.eq_ignore_ascii_case(name))
+        {
             Some(NativePatternClass::CurveDriven)
+        } else if form.eq_ignore_ascii_case("mirror") {
+            Some(NativePatternClass::Mirror)
+        } else {
+            None
         }
-        "mirror" => Some(NativePatternClass::Mirror),
-        _ => None,
     };
     if feature_input_class(feature, NativeClassKind::LinearPattern) {
         return Some(NativePatternClass::Linear);
