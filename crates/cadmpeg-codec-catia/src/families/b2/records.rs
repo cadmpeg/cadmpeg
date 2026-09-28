@@ -2515,9 +2515,10 @@ pub(crate) fn b2_embedded_cylinders_from_records<'a>(
 }
 
 fn b2_construction_offset_supports_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2OffsetSupport> {
+) -> Result<Vec<B2OffsetSupport>, CodecError> {
     let mut out = Vec::new();
     for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x30) {
         let pos = frame.pos;
@@ -2559,15 +2560,15 @@ fn b2_construction_offset_supports_from_records(
         ) else {
             continue;
         };
-        out.push(B2OffsetSupport {
+        crate::resource::push(ctx, &mut out, B2OffsetSupport {
             pos,
             support_id,
             distance,
             u_range,
             v_range,
-        });
+        }, "catia_b2_construction_offset_supports")?;
     }
-    out
+    Ok(out)
 }
 
 /// Decode `b2 03 29` analytic cone charts.
@@ -3258,27 +3259,22 @@ fn circle_range_relative_span(radius: f64, range: [f64; 2]) -> f64 {
 #[cfg(test)]
 fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
     let records = consolidated_records(data);
-    b2_edge_parameters_from_records(data, &records)
+    b2_edge_parameters_from_records(data, &records).collect()
 }
 
-pub(in crate::families) fn b2_edge_parameters_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2EdgeParameters> {
-    let mut out = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x23) {
+pub(in crate::families) fn b2_edge_parameters_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2EdgeParameters> + 'a {
+    family_frames_from_records(records, ConsolidatedFamily::B, 0x23).filter_map(move |frame| {
         let pos = frame.pos;
         if frame.end - frame.payload != 0x4e {
-            continue;
+            return None;
         }
-        let Some(values) = read_f64_array::<9>(data, frame.payload + 6) else {
-            continue;
-        };
+        let values = read_f64_array::<9>(data, frame.payload + 6)?;
         let tolerance = values[2];
         let values = values.map(FiniteReal::get);
-        let Some(range) = IncreasingParameterInterval::new([values[0], values[1]]) else {
-            continue;
-        };
+        let range = IncreasingParameterInterval::new([values[0], values[1]])?;
         if values[0] == values[3]
             && values[0] == values[6]
             && values[1] == values[4]
@@ -3286,14 +3282,15 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
             && values[5] == 1.0
             && values[2] == values[8]
         {
-            out.push(B2EdgeParameters {
+            Some(B2EdgeParameters {
                 pos,
                 range,
                 tolerance,
-            });
+            })
+        } else {
+            None
         }
-    }
-    out
+    })
 }
 
 /// Decode `b2 03 31` offset-surface constructors.
@@ -3301,14 +3298,16 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
 #[cfg(test)]
 fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
     let records = consolidated_records(data);
-    b2_offset_supports_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx|
+        b2_offset_supports_from_records(ctx, data, &records).expect("service decode"))
 }
 
 pub(in crate::families) fn b2_offset_supports_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2OffsetSupport> {
-    let mut offsets = family_frames_from_records(records, ConsolidatedFamily::B, 0x31)
+) -> Result<Vec<B2OffsetSupport>, CodecError> {
+    let mut offsets = crate::resource::collect_vec(ctx, family_frames_from_records(records, ConsolidatedFamily::B, 0x31)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -3334,10 +3333,12 @@ pub(in crate::families) fn b2_offset_supports_from_records(
                 v_range: IncreasingParameterInterval::new([v0.get(), v1.get()])?,
             })
         })
-        .collect::<Vec<_>>();
-    offsets.extend(b2_construction_offset_supports_from_records(data, records));
+        , "catia_b2_offset_supports")?;
+    let extra = b2_construction_offset_supports_from_records(ctx, data, records)?;
+    crate::resource::reserve_vec(ctx, &mut offsets, extra.len(), "catia_b2_offset_supports")?;
+    offsets.extend(extra);
     offsets.sort_unstable_by_key(|offset| offset.pos);
-    offsets
+    Ok(offsets)
 }
 
 /// Bind each offset constructor to the unique consolidated NURBS carrier whose
@@ -3345,48 +3346,54 @@ pub(in crate::families) fn b2_offset_supports_from_records(
 /// serialized V limits.
 #[must_use]
 pub(in crate::families) fn offset_support_carriers(
+    ctx: &DecodeContext<'_>,
     offsets: &[B2OffsetSupport],
     carriers: &[FreeformSurface],
-) -> Vec<Option<usize>> {
+) -> Result<Vec<Option<usize>>, CodecError> {
     const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-3;
-    offsets
-        .iter()
-        .map(|offset| {
-            let [u0, u1] = offset.u_range.endpoints();
-            let [v0, v1] = offset.v_range.endpoints();
-            let candidates = carriers
-                .iter()
-                .enumerate()
-                .filter_map(|(index, carrier)| {
-                    let surface = &carrier.geometry;
-                    let u_min = *surface.u_knots().first()?;
-                    let u_max = *surface.u_knots().last()?;
-                    let v_min = *surface.v_knots().first()?;
-                    let v_max = *surface.v_knots().last()?;
-                    let u_span = u_max - u_min;
-                    let v_span = v_max - v_min;
-                    if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0
-                    {
-                        return None;
+    let mut bindings = Vec::new();
+    for offset in offsets {
+        let [u0, u1] = offset.u_range.endpoints();
+        let [v0, v1] = offset.v_range.endpoints();
+        let mut selected = None;
+        let mut ambiguous = false;
+        for (index, carrier) in carriers.iter().enumerate() {
+            ctx.charge_work(1, "catia_b2_offset_carrier_scan")?;
+            let surface = &carrier.geometry;
+            let (Some(&u_min), Some(&u_max), Some(&v_min), Some(&v_max)) =
+                (surface.u_knots().first(), surface.u_knots().last(),
+                 surface.v_knots().first(), surface.v_knots().last())
+            else { continue };
+            let u_span = u_max - u_min;
+            let v_span = v_max - v_min;
+            if !u_span.is_finite() || u_span <= 0.0 || !v_span.is_finite() || v_span <= 0.0 {
+                continue;
+            }
+            let u_tolerance = RELATIVE_PARAMETER_TOLERANCE * u_span;
+            let v_tolerance = RELATIVE_PARAMETER_TOLERANCE * v_span;
+            let contains = u0 >= u_min - u_tolerance
+                && u1 <= u_max + u_tolerance
+                && v0 >= v_min - v_tolerance
+                && v1 <= v_max + v_tolerance;
+            let has_v_limit = |limit: f64| -> Result<bool, CodecError> {
+                for knot in surface.v_knots() {
+                    ctx.charge_work(1, "catia_b2_offset_knot_scan")?;
+                    if (*knot - limit).abs() <= v_tolerance {
+                        return Ok(true);
                     }
-                    let u_tolerance = RELATIVE_PARAMETER_TOLERANCE * u_span;
-                    let v_tolerance = RELATIVE_PARAMETER_TOLERANCE * v_span;
-                    let contains = u0 >= u_min - u_tolerance
-                        && u1 <= u_max + u_tolerance
-                        && v0 >= v_min - v_tolerance
-                        && v1 <= v_max + v_tolerance;
-                    let has_v_limit = |limit: f64| {
-                        surface
-                            .v_knots()
-                            .iter()
-                            .any(|knot| (*knot - limit).abs() <= v_tolerance)
-                    };
-                    (contains && has_v_limit(v0) && has_v_limit(v1)).then_some(index)
-                })
-                .collect::<Vec<_>>();
-            <[usize; 1]>::try_from(candidates).ok().map(|[index]| index)
-        })
-        .collect()
+                }
+                Ok(false)
+            };
+            if contains && has_v_limit(v0)? && has_v_limit(v1)? {
+                if selected.replace(index).is_some() {
+                    ambiguous = true;
+                }
+            }
+        }
+        crate::resource::push(ctx, &mut bindings, if ambiguous { None } else { selected },
+            "catia_b2_offset_bindings")?;
+    }
+    Ok(bindings)
 }
 
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.

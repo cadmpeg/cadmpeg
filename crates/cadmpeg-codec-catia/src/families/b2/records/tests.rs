@@ -1795,6 +1795,36 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 }
 
 #[test]
+fn b2_offset_support_parser_refuses_collection_limit() {
+    let bytes = b2_offset_support_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_supports"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    }).expect("service profile admits offset support");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
+fn b2_construction_offset_support_refuses_collection_limit() {
+    let bytes = b2_construction_use_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_construction_offset_supports"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+    }).expect("service profile admits construction offset support");
+    assert_eq!(service.len(), 1);
+}
+
+#[test]
 fn consolidated_offset_support_parser_reads_width2_frame() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b3_offset_support_stream());
     assert_eq!(offsets.len(), 1);
@@ -2222,10 +2252,35 @@ fn an_offset_support_holds_only_increasing_domains_and_binds_them() {
         &mut crate::nurbs::LaneRefusals::new(),
     ).expect("service decode"));
     assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
+        crate::test_support::with_service_context(|ctx|
+            crate::families::b2::records::offset_support_carriers(ctx, &[offset], &carriers)
+                .expect("service decode")),
         [Some(0)]
     );
     assert!(IncreasingParameterInterval::new([0.0, 0.0]).is_none());
+}
+
+#[test]
+fn b2_offset_support_binding_refuses_collection_and_work_limits() {
+    let offsets = crate::families::b2::records::b2_offset_supports(&b2_offset_support_stream());
+    let carriers = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_surfaces(ctx, &a5_surface_stream(),
+            &mut crate::nurbs::LaneRefusals::new())
+    }).expect("service profile admits surface");
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::offset_support_carriers(ctx, &offsets, &carriers)
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_bindings"));
+    let work = crate::test_support::with_work_limit(0, |ctx| {
+        crate::families::b2::records::offset_support_carriers(ctx, &offsets, &carriers)
+    });
+    assert!(matches!(work, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_b2_offset_carrier_scan"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::offset_support_carriers(ctx, &offsets, &carriers)
+    }).expect("service profile admits offset binding");
+    assert_eq!(service.len(), 1);
 }
 
 #[test]

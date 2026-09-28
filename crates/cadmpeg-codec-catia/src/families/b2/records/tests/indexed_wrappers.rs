@@ -286,7 +286,9 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .iter()
             .map(offset_signature)
             .collect::<Vec<_>>(),
-        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
+        crate::test_support::with_service_context(|ctx|
+            crate::families::b2::records::b2_offset_supports_from_records(ctx, &bytes, &records)
+                .expect("service decode"))
             .iter()
             .map(offset_signature)
             .collect::<Vec<_>>()
