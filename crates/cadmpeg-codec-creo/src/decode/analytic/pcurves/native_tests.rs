@@ -86,6 +86,82 @@ fn assert_pcurve_domain_refusal(error: CodecError, operation: &'static str) {
             && resource.operation == operation));
 }
 
+fn path_activity_result(limit: u64) -> Result<super::PcurvePathActivity, CodecError> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: vec![crate::topology::HalfEdgeId {
+            curve_id: 7,
+            side: crate::topology::Side::Zero,
+        }],
+    });
+    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
+        id: 7,
+        type_byte: 0,
+        feature_id: 0,
+        directions: [0x01, 0xf6],
+        faces: [std::num::NonZeroU32::new(5), None],
+        next_edges: [7, 0],
+        offset: 0,
+    });
+    scan.curves.prototype_topology.push(crate::curve::CurvePrototypeTopology {
+        curve_id: 8,
+        faces: [std::num::NonZeroU32::new(6), None],
+        next_edges: [8, 0],
+        offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::PcurvePathActivity::from_scan(&ctx, &scan)
+}
+
+#[test]
+fn pcurve_path_activity_refuses_active_path_node() {
+    assert_pcurve_domain_refusal(
+        path_activity_result(0).expect_err("active path exceeds limit"),
+        "creo active pcurve path nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_topology_face_node() {
+    assert_pcurve_domain_refusal(
+        path_activity_result(3).expect_err("topology face exceeds limit"),
+        "creo pcurve topology face nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_prototype_count_node() {
+    assert_pcurve_domain_refusal(
+        path_activity_result(4).expect_err("prototype count exceeds limit"),
+        "creo pcurve prototype count nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_refuses_prototype_face_node() {
+    assert_pcurve_domain_refusal(
+        path_activity_result(5).expect_err("prototype face exceeds limit"),
+        "creo pcurve prototype face nodes",
+    );
+}
+
+#[test]
+fn pcurve_path_activity_keeps_service_paths() {
+    let activity = path_activity_result(1_000_000).expect("service path activity");
+    assert_eq!(
+        activity.selected_paths(7, [std::num::NonZeroU32::new(5), None], false),
+        Some([true, false]),
+    );
+    assert_eq!(
+        activity.selected_paths(8, [std::num::NonZeroU32::new(6), None], true),
+        Some([false, false]),
+    );
+}
+
 #[test]
 fn pcurve_domain_solver_refuses_self_loop_node() {
     let point = [1.0, 0.0, 0.0];

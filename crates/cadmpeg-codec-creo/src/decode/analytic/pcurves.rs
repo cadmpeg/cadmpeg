@@ -316,38 +316,51 @@ struct PcurvePathActivity {
 }
 
 impl PcurvePathActivity {
-    fn from_scan(scan: &ContainerScan) -> Self {
-        let active_paths = scan
-            .topology
-            .loops
-            .iter()
-            .flat_map(|loop_| {
-                loop_
-                    .half_edges
-                    .iter()
-                    .map(move |half_edge| (loop_.face_id, half_edge.curve_id))
-            })
-            .collect();
-        let topology_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-            .into_iter()
-            .map(|row| (row.id, row.faces))
-            .collect();
+    fn from_scan(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &ContainerScan,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut active_paths = BTreeSet::new();
+        for loop_ in &scan.topology.loops {
+            for half_edge in &loop_.half_edges {
+                let key = (loop_.face_id, half_edge.curve_id);
+                if !active_paths.contains(&key) {
+                    ctx.charge_collection_items(1, "creo active pcurve path nodes")?;
+                    active_paths.insert(key);
+                }
+            }
+        }
+        let mut topology_faces = BTreeMap::new();
+        for row in crate::identity::uniquely_identified_rows_checked(
+            ctx,
+            &scan.curves.topology_rows,
+            |row| row.id,
+        )? {
+            ctx.charge_collection_items(1, "creo pcurve topology face nodes")?;
+            topology_faces.insert(row.id, row.faces);
+        }
         let mut prototype_counts = BTreeMap::<u32, usize>::new();
         for row in &scan.curves.prototype_topology {
-            *prototype_counts.entry(row.curve_id).or_default() += 1;
+            match prototype_counts.entry(row.curve_id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo pcurve prototype count nodes")?;
+                    entry.insert(1);
+                }
+            }
         }
-        let prototype_faces = scan
-            .curves
-            .prototype_topology
-            .iter()
-            .filter(|row| prototype_counts.get(&row.curve_id) == Some(&1))
-            .map(|row| (row.curve_id, row.faces))
-            .collect();
-        Self {
+        let mut prototype_faces = BTreeMap::new();
+        for row in &scan.curves.prototype_topology {
+            if prototype_counts.get(&row.curve_id) == Some(&1) {
+                ctx.charge_collection_items(1, "creo pcurve prototype face nodes")?;
+                prototype_faces.insert(row.curve_id, row.faces);
+            }
+        }
+        Ok(Self {
             active_paths,
             topology_faces,
             prototype_faces,
-        }
+        })
     }
 
     fn selected_paths(
@@ -846,7 +859,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
 ), cadmpeg_core::CodecError> {
     let ignored_surface_ids =
         topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
-    let path_activity = PcurvePathActivity::from_scan(scan);
+    let path_activity = PcurvePathActivity::from_scan(ctx, scan)?;
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
     let mut process_paths = |curve_id: u32,
