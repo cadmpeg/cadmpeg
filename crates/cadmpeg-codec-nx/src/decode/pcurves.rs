@@ -2922,7 +2922,7 @@ struct BlendTransferContact<'a> {
     boundary: usize,
 }
 
-type BlendParameterGridCache = BTreeMap<SurfaceId, Option<Vec<(Point2, Point3)>>>;
+type BlendParameterGridCache<'a> = BTreeMap<&'a str, Option<Vec<(Point2, Point3)>>>;
 
 fn blend_transfer_contact<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'a>,
@@ -2972,17 +2972,17 @@ fn opposite_chart_geometry_work_limit(candidates_remaining: usize, remaining: us
 }
 
 #[allow(clippy::too_many_arguments)]
-fn transfer_intersection_pcurve(
+fn transfer_intersection_pcurve<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
-    target_surface: &SurfaceId,
+    target_surface: &'a SurfaceId,
     parameter_range: [f64; 2],
     tolerance: f64,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let blend_contact = blend_transfer_contact(index, source_surface, target_surface);
     transfer_intersection_pcurve_with_contact_and_budget(
@@ -3001,18 +3001,18 @@ fn transfer_intersection_pcurve(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn transfer_intersection_pcurve_with_contact_and_budget(
+fn transfer_intersection_pcurve_with_contact_and_budget<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
-    target_surface: &SurfaceId,
+    target_surface: &'a SurfaceId,
     parameter_range: [f64; 2],
     tolerance: f64,
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let source_geometry = index
         .surfaces(source_surface.as_str())
@@ -3038,12 +3038,12 @@ fn transfer_intersection_pcurve_with_contact_and_budget(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn transfer_intersection_pcurve_with_budget(
+fn transfer_intersection_pcurve_with_budget<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
-    target_surface: &SurfaceId,
+    target_surface: &'a SurfaceId,
     source_geometry: Option<&SolvedSurfaceGeometry>,
     target_geometry: Option<&SolvedSurfaceGeometry>,
     parameter_range: [f64; 2],
@@ -3051,7 +3051,7 @@ fn transfer_intersection_pcurve_with_budget(
     blend_contact: Option<BlendTransferContact<'_>>,
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     const GENERAL_CONTINUATION_STEPS: usize = 16;
     // A complete blend boundary is one continuous image even when its
@@ -3206,12 +3206,12 @@ fn decoded_solved_surface_point_with_budget(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn transferred_pcurve_sample_with_budget(
+fn transferred_pcurve_sample_with_budget<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
-    target_surface: &SurfaceId,
+    target_surface: &'a SurfaceId,
     source_geometry: Option<&SolvedSurfaceGeometry>,
     target_geometry: Option<&SolvedSurfaceGeometry>,
     parameter: f64,
@@ -3221,7 +3221,7 @@ fn transferred_pcurve_sample_with_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     contact_seeds: &mut BlendContactSeedCache,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<TransferredPcurveSample>, cadmpeg_core::CodecError> {
     if !budget.charge() {
         return Ok(None);
@@ -3552,12 +3552,12 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn append_transferred_pcurve_segment_with_budget(
+fn append_transferred_pcurve_segment_with_budget<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     source_surface: &SurfaceId,
     source_pcurve: &PcurveGeometry,
-    target_surface: &SurfaceId,
+    target_surface: &'a SurfaceId,
     source_geometry: Option<&SolvedSurfaceGeometry>,
     target_geometry: Option<&SolvedSurfaceGeometry>,
     first: TransferredPcurveSample,
@@ -3569,7 +3569,7 @@ fn append_transferred_pcurve_segment_with_budget(
     budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     contact_seeds: &mut BlendContactSeedCache,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
     let midpoint_parameter = f64::midpoint(first.0, last.0);
     let midpoint_seed = Point2::new(
@@ -3703,6 +3703,7 @@ fn append_transferred_pcurve_segment_with_budget(
         Ok(true)
     })()?;
     if fits {
+        let _reservation = geometry_budget.reserve_vec(samples, 1, "nx transferred pcurve samples")?;
         samples.push(last);
         return Ok(Some(()));
     }
@@ -3772,14 +3773,14 @@ pub(super) fn surface_parameters_for_fit_with_index_and_budget(
     )
 }
 
-fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
+fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
+    surface: &'a SurfaceId,
     point: Point3,
     seed: Option<Point2>,
     tolerance: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache,
+    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let Some(carrier) = index.surfaces(surface.as_str()) else {
         return Ok(None);
@@ -3834,17 +3835,18 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
             if offset.is_some() {
                 return Ok(offset);
             }
-            if !blend_parameter_grids.contains_key(surface) {
+            if !blend_parameter_grids.contains_key(surface.as_str()) {
                 let grid = blend_surface_parameter_grid_with_index_and_budget(
                     index,
                     surface,
                     0,
                     geometry_budget,
                 )?;
-                blend_parameter_grids.insert(surface.clone(), grid);
+                geometry_budget.charge_collection_items(1, "nx blend parameter grid cache")?;
+                blend_parameter_grids.insert(surface.as_str(), grid);
             }
             let grid = blend_parameter_grids
-                .get(surface)
+                .get(surface.as_str())
                 .and_then(Option::as_deref)
                 .map_or(BlendParameterGrid::Disabled, BlendParameterGrid::Provided);
             blend_surface_parameters_for_fit_with_grid_and_budget(
