@@ -844,15 +844,15 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         shell_faces: vec![relation(3, vec![10, 11])],
         ..AsmHistoricalTopology::default()
     };
-    assert_eq!(complete_body_face_slots(&topology, 1), Some(vec![10, 11]));
+    assert_eq!(complete_body_face_slots(None, &topology, 1).unwrap(), Some(vec![10, 11]));
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
-    assert_eq!(complete_body_face_slots(&incomplete, 1), None);
+    assert_eq!(complete_body_face_slots(None, &incomplete, 1).unwrap(), None);
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
-    assert_eq!(complete_body_face_slots(&ambiguous, 1), None);
+    assert_eq!(complete_body_face_slots(None, &ambiguous, 1).unwrap(), None);
 }
 
 #[test]

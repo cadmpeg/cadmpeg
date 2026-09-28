@@ -5299,7 +5299,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(topology) = previous.topology() else {
             continue;
         };
-        let Some(faces) = complete_body_face_slots(topology, body_slot) else {
+        let Some(faces) = complete_body_face_slots(decode, topology, body_slot)? else {
             continue;
         };
         operand.resolved_body_state_id = Some(previous.state_id);
@@ -5329,13 +5329,33 @@ fn body_recipe_operand_history_pair<'a>(
     Some((history, state, previous))
 }
 
-fn complete_body_face_slots(topology: &AsmHistoricalTopology, body: i64) -> Option<Vec<i64>> {
-    fn occurrence_counts(slots: &[i64]) -> HashMap<i64, usize> {
-        let mut counts = HashMap::with_capacity(slots.len());
+fn complete_body_face_slots(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    topology: &AsmHistoricalTopology,
+    body: i64,
+) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
+    macro_rules! complete_some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    fn occurrence_counts(
+        decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+        slots: &[i64],
+    ) -> Result<HashMap<i64, usize>, cadmpeg_core::CodecError> {
+        let mut counts = HashMap::new();
         for &slot in slots {
+            if !counts.contains_key(&slot) {
+                charge_history_item(decode, "index F3D complete body entity counts")?;
+                counts.try_reserve(1).map_err(|_| history_reserve_error(
+                    decode, "index F3D complete body entity counts"))?;
+            }
             *counts.entry(slot).or_default() += 1;
         }
-        counts
+        Ok(counts)
     }
 
     struct RelationIndex<'a> {
@@ -5343,92 +5363,109 @@ fn complete_body_face_slots(topology: &AsmHistoricalTopology, body: i64) -> Opti
         owner_by_member: HashMap<i64, Option<i64>>,
     }
 
-    fn relation_index(relations: &[AsmHistoricalRelation]) -> RelationIndex<'_> {
-        let mut members_by_owner = HashMap::with_capacity(relations.len());
+    fn relation_index<'a>(
+        decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+        relations: &'a [AsmHistoricalRelation],
+    ) -> Result<RelationIndex<'a>, cadmpeg_core::CodecError> {
+        let mut members_by_owner = HashMap::new();
         let mut owner_by_member = HashMap::new();
         for relation in relations {
+            if !members_by_owner.contains_key(&relation.owner_ref) {
+                charge_history_item(decode, "index F3D complete body relation owners")?;
+                members_by_owner.try_reserve(1).map_err(|_| history_reserve_error(
+                    decode, "index F3D complete body relation owners"))?;
+            }
             members_by_owner
                 .entry(relation.owner_ref)
                 .and_modify(|members| *members = None)
                 .or_insert(Some(relation.member_refs.as_slice()));
             for &member in &relation.member_refs {
+                if !owner_by_member.contains_key(&member) {
+                    charge_history_item(decode, "index F3D complete body relation members")?;
+                    owner_by_member.try_reserve(1).map_err(|_| history_reserve_error(
+                        decode, "index F3D complete body relation members"))?;
+                }
                 owner_by_member
                     .entry(member)
                     .and_modify(|owner| *owner = None)
                     .or_insert(Some(relation.owner_ref));
             }
         }
-        RelationIndex {
+        Ok(RelationIndex {
             members_by_owner,
             owner_by_member,
-        }
+        })
     }
 
-    let body_counts = occurrence_counts(&topology.bodies);
-    let region_counts = occurrence_counts(&topology.regions);
-    let shell_counts = occurrence_counts(&topology.shells);
-    let face_counts = occurrence_counts(&topology.faces);
-    let body_regions = relation_index(&topology.body_regions);
-    let region_shells = relation_index(&topology.region_shells);
-    let shell_faces = relation_index(&topology.shell_faces);
+    let body_counts = occurrence_counts(decode, &topology.bodies)?;
+    let region_counts = occurrence_counts(decode, &topology.regions)?;
+    let shell_counts = occurrence_counts(decode, &topology.shells)?;
+    let face_counts = occurrence_counts(decode, &topology.faces)?;
+    let body_regions = relation_index(decode, &topology.body_regions)?;
+    let region_shells = relation_index(decode, &topology.region_shells)?;
+    let shell_faces = relation_index(decode, &topology.shell_faces)?;
 
     if body_counts.get(&body).copied() != Some(1) {
-        return None;
+        return Ok(None);
     }
-    let regions = body_regions
+    let regions = complete_some!(body_regions
         .members_by_owner
         .get(&body)
         .copied()
-        .flatten()?;
+        .flatten());
     if regions.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut seen_regions = HashSet::new();
     let mut seen_shells = HashSet::new();
     let mut seen_faces = HashSet::new();
     for &region in regions {
-        if !seen_regions.insert(region)
+        if !history_hash_set_insert(decode, &mut seen_regions, region,
+            "collect F3D complete body regions")?
             || region_counts.get(&region).copied() != Some(1)
             || body_regions.owner_by_member.get(&region).copied().flatten() != Some(body)
         {
-            return None;
+            return Ok(None);
         }
-        let shells = region_shells
+        let shells = complete_some!(region_shells
             .members_by_owner
             .get(&region)
             .copied()
-            .flatten()?;
+            .flatten());
         if shells.is_empty() {
-            return None;
+            return Ok(None);
         }
         for &shell in shells {
-            if !seen_shells.insert(shell)
+            if !history_hash_set_insert(decode, &mut seen_shells, shell,
+                "collect F3D complete body shells")?
                 || shell_counts.get(&shell).copied() != Some(1)
                 || region_shells.owner_by_member.get(&shell).copied().flatten() != Some(region)
             {
-                return None;
+                return Ok(None);
             }
-            let faces = shell_faces
+            let faces = complete_some!(shell_faces
                 .members_by_owner
                 .get(&shell)
                 .copied()
-                .flatten()?;
+                .flatten());
             if faces.is_empty() {
-                return None;
+                return Ok(None);
             }
             for &face in faces {
-                if !seen_faces.insert(face)
+                if !history_hash_set_insert(decode, &mut seen_faces, face,
+                    "collect F3D complete body faces")?
                     || face_counts.get(&face).copied() != Some(1)
                     || shell_faces.owner_by_member.get(&face).copied().flatten() != Some(shell)
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
         }
     }
-    let mut faces = seen_faces.into_iter().collect::<Vec<_>>();
+    let mut faces = history_collect(decode, seen_faces,
+        "collect F3D complete body face slots")?;
     faces.sort_unstable();
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
 }
 
 fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
@@ -9260,6 +9297,19 @@ fn history_set_insert(
     }
     set.insert(value);
     Ok(())
+}
+
+fn history_hash_set_insert<T: std::hash::Hash + Eq>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    set: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if !set.contains(&value) {
+        charge_history_item(decode, operation)?;
+        set.try_reserve(1).map_err(|_| history_reserve_error(decode, operation))?;
+    }
+    Ok(set.insert(value))
 }
 
 fn history_collect<T>(
