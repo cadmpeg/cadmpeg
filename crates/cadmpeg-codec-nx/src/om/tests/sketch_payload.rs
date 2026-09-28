@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::om::sketch_payload_fixed_pairs;
-use crate::om::sketch_payload_mixed_pairs;
+fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<crate::om::SketchPayloadFixedPair> {
+    crate::test_support::with_decode_context(|ctx| crate::om::sketch_payload_fixed_pairs(ctx, bytes)).unwrap()
+}
+fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<crate::om::SketchPayloadMixedPair> {
+    crate::test_support::with_decode_context(|ctx| crate::om::sketch_payload_mixed_pairs(ctx, bytes)).unwrap()
+}
 use crate::om::sketch_payload_scalar_lanes;
 use crate::test_support::test_bytes::shifted_f64_bytes;
 
@@ -26,6 +30,57 @@ fn sketch_fixed_pair_bytes(
     }
     bytes.extend_from_slice(&shifted_f64_bytes(second * 4.0));
     bytes
+}
+
+fn pair_refusal(fixed: bool, configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let mut bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
+    if !fixed {
+        bytes.truncate(bytes.len() - 8);
+        bytes.extend([0x50, 0x50, 0x00, 0x00]);
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    if fixed { crate::om::sketch_payload_fixed_pairs(&ctx, &bytes).unwrap_err() }
+    else { crate::om::sketch_payload_mixed_pairs(&ctx, &bytes).unwrap_err() }
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_collection_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_retained_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn sketch_fixed_pairs_refuse_work_limit() {
+    let error = pair_refusal(true, |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_collection_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_retained_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn sketch_mixed_pairs_refuse_work_limit() {
+    let error = pair_refusal(false, |policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
