@@ -72,13 +72,14 @@ pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
 
 /// Build the decode body from the entry point's one dialect classification.
 pub(in super::super) fn build_report(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
     ir: &CadIr,
     coverage: cadmpeg_ir::report::decode::Coverage,
     brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
-) -> DecodeBody {
+) -> Result<DecodeBody, cadmpeg_core::CodecError> {
     let geom_sections = scan
         .framing
         .sections
@@ -112,7 +113,10 @@ pub(in super::super) fn build_report(
     // The admission charge, first: it describes how the whole document was
     // read, not what any one record cost. Identity itself is authored once, in
     // `ir.source`; the report body carries only the charge.
-    losses.extend(classification.loss());
+    if let Some(loss) = classification.loss(ctx)? {
+        ctx.try_reserve_items(&mut losses, 1, "creo dialect report losses")?;
+        losses.push(loss);
+    }
 
     // The namespace census: what is byte-backed and readable.
     let srf = scan
@@ -164,7 +168,7 @@ pub(in super::super) fn build_report(
     push_structural_layer_notes(&mut losses, scan);
     push_coverage_drop_losses(&mut losses, &coverage);
 
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: if container_only {
             cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {}
         } else {
@@ -172,7 +176,7 @@ pub(in super::super) fn build_report(
         },
         coverage,
         losses,
-        notes: container::notes(scan),
+        notes: container::notes(ctx, scan)?,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    })
 }

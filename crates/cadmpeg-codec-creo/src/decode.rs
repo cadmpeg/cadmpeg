@@ -86,7 +86,7 @@ pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T)
 /// no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
-    let classification = crate::dialect::classify(&scan);
+    let classification = crate::dialect::classify(ctx, &scan)?;
     // Admit section identities before model construction.
     ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
     let BuiltIr {
@@ -102,13 +102,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         build_ir(ctx, &scan, &classification)?
     };
     let mut body = build_report(
+        ctx,
         &scan,
         &classification,
         &ir,
         coverage,
         &brep_diagnostics,
         ctx.container_only(),
-    );
+    )?;
+    ctx.try_reserve_items(&mut body.losses, transfer_losses.len(), "creo transfer report losses")?;
     body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;

@@ -3303,28 +3303,37 @@ pub(crate) fn has_thumbnail(scan: &ContainerScan) -> bool {
 
 /// Build a codec-neutral summary of the sections, layout, and namespace census.
 pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    classification: &crate::dialect::DialectClassification,
-) -> ContainerSummary {
-    let entries = scan
-        .framing
-        .sections
-        .iter()
-        .map(|s| {
+    classification: crate::dialect::DialectClassification,
+) -> Result<ContainerSummary, CodecError> {
+    let mut entries = Vec::new();
+    for s in &scan.framing.sections {
             let mut attributes = BTreeMap::new();
-            attributes.insert("offset".to_string(), s.offset().to_string());
+            ctx.charge_collection_items(1, "creo summary attribute nodes")?;
+            attributes.insert(
+                ctx.copy_retained_text("offset", "creo summary attribute key")?,
+                ctx.format_retained(s.offset(), "creo summary offset")?,
+            );
             if s.raw_name != s.name() {
-                attributes.insert("raw_name".to_string(), s.raw_name.clone());
+                ctx.charge_collection_items(1, "creo summary attribute nodes")?;
+                attributes.insert(
+                    ctx.copy_retained_text("raw_name", "creo summary attribute key")?,
+                    ctx.copy_retained_text(&s.raw_name, "creo summary raw name")?,
+                );
             }
             let expanded = expanded_section_for(scan, s);
             if let Some(expanded) = expanded {
+                ctx.charge_collection_items(1, "creo summary attribute nodes")?;
                 attributes.insert(
-                    "expanded_payload_size".to_string(),
-                    expanded.data.len().to_string(),
+                    ctx.copy_retained_text("expanded_payload_size", "creo summary attribute key")?,
+                    ctx.format_retained(expanded.data.len(), "creo summary expanded size")?,
                 );
             }
-            ContainerEntry {
-                name: s.name().to_string(),
+            let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
+            ctx.try_reserve_items(&mut entries, 1, "creo summary entries")?;
+            entries.push(ContainerEntry {
+                name,
                 role: s.role().into(),
                 storage: expanded.map_or_else(
                     || EntryStorage::verbatim(VerbatimLabel::None, s.length() as u64),
@@ -3335,53 +3344,75 @@ pub(crate) fn summarize(
                     },
                 ),
                 attributes,
-            }
-        })
-        .collect();
+            });
+    }
 
-    let notes = notes(scan);
+    let notes = notes(ctx, scan)?;
+    let mut losses = Vec::new();
+    if let Some(loss) = classification.loss(ctx)? {
+        ctx.try_reserve_items(&mut losses, 1, "creo summary losses")?;
+        losses.push(loss);
+    }
 
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(classification.matched().clone()),
+    Ok(ContainerSummary::classified(
+        cadmpeg_core::dialect::DialectLayers::of(classification.into_matched()),
         cadmpeg_ir::ContainerKind::Psb,
         entries,
-        classification.loss().into_iter().collect(),
+        losses,
         notes,
-    )
+    ))
 }
 
 /// Build the diagnostic notes shared by inspection and decode reports.
-pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
-    let mut notes = vec![
-        format!("PSB container: {}", scan.framing.version_line),
-        format!(
+pub(crate) fn notes(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<Vec<String>, CodecError> {
+    fn push_note(
+        ctx: &DecodeContext<'_>,
+        notes: &mut Vec<String>,
+        value: impl std::fmt::Display,
+    ) -> Result<(), CodecError> {
+        let value = ctx.format_retained(value, "creo container note text")?;
+        ctx.try_reserve_items(notes, 1, "creo container notes")?;
+        notes.push(value);
+        Ok(())
+    }
+    struct OptionalCount<T>(Option<T>);
+    impl<T: std::fmt::Display> std::fmt::Display for OptionalCount<T> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match &self.0 {
+                Some(value) => write!(f, "{value}"),
+                None => f.write_str("n/a"),
+            }
+        }
+    }
+    let mut notes = Vec::new();
+    push_note(ctx, &mut notes, format_args!("PSB container: {}", scan.framing.version_line))?;
+    push_note(ctx, &mut notes, format_args!(
             "layout: {}; {} section(s) enumerated",
             scan.framing.layout.token(),
             scan.framing.sections.len()
-        ),
-    ];
+        ))?;
     if let Some(name) = &scan.framing.model_name {
-        notes.push(format!("native model name: {}", name.name));
+        push_note(ctx, &mut notes, format_args!("native model name: {}", name.name))?;
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
         let continuation_count = legacy.persistence.continuation_count();
-        notes.push(format!(
+        push_note(ctx, &mut notes, format_args!(
             "legacy ASCII persistence: schema {}; product release {release}; {} attribute \
              declarations, {} resolved values, {continuation_count} continuation rows in {} scopes",
             legacy.schema,
             legacy.persistence.declaration_count(),
             legacy.persistence.value_count(),
             legacy.persistence.scopes.len(),
-        ));
+        ))?;
         if legacy.persistence.unresolved_value_count() != 0
             || legacy.persistence.conflicting_declaration_count() != 0
         {
-            notes.push(format!(
+            push_note(ctx, &mut notes, format_args!(
                 "legacy ASCII structural gaps: {} unresolved values, {} conflicting declarations",
                 legacy.persistence.unresolved_value_count(),
                 legacy.persistence.conflicting_declaration_count(),
-            ));
+            ))?;
         }
     }
 
@@ -3390,35 +3421,34 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
         scan.framing.census.crv_array_count,
     ) {
         (None, None) => {
-            notes.push("no VisibGeom srf_array/crv_array count header was located".to_string());
+            push_note(ctx, &mut notes, "no VisibGeom srf_array/crv_array count header was located")?;
         }
         (srf, crv) => {
-            notes.push(format!(
+            push_note(ctx, &mut notes, format_args!(
                 "VisibGeom namespace census: srf_array={}, crv_array={} (byte-backed count \
                  headers; per-instance row geometry is not decoded)",
-                srf.map_or_else(|| "n/a".to_string(), |c| c.to_string()),
-                crv.map_or_else(|| "n/a".to_string(), |c| c.to_string()),
-            ));
+                OptionalCount(srf),
+                OptionalCount(crv),
+            ))?;
         }
     }
 
     if has_thumbnail(scan) {
-        notes.push("THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)".to_string());
+        push_note(ctx, &mut notes, "THMB_IMG_MAIN carries a JPEG preview (excluded from geometry)")?;
     }
     if !scan.framing.expanded_sections.is_empty() {
-        notes.push(format!(
+        push_note(ctx, &mut notes, format_args!(
             "expanded {} Unix-compress section payload(s) with TOC-validated output lengths",
             scan.framing.expanded_sections.len()
-        ));
+        ))?;
     }
 
-    notes.push(
+    push_note(ctx, &mut notes,
         "container-level enumeration; `decode` preserves PSB geometry sections as unknown records \
          and transfers only carriers whose model-space placement is complete"
-            .to_string(),
-    );
+    )?;
 
-    notes
+    Ok(notes)
 }
 
 #[cfg(test)]

@@ -1334,8 +1334,10 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
     assert_eq!(legacy.persistence.declaration_count(), 1);
     assert_eq!(legacy.persistence.value_count(), 1);
-    let classification = crate::dialect::classify(&scan);
-    assert!(container::summarize(&scan, &classification)
+    let classification = crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+        .expect("dialect classification admitted");
+    assert!(crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+        .expect("container summary admitted")
         .notes
         .iter()
         .any(|note| {
