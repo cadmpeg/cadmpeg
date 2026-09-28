@@ -286,3 +286,93 @@ fn pattern_body_seed_preserves_native_selection() {
                 [PatternSeed::Bodies(BodySelection::Native(id))]
                     if id == "f3d:Design/BulkStream.dat:design-construction-operand-group#20")));
 }
+
+fn pattern_slots_error(max_items: u64, max_retained: u64)
+    -> Result<(), cadmpeg_core::CodecError>
+{
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed}, BodySelection, Feature, FeatureDefinition,
+        FeatureId, FeatureOperation,
+    };
+    let feature_id = FeatureId::mint("f3d:test:feature#pattern").unwrap();
+    let prefix = crate::ids::history_input_prefix(&feature_id.key(), 7);
+    let seed = BodySelection::historical(
+        crate::ids::history_input_state_id(&prefix),
+        vec![crate::ids::history_input_body_id(&prefix, 1)],
+        "f3d:test:native-selection#1".into(),
+    ).unwrap();
+    let pattern: PatternKind = serde_json::from_value(serde_json::json!({
+        "kind": "circular",
+        "axis_origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "axis_dir": {"x": 0.0, "y": 0.0, "z": 1.0},
+        "angle": 1.0,
+        "count": 2
+    })).unwrap();
+    let mut feature = Feature {
+        id: feature_id,
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: vec![PatternSeed::Bodies(seed)],
+                pattern,
+            }),
+        ),
+        native_ref: None,
+    };
+    feature.evaluation.set_outputs(
+        vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#2").unwrap()]
+            .try_into().unwrap());
+    let inputs = FeatureBodySelectionInputs {
+        scopes: &[],
+        groups: &[],
+        body_recipe_operands: &[],
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: &[],
+        regions: &[],
+        shells: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::bind_feature_body_selections(&ctx, std::slice::from_mut(&mut feature), &inputs)
+}
+
+#[test]
+fn pattern_body_first_slot_refuses_collection_limit() {
+    let error = pattern_slots_error(0, u64::MAX).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern body slots"));
+}
+
+#[test]
+fn pattern_body_second_slot_refuses_collection_limit() {
+    let error = pattern_slots_error(1, u64::MAX).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern body slots"));
+}
+
+#[test]
+fn pattern_body_feature_id_refuses_retained_limit() {
+    let error = pattern_slots_error(u64::MAX, 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D pattern body feature ID"));
+}
+
+#[test]
+fn pattern_body_feature_index_refuses_collection_limit() {
+    let error = pattern_slots_error(2, u64::MAX).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern body features"));
+}
