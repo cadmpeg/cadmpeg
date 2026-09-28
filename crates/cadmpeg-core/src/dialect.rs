@@ -438,6 +438,29 @@ impl DialectLayers {
         Ok(())
     }
 
+    /// Inserts one extra layer after charging and reserving its collection slot.
+    pub fn insert_charged(
+        &mut self,
+        ctx: &crate::decode::DecodeContext<'_>,
+        layer: DialectMatch,
+        operation: &'static str,
+    ) -> Result<Result<(), DialectMatch>, crate::CodecError> {
+        if Self::same_key(&self.primary, &layer)
+            || self
+                .extra
+                .iter()
+                .any(|existing| Self::same_key(existing, &layer))
+        {
+            return Ok(Err(layer));
+        }
+        ctx.charge_collection_items(1, operation)?;
+        self.extra
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        self.extra.push(layer);
+        Ok(Ok(()))
+    }
+
     /// Adds a layer, returning it unchanged when its key is occupied.
     pub fn with(mut self, layer: DialectMatch) -> Result<Self, DialectMatch> {
         self.insert(layer)?;

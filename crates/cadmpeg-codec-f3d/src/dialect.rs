@@ -218,20 +218,69 @@ impl F3dDialect {
 /// identity collision. Returns the layer set and any recoverable
 /// classification loss.
 pub(crate) fn classify_layers(
+    ctx: &DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
-) -> (DialectLayers, Vec<LossNote>) {
+) -> Result<(DialectLayers, Vec<LossNote>), CodecError> {
+    ctx.charge_collection_items(1, "classify F3D primary dialect layer")?;
     let mut layers = DialectLayers::of(scan.kind.dialect().clone());
     let mut losses = Vec::new();
-    for layer in kernel_layers(scan) {
-        let format = layer.format().to_owned();
-        let instance = layer.instance().unwrap_or("unidentified").to_owned();
-        if layers.insert(layer).is_err() {
-            losses.push(F3dLossCode::DialectLayerCollision.note(format!(
-                "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
-            )));
+    let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
+        if let Err(rejected) = layers.insert_charged(ctx, layer, "collect F3D dialect layers")? {
+            ctx.charge_collection_items(1, "collect F3D dialect collision losses")?;
+            losses.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect F3D dialect collision losses", 0, 1)
+            })?;
+            let format = rejected.format();
+            let instance = rejected.instance().unwrap_or("unidentified");
+            losses.push(F3dLossCode::DialectLayerCollision.note(
+                crate::container::format_retained(
+                    ctx,
+                    "retain F3D dialect collision loss",
+                    format_args!(
+                        "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
+                    ),
+                )?,
+            ));
         }
+        Ok(())
+    };
+    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
+        LayerInstance::Tagged
+    } else {
+        LayerInstance::Sole
+    };
+    for brep in &scan.breps {
+        let header = brep.kernel.as_ref().map_or(
+            cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+            crate::container::KernelFraming::as_header_ref,
+        );
+        add_layer(cadmpeg_asm::dialect::classify_layer(
+            header, &brep.name, instance,
+        ))?;
     }
-    (layers, losses)
+    for name in crate::container::text_brep_names(scan) {
+        let matched = match scan.text_breps.get(name) {
+            Some(crate::container::TextBrepFraming::Parsed(stream)) => {
+                let header = stream.header.as_kernel_header();
+                let reference = match stream.terminator {
+                    cadmpeg_asm::sat::Terminator::Asm => {
+                        cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
+                    }
+                    cadmpeg_asm::sat::Terminator::Acis => {
+                        cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
+                    }
+                };
+                cadmpeg_asm::dialect::classify_layer(reference, name, instance)
+            }
+            _ => cadmpeg_asm::dialect::classify_layer(
+                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
+                name,
+                instance,
+            ),
+        };
+        add_layer(matched)?;
+    }
+    Ok((layers, losses))
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
@@ -275,48 +324,6 @@ fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
     );
     let message = archive_member_message(matched, &message);
     Some(F3dLossCode::SourceDialectUnverified.note(message))
-}
-
-/// Kernel dialect layers from the binary and text B-rep streams.
-fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
-    let instance = if scan.breps.len() + crate::container::text_brep_names(scan).count() > 1 {
-        LayerInstance::Tagged
-    } else {
-        LayerInstance::Sole
-    };
-    let mut matches = Vec::new();
-    for brep in &scan.breps {
-        let header = brep.kernel.as_ref().map_or(
-            cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
-            crate::container::KernelFraming::as_header_ref,
-        );
-        matches.push(cadmpeg_asm::dialect::classify_layer(
-            header, &brep.name, instance,
-        ));
-    }
-    for name in crate::container::text_brep_names(scan) {
-        let matched = match scan.text_breps.get(name) {
-            Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header();
-                let reference = match stream.terminator {
-                    cadmpeg_asm::sat::Terminator::Asm => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
-                    }
-                    cadmpeg_asm::sat::Terminator::Acis => {
-                        cadmpeg_asm::dialect::KernelHeaderRef::TextAcis(&header)
-                    }
-                };
-                cadmpeg_asm::dialect::classify_layer(reference, name, instance)
-            }
-            _ => cadmpeg_asm::dialect::classify_layer(
-                cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
-                name,
-                instance,
-            ),
-        };
-        matches.push(matched);
-    }
-    matches
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
