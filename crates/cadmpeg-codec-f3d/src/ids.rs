@@ -265,6 +265,43 @@ pub(crate) fn identity_key_component(value: &str) -> String {
         .to_owned()
 }
 
+fn identity_key_component_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let operation = "retain F3D Combine identity component";
+    let mut length = 0usize;
+    for character in value.chars() {
+        let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            character.len_utf8().checked_mul(3)
+        } else {
+            Some(character.len_utf8())
+        };
+        length = length.checked_add(width.ok_or_else(||
+            ctx.refuse_codec_limit(operation, 0, u64::MAX))?)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    }
+    let bytes = u64::try_from(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut encoded = String::new();
+    encoded.try_reserve(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    for character in value.chars() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let mut scalar = [0; 4];
+            for byte in character.encode_utf8(&mut scalar).as_bytes() {
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                encoded.push('%');
+                encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+                encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+            }
+        } else {
+            encoded.push(character);
+        }
+    }
+    Ok(encoded)
+}
+
 /// Reverse [`identity_key_component`] for a complete encoded component.
 pub(crate) fn decode_identity_key_component(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
@@ -450,42 +487,32 @@ pub(crate) fn neutral_feature_id_parts(
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
-pub(crate) fn neutral_combine_external_body_id(
+pub(crate) fn neutral_combine_external_body_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     identity: &DesignCombineExternalBodyIdentity,
-) -> String {
-    let selector_asset = identity_key_component(identity.selector_asset_id().as_str());
-    let selector_context = identity_key_component(identity.selector_context_id().as_str());
-    let external_asset = identity_key_component(identity.external_asset_id().as_str());
-    let link_name = identity_key_component(identity.external_link_name());
-    let property_key = identity
-        .external_version()
-        .map(|version| version.property_key.value.as_str())
-        .map(identity_key_component)
-        .unwrap_or_default();
-    let version_urn = identity
-        .external_version()
-        .map(|version| version.version_urn.value.as_str())
-        .map(identity_key_component)
-        .unwrap_or_default();
-    format!(
-        "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
-        selector_asset.len(),
-        selector_asset,
-        selector_context.len(),
-        selector_context,
-        identity.occurrence_reference(),
-        identity.external_body_reference(),
-        identity.external_segment(),
-        external_asset.len(),
-        external_asset,
-        link_name.len(),
-        link_name,
-        u8::from(identity.external_version().is_some()),
-        property_key.len(),
-        property_key,
-        u8::from(identity.external_version().is_some()),
-        version_urn.len(),
-        version_urn,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let selector_asset = identity_key_component_charged(ctx, identity.selector_asset_id().as_str())?;
+    let selector_context = identity_key_component_charged(ctx, identity.selector_context_id().as_str())?;
+    let external_asset = identity_key_component_charged(ctx, identity.external_asset_id().as_str())?;
+    let link_name = identity_key_component_charged(ctx, identity.external_link_name())?;
+    let property_key = identity.external_version()
+        .map(|version| identity_key_component_charged(ctx, version.property_key.value.as_str()))
+        .transpose()?.unwrap_or_default();
+    let version_urn = identity.external_version()
+        .map(|version| identity_key_component_charged(ctx, version.version_urn.value.as_str()))
+        .transpose()?.unwrap_or_default();
+    crate::container::format_retained(
+        ctx,
+        "retain F3D Combine external body identity",
+        format_args!(
+            "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            selector_asset.len(), selector_asset, selector_context.len(), selector_context,
+            identity.occurrence_reference(), identity.external_body_reference(),
+            identity.external_segment(), external_asset.len(), external_asset,
+            link_name.len(), link_name, u8::from(identity.external_version().is_some()),
+            property_key.len(), property_key,
+            u8::from(identity.external_version().is_some()), version_urn.len(), version_urn,
+        ),
     )
 }
 
