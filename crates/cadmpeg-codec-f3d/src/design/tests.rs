@@ -362,7 +362,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         project_sketch_design(None, &placements, &points, &[], &[], &[], 1.0e-6)
             .expect("sketch lanes pair");
     let mut constraints =
-        project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
+        project_sketch_constraints(None, &placements, &[], &points, &[], &[], &relations, &entities)
+            .unwrap();
     assert_eq!(sketches.len(), 2);
     assert_eq!(entities.len(), 2);
     assert_eq!(constraints.len(), 2);

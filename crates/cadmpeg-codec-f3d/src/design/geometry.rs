@@ -2024,12 +2024,14 @@ fn certified_profile_loop(
 ) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let scale = entities
-        .iter()
-        .filter_map(sketch_entity_endpoints)
-        .flatten()
-        .flat_map(|point| [point.u.abs(), point.v.abs()])
-        .fold(1.0_f64, f64::max);
+    let mut scale = 1.0_f64;
+    for entity in entities {
+        if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
+            for point in ends {
+                scale = scale.max(point.u.abs()).max(point.v.abs());
+            }
+        }
+    }
     // The tube need only separate the selected point and peer boundaries; it
     // is not a geometric approximation exposed by the codec.  A square-root
     // scale keeps the conservative tube practical while exact boundary tests
@@ -3051,7 +3053,7 @@ pub(super) fn closed_sketch_profiles(
             push_geometry_item(ctx, &mut profiles, profile,
                 "f3d closed sketch circle profile")?;
         }
-        if let Some(ends) = sketch_entity_endpoints(entity) {
+        if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
             push_geometry_item(ctx, &mut edges, (entity, ends),
                 "f3d closed sketch edge")?;
         }
@@ -3526,10 +3528,11 @@ fn tangent_nested_line_profile(
 
 pub(super) fn sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SketchEntity,
-) -> Option<[Point2; 2]> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<[Point2; 2]>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match entity.geometry.definition() {
+    Ok(match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Arc {
             center,
@@ -3563,33 +3566,27 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
+            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
             let start_parameter = curve.knots()[curve.degree() as usize];
             let end_parameter = curve.knots()[control_points.len()];
-            Some([
-                *cadmpeg_ir::eval::nurbs_pcurve_uv(
+            let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     start_parameter,
-                )
-                .ok()?
-                .as_raw(),
-                *cadmpeg_ir::eval::nurbs_pcurve_uv(
+                ))?;
+            let end = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     end_parameter,
-                )
-                .ok()?
-                .as_raw(),
-            ])
+                ))?;
+            start.zip(end).map(|(start, end)| [*start.as_raw(), *end.as_raw()])
         }
         _ => None,
-    }
+    })
 }
 
 fn sketch_endpoints_close(first: Point2, second: Point2, tolerance: f64) -> bool {

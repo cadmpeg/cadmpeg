@@ -16,6 +16,8 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation},
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
 
@@ -25,6 +27,7 @@ const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.
 pub(crate) fn project_sketch_constraints(
+    ctx: Option<&DecodeContext<'_>>,
     placements: &[DesignSketchPlacement],
     parameters: &[DesignParameter],
     points: &[SketchPoint],
@@ -32,7 +35,7 @@ pub(crate) fn project_sketch_constraints(
     texts: &[SketchText],
     relations: &[SketchRelation],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
     use cadmpeg_ir::sketches::{
         NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput as Definition,
         SketchNativeOperand,
@@ -143,9 +146,11 @@ pub(crate) fn project_sketch_constraints(
         }
     };
 
-    let projected_constraints = relations.iter().filter_map(|relation| {
-        let scope = native_stream(&relation.id)?;
-        let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
+    let project_relation = |relation: &SketchRelation| -> Result<Option<SketchConstraint>, CodecError> {
+        let Some(scope) = native_stream(&relation.id) else { return Ok(None); };
+        let Some(sketch) = sketches.get(&(scope, relation.owner_reference)).cloned() else {
+            return Ok(None);
+        };
         let input_entities = relation
             .members()
             .iter()
@@ -186,7 +191,7 @@ pub(crate) fn project_sketch_constraints(
         };
         let definition = (if let Some(kind) = sole_kind {
             let loci = if kind == SketchConstraintKind::Coincident {
-                exact_coincident_loci(&semantic_entities)
+                exact_coincident_loci(&semantic_entities, ctx)?
             } else {
                 None
             };
@@ -250,12 +255,15 @@ pub(crate) fn project_sketch_constraints(
                     )
                     .collect(),
             })
-        })?;
-        Some(SketchConstraint {
+        });
+        let Some(definition) = definition else { return Ok(None); };
+        let Some(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok() else {
+            return Ok(None);
+        };
+        Ok(Some(SketchConstraint {
             id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
             sketch,
-            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                .ok()?,
+            definition,
             name: None,
             driving: None,
             active: None,
@@ -266,11 +274,22 @@ pub(crate) fn project_sketch_constraints(
             label_position: None,
             metadata: None,
             native_ref: Some(relation.id.clone()),
-        })
-    });
-    let mut constraints = projected_constraints.collect::<Vec<_>>();
+        }))
+    };
+    let mut constraints = Vec::new();
+    for relation in relations {
+        if let Some(constraint) = project_relation(relation)? {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d projected sketch constraint")?;
+                constraints.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d projected sketch constraint allocation", 0, 1)
+                })?;
+            }
+            constraints.push(constraint);
+        }
+    }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
-    constraints
+    Ok(constraints)
 }
 
 struct RectangularPatternSourceDirection {

@@ -20,6 +20,7 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchConstraintKind, SketchRelation, SketchRelationOperand},
 };
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
@@ -4293,7 +4294,8 @@ pub(super) fn exact_atomic_constraint(
 
 pub(super) fn exact_coincident_loci(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition as Geometry,
         SketchLocus,
@@ -4301,7 +4303,7 @@ pub(super) fn exact_coincident_loci(
 
     let loci = |entity: &cadmpeg_ir::sketches::SketchEntity| {
         let mut loci = Vec::new();
-        if let Some([start, end]) = sketch_entity_endpoints(entity) {
+        if let Some([start, end]) = sketch_entity_endpoints(entity, ctx)? {
             loci.push((SketchLocus::Start(entity.id().clone()), start));
             loci.push((SketchLocus::End(entity.id().clone()), end));
         }
@@ -4323,7 +4325,7 @@ pub(super) fn exact_coincident_loci(
             | Geometry::ExternalReference { .. }
             | Geometry::Native { .. } => {}
         }
-        loci
+        Ok::<_, CodecError>(loci)
     };
 
     if entities.len() < 2
@@ -4334,12 +4336,12 @@ pub(super) fn exact_coincident_loci(
             .len()
             != entities.len()
     {
-        return None;
+        return Ok(None);
     }
     let loci = entities
         .iter()
         .map(|entity| loci(entity))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     let mut solutions = Vec::new();
     for (first_locus, position) in &loci[0] {
         let mut solution = vec![first_locus.clone()];
@@ -4362,9 +4364,9 @@ pub(super) fn exact_coincident_loci(
         }
     }
     let [loci] = solutions.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(Definition::CoincidentLoci { loci: loci.clone() })
+    Ok(Some(Definition::CoincidentLoci { loci: loci.clone() }))
 }
 
 fn midpoint_constraint(
@@ -4567,8 +4569,12 @@ fn recipe_linear_dimension_candidates(
                 <= EPS_DIMENSIONS_RECIPE_LINEAR_DIMENSION_CANDIDATES_E9 * scale
     };
     let point_on_endpoint = |position: Point2, line: &cadmpeg_ir::sketches::SketchEntity| {
-        sketch_entity_endpoints(line)
-            .is_some_and(|endpoints| endpoints.into_iter().any(|end| same_point(position, end)))
+        match line.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => {
+                [start.get(), end.get()].into_iter().any(|end| same_point(position, end))
+            }
+            _ => false,
+        }
     };
     let mut candidates = Vec::new();
     for first in 0..points.len() {
