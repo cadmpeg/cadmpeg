@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
 const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1.0e-6;
@@ -42,6 +43,29 @@ struct SketchArrangementEdge {
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
     polyline: Vec<Point2>,
+}
+
+fn push_geometry_index<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut HashMap<K, Vec<V>>,
+    key: K,
+    value: V,
+    index_operation: &'static str,
+    value_operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        if !index.contains_key(&key) {
+            ctx.charge_collection_items(1, index_operation)?;
+            index.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(index_operation, 0, 1))?;
+        }
+        ctx.charge_collection_items(1, value_operation)?;
+    }
+    let values = index.entry(key).or_default();
+    if let Some(ctx) = ctx {
+        values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(value_operation, 0, 1))?;
+    }
+    values.push(value);
+    Ok(())
 }
 
 fn push_arrangement_outgoing(
@@ -2835,7 +2859,8 @@ pub(super) fn closed_sketch_profiles(
                 }
             }
         }
-        endpoint_cells.entry(cell).or_default().push(endpoint);
+        push_geometry_index(ctx, &mut endpoint_cells, cell, endpoint,
+            "f3d sketch endpoint cell", "f3d sketch endpoint cell member")?;
     }
     let edge_nodes = (0..edges.len())
         .map(|edge| {
@@ -2847,8 +2872,10 @@ pub(super) fn closed_sketch_profiles(
         .collect::<Vec<_>>();
     let mut adjacency = HashMap::<usize, Vec<usize>>::new();
     for (edge, [start, end]) in edge_nodes.iter().copied().enumerate() {
-        adjacency.entry(start).or_default().push(edge);
-        adjacency.entry(end).or_default().push(edge);
+        push_geometry_index(ctx, &mut adjacency, start, edge,
+            "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
+        push_geometry_index(ctx, &mut adjacency, end, edge,
+            "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
     }
     for incident in adjacency.values_mut() {
         incident.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
