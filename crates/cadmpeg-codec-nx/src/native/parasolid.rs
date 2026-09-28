@@ -3726,126 +3726,186 @@ pub(super) fn parasolid_entity_value_records(
 }
 
 /// Join type-81 reference slots to unique same-stream numeric value records.
+fn insert_unique_value<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    values: &mut BTreeMap<(u32, u32), Option<T>>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    key: (u32, u32),
+    value: T,
+) -> Result<(), CodecError> {
+    match values.entry(key) {
+        std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "NX entity 51 value identity index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<((u32, u32), Option<T>)>() * 4,
+            ))?;
+            entry.insert(Some(value));
+        }
+    }
+    Ok(())
+}
+
+fn entity_51_use_id(
+    ctx: &DecodeContext<'_>,
+    stem: &'static str,
+    entity: &ParasolidEntity51Record,
+    reference_ordinal: u32,
+) -> Result<String, CodecError> {
+    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let length = "nx:s".len()
+        .checked_add(digits(u64::from(entity.stream_ordinal)))
+        .and_then(|length| length.checked_add(1 + stem.len() + 1))
+        .and_then(|length| length.checked_add(digits(u64::from(u32::from(entity.xmt)))))
+        .and_then(|length| length.checked_add(1 + digits(entity.inflated_offset)))
+        .and_then(|length| length.checked_add(1 + digits(u64::from(reference_ordinal))))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX entity 51 value use identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX entity 51 value use identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 value use identity", 0, 1))?;
+    write!(&mut id, "nx:s{}:{stem}#{}-{}-{reference_ordinal}", entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset)
+        .map_err(|_| ctx.refuse_codec_limit("write NX entity 51 value use identity", 0, 1))?;
+    Ok(id)
+}
+
+fn entity_51_use_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(text.as_bytes(), "NX entity 51 value use text")?)
+        .map_err(|_| CodecError::Malformed("NX entity 51 value use text is not UTF-8".into()))
+}
+
+fn push_entity_51_use<T>(
+    ctx: &DecodeContext<'_>,
+    uses: &mut Vec<T>,
+    value: T,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "NX entity 51 value uses")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), "NX entity 51 value use")?;
+    uses.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX entity 51 value uses", 0, 1))?;
+    uses.push(value);
+    Ok(())
+}
+
+fn sort_entity_51_uses<T>(
+    ctx: &DecodeContext<'_>,
+    uses: &mut [T],
+    id: impl Fn(&T) -> &str,
+) -> Result<(), CodecError> {
+    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX entity 51 value use sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX entity 51 value use sort work")?;
+    uses.sort_by(|left, right| id(left).cmp(id(right)));
+    Ok(())
+}
+
 pub(super) fn parasolid_entity_51_numeric_uses(
+    ctx: &DecodeContext<'_>,
     entities: &[ParasolidEntity51Record],
     integers: &[ParasolidEntity52IntegerRecord],
     doubles: &[ParasolidEntity53DoubleRecord],
-) -> Vec<ParasolidEntity51NumericUse> {
+) -> Result<Vec<ParasolidEntity51NumericUse>, CodecError> {
     let mut values =
-        BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, NonNullXmt, &str)>>::new();
+        BTreeMap::<(u32, u32), Option<(ParasolidEntity51NumericKind, NonNullXmt, &str)>>::new();
+    let mut values_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
     for record in integers {
-        values
-            .entry((record.stream_ordinal, u32::from(record.xmt)))
-            .or_default()
-            .push((
+        insert_unique_value(ctx, &mut values, &mut values_guard,
+            (record.stream_ordinal, u32::from(record.xmt)), (
                 ParasolidEntity51NumericKind::UnsignedIntegers,
                 record.xmt,
                 &record.id,
-            ));
+            ))?;
     }
     for record in doubles {
-        values
-            .entry((record.stream_ordinal, u32::from(record.xmt)))
-            .or_default()
-            .push((
+        insert_unique_value(ctx, &mut values, &mut values_guard,
+            (record.stream_ordinal, u32::from(record.xmt)), (
                 ParasolidEntity51NumericKind::Doubles,
                 record.xmt,
                 &record.id,
-            ));
+            ))?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some([(kind, target_xmt, value_record)]) = values
+            let Some(Some((kind, target_xmt, value_record))) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
-                .map(Vec::as_slice)
             else {
                 continue;
             };
-            uses.push(ParasolidEntity51NumericUse {
-                id: format!(
-                    "nx:s{}:entity-51-numeric-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal,
-                    u32::from(entity.xmt),
-                    entity.inflated_offset
-                ),
+            push_entity_51_use(ctx, &mut uses, ParasolidEntity51NumericUse {
+                id: entity_51_use_id(ctx, "entity-51-numeric-use", entity, reference_ordinal)?,
                 stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity.id.clone(),
+                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
                 position,
                 referenced_xmt: *target_xmt,
                 kind: *kind,
-                value_record: (*value_record).to_string(),
+                value_record: entity_51_use_text(ctx, value_record)?,
                 inflated_offset: entity.inflated_offset,
-            });
+            })?;
         }
     }
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
+    Ok(uses)
 }
 
 /// Join type-81 reference slots to unique same-stream type-84 strings.
 pub(super) fn parasolid_entity_51_string_uses(
+    ctx: &DecodeContext<'_>,
     entities: &[ParasolidEntity51Record],
     strings: &[ParasolidEntity54StringRecord],
-) -> Vec<ParasolidEntity51StringUse> {
+) -> Result<Vec<ParasolidEntity51StringUse>, CodecError> {
     let mut strings_by_identity =
-        BTreeMap::<(u32, u32), Vec<&ParasolidEntity54StringRecord>>::new();
+        BTreeMap::<(u32, u32), Option<&ParasolidEntity54StringRecord>>::new();
+    let mut strings_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
     for string in strings {
-        strings_by_identity
-            .entry((string.stream_ordinal, u32::from(string.xmt)))
-            .or_default()
-            .push(string);
+        insert_unique_value(ctx, &mut strings_by_identity, &mut strings_guard,
+            (string.stream_ordinal, u32::from(string.xmt)), string)?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some([string]) = strings_by_identity
+            let Some(Some(string)) = strings_by_identity
                 .get(&(entity.stream_ordinal, referenced_xmt))
-                .map(Vec::as_slice)
             else {
                 continue;
             };
-            uses.push(ParasolidEntity51StringUse {
-                id: format!(
-                    "nx:s{}:entity-51-string-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal,
-                    u32::from(entity.xmt),
-                    entity.inflated_offset
-                ),
+            push_entity_51_use(ctx, &mut uses, ParasolidEntity51StringUse {
+                id: entity_51_use_id(ctx, "entity-51-string-use", entity, reference_ordinal)?,
                 stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity.id.clone(),
+                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
                 position,
                 referenced_xmt: string.xmt,
-                string_record: string.id.clone(),
+                string_record: entity_51_use_text(ctx, &string.id)?,
                 inflated_offset: entity.inflated_offset,
-            });
+            })?;
         }
     }
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
+    Ok(uses)
 }
 
 /// Join type-81 reference slots to unique same-stream structured value records.
 pub(super) fn parasolid_entity_51_structured_uses(
+    ctx: &DecodeContext<'_>,
     entities: &[ParasolidEntity51Record],
     vectors: &[ParasolidEntityVectorRecord],
     axes: &[ParasolidEntity57AxisRecord],
     tags: &[ParasolidEntity58TagRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
-) -> Vec<ParasolidEntity51StructuredUse> {
-    let mut values = BTreeMap::<(u32, u32), Vec<(StructuredValueKind, NonNullXmt, &str)>>::new();
+) -> Result<Vec<ParasolidEntity51StructuredUse>, CodecError> {
+    let mut values = BTreeMap::<(u32, u32), Option<(StructuredValueKind, NonNullXmt, &str)>>::new();
+    let mut values_guard = ctx.reserve_scoped(0, "NX entity 51 value identity index")?;
     for record in vectors {
         let kind = match record.kind {
             ParasolidVectorValueKind::Points => StructuredValueKind::Points,
             ParasolidVectorValueKind::Vectors => StructuredValueKind::Vectors,
             ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
         };
-        values
-            .entry((record.stream_ordinal, u32::from(record.xmt)))
-            .or_default()
-            .push((kind, record.xmt, record.id.as_str()));
+        insert_unique_value(ctx, &mut values, &mut values_guard,
+            (record.stream_ordinal, u32::from(record.xmt)),
+            (kind, record.xmt, record.id.as_str()))?;
     }
     for (kind, stream_ordinal, xmt, id) in axes
         .iter()
@@ -3874,40 +3934,32 @@ pub(super) fn parasolid_entity_51_structured_uses(
             )
         }))
     {
-        values
-            .entry((stream_ordinal, u32::from(xmt)))
-            .or_default()
-            .push((kind, xmt, id));
+        insert_unique_value(ctx, &mut values, &mut values_guard,
+            (stream_ordinal, u32::from(xmt)), (kind, xmt, id))?;
     }
     let mut uses = Vec::new();
     for entity in entities {
         for (position, &referenced_xmt) in entity.trailing_references.fields() {
             let reference_ordinal = position.reference_ordinal();
-            let Some([(kind, target_xmt, value_record)]) = values
+            let Some(Some((kind, target_xmt, value_record))) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
-                .map(Vec::as_slice)
             else {
                 continue;
             };
-            uses.push(ParasolidEntity51StructuredUse {
-                id: format!(
-                    "nx:s{}:entity-51-structured-use#{}-{}-{reference_ordinal}",
-                    entity.stream_ordinal,
-                    u32::from(entity.xmt),
-                    entity.inflated_offset
-                ),
+            push_entity_51_use(ctx, &mut uses, ParasolidEntity51StructuredUse {
+                id: entity_51_use_id(ctx, "entity-51-structured-use", entity, reference_ordinal)?,
                 stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity.id.clone(),
+                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
                 position,
                 referenced_xmt: *target_xmt,
                 kind: *kind,
-                value_record: (*value_record).to_string(),
+                value_record: entity_51_use_text(ctx, value_record)?,
                 inflated_offset: entity.inflated_offset,
-            });
+            })?;
         }
     }
-    uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    sort_entity_51_uses(ctx, &mut uses, |value| &value.id)?;
+    Ok(uses)
 }
 
 /// Resolve topology-owned attribute instances through their type-80 definition.
@@ -5702,13 +5754,13 @@ mod tests {
             byte_len: 36,
             inflated_offset: 80,
         };
-        let uses = parasolid_entity_51_structured_uses(
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&point),
-            &[],
-            &[],
-            &[],
-        );
+        let uses = crate::test_support::with_decode_context(|ctx| {
+            parasolid_entity_51_structured_uses(ctx,
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&point),
+                &[], &[], &[],
+            ).unwrap()
+        });
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].position.reference_ordinal(), 5);
         assert_eq!(uses[0].kind, StructuredValueKind::Points);
@@ -5722,23 +5774,22 @@ mod tests {
             byte_len: 16,
             inflated_offset: 90,
         };
-        assert!(parasolid_entity_51_structured_uses(
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&point),
-            &[],
-            std::slice::from_ref(&colliding_tag),
-            &[],
-        )
-        .is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            parasolid_entity_51_structured_uses(ctx,
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&point),
+                &[], std::slice::from_ref(&colliding_tag), &[],
+            ).unwrap()
+        }).is_empty());
 
         let other_stream = ParasolidEntityVectorRecord {
             stream_ordinal: 3,
             ..point
         };
-        assert!(
-            parasolid_entity_51_structured_uses(&[entity], &[other_stream], &[], &[], &[],)
-                .is_empty()
-        );
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            parasolid_entity_51_structured_uses(ctx, &[entity], &[other_stream], &[], &[], &[])
+                .unwrap()
+        }).is_empty());
     }
 
     #[test]
@@ -6428,18 +6479,103 @@ mod tests {
             inflated_offset: 400,
         }];
 
-        let numeric_uses =
-            super::parasolid_entity_51_numeric_uses(std::slice::from_ref(&entity), &integers, &[]);
+        let numeric_uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_entity_51_numeric_uses(ctx, std::slice::from_ref(&entity), &integers, &[])
+                .unwrap()
+        });
         assert_eq!(numeric_uses.len(), 1);
         assert_eq!(numeric_uses[0].position.reference_ordinal(), 5);
         assert_eq!(u32::from(numeric_uses[0].referenced_xmt), 70);
 
-        let string_uses =
-            super::parasolid_entity_51_string_uses(std::slice::from_ref(&entity), &strings);
+        let string_uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_entity_51_string_uses(ctx, std::slice::from_ref(&entity), &strings)
+                .unwrap()
+        });
         assert_eq!(string_uses.len(), 1);
         assert_eq!(string_uses[0].position.reference_ordinal(), 6);
         assert_eq!(u32::from(string_uses[0].referenced_xmt), 71);
     }
+
+    enum ValueUseRoute {
+        Numeric,
+        String,
+        Structured,
+    }
+
+    fn entity_51_value_use_limit_error(
+        route: ValueUseRoute,
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let entity = super::ParasolidEntity51Record {
+            id: "entity".into(),
+            stream_ordinal: 1,
+            xmt: NonNullXmt::try_from(10).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
+            definition_xmt: 9,
+            leading_references: [1; 5],
+            trailing_references: EntityReferences::new(vec![12]).unwrap(),
+            byte_len: 32,
+            inflated_offset: 40,
+        };
+        let xmt = NonNullXmt::try_from(12).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match route {
+            ValueUseRoute::Numeric => {
+                let value = super::ParasolidEntity52IntegerRecord {
+                    id: "value".into(), stream_ordinal: 1, xmt,
+                    values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
+                    byte_len: 12, inflated_offset: 80,
+                };
+                super::parasolid_entity_51_numeric_uses(&ctx, &[entity], &[value], &[]).err()
+            }
+            ValueUseRoute::String => {
+                let value = super::ParasolidEntity54StringRecord {
+                    id: "value".into(), stream_ordinal: 1, xmt,
+                    value: PrintableString::new("text".to_owned()).unwrap(),
+                    byte_len: 12, inflated_offset: 80,
+                };
+                super::parasolid_entity_51_string_uses(&ctx, &[entity], &[value]).err()
+            }
+            ValueUseRoute::Structured => {
+                let value = super::ParasolidEntityVectorRecord {
+                    id: "value".into(), stream_ordinal: 1,
+                    kind: super::ParasolidVectorValueKind::Points, xmt,
+                    values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
+                    byte_len: 36, inflated_offset: 80,
+                };
+                super::parasolid_entity_51_structured_uses(&ctx, &[entity], &[value], &[], &[], &[]).err()
+            }
+        }.expect("entity 51 value use route limit refusal")
+    }
+
+    macro_rules! value_use_limit_test {
+        ($name:ident, $route:ident, $limit:ident, $dimension:ident) => {
+            #[test]
+            fn $name() {
+                let error = entity_51_value_use_limit_error(ValueUseRoute::$route,
+                    |policy| policy.limits.$limit = 0);
+                assert!(matches!(error, CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::$dimension));
+            }
+        };
+    }
+
+    value_use_limit_test!(numeric_use_route_refuses_collection_limit, Numeric, max_collection_items, CollectionItems);
+    value_use_limit_test!(numeric_use_route_refuses_retained_limit, Numeric, max_retained_bytes, RetainedBytes);
+    value_use_limit_test!(numeric_use_route_refuses_scoped_limit, Numeric, max_materialized_bytes, MaterializedBytes);
+    value_use_limit_test!(numeric_use_route_refuses_work_limit, Numeric, max_work_units, WorkUnits);
+    value_use_limit_test!(string_use_route_refuses_collection_limit, String, max_collection_items, CollectionItems);
+    value_use_limit_test!(string_use_route_refuses_retained_limit, String, max_retained_bytes, RetainedBytes);
+    value_use_limit_test!(string_use_route_refuses_scoped_limit, String, max_materialized_bytes, MaterializedBytes);
+    value_use_limit_test!(string_use_route_refuses_work_limit, String, max_work_units, WorkUnits);
+    value_use_limit_test!(structured_use_route_refuses_collection_limit, Structured, max_collection_items, CollectionItems);
+    value_use_limit_test!(structured_use_route_refuses_retained_limit, Structured, max_retained_bytes, RetainedBytes);
+    value_use_limit_test!(structured_use_route_refuses_scoped_limit, Structured, max_materialized_bytes, MaterializedBytes);
+    value_use_limit_test!(structured_use_route_refuses_work_limit, Structured, max_work_units, WorkUnits);
+
     mod attribute_wire;
     mod carrier_and_attribute_resolution;
 }
