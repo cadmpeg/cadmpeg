@@ -3004,9 +3004,46 @@ pub(crate) fn decode_construction_operand_identities(
     Ok(out)
 }
 
+/// Collect one Design stream's lost-edge records in source byte order.
+fn collect_stream_lost_edges<'a>(
+    ctx: &DecodeContext<'_>,
+    lost_edges: &'a [LostEdgeReference],
+    stream: &str,
+) -> Result<Vec<&'a LostEdgeReference>, CodecError> {
+    let mut edges = Vec::new();
+    for edge in lost_edges.iter().filter(|edge| native_stream(&edge.id) == Some(stream)) {
+        ctx.charge_collection_items(1, "f3d lost-edge stream records")?;
+        edges.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d lost-edge stream record allocation", 0, 1)
+        })?;
+        edges.push(edge);
+    }
+    edges.sort_by_key(|edge| edge.record_byte_offset());
+    Ok(edges)
+}
+
+fn copy_lost_edge_run_ids(
+    ctx: &DecodeContext<'_>,
+    run: &[&LostEdgeReference],
+) -> Result<Vec<String>, CodecError> {
+    let count = u64::try_from(run.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d lost-edge run count", 0, 1)
+    })?;
+    ctx.charge_collection_items(count, "f3d lost-edge run IDs")?;
+    let mut ids = Vec::new();
+    ids.try_reserve(run.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d lost-edge run ID allocation", 0, 1)
+    })?;
+    for edge in run {
+        ids.push(copy_ascii_retained(ctx, &edge.id, "f3d lost-edge run ID text")?);
+    }
+    Ok(ids)
+}
+
 /// Bind a contiguous unresolved-edge run to the construction group whose
 /// first identity wrapper terminates that run.
 pub(crate) fn bind_lost_edge_groups(
+    ctx: &DecodeContext<'_>,
     groups: &mut [DesignConstructionOperandGroup],
     identities: &[DesignConstructionOperandIdentity],
     lost_edges: &[LostEdgeReference],
@@ -3035,31 +3072,27 @@ pub(crate) fn bind_lost_edge_groups(
         let wrapper_record_index = wrapper.record_index;
         let wrapper_byte_offset = wrapper.byte_offset;
         let wrapper_class_tag = wrapper.class_tag.as_str();
-        let mut stream_edges = lost_edges
-            .iter()
-            .filter(|edge| native_stream(&edge.id) == Some(stream))
-            .collect::<Vec<_>>();
-        stream_edges.sort_by_key(|edge| edge.record_byte_offset());
-        let terminals = stream_edges
-            .iter()
-            .enumerate()
-            .filter(|(_, edge)| {
-                edge.next_record_index == wrapper_record_index
-                    && edge.next_byte_offset() == wrapper_byte_offset
-                    && edge.next_class_tag.as_str() == wrapper_class_tag
-            })
-            .map(|(ordinal, _)| ordinal)
-            .collect::<Vec<_>>();
-        let [terminal] = terminals.as_slice() else {
-            if terminals.is_empty() {
-                continue;
+        let stream_edges = collect_stream_lost_edges(ctx, lost_edges, stream)?;
+        let mut terminal = None;
+        let mut multiple_terminals = false;
+        for (ordinal, edge) in stream_edges.iter().enumerate() {
+            if edge.next_record_index == wrapper_record_index
+                && edge.next_byte_offset() == wrapper_byte_offset
+                && edge.next_class_tag.as_str() == wrapper_class_tag
+            {
+                if terminal.replace(ordinal).is_some() {
+                    multiple_terminals = true;
+                }
             }
+        }
+        if multiple_terminals {
             return Err(CodecError::malformed(format_args!(
                 "Fusion construction group {} has multiple terminating lost-edge runs",
                 group.record_index
             )));
-        };
-        let mut start = *terminal;
+        }
+        let Some(terminal) = terminal else { continue; };
+        let mut start = terminal;
         while start > 0 {
             let previous = stream_edges[start - 1];
             let current = stream_edges[start];
@@ -3071,7 +3104,7 @@ pub(crate) fn bind_lost_edge_groups(
             }
             start -= 1;
         }
-        let run = &stream_edges[start..=*terminal];
+        let run = &stream_edges[start..=terminal];
         if run.len() != group.members().len() {
             return Err(CodecError::malformed(format_args!(
                 "Fusion construction group {} has {} operands but its lost-edge run has {} records",
@@ -3080,7 +3113,7 @@ pub(crate) fn bind_lost_edge_groups(
                 run.len()
             )));
         }
-        group.lost_edge_references = run.iter().map(|edge| edge.id.clone()).collect();
+        group.lost_edge_references = copy_lost_edge_run_ids(ctx, run)?;
     }
     Ok(())
 }

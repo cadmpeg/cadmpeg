@@ -283,7 +283,52 @@ fn generated_base_flange_profile_frame_resolves() {
 }
 
 #[test]
+fn lost_edge_stream_and_run_copies_refuse_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let edge = LostEdgeReference::new(
+        "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
+        152, "419".into(), 299, "326".into(), 300,
+    ).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::collect_stream_lost_edges(
+            &ctx, std::slice::from_ref(&edge), "f3d:Design/BulkStream.dat",
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d lost-edge stream records"
+    ));
+    let run = [&edge];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::copy_lost_edge_run_ids(&ctx, &run),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d lost-edge run IDs"
+    ));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    policy.limits.max_retained_bytes = u64::try_from(edge.id.len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::copy_lost_edge_run_ids(&ctx, &run),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d lost-edge run ID text"
+    ));
+}
+
+#[test]
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
@@ -418,6 +463,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     }
     terminating_identity = DesignConstructionOperandIdentity::try_new(draft).unwrap();
     bind_lost_edge_groups(
+        &ctx,
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
         &[LostEdgeReference::new(
