@@ -750,14 +750,16 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
                 .zip([0.0, 0.0, 1.0, 1.0])
                 .all(|(actual, expected)| scalar_near((*actual - v_minimum) / v_span, expected, EPS_ENDPOINT_AGREEMENT)))
         .then_some(())?;
-        let poles = nurbs.poles();
-        let weights = match nurbs.pole_grid().weights() {
-            Some(weights) => weights.concat(),
-            None => match ctx.alloc_filled(poles.len(), 1.0, "creo_nurbs_weights") {
-                Ok(weights) => weights,
-                Err(error) => return Some(Err(error)),
-            },
-        };
+        let first_pole = nurbs.pole(0, 0)?;
+        let mut poles = [first_pole; 8];
+        let mut weights = [1.0; 8];
+        for (index, pole) in poles.iter_mut().enumerate() {
+            let (u, v) = (index / 2, index % 2);
+            *pole = nurbs.pole(u, v)?;
+            if matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. }) {
+                weights[index] = nurbs.weight(u, v)?.get();
+            }
+        }
         (0..4)
             .all(|u| {
                 scalar_near(
@@ -858,11 +860,41 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         let first = evaluated(0);
         let second = evaluated(1);
         let curve = &boundaries[0].curve;
+        let mut knots = Vec::new();
+        if let Err(error) = ctx.try_reserve_items(
+            &mut knots,
+            curve.knots().len(),
+            "creo cubic generator knots",
+        ) {
+            return Some(Err(error));
+        }
+        knots.extend_from_slice(curve.knots());
+        let mut control_points = Vec::new();
+        if let Err(error) = ctx.try_reserve_items(
+            &mut control_points,
+            2,
+            "creo cubic generator control points",
+        ) {
+            return Some(Err(error));
+        }
+        control_points.extend([first.0, second.0]);
+        let weights = if matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. }) {
+            let mut weights = Vec::new();
+            if let Err(error) =
+                ctx.try_reserve_items(&mut weights, 2, "creo cubic generator weights")
+            {
+                return Some(Err(error));
+            }
+            weights.extend([first.1, second.1]);
+            Some(weights)
+        } else {
+            None
+        };
         let curve = match NurbsCurve::from_lanes(
             curve.degree(),
-            curve.knots().to_vec(),
-            vec![first.0, second.0],
-            nurbs.pole_weights().map(|_| vec![first.1, second.1]),
+            knots,
+            control_points,
+            weights,
             curve.periodic(),
         ) {
             Ok(curve) => curve,
@@ -930,6 +962,71 @@ mod tests {
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
         .map(|boundaries| boundaries.map_or(0, |boundaries| boundaries.len()))
+    }
+
+    fn cubic_generator_with_collection_limit(
+        limit: u64,
+    ) -> Result<Option<cadmpeg_ir::geometry::CurveGeometry>, cadmpeg_core::CodecError> {
+        let surface = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(3, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                [-1.0, -0.5, 0.5, 1.0]
+                    .into_iter()
+                    .map(|x| vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
+                    .collect(),
+                Some(vec![
+                    vec![1.0, 1.0],
+                    vec![2.0, 2.0],
+                    vec![3.0, 3.0],
+                    vec![4.0, 4.0],
+                ]),
+            ),
+            false,
+        )
+        .expect("valid cubic generator surface");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the collection policy");
+        super::cubic_extrusion_plane_generator_curve(
+            &ctx,
+            &surface,
+            7,
+            super::PlaneEquation {
+                origin: [0.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+            },
+            &mut Vec::new(),
+        )
+    }
+
+    #[test]
+    fn cubic_generator_knots_refuse_before_vec_copy() {
+        assert!(matches!(cubic_generator_with_collection_limit(63),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "creo cubic generator knots"));
+        assert!(cubic_generator_with_collection_limit(68)
+            .expect("collection limit admits the cubic generator")
+            .is_some());
+    }
+
+    #[test]
+    fn cubic_generator_control_points_refuse_before_vec_growth() {
+        assert!(matches!(cubic_generator_with_collection_limit(65),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "creo cubic generator control points"));
+    }
+
+    #[test]
+    fn cubic_generator_weights_refuse_before_vec_growth() {
+        assert!(matches!(cubic_generator_with_collection_limit(67),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "creo cubic generator weights"));
     }
 
     macro_rules! boundary_collection_limit_test {
