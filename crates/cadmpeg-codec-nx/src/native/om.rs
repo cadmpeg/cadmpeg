@@ -4001,54 +4001,30 @@ pub(super) fn data_block_references(ctx: &cadmpeg_core::decode::DecodeContext<'_
             .or_default()
             .push(declaration.id.clone());
     }
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((control, _, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let mut source_blocks = Vec::with_capacity(records.len() + 1);
-            source_blocks.push(control.clone());
-            source_blocks.extend(records.iter().cloned());
-            source_blocks
-                .into_iter()
-                .enumerate()
-                .flat_map(|(block_ordinal, block)| {
-                    crate::om::data_block_object_references(block.bytes)
-                        .into_iter()
-                        .enumerate()
-                        .map(|(ordinal, reference)| {
-                            let key = (entry.name.clone(), reference.object_index.value());
-                            let unique = |candidates: Option<&Vec<String>>| {
-                                let [target] = candidates?.as_slice() else {
-                                    return None;
-                                };
-                                Some(target.clone())
-                            };
-                            DataBlockReference {
-                                id: format!(
-                                    "nx:om-data-block-references-{section_ordinal}-{block_ordinal}:reference#{ordinal}"
-                                ),
-                                data_block: format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
-                                ),
-                                ordinal: ordinal as u32,
-                                object: reference.object_index,
-                                target_record: unique(target_records.get(&key)),
-                                target_expression_declaration: unique(declarations.get(&key)),
-                                source_offset: entry_offset
-                                    + block.offset as u64
-                                    + reference.offset as u64,
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect()
-        })
-        .collect())
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        let Some((control, _, records)) = section.as_offset_only() else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (block_ordinal, block) in std::iter::once(control).chain(records).enumerate() {
+            for (ordinal, reference) in crate::om::data_block_object_references(ctx, block.bytes)?.into_iter().enumerate() {
+                let key = (entry.name.clone(), reference.object_index.value());
+                let unique = |candidates: Option<&Vec<String>>| {
+                    let [target] = candidates?.as_slice() else { return None; };
+                    Some(target.clone())
+                };
+                output.push(DataBlockReference {
+                    id: format!("nx:om-data-block-references-{section_ordinal}-{block_ordinal}:reference#{ordinal}"),
+                    data_block: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+                    ordinal: ordinal as u32,
+                    object: reference.object_index,
+                    target_record: unique(target_records.get(&key)),
+                    target_expression_declaration: unique(declarations.get(&key)),
+                    source_offset: entry_offset + block.offset as u64 + reference.offset as u64,
+                });
+            }
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete part-local color tables from class-declaring offset stores.

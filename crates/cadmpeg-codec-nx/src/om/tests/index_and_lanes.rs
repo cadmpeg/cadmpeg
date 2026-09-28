@@ -5,7 +5,6 @@
 
 use crate::om::construction_payload_scalar_fields;
 use crate::om::data_block_object_frames;
-use crate::om::data_block_object_references;
 use crate::om::datum_csys_descriptor_block;
 use crate::om::datum_csys_payload_fixed_pairs;
 use crate::om::datum_plane_descriptor_block;
@@ -61,6 +60,43 @@ fn operation_payload_text_frames(record: crate::om::operation_record::OperationP
 
 fn operation_common_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::common_frame::CommonFrame<usize>> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_common_frames(ctx, record)).unwrap()
+}
+
+fn data_block_object_references(bytes: &[u8]) -> Vec<crate::om::DataBlockObjectReference> {
+    crate::test_support::with_decode_context(|ctx| crate::om::data_block_object_references(ctx, bytes)).unwrap()
+}
+
+#[test]
+fn om_data_block_object_references_refuse_collection_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_data_block_object_references_refuse_retained_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_data_block_object_references_refuse_work_limit() {
+    let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn operation_terminal_frame(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::OperationTerminalFrame> {
