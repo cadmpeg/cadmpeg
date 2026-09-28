@@ -1523,61 +1523,79 @@ fn stable_object_record_identities(
 ) -> Result<Vec<Option<String>>, cadmpeg_core::CodecError> {
     const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
-    let references = records
-        .iter()
-        .map(|bytes| {
-            Ok(
-                crate::om::counted_record_references(ctx, bytes, 0, records.len())?
-                    .into_iter()
-                    .map(|reference| (reference.offset, usize::from(reference.value)))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+    let mut reference_reservation = ctx.reserve_scoped(0, "NX object record graph references")?;
+    let mut references = Vec::new();
+    for bytes in records {
+        ctx.charge_collection_items(1, "NX object record graph reference lists")?;
+        reference_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Vec<(usize, usize)>>()))?;
+        references.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX object record graph reference lists", 0, 1))?;
+        let parsed = crate::om::counted_record_references(ctx, bytes, 0, records.len())?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(parsed.len()), "NX object record graph references")?;
+        let pair_bytes = parsed.len().checked_mul(std::mem::size_of::<(usize, usize)>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX object record graph references", 0, 1))?;
+        reference_reservation.grow(cadmpeg_core::decode::u64_from_index(pair_bytes))?;
+        let mut pairs = Vec::new();
+        pairs.try_reserve_exact(parsed.len())
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX object record graph references", 0, 1))?;
+        for reference in parsed {
+            pairs.push((reference.offset, usize::from(reference.value)));
+        }
+        references.push(pairs);
+    }
     let mut graph_work = MAX_GRAPH_WORK;
-
-    (0..records.len())
-        .map(|root| -> Result<Option<String>, CodecError> {
-            if references[root].is_empty() {
-                return Ok(Some(stable_object_record_identity(ctx, source_entry, records[root])?));
-            }
-            Ok(stable_object_record_graph_identity(
-                source_entry,
-                records,
-                &references,
-                root,
-                &mut graph_work,
-            ))
-        })
-        .collect()
+    let output_bytes = records.len().checked_mul(std::mem::size_of::<Option<String>>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX object record identities", 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(records.len()), "NX object record identities")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(output_bytes), "NX object record identities")?;
+    let mut identities = Vec::new();
+    identities.try_reserve_exact(records.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX object record identities", 0, 1))?;
+    for root in 0..records.len() {
+        let identity = if references[root].is_empty() {
+            Some(stable_object_record_identity(ctx, source_entry, records[root])?)
+        } else {
+            stable_object_record_graph_identity(ctx, source_entry, records, &references, root, &mut graph_work)?
+        };
+        identities.push(identity);
+    }
+    Ok(identities)
 }
 
-fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
-    *work = work.checked_sub(amount)?;
-    Some(())
+fn consume_stable_object_graph_work(
+    ctx: &DecodeContext<'_>,
+    work: &mut usize,
+    amount: usize,
+) -> Result<Option<()>, CodecError> {
+    let Some(remaining) = work.checked_sub(amount) else { return Ok(None); };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(amount), "NX object record graph identity")?;
+    *work = remaining;
+    Ok(Some(()))
 }
 
 fn append_stable_object_graph_node(
-    seed: &mut Vec<u8>,
+    ctx: &DecodeContext<'_>,
+    digest: &mut Sha256,
     graph_work: &mut usize,
     node_id: u64,
-) -> Option<()> {
-    consume_stable_object_graph_work(graph_work, 9)?;
-    seed.push(STABLE_GRAPH_NODE_START);
-    seed.extend_from_slice(&node_id.to_le_bytes());
-    Some(())
+) -> Result<Option<()>, CodecError> {
+    let Some(()) = consume_stable_object_graph_work(ctx, graph_work, 9)? else { return Ok(None); };
+    digest.update([STABLE_GRAPH_NODE_START]);
+    digest.update(node_id.to_le_bytes());
+    Ok(Some(()))
 }
 
 const STABLE_GRAPH_NODE_START: u8 = 0xf0;
 
 /// Encode one rooted object-record graph without depending on local ordinals.
 fn stable_object_record_graph_identity(
+    ctx: &DecodeContext<'_>,
     source_entry: &str,
     records: &[&[u8]],
     references: &[Vec<(usize, usize)>],
     root: usize,
     graph_work: &mut usize,
-) -> Option<String> {
+) -> Result<Option<String>, CodecError> {
     #[derive(Debug)]
     struct Frame {
         record: usize,
@@ -1590,19 +1608,31 @@ fn stable_object_record_graph_identity(
     const REFERENCE_NEW: u8 = 0xf3;
     const REFERENCE_BACK: u8 = 0xf4;
 
-    let mut seed = Vec::new();
-    consume_stable_object_graph_work(graph_work, source_entry.len().checked_add(32)?)?;
-    seed.extend_from_slice(b"nx:om:object-record-graph\0");
-    seed.extend_from_slice(&(source_entry.len() as u64).to_le_bytes());
-    seed.extend_from_slice(source_entry.as_bytes());
+    let Some(seed_work) = source_entry.len().checked_add(32) else { return Ok(None); };
+    let Some(()) = consume_stable_object_graph_work(ctx, graph_work, seed_work)? else { return Ok(None); };
+    let mut digest = Sha256::new();
+    digest.update(b"nx:om:object-record-graph\0");
+    digest.update(cadmpeg_core::decode::u64_from_index(source_entry.len()).to_le_bytes());
+    digest.update(source_entry.as_bytes());
 
     let mut node_ids = BTreeMap::<usize, u64>::new();
     let mut next_node_id = 0_u64;
     let mut stack = Vec::new();
+    let mut stack_charged_len = 0usize;
+    let mut map_reservation = ctx.reserve_scoped(0, "NX object record graph nodes")?;
+    let mut stack_reservation = ctx.reserve_scoped(0, "NX object record graph stack")?;
 
+    ctx.charge_collection_items(1, "NX object record graph nodes")?;
+    map_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, u64)>() * 4))?;
     node_ids.insert(root, next_node_id);
-    append_stable_object_graph_node(&mut seed, graph_work, next_node_id)?;
-    next_node_id = next_node_id.checked_add(1)?;
+    let Some(()) = append_stable_object_graph_node(ctx, &mut digest, graph_work, next_node_id)? else { return Ok(None); };
+    let Some(next) = next_node_id.checked_add(1) else { return Ok(None); };
+    next_node_id = next;
+    ctx.charge_collection_items(1, "NX object record graph stack")?;
+    stack_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Frame>()))?;
+    stack_charged_len += 1;
+    stack.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX object record graph stack", 0, 1))?;
     stack.push(Frame {
         record: root,
         next_reference: 0,
@@ -1611,39 +1641,51 @@ fn stable_object_record_graph_identity(
 
     while let Some(frame_index) = stack.len().checked_sub(1) {
         let (record, next_reference, raw_cursor) = {
-            let frame = stack.get(frame_index)?;
+            let Some(frame) = stack.get(frame_index) else { return Ok(None); };
             (frame.record, frame.next_reference, frame.raw_cursor)
         };
-        let record_bytes = *records.get(record)?;
-        let record_references = references.get(record)?;
+        let Some(&record_bytes) = records.get(record) else { return Ok(None); };
+        let Some(record_references) = references.get(record) else { return Ok(None); };
         if let Some(&(reference_offset, target)) = record_references.get(next_reference) {
-            let reference_end = reference_offset.checked_add(3)?;
+            let Some(reference_end) = reference_offset.checked_add(3) else { return Ok(None); };
             if reference_offset < raw_cursor
                 || reference_end > record_bytes.len()
                 || target >= records.len()
             {
-                return None;
+                return Ok(None);
             }
-            let raw = record_bytes.get(raw_cursor..reference_offset)?;
-            consume_stable_object_graph_work(graph_work, raw.len().checked_add(9)?)?;
-            seed.push(RAW);
-            seed.extend_from_slice(&(raw.len() as u64).to_le_bytes());
-            seed.extend_from_slice(raw);
+            let Some(raw) = record_bytes.get(raw_cursor..reference_offset) else { return Ok(None); };
+            let Some(raw_work) = raw.len().checked_add(9) else { return Ok(None); };
+            let Some(()) = consume_stable_object_graph_work(ctx, graph_work, raw_work)? else { return Ok(None); };
+            digest.update([RAW]);
+            digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
+            digest.update(raw);
 
-            let frame = stack.get_mut(frame_index)?;
-            frame.next_reference = frame.next_reference.checked_add(1)?;
+            let Some(frame) = stack.get_mut(frame_index) else { return Ok(None); };
+            let Some(next_reference) = frame.next_reference.checked_add(1) else { return Ok(None); };
+            frame.next_reference = next_reference;
             frame.raw_cursor = reference_end;
 
             if let Some(&target_id) = node_ids.get(&target) {
-                consume_stable_object_graph_work(graph_work, 9)?;
-                seed.push(REFERENCE_BACK);
-                seed.extend_from_slice(&target_id.to_le_bytes());
+                let Some(()) = consume_stable_object_graph_work(ctx, graph_work, 9)? else { return Ok(None); };
+                digest.update([REFERENCE_BACK]);
+                digest.update(target_id.to_le_bytes());
             } else {
+                ctx.charge_collection_items(1, "NX object record graph nodes")?;
+                map_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(usize, u64)>() * 4))?;
                 node_ids.insert(target, next_node_id);
-                seed.push(REFERENCE_NEW);
-                seed.extend_from_slice(&next_node_id.to_le_bytes());
-                append_stable_object_graph_node(&mut seed, graph_work, next_node_id)?;
-                next_node_id = next_node_id.checked_add(1)?;
+                digest.update([REFERENCE_NEW]);
+                digest.update(next_node_id.to_le_bytes());
+                let Some(()) = append_stable_object_graph_node(ctx, &mut digest, graph_work, next_node_id)? else { return Ok(None); };
+                let Some(next) = next_node_id.checked_add(1) else { return Ok(None); };
+                next_node_id = next;
+                if stack.len() >= stack_charged_len {
+                    ctx.charge_collection_items(1, "NX object record graph stack")?;
+                    stack_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Frame>()))?;
+                    stack_charged_len += 1;
+                }
+                stack.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX object record graph stack", 0, 1))?;
                 stack.push(Frame {
                     record: target,
                     next_reference: 0,
@@ -1652,22 +1694,21 @@ fn stable_object_record_graph_identity(
             }
         } else {
             if raw_cursor > record_bytes.len() {
-                return None;
+                return Ok(None);
             }
-            let raw = record_bytes.get(raw_cursor..)?;
-            consume_stable_object_graph_work(graph_work, raw.len().checked_add(1)?)?;
-            seed.push(RAW);
-            seed.extend_from_slice(&(raw.len() as u64).to_le_bytes());
-            seed.extend_from_slice(raw);
-            seed.push(NODE_END);
+            let Some(raw) = record_bytes.get(raw_cursor..) else { return Ok(None); };
+            let Some(raw_work) = raw.len().checked_add(1) else { return Ok(None); };
+            let Some(()) = consume_stable_object_graph_work(ctx, graph_work, raw_work)? else { return Ok(None); };
+            digest.update([RAW]);
+            digest.update(cadmpeg_core::decode::u64_from_index(raw.len()).to_le_bytes());
+            digest.update(raw);
+            digest.update([NODE_END]);
             stack.pop();
         }
     }
 
-    Some(format!(
-        "nx:om:object-record:{}",
-        cadmpeg_ir::hash::sha256_hex(&seed)
-    ))
+    let digest: [u8; 32] = digest.finalize().into();
+    data_block_hex(ctx, &digest, "nx:om:object-record:", "NX object record graph identity").map(Some)
 }
 
 /// Counted active-object membership table from `RMFastLoad`.
@@ -8475,9 +8516,10 @@ mod object_record_identity_tests {
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
     }
 
-    #[test]
-    fn object_record_identity_route_refuses_work_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    fn object_record_identity_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let file = prt_with_indexed_om_section();
         let scan_arena = DecodeArena::new();
         let scan_policy = DecodePolicy::service();
@@ -8485,11 +8527,41 @@ mod object_record_identity_tests {
         let container = crate::container::scan_bytes(&scan_ctx, &file).unwrap();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
+        configure(&mut policy);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::object_records(&ctx, &container).unwrap_err();
+        super::object_records(&ctx, &container).unwrap_err()
+    }
+
+    #[test]
+    fn object_record_identity_route_refuses_work_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = object_record_identity_limit_error(|policy| policy.limits.max_work_units = 0);
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits));
+    }
+
+    #[test]
+    fn object_record_identity_route_refuses_collection_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = object_record_identity_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn object_record_identity_route_refuses_retained_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = object_record_identity_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn object_record_identity_route_refuses_scoped_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let error = object_record_identity_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes));
     }
 
     fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
