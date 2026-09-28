@@ -280,6 +280,32 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
 }
 
 #[test]
+fn native_entity_wire_projection_refuses_value_field_growth() {
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &[0x91, 0x84, 0xe8, 0xfe]);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    let record = crate::native::CatiaNative::decode(&bytes)
+        .entity_records
+        .into_iter()
+        .next()
+        .expect("paired entity record");
+    let refusal = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::native::entity_record::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    });
+    assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_value_fields"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        crate::native::entity_record::CatiaEntityRecordWire::from_charged(ctx, record.clone())
+    })
+    .expect("service budget admits entity wire");
+    assert_eq!(
+        serde_json::to_value(admitted).expect("charged wire serializes"),
+        serde_json::to_value(record).expect("record wire serializes"),
+    );
+}
+
+#[test]
 fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() {
     let decoded = CatiaCodec
         .decode(
