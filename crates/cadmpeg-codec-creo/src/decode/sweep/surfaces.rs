@@ -774,7 +774,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     spline.offset
                 ),
                 &mut refusal,
-            )
+            )?
             else {
                 for record in refusal.take_records_checked()? {
                     losses.push(

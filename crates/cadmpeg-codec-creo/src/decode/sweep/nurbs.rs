@@ -616,47 +616,80 @@ pub(in super::super) fn extruded_nurbs_surface(
     sweep: [f64; 3],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
-    let directrix_points = directrix.pole_rows().raw_points();
-    let directrix_weights = directrix.weights();
-    let mut control_points = Vec::with_capacity(directrix_points.len() * 2);
-    let mut weights = directrix_weights
-        .as_ref()
-        .map(|_| Vec::with_capacity(control_points.capacity()));
-    for (index, point) in directrix_points.iter().enumerate() {
-        control_points.push(*point);
-        control_points.push(Point3::new(
-            point.x + sweep[0],
-            point.y + sweep[1],
-            point.z + sweep[2],
-        ));
-        if let (Some(source), Some(target)) = (&directrix_weights, &mut weights) {
-            target.extend([source[index], source[index]]);
+) -> Result<Option<NurbsSurface>, CodecError> {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurfaceAxis, WeightedPole3};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::scalar::NonZeroReal;
+
+    let count = directrix.pole_count();
+    let rational = matches!(directrix.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. });
+    let mut polynomial_rows = Vec::new();
+    let mut rational_rows = Vec::new();
+    if rational {
+        ctx.try_reserve_items(&mut rational_rows, count, "creo extruded NURBS pole rows")?;
+    } else {
+        ctx.try_reserve_items(&mut polynomial_rows, count, "creo extruded NURBS pole rows")?;
+    }
+    for index in 0..count {
+        let Some(point) = directrix.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
+        let source = point.get();
+        let translated = Point3::new(
+            source.x + sweep[0],
+            source.y + sweep[1],
+            source.z + sweep[2],
+        );
+        let Some(translated) = FinitePoint3::new(translated) else {
+            refusal.note_checked(ctx,
+                format_args!("creo extruded NURBS surface record for {record}"),
+                &cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                ),
+            );
+            return Ok(None);
+        };
+        if rational {
+            let Some(weight) = directrix.pole_rows().weight_at(index).and_then(NonZeroReal::new) else {
+                return Ok(None);
+            };
+            let mut row = Vec::new();
+            ctx.try_reserve_items(&mut row, 2, "creo extruded NURBS pole values")?;
+            row.extend([
+                WeightedPole3 { point, weight },
+                WeightedPole3 { point: translated, weight },
+            ]);
+            rational_rows.push(row);
+        } else {
+            let mut row = Vec::new();
+            ctx.try_reserve_items(&mut row, 2, "creo extruded NURBS pole values")?;
+            row.extend([point, translated]);
+            polynomial_rows.push(row);
         }
     }
-    match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-    )
-    .and_then(|poles| {
-        NurbsSurface::new(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                directrix.degree(),
-                directrix.knots().clone(),
-                directrix.periodic(),
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            poles,
-            false,
-        )
-    }) {
-        Ok(surface) => Some(surface),
+    let poles = if rational {
+        NurbsPoleGrid::Rational { rows: rational_rows }
+    } else {
+        NurbsPoleGrid::Polynomial { rows: polynomial_rows }
+    };
+    let u_knots = ctx.try_collection(
+        directrix.knots().len(),
+        "creo extruded NURBS U knots",
+        || directrix.knots().try_clone(),
+    )?;
+    match NurbsSurface::new_admitted_grid(
+        NurbsSurfaceAxis::new(directrix.degree(), u_knots, directrix.periodic()),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        poles,
+        false,
+    ) {
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note_checked(ctx,
                 format_args!("creo extruded NURBS surface record for {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -773,7 +806,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         };
         let Some(surface) = extruded_nurbs_surface(
             ctx, &translated, sweep, diagnostics.record, diagnostics.refusals,
-        ) else {
+        )? else {
             return Ok(None);
         };
         return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))));
@@ -1333,6 +1366,46 @@ mod tests {
         }).expect("service resources").expect("finite translation").control_points(),
             vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]);
     }
+
+    fn extruded_nurbs_refusal_at_limit(limit: u64) -> cadmpeg_core::CodecError {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
+            Some(vec![1.0, 0.5]),
+            false,
+        ).expect("rational directrix");
+        with_collection_limit(limit, |ctx| {
+            extruded_nurbs_surface(ctx, &curve, [0.0, 0.0, 2.0],
+                &"rational directrix", &mut crate::lane_refusal::LaneRefusals::new())
+        }).expect_err("surface grid exceeds collection limit")
+    }
+
+    #[test]
+    fn extruded_nurbs_pole_rows_refuse_collection_limit() {
+        assert!(matches!(extruded_nurbs_refusal_at_limit(0),
+            cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo extruded NURBS pole rows"));
+    }
+
+    #[test]
+    fn extruded_nurbs_pole_values_refuse_each_row_limit() {
+        for limit in [2, 4] {
+            assert!(matches!(extruded_nurbs_refusal_at_limit(limit),
+                cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == "creo extruded NURBS pole values"));
+        }
+    }
+
+    #[test]
+    fn extruded_nurbs_u_knots_refuse_collection_limit() {
+        assert!(matches!(extruded_nurbs_refusal_at_limit(6),
+            cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo extruded NURBS U knots"));
+    }
     fn planar_or_offset_spline(z: f64) -> crate::feature::definitions::FeatureSavedSpline {
         crate::feature::definitions::FeatureSavedSpline {
             entity_id: Some(11),
@@ -1527,11 +1600,11 @@ mod tests {
             let first = extruded_nurbs_surface(
                 ctx, &directrix, [f64::MAX, 0.0, 0.0],
                 &"surface 11 at offset 64", &mut refusal,
-            );
+            ).expect("first carrier resources");
             let second = extruded_nurbs_surface(
                 ctx, &directrix, [f64::MAX, 0.0, 0.0],
                 &"surface 12 at offset 128", &mut refusal,
-            );
+            ).expect("second carrier resources");
             (first, second)
         });
         assert!(first.is_none(), "the refused ruling states no surface");
