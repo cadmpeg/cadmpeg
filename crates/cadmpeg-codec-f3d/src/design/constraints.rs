@@ -44,6 +44,23 @@ fn insert_constraint_index<K: Eq + Hash, V>(
     Ok(())
 }
 
+fn insert_constraint_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !items.contains(&item) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate entity IDs are detected after both sets are built.
+    let _ = items.insert(item);
+    Ok(())
+}
+
 fn push_constraint_item<T>(
     ctx: Option<&DecodeContext<'_>>,
     items: &mut Vec<T>,
@@ -244,16 +261,17 @@ pub(crate) fn project_sketch_constraints(
                 relation, scope, parameters, &semantic_entities, ctx,
             )?;
         }
-        let definition = definition.or_else(|| {
-            exact_circular_pattern(
+        if definition.is_none() {
+            definition = exact_circular_pattern(
                 relation,
                 scope,
                 parameters,
                 &input_entities,
                 &semantic_entities,
-            )
-        })
-        .or_else(|| exact_offset_constraint(relation, scope, &projected));
+                ctx,
+            )?;
+        }
+        let definition = definition.or_else(|| exact_offset_constraint(relation, scope, &projected));
         let definition = match definition {
             Some(definition) => Some(definition),
             None => exact_text_relation(relation, scope, &projected, ctx)?,
@@ -700,7 +718,8 @@ fn exact_circular_pattern(
     parameters: &[DesignParameter],
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     returned: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
         SketchCircularPattern, SketchCircularPatternInstance,
@@ -711,7 +730,7 @@ fn exact_circular_pattern(
         || members.len() != relation.members().len()
         || returned.len() != relation.return_members().len()
     {
-        return None;
+        return Ok(None);
     }
     let pattern = relation.definition.pattern();
     let Some(SketchPatternDefinition::Circular {
@@ -721,7 +740,7 @@ fn exact_circular_pattern(
         evaluated_count,
     }) = pattern
     else {
-        return None;
+        return Ok(None);
     };
     let angle_parameter = parameters.iter().find(|parameter| {
         native_stream(&parameter.id) == Some(scope)
@@ -740,23 +759,25 @@ fn exact_circular_pattern(
             f64::from(evaluated_count.get()),
         )
     }) {
-        return None;
+        return Ok(None);
     }
     // Relation ordinals do not classify center/seed/generated; partition by
     // geometry when the member and returned id sets match.
-    let member_ids = members
-        .iter()
-        .map(|entity| entity.id())
-        .collect::<HashSet<_>>();
-    let returned_ids = returned
-        .iter()
-        .map(|entity| entity.id())
-        .collect::<HashSet<_>>();
+    let mut member_ids = HashSet::new();
+    for entity in members {
+        insert_constraint_set(ctx, &mut member_ids, entity.id(),
+            "f3d circular pattern member id")?;
+    }
+    let mut returned_ids = HashSet::new();
+    for entity in returned {
+        insert_constraint_set(ctx, &mut returned_ids, entity.id(),
+            "f3d circular pattern returned id")?;
+    }
     if member_ids.len() != members.len()
         || returned_ids.len() != returned.len()
         || member_ids != returned_ids
     {
-        return None;
+        return Ok(None);
     }
     let mut candidates = Vec::new();
     for center in members.iter().copied() {
@@ -767,12 +788,12 @@ fn exact_circular_pattern(
             continue;
         };
         let center_position = center_position.get();
-        let patterned = returned
-            .iter()
-            .copied()
-            .filter(|entity| entity.id() != center.id())
-            .collect::<Vec<_>>();
-        let count = usize::try_from(evaluated_count.get()).ok()?;
+        let mut patterned = Vec::new();
+        for entity in returned.iter().copied().filter(|entity| entity.id() != center.id()) {
+            push_constraint_item(ctx, &mut patterned, entity,
+                "f3d circular pattern entity")?;
+        }
+        let Ok(count) = usize::try_from(evaluated_count.get()) else { return Ok(None); };
         if patterned.is_empty() || !patterned.len().is_multiple_of(count) {
             continue;
         }
@@ -789,56 +810,60 @@ fn exact_circular_pattern(
         for divisor in divisors {
             // The seed is the first chunk; it is not an instance, and the
             // instances carry only their nonzero rotations.
-            let instances = patterned
-                .chunks_exact(arity)
-                .enumerate()
-                .skip(1)
-                .map(|(index, instance)| {
-                    let rotation = evaluated_angle.get() * index as f64 / divisor;
-                    seed.iter()
-                        .zip(instance)
-                        .all(|(source, result)| {
-                            rotated_sketch_geometry_matches(
-                                &source.geometry,
-                                &result.geometry,
-                                center_position,
-                                rotation,
-                            )
-                        })
-                        .then(|| {
-                            Some(SketchCircularPatternInstance {
-                                angle: cadmpeg_ir::scalar::NonZeroAngle::new(rotation)?,
-                                entities: instance
-                                    .iter()
-                                    .map(|entity| entity.id().clone())
-                                    .collect(),
-                            })
-                        })
-                        .flatten()
-                })
-                .collect::<Option<Vec<_>>>();
-            if let Some(instances) = instances {
-                let seed_entities = seed
-                    .iter()
-                    .map(|entity| entity.id().clone())
-                    .collect::<Vec<_>>();
-                candidates.push((center.id().clone(), seed_entities, instances));
+            let mut instances = Vec::new();
+            let mut valid = true;
+            for (index, instance) in patterned.chunks_exact(arity).enumerate().skip(1) {
+                let rotation = evaluated_angle.get() * index as f64 / divisor;
+                if !seed.iter().zip(instance).all(|(source, result)| {
+                    rotated_sketch_geometry_matches(
+                        &source.geometry, &result.geometry, center_position, rotation,
+                    )
+                }) {
+                    valid = false;
+                    break;
+                }
+                let Some(angle) = cadmpeg_ir::scalar::NonZeroAngle::new(rotation) else {
+                    valid = false;
+                    break;
+                };
+                let mut entity_ids = Vec::new();
+                for entity in instance {
+                    let id = copy_constraint_id(ctx, entity.id().as_str(),
+                        "f3d circular pattern instance entity id")?;
+                    push_constraint_item(ctx, &mut entity_ids, id,
+                        "f3d circular pattern instance entity")?;
+                }
+                push_constraint_item(ctx, &mut instances,
+                    SketchCircularPatternInstance { angle, entities: entity_ids },
+                    "f3d circular pattern instance")?;
+            }
+            if valid {
+                let mut seed_entities = Vec::new();
+                for entity in seed {
+                    let id = copy_constraint_id(ctx, entity.id().as_str(),
+                        "f3d circular pattern seed entity id")?;
+                    push_constraint_item(ctx, &mut seed_entities, id,
+                        "f3d circular pattern seed entity")?;
+                }
+                let center = copy_constraint_id(ctx, center.id().as_str(),
+                    "f3d circular pattern center id")?;
+                push_constraint_item(ctx, &mut candidates,
+                    (center, seed_entities, instances), "f3d circular pattern candidate")?;
             }
         }
     }
     candidates.dedup();
-    let [(center, seed_entities, instances)] = candidates.as_slice() else {
-        return None;
-    };
+    if candidates.len() != 1 { return Ok(None); }
+    let Some((center, seed_entities, instances)) = candidates.pop() else { return Ok(None); };
     let pattern = SketchCircularPattern::new(
-        center.clone(),
+        center,
         angle,
         angle_parameter.map(neutral_parameter_id),
         count_parameter.map(neutral_parameter_id),
-        seed_entities.clone(),
-        instances.clone(),
-    )?;
-    Some(Definition::CircularPattern { pattern })
+        seed_entities,
+        instances,
+    );
+    Ok(pattern.map(|pattern| Definition::CircularPattern { pattern }))
 }
 
 fn rotated_sketch_geometry_matches(

@@ -23,6 +23,7 @@ use cadmpeg_test_support::wire;
 
 mod text_allocation;
 mod rectangular_allocation;
+mod circular_allocation;
 
 #[test]
 fn translated_nurbs_match_borrowed_rational_poles() {
@@ -640,7 +641,8 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             &[],
             &members,
             &returned,
-        )
+            None,
+        ).unwrap()
     else {
         panic!("partial circular pattern did not resolve");
     };
@@ -682,7 +684,8 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
             &[],
             &full_members,
             &full_returned,
-        ),
+            None,
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
             if scalar_close(pattern.instances()[0].angle.get(), std::f64::consts::TAU / 3.0)
     ));
@@ -779,7 +782,7 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
     let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
-        exact_circular_pattern(&relation, "native", &[], &members, &returned)
+        exact_circular_pattern(&relation, "native", &[], &members, &returned, None).unwrap()
     else {
         panic!("role-agnostic circular pattern did not resolve");
     };
