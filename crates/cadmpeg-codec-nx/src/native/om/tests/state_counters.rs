@@ -9,6 +9,8 @@ use crate::om::state_status::StateStatusPayload;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
@@ -129,6 +131,40 @@ fn audit_trail_test_payload() -> Vec<u8> {
     payload.resize(32, 0);
     payload.extend_from_slice(&size_framed_audit_trail_section_with_record_area());
     payload
+}
+
+fn audit_trail_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", audit_trail_test_payload())]);
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    audit_trail_rows(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn audit_trail_route_refuses_collection_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn audit_trail_route_refuses_retained_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn audit_trail_route_refuses_work_limit() {
+    let error = audit_trail_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
