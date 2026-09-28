@@ -434,12 +434,9 @@ fn complete_spline_parameter_count(
     let count = usize::try_from(array.count()).ok()?;
     let values = array.values();
     (values.iter().all(|value| value.is_some_and(f64::is_finite))
-        && values
-            .iter()
-            .copied()
-            .collect::<Option<Vec<_>>>()?
-            .windows(2)
-            .all(|pair| pair[0] < pair[1]))
+        && values.windows(2).all(|pair| {
+            pair[0].zip(pair[1]).is_some_and(|(first, second)| first < second)
+        }))
     .then_some(count)
 }
 
@@ -507,21 +504,16 @@ fn associated_spline_replay_prototype(
         prototypes.next().is_none().then_some(())?;
         (row.offset > prototype.offset).then_some(())?;
 
-        let frame_rows = rows
+        let frame_rows = || rows
             .iter()
-            .filter(|candidate| candidate.offset >= frame_start && candidate.offset < frame_end)
-            .collect::<Vec<_>>();
-        let previous = frame_rows
-            .iter()
-            .copied()
+            .filter(|candidate| candidate.offset >= frame_start && candidate.offset < frame_end);
+        let previous = frame_rows()
             .filter(|candidate| candidate.offset < prototype.offset)
             .max_by_key(|candidate| candidate.offset);
         let first = if previous.is_some_and(|candidate| candidate.kind == SurfaceKind::Spline) {
             previous
         } else {
-            frame_rows
-                .iter()
-                .copied()
+            frame_rows()
                 .filter(|candidate| {
                     candidate.offset > prototype.offset && candidate.kind == SurfaceKind::Spline
                 })
@@ -1038,18 +1030,18 @@ fn perpendicular_round_edge_radius(envelope: Type24RoundEdgeEnvelope) -> Option<
         .flatten()
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let pairs = (0..3)
+    let mut pairs = (0..3)
         .flat_map(|first| ((first + 1)..3).map(move |second| (first, second)))
         .filter(|(first, second)| {
             delta[*first].abs() > EPS_CYLINDER_GEOMETRY_MIN * scale
                 && (delta[*first].abs() - delta[*second].abs()).abs()
                     <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale
-        })
-        .collect::<Vec<_>>();
-    let [(first, second)] = pairs.as_slice() else {
+        });
+    let Some((first, second)) = pairs.next() else {
         return None;
     };
-    Some(f64::midpoint(delta[*first].abs(), delta[*second].abs()))
+    pairs.next().is_none().then_some(())?;
+    Some(f64::midpoint(delta[first].abs(), delta[second].abs()))
 }
 
 /// One contiguous positional scalar frame with no intervening bytes.
@@ -1091,6 +1083,17 @@ pub(crate) struct SurfaceParameterScalar {
     pub(crate) raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub(crate) offset: usize,
+}
+
+fn six_finite_scalar_values(slots: &[SurfaceParameterScalar]) -> Option<[f64; 6]> {
+    let [first_x, first_y, first_z, second_x, second_y, second_z] = slots else {
+        return None;
+    };
+    let values = [
+        first_x.value?, first_y.value?, first_z.value?,
+        second_x.value?, second_y.value?, second_z.value?,
+    ];
+    values.iter().all(|value| value.is_finite()).then_some(values)
 }
 
 impl serde::Serialize for SurfaceParameterScalar {
@@ -1597,14 +1600,8 @@ impl SurfaceParameterRecord {
             (self.body.get(terminal_end..) == Some(&[0xf7, 0x17][..])).then_some(())?;
         }
         let corners = terminal.slots.get(terminal.slots.len().checked_sub(6)?..)?;
-        let values = corners
-            .iter()
-            .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()?;
-        values
-            .iter()
-            .all(|value| value.is_finite())
-            .then_some([*values.first_chunk::<3>()?, *values.last_chunk::<3>()?])
+        let values = six_finite_scalar_values(corners)?;
+        Some([*values.first_chunk::<3>()?, *values.last_chunk::<3>()?])
     }
 
     /// Decode a source-bound selector-corner interval cylinder.
@@ -1745,11 +1742,7 @@ impl SurfaceParameterRecord {
         self.terminal_scalar_frame_has_owned_end(terminal)?;
         let diameter = terminal.slots[1].value?;
         let corners = &terminal.slots[2..];
-        let values = corners
-            .iter()
-            .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()?;
-        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let values = six_finite_scalar_values(corners)?;
         let first = *values.first_chunk::<3>()?;
         let second = *values.last_chunk::<3>()?;
         let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
@@ -1759,14 +1752,12 @@ impl SurfaceParameterRecord {
             .map(|value| value.abs())
             .fold(1.0, f64::max);
         (diameter.is_finite() && diameter > EPS_SURFACE_NONZERO * scale).then_some(())?;
-        let radial_axes = (0..3)
-            .filter(|axis| (spans[*axis].abs() - diameter).abs() <= EPS_SURFACE_AGREEMENT * scale)
-            .collect::<Vec<_>>();
-        let [radial_axis] = radial_axes.as_slice() else {
-            return None;
-        };
+        let mut radial_axes = (0..3)
+            .filter(|axis| (spans[*axis].abs() - diameter).abs() <= EPS_SURFACE_AGREEMENT * scale);
+        let radial_axis = radial_axes.next()?;
+        radial_axes.next().is_none().then_some(())?;
         let mut axis_delta = spans;
-        axis_delta[*radial_axis] = 0.0;
+        axis_delta[radial_axis] = 0.0;
         let length = axis_delta
             .iter()
             .map(|value| value * value)
@@ -1774,10 +1765,10 @@ impl SurfaceParameterRecord {
             .sqrt();
         (length > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let mut origin = first;
-        origin[*radial_axis] = f64::midpoint(first[*radial_axis], second[*radial_axis]);
+        origin[radial_axis] = f64::midpoint(first[radial_axis], second[radial_axis]);
         let axis = axis_delta.map(|value| value / length);
         let mut ref_direction = [0.0; 3];
-        ref_direction[*radial_axis] = spans[*radial_axis].signum();
+        ref_direction[radial_axis] = spans[radial_axis].signum();
         PositionalCylinderFrame::new(origin, axis, ref_direction, 0.5 * diameter, Some(length))
     }
 
@@ -1806,33 +1797,27 @@ impl SurfaceParameterRecord {
         };
         self.terminal_scalar_frame_has_owned_end(terminal)?;
         let corners = &terminal.slots[terminal.slots.len() - 6..];
-        let values = corners
-            .iter()
-            .map(|slot| slot.value)
-            .collect::<Option<Vec<_>>>()?;
-        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let values = six_finite_scalar_values(corners)?;
         let first = *values.first_chunk::<3>()?;
         let second = *values.last_chunk::<3>()?;
         let spans = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-        let equal_pairs = [(0, 1), (0, 2), (1, 2)]
+        let mut equal_pairs = [(0, 1), (0, 2), (1, 2)]
             .into_iter()
             .filter(|(first, second)| {
                 (spans[*first].abs() - spans[*second].abs()).abs() <= EPS_SURFACE_AGREEMENT * scale
-            })
-            .collect::<Vec<_>>();
-        let [(first_radial, second_radial)] = equal_pairs.as_slice() else {
-            return None;
-        };
+            });
+        let (first_radial, second_radial) = equal_pairs.next()?;
+        equal_pairs.next().is_none().then_some(())?;
         let axis_index = 3usize.checked_sub(first_radial + second_radial)?;
-        let diameter = f64::midpoint(spans[*first_radial].abs(), spans[*second_radial].abs());
+        let diameter = f64::midpoint(spans[first_radial].abs(), spans[second_radial].abs());
         let length = spans[axis_index].abs();
         (diameter > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let bounded = length > EPS_SURFACE_NONZERO * scale;
         (!repeated_diameter_shell || !bounded).then_some(())?;
         let mut origin = first;
-        origin[*first_radial] = f64::midpoint(first[*first_radial], second[*first_radial]);
-        origin[*second_radial] = f64::midpoint(first[*second_radial], second[*second_radial]);
+        origin[first_radial] = f64::midpoint(first[first_radial], second[first_radial]);
+        origin[second_radial] = f64::midpoint(first[second_radial], second[second_radial]);
         let mut axis = [0.0; 3];
         axis[axis_index] = if bounded {
             spans[axis_index].signum()
@@ -1840,7 +1825,7 @@ impl SurfaceParameterRecord {
             1.0
         };
         let mut ref_direction = [0.0; 3];
-        ref_direction[*first_radial] = spans[*first_radial].signum();
+        ref_direction[first_radial] = spans[first_radial].signum();
         PositionalCylinderFrame::new(
             origin,
             axis,
@@ -1865,19 +1850,19 @@ impl SurfaceParameterRecord {
             .chain([layout.diameter].iter())
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        let radial_indices = spans
+        let mut radial_indices = spans
             .iter()
             .enumerate()
             .filter_map(|(index, span)| {
                 ((span.abs() - layout.diameter).abs() <= EPS_SURFACE_AGREEMENT * scale)
                     .then_some(index)
-            })
-            .collect::<Vec<_>>();
-        let [radial_index] = radial_indices.as_slice() else {
+            });
+        let Some(radial_index) = radial_indices.next() else {
             return None;
         };
+        radial_indices.next().is_none().then_some(())?;
         let mut axis_vector = spans;
-        axis_vector[*radial_index] = 0.0;
+        axis_vector[radial_index] = 0.0;
         let length = axis_vector
             .iter()
             .map(|value| value * value)
@@ -1885,12 +1870,12 @@ impl SurfaceParameterRecord {
             .sqrt();
         (length.is_finite() && length > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let mut origin = layout.extent_endpoints[0];
-        origin[*radial_index] = f64::midpoint(
-            layout.extent_endpoints[0][*radial_index],
-            layout.extent_endpoints[1][*radial_index],
+        origin[radial_index] = f64::midpoint(
+            layout.extent_endpoints[0][radial_index],
+            layout.extent_endpoints[1][radial_index],
         );
         let mut ref_direction = [0.0; 3];
-        ref_direction[*radial_index] = spans[*radial_index].signum();
+        ref_direction[radial_index] = spans[radial_index].signum();
         PositionalCylinderFrame::new(
             origin,
             axis_vector.map(|value| value / length),
@@ -4605,17 +4590,13 @@ fn decode_inline_selector_cylinder_envelope(
     let close = inline_surface_envelope_close(body, cursor)?;
     let axial_span = (second_axial - first_axial).abs();
     let spans = std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
-    let axial_axes = (0..3)
-        .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)))
-        .collect::<Vec<_>>();
-    let [axis_index] = axial_axes.as_slice() else {
-        return None;
-    };
-    let radial_axes: [usize; 2] = (0..3)
-        .filter(|axis| axis != axis_index)
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
+    let mut axial_axes = (0..3)
+        .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)));
+    let axis_index = axial_axes.next()?;
+    axial_axes.next().is_none().then_some(())?;
+    let mut radial = (0..3).filter(|axis| *axis != axis_index);
+    let radial_axes = [radial.next()?, radial.next()?];
+    radial.next().is_none().then_some(())?;
     (radial_axes
         .into_iter()
         .filter(|axis| spans[*axis].is_none())
@@ -4969,15 +4950,17 @@ fn solve_inline_axis_endpoint(
     let second_corner = envelope.corners[1][axis_index]?;
     let lower = first_corner.min(second_corner);
     let upper = first_corner.max(second_corner);
-    let mut direct = Vec::new();
-    let mut crosswise = Vec::new();
-    let mut containing = Vec::new();
-    let mut endpoint_anchored = Vec::new();
-    let push_unique = |candidates: &mut Vec<(f64, f64)>, candidate: (f64, f64)| {
-        if !candidates.iter().any(|existing| {
+    let mut direct = [None; 4];
+    let mut crosswise = [None; 4];
+    let mut containing = [None; 4];
+    let mut endpoint_anchored = [None; 4];
+    let push_unique = |candidates: &mut [Option<(f64, f64)>; 4], candidate: (f64, f64)| {
+        if !candidates.iter().flatten().any(|existing| {
             inline_close(existing.0, candidate.0) && inline_close(existing.1, candidate.1)
         }) {
-            candidates.push(candidate);
+            if let Some(slot) = candidates.iter_mut().find(|slot| slot.is_none()) {
+                *slot = Some(candidate);
+            }
         }
     };
     for origin_sign in [-1.0, 1.0] {
@@ -5019,33 +5002,24 @@ fn solve_inline_axis_endpoint(
             }
         }
     }
-    let stored_direction = direct
+    let mut stored_direction = direct
         .iter()
         .chain(&crosswise)
         .chain(&containing)
         .chain(&endpoint_anchored)
+        .flatten()
         .filter(|candidate| inline_close(candidate.1, stored_axis_sense))
-        .copied()
-        .collect::<Vec<_>>();
-    if let [candidate] = stored_direction.as_slice() {
-        return Some(*candidate);
+        .copied();
+    if let (Some(candidate), None) = (stored_direction.next(), stored_direction.next()) {
+        return Some(candidate);
     }
-    match direct.as_slice() {
-        [candidate] => Some(*candidate),
-        [] => match crosswise.as_slice() {
-            [candidate] => Some(*candidate),
-            [] => match containing.as_slice() {
-                [candidate] => Some(*candidate),
-                [] => match endpoint_anchored.as_slice() {
-                    [candidate] => Some(*candidate),
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        },
-        _ => None,
+    for candidates in [direct, crosswise, containing, endpoint_anchored] {
+        let mut populated = candidates.into_iter().flatten();
+        if let Some(candidate) = populated.next() {
+            return populated.next().is_none().then_some(candidate);
+        }
     }
+    None
 }
 
 fn unique_inline_center(
@@ -5057,20 +5031,13 @@ fn unique_inline_center(
     let bounds = envelope.corners.map(|corner| corner[coordinate]);
     if let [None, Some(known)] | [Some(known), None] = bounds {
         let magnitude = stored_center.abs();
-        let mut candidates = Vec::new();
-        for center in [-magnitude, magnitude] {
-            if inline_close((known - center).abs(), radius)
-                && !candidates
-                    .iter()
-                    .any(|candidate| inline_close(*candidate, center))
-            {
-                candidates.push(center);
-            }
-        }
-        let [center] = candidates.as_slice() else {
-            return None;
-        };
-        return Some(*center);
+        let mut candidates = [-magnitude, magnitude]
+            .into_iter()
+            .filter(|center| inline_close((known - center).abs(), radius));
+        let center = candidates.next()?;
+        return candidates
+            .all(|candidate| inline_close(candidate, center))
+            .then_some(center);
     }
     let [Some(first), Some(second)] = bounds else {
         return None;
@@ -5078,19 +5045,14 @@ fn unique_inline_center(
     let lower = first.min(second);
     let upper = first.max(second);
     let magnitude = stored_center.abs();
-    let mut candidates = Vec::new();
-    for center in [-magnitude, magnitude] {
-        if lower >= center - radius - EPS_INLINE_WITNESS * inline_scale(center, radius)
-            && upper <= center + radius + EPS_INLINE_WITNESS * inline_scale(center, radius)
-            && !candidates.iter().any(|known| inline_close(*known, center))
-        {
-            candidates.push(center);
-        }
-    }
-    let [center] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*center)
+    let mut candidates = [-magnitude, magnitude].into_iter().filter(|center| {
+        lower >= center - radius - EPS_INLINE_WITNESS * inline_scale(*center, radius)
+            && upper <= center + radius + EPS_INLINE_WITNESS * inline_scale(*center, radius)
+    });
+    let center = candidates.next()?;
+    candidates
+        .all(|candidate| inline_close(candidate, center))
+        .then_some(center)
 }
 
 fn inline_scale(first: f64, second: f64) -> f64 {
@@ -5518,7 +5480,7 @@ fn decode_compound_support_apex_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     let mut segment_start = 0;
     for segment_end in body
         .iter()
@@ -5530,17 +5492,15 @@ fn decode_compound_support_apex_cone_frame(
             if let Some(frame) =
                 decode_support_apex_cone_frame(&segment[..angle.start], angle.value, cache)
             {
-                if !candidates.contains(&frame) {
-                    candidates.push(frame);
+                if candidate.is_some_and(|previous| previous != frame) {
+                    return None;
                 }
+                candidate = Some(frame);
             }
         }
         segment_start = segment_end + 1;
     }
-    let [frame] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    candidate
 }
 
 fn decode_planar_envelope_cone_frame(
@@ -5625,28 +5585,24 @@ fn decode_support_apex_cone_frame(
     half_angle: ApexConeHalfAngle,
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    let reference_candidates = (0..body.len())
+    let mut reference_candidates = (0..body.len())
         .filter_map(|start| {
             matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
             let (_, end) = scalar::decode_model_reference_coordinate(body, start, cache)?;
             (end + 3 == body.len()).then_some(start)
-        })
-        .collect::<Vec<_>>();
-    let [reference_start] = reference_candidates.as_slice() else {
-        return None;
-    };
-    let apex_candidates = (0..*reference_start)
+        });
+    let reference_start = reference_candidates.next()?;
+    reference_candidates.next().is_none().then_some(())?;
+    let mut apex_candidates = (0..reference_start)
         .filter_map(|start| {
             let (apex, end) = scalar::decode_in_surface_row_lane(body, start, cache)?;
-            (end == *reference_start && apex.is_finite()).then_some((apex, start))
-        })
-        .collect::<Vec<_>>();
-    let [(apex_coordinate, apex_start)] = apex_candidates.as_slice() else {
-        return None;
-    };
-    let support_candidates = (0..*apex_start)
+            (end == reference_start && apex.is_finite()).then_some((apex, start))
+        });
+    let (apex_coordinate, apex_start) = apex_candidates.next()?;
+    apex_candidates.next().is_none().then_some(())?;
+    let support_candidates = (0..apex_start)
         .filter_map(|start| {
-            let mut frame = body.get(start..*apex_start)?.to_vec();
+            let mut frame = body.get(start..apex_start)?.to_vec();
             frame.extend_from_slice(&[0x18, 0x18, 0x18]);
             let slots = scalar::decode_positional_plane_local_system_slots(&frame, cache)?.get();
             (slots[9..12] == [0.0, 0.0, 0.0]).then_some(slots)
@@ -5676,18 +5632,16 @@ fn decode_support_apex_cone_frame(
         first[0] * second[1] - first[1] * second[0],
     ];
     let mut axis = normalize(cross)?;
-    let axis_indices = axis
+    let mut axis_indices = axis
         .iter()
         .enumerate()
-        .filter_map(|(index, value)| (value.abs() >= 1.0 - EPS_AXIS_ALIGNMENT).then_some(index))
-        .collect::<Vec<_>>();
-    let [axis_index] = axis_indices.as_slice() else {
-        return None;
-    };
+        .filter_map(|(index, value)| (value.abs() >= 1.0 - EPS_AXIS_ALIGNMENT).then_some(index));
+    let axis_index = axis_indices.next()?;
+    axis_indices.next().is_none().then_some(())?;
     let mut apex = [0.0; 3];
-    apex[*axis_index] = *apex_coordinate;
+    apex[axis_index] = apex_coordinate;
     (apex_coordinate.abs() > EPS_SURFACE_NONZERO).then_some(())?;
-    if axis[*axis_index] * apex_coordinate > 0.0 {
+    if axis[axis_index] * apex_coordinate > 0.0 {
         axis = axis.map(|value| -value);
     }
     PositionalConeFrame::new(apex, axis, second.map(|value| -value), half_angle)
@@ -6811,7 +6765,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     {
         return PlaneFrame::without_directions(origin);
     }
-    let pairs = [(0, 1), (0, 2), (1, 2)]
+    let mut pairs = [(0, 1), (0, 2), (1, 2)]
         .into_iter()
         .filter(|(first, second)| {
             let first_magnitude = magnitudes[*first];
@@ -6828,14 +6782,16 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
                     <= EPS_PLANE_FRAME_SCALE * scale.max(1.0)
                 && support_dot.abs()
                     <= EPS_PLANE_FRAME_ORTHOGONAL * first_magnitude * second_magnitude
-        })
-        .collect::<Vec<_>>();
-    let [(first_index, second_index)] = pairs.as_slice() else {
+        });
+    let Some((first_index, second_index)) = pairs.next() else {
         return PlaneFrame::without_directions(origin);
     };
-    let first = supports[*first_index];
-    let second = supports[*second_index];
-    let u_axis = plane_unit_direction(first, magnitudes[*first_index]);
+    if pairs.next().is_some() {
+        return PlaneFrame::without_directions(origin);
+    }
+    let first = supports[first_index];
+    let second = supports[second_index];
+    let u_axis = plane_unit_direction(first, magnitudes[first_index]);
     let cross = [
         first[1].mul_add(second[2], -(first[2] * second[1])),
         first[2].mul_add(second[0], -(first[0] * second[2])),
