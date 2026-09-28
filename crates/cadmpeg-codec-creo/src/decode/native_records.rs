@@ -726,7 +726,7 @@ pub(super) struct CreoFeatureSurfaceReplayAssociation {
     pub(super) visible_surface_id: u32,
     pub(super) replay_surface_id: u32,
     pub(super) replay_ordinal: usize,
-    pub(super) surface_family: String,
+    pub(super) surface_family: &'static str,
     pub(super) table_offset: usize,
 }
 

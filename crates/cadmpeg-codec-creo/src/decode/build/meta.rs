@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::container::ContainerScan;
 use crate::feature::definitions::{ScalarLane, VariableType};
 
-use super::super::expanded::feature_surface_replay_associations;
+use super::super::expanded::feature_surface_replay_association_count;
 use super::super::sketch::coordinates::resolved_section_coordinates;
 use super::super::sketch::equations_scalar::resolved_section_scalar_values;
 use super::super::sketch::radii::resolved_section_radii;
@@ -920,7 +920,7 @@ pub(super) fn source_meta(
     );
     coverage.record(
         crate::coverage::DECODED_FEATURE_SURFACE_REPLAY_ASSOCIATION_COUNT,
-        feature_surface_replay_associations(scan).len(),
+        feature_surface_replay_association_count(ctx, scan)?,
     );
     if let Some(count) = scan.framing.declared_body_count {
         insert_source_attribute(ctx, &mut attributes, "declared_body_count", count)?;
