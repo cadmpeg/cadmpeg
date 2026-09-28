@@ -991,7 +991,8 @@ pub(crate) fn parse_runs(
         let mut complete = true;
         for (candidate, identity) in candidates.iter().zip(identities) {
             ctx.charge_entities(1, "admit CATIA 7C05 native entity")?;
-            ctx.charge_collection_items(1, "collect CATIA 7C05 materialized records")?;
+            crate::resource::reserve_vec(ctx, &mut records, 1,
+                "collect CATIA 7C05 materialized records")?;
             let Some(record) = materialize_record(ctx, data, candidate, identity)? else {
                 complete = false;
                 break;
@@ -999,8 +1000,8 @@ pub(crate) fn parse_runs(
             records.push(record);
         }
         if complete {
-            ctx.charge_collection_items(1, "collect CATIA 7C05 materialized runs")?;
-            runs.push(records);
+            crate::resource::push(ctx, &mut runs, records,
+                "collect CATIA 7C05 materialized runs")?;
         }
     }
     Ok(runs)
@@ -1023,8 +1024,8 @@ pub(crate) fn paired_object_graph_roots(
             continue;
         };
         if data.get(end) == Some(&0xde) {
-            ctx.charge_collection_items(1, "collect CATIA paired object roots")?;
-            roots.insert(end + 1, candidates.len());
+            crate::resource::insert_map(ctx, &mut roots, end + 1, candidates.len(),
+                "collect CATIA paired object roots")?;
         }
     }
     Ok(roots)
@@ -1058,21 +1059,24 @@ fn parse_candidate_runs(
         }
         if let Some(candidate) = parse_candidate_variants(ctx, data, pos)? {
             enclosing_end = enclosing_end.max(end);
-            ctx.charge_collection_items(1, "collect CATIA 7C05 candidate roots")?;
-            roots.push(candidate);
+            crate::resource::push(ctx, &mut roots, candidate,
+                "collect CATIA 7C05 candidate roots")?;
         }
     }
     let mut candidate_runs = Vec::<Vec<EntityRecordCandidates>>::new();
     for candidate in roots {
-        ctx.charge_collection_items(1, "collect CATIA 7C05 run candidates")?;
         if let Some(run) = candidate_runs.last_mut().filter(|run| {
             run.last()
                 .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(candidate.pos))
         }) {
-            run.push(candidate);
+            crate::resource::push(ctx, run, candidate,
+                "collect CATIA 7C05 run candidates")?;
         } else {
-            ctx.charge_collection_items(1, "collect CATIA 7C05 runs")?;
-            candidate_runs.push(vec![candidate]);
+            let mut run = Vec::new();
+            crate::resource::push(ctx, &mut run, candidate,
+                "collect CATIA 7C05 run candidates")?;
+            crate::resource::push(ctx, &mut candidate_runs, run,
+                "collect CATIA 7C05 runs")?;
         }
     }
     Ok(candidate_runs)
@@ -1355,11 +1359,10 @@ fn identity_candidates(
                         break;
                     };
                     if entity_id != 0 {
-                        ctx.charge_collection_items(1, "admit CATIA 7C05 identity candidate")?;
-                        identities.push(EntityIdentityCandidate {
+                        crate::resource::push(ctx, &mut identities, EntityIdentityCandidate {
                             delimiter: at,
                             entity_id,
-                        });
+                        }, "admit CATIA 7C05 identity candidate")?;
                     }
                 }
                 at += 1;
