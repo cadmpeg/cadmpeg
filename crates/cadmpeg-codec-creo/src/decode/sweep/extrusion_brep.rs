@@ -61,6 +61,16 @@ where
     )
 }
 
+fn copy_extrusion_identity<I>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<I, cadmpeg_core::CodecError>
+where
+    I: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
+{
+    crate::identity::copy_checked_id(ctx, source, "creo extrusion entity ID copies")
+}
+
 fn cap_coedge_ids_admitted(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature_id: u32,
@@ -197,6 +207,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 )?
             };
         }
+        macro_rules! copy_id {
+            ($source:expr) => {
+                copy_extrusion_identity(ctx, ($source).as_str())?
+            };
+        }
         let length = span.upper() - span.lower();
         let Some(sketch) = exactly_one(
             ir.model
@@ -256,7 +271,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             // reaches the model, so a refused lane leaves no partial body and
             // the model carries the absence of this one extrusion.
             diagnostics.rejected_extrusion_bodies.push((
-                body_id.clone(),
+                copy_id!(body_id),
                 format!("refused extrusion side lanes: {}", records.join("; ")),
             ));
             continue;
@@ -270,15 +285,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let shell_id = extrusion_id!(ShellId, "shell");
         let bottom_face = extrusion_id!(FaceId, "face:bottom");
         let top_face = extrusion_id!(FaceId, "face:top");
-        let mut shell_faces = vec![bottom_face.clone(), top_face.clone()];
+        let mut shell_faces = vec![copy_id!(bottom_face), copy_id!(top_face)];
         for (profile_index, profile) in profiles.iter().enumerate() {
             for index in 0..profile.entities().len() {
                 shell_faces.push(extrusion_id!(FaceId, "face:{}:side:{}", profile_index, index));
             }
         }
         let shell = match Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
+            copy_id!(shell_id),
+            copy_id!(region_id),
             shell_faces,
             Vec::new(),
             Vec::new(),
@@ -310,7 +325,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ctx,
                 ir,
                 Surface {
-                    id: id.clone(),
+                    id: copy_id!(id),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                             Point3::new(
@@ -359,13 +374,13 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                     ctx.charge_entities(1, "admit Creo model points")?;
                     source_carriers
-                        .admit_point(ctx, ir, Point::new(point_id.clone(), finite_position, None))?;
+                        .admit_point(ctx, ir, Point::new(copy_id!(point_id), finite_position, None))?;
                     ctx.charge_entities(1, "admit Creo model vertices")?;
                     source_carriers.admit_vertex(
                         ctx,
                         ir,
                         Vertex {
-                            id: vertex_id.clone(),
+                            id: copy_id!(vertex_id),
                             point: point_id,
                             tolerance: None,
                         },
@@ -468,7 +483,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ctx,
                         ir,
                         Curve {
-                            id: curve_id.clone(),
+                            id: copy_id!(curve_id),
                             geometry: curve,
                             source_object: None,
                         },
@@ -503,14 +518,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ctx,
                         ir,
                         Edge {
-                            id: edge_id.clone(),
+                            id: copy_id!(edge_id),
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 param_range,
                             )
                             .map_err(cadmpeg_core::CodecError::malformed)?,
-                            start: vertices[index].clone(),
-                            end: vertices[next].clone(),
+                            start: copy_id!(vertices[index]),
+                            end: copy_id!(vertices[next]),
                             tolerance: None,
                         },
                     )?;
@@ -524,7 +539,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Curve {
-                        id: curve_id.clone(),
+                        id: copy_id!(curve_id),
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                                 Point3::new(
@@ -544,14 +559,14 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Edge {
-                        id: edge_id.clone(),
+                        id: copy_id!(edge_id),
                         carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                             Some(curve_id),
                             Some([0.0, length]),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                        start: bottom_vertices[index].clone(),
-                        end: top_vertices[index].clone(),
+                        start: copy_id!(bottom_vertices[index]),
+                        end: copy_id!(top_vertices[index]),
                         tolerance: None,
                     },
                 )?;
@@ -560,8 +575,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
             let bottom_loop = extrusion_id!(LoopId, "loop:{}:bottom", profile_index);
             let top_loop = extrusion_id!(LoopId, "loop:{}:top", profile_index);
-            bottom_loops.push(bottom_loop.clone());
-            top_loops.push(top_loop.clone());
+            bottom_loops.push(copy_id!(bottom_loop));
+            top_loops.push(copy_id!(top_loop));
             let bottom_coedges = cap_coedge_ids_admitted(
                 ctx, feature_id, profile_index, count, "bottom-cap", true,
                 "creo extrusion bottom cap coedge IDs",
@@ -572,8 +587,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
-                id: bottom_loop.clone(),
-                face: bottom_face.clone(),
+                id: copy_id!(bottom_loop),
+                face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new_admitted(
                         ctx,
@@ -590,8 +605,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             });
             ctx.charge_entities(1, "admit Creo model loops")?;
             ir.model.loops.push(IrLoop {
-                id: top_loop.clone(),
-                face: top_face.clone(),
+                id: copy_id!(top_loop),
+                face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new_admitted(
                         ctx,
@@ -608,7 +623,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             });
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
-                let id = bottom_coedges[ring_index].clone();
+                let id = copy_id!(bottom_coedges[ring_index]);
                 let entity = &profile[edge_index];
                 let geometry = entity.geometry();
                 let Some(sketch_geometry) = geometry.to_sketch() else {
@@ -662,8 +677,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ir,
                     Coedge {
                         id,
-                        owner_loop: bottom_loop.clone(),
-                        edge: bottom_edges[edge_index].clone(),
+                        owner_loop: copy_id!(bottom_loop),
+                        edge: copy_id!(bottom_edges[edge_index]),
                         radial_next: extrusion_id!(CoedgeId, "coedge:{}:{}:side-bottom", profile_index, edge_index),
                         sense: Sense::Reversed,
                         pcurves: vec![PcurveUse {
@@ -674,7 +689,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         use_curve: None,
                     },
                 )?;
-                let id = top_coedges[ring_index].clone();
+                let id = copy_id!(top_coedges[ring_index]);
                 let entity = &profile[ring_index];
                 let geometry = entity.geometry();
                 let Some(sketch_geometry) = geometry.to_sketch() else {
@@ -728,8 +743,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ir,
                     Coedge {
                         id,
-                        owner_loop: top_loop.clone(),
-                        edge: top_edges[ring_index].clone(),
+                        owner_loop: copy_id!(top_loop),
+                        edge: copy_id!(top_edges[ring_index]),
                         radial_next: extrusion_id!(CoedgeId, "coedge:{}:{}:side-top", profile_index, ring_index),
                         sense: Sense::Forward,
                         pcurves: vec![PcurveUse {
@@ -788,7 +803,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Surface {
-                        id: surface_id.clone(),
+                        id: copy_id!(surface_id),
                         geometry: surface_geometry,
                         source_object: None,
                     },
@@ -803,8 +818,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
-                    id: loop_id.clone(),
-                    face: face_id.clone(),
+                    id: copy_id!(loop_id),
+                    face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new_admitted(
                             ctx,
@@ -819,11 +834,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         )?,
                     ),
                 });
-                let edge_uses = [
-                    (bottom_edges[index].clone(), Sense::Forward),
-                    (vertical_edges[next].clone(), Sense::Forward),
-                    (top_edges[index].clone(), Sense::Reversed),
-                    (vertical_edges[index].clone(), Sense::Reversed),
+                let edge_uses: [(EdgeId, Sense); 4] = [
+                    (copy_id!(bottom_edges[index]), Sense::Forward),
+                    (copy_id!(vertical_edges[next]), Sense::Forward),
+                    (copy_id!(top_edges[index]), Sense::Reversed),
+                    (copy_id!(vertical_edges[index]), Sense::Reversed),
                 ];
                 let side_uvs = extrusion_side_uvs(
                     &sketch_geometry,
@@ -834,9 +849,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 );
                 for use_index in 0..4 {
                     let radial_next = match use_index {
-                        0 => bottom_coedges[count - 1 - index].clone(),
+                        0 => copy_id!(bottom_coedges[count - 1 - index]),
                         1 => extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-in", profile_index, next),
-                        2 => top_coedges[index].clone(),
+                        2 => copy_id!(top_coedges[index]),
                         3 => extrusion_id!(CoedgeId, "coedge:{}:{}:side-vertical-out", profile_index, index),
                         _ => continue,
                     };
@@ -860,9 +875,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ctx,
                         ir,
                         Coedge {
-                            id: coedges[use_index].clone(),
-                            owner_loop: loop_id.clone(),
-                            edge: edge_uses[use_index].0.clone(),
+                            id: copy_id!(coedges[use_index]),
+                            owner_loop: copy_id!(loop_id),
+                            edge: copy_id!(edge_uses[use_index].0),
                             radial_next,
                             sense: edge_uses[use_index].1,
                             pcurves: vec![PcurveUse {
@@ -879,8 +894,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ctx,
                     ir,
                     Face {
-                        id: face_id.clone(),
-                        shell: shell_id.clone(),
+                        id: copy_id!(face_id),
+                        shell: copy_id!(shell_id),
                         surface: surface_id,
                         sense: if forward_sides {
                             Sense::Forward
@@ -901,7 +916,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir,
             Face {
                 id: bottom_face,
-                shell: shell_id.clone(),
+                shell: copy_id!(shell_id),
                 surface: bottom_surface,
                 sense: if forward_caps {
                     Sense::Reversed
@@ -920,7 +935,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             ir,
             Face {
                 id: top_face,
-                shell: shell_id.clone(),
+                shell: copy_id!(shell_id),
                 surface: top_surface,
                 sense: if forward_caps {
                     Sense::Forward
@@ -937,8 +952,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ir.model.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+            id: copy_id!(region_id),
+            body: copy_id!(body_id),
             shells: vec![shell_id],
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
