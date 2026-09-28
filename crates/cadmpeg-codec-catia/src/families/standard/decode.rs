@@ -2546,7 +2546,7 @@ fn try_decode_standard_population(
                         Exactness::ByteExact
                     },
                 ));
-                if let Err(error) = admission.charge() {
+                if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
@@ -2606,7 +2606,7 @@ fn try_decode_standard_population(
                     annotation_tag,
                     Exactness::ByteExact,
                 ));
-                if let Err(error) = admission.charge() {
+                if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
@@ -2634,7 +2634,7 @@ fn try_decode_standard_population(
                     format!("surfacic_reps_{:02x}", prefix.kind.marker()),
                     Exactness::Unknown,
                 ));
-                if let Err(error) = admission.charge() {
+                if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 surfaces.push(Surface {
@@ -2711,7 +2711,7 @@ fn try_decode_standard_population(
                                 format!("surface:{support_object_id:08x}"),
                                 Exactness::ByteExact,
                             );
-                            if let Err(error) = admission.charge() {
+                            if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                                 return Some(Err(error));
                             }
                             surfaces.push(Surface {
@@ -2741,7 +2741,7 @@ fn try_decode_standard_population(
                             format!("surface:{support_object_id:08x}"),
                             Exactness::ByteExact,
                         );
-                        if let Err(error) = admission.charge() {
+                        if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                             return Some(Err(error));
                         }
                         surfaces.push(Surface {
@@ -2798,7 +2798,7 @@ fn try_decode_standard_population(
                             false
                         };
                         if attached {
-                            if let Err(error) = admission.charge() {
+                            if let Err(error) = admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces") {
                                 return Some(Err(error));
                             }
                             ir.model.procedural_surfaces.push(ProceduralSurface::new(
@@ -2864,7 +2864,7 @@ fn try_decode_standard_population(
                     Exactness::Derived,
                 );
                 annotations.derived(&directrix_id, "geometry").ok()?;
-                if let Err(error) = admission.charge() {
+                if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                     return Some(Err(error));
                 }
                 ir.model.curves.push(Curve {
@@ -2921,7 +2921,7 @@ fn try_decode_standard_population(
             exactness,
         );
         if attached {
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces") {
                 return Some(Err(error));
             }
             ir.model.procedural_surfaces.push(ProceduralSurface::new(
@@ -2965,7 +2965,7 @@ fn try_decode_standard_population(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        if let Err(error) = admission.charge() {
+        if let Err(error) = admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points") {
             return Some(Err(error));
         }
         ir.model.points.push(Point::new(
@@ -2988,7 +2988,7 @@ fn try_decode_standard_population(
             Exactness::ByteExact,
         );
         annotations.derived(&vertex_id, "point").ok()?;
-        if let Err(error) = admission.charge() {
+        if let Err(error) = admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices") {
             return Some(Err(error));
         }
         ir.model.vertices.push(Vertex {
@@ -10464,7 +10464,7 @@ fn build_standard_edge_curve(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
     );
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -10538,7 +10538,7 @@ fn build_standard_edge_curve(
                 ) else {
                     return Ok((None, None));
                 };
-                admission.charge()?;
+                admission.reserve_entity(&mut ir.model.procedural_curves, "catia_family_emit_procedural_curves")?;
                 let procedural = ProceduralCurve::new(
                     procedural_id,
                     ProceduralCurveDefinition::Intersection {
@@ -10592,7 +10592,7 @@ fn ensure_native_edge_support_surface(
         &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
         surface_object_id,
     );
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
     let (geometry, procedural_id) = match carrier {
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
             (geometry.clone(), None)
@@ -10642,7 +10642,7 @@ fn ensure_native_edge_support_surface(
             ),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             definition.as_ref().clone(),
@@ -11381,7 +11381,7 @@ fn attach_standard_circles(
         annotations
             .derived(&id, "geometry.axis")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
@@ -11606,7 +11606,7 @@ fn attach_standard_lines(
             .map_err(cadmpeg_core::CodecError::malformed)?
             .derived(&id, "geometry.direction")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(payload)),

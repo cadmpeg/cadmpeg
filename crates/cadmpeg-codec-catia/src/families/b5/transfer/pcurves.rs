@@ -797,7 +797,7 @@ pub(super) fn emit_pcurves(
             for occurrence in occurrences {
                 pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
             }
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
