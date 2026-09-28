@@ -640,7 +640,12 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         ),
     ];
 
-    bind_sweep_result_modes(&mut features, &bodies);
+    bind_sweep_result_modes(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+        &bodies,
+    )
+    .unwrap();
 
     let modes = features.map(|feature| match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.mode(),
@@ -655,6 +660,30 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     );
     assert_eq!(modes[2], SweepMode::Unresolved {});
     assert_eq!(modes[3], SweepMode::Unresolved {});
+}
+
+#[test]
+fn sweep_body_kind_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let body = Body {
+        id: BodyId::mint("test:model:body#solid").unwrap(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let error = bind_sweep_result_modes(&ctx, &mut [], &[body]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sweep body kinds"));
 }
 
 #[test]

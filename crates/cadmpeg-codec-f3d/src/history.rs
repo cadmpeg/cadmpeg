@@ -1276,57 +1276,91 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
 }
 
 pub(crate) fn bind_sweep_result_modes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     bodies: &[cadmpeg_ir::topology::Body],
-) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode};
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SweepMode, SweepShape};
     use cadmpeg_ir::topology::BodyKind;
 
-    let body_kinds = bodies
-        .iter()
-        .map(|body| (body.id.clone(), body.kind))
-        .collect::<HashMap<_, _>>();
+    let mut body_kinds = HashMap::new();
+    for body in bodies {
+        if !body_kinds.contains_key(&body.id) {
+            ctx.charge_collection_items(1, "index F3D sweep body kinds")?;
+            body_kinds.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D sweep body kinds", 0, 1)
+            })?;
+        }
+        body_kinds.insert(&body.id, body.kind);
+    }
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
-                &mut definition
-            else {
-                break 'feature_edit;
-            };
-            if shape.mode() != (SweepMode::Unresolved {}) || feature.evaluation.outputs().is_empty()
-            {
-                break 'feature_edit;
-            }
-            let output_kinds = feature
-                .evaluation
-                .outputs()
-                .iter()
-                .map(|output| body_kinds.get(output).copied())
-                .collect::<Option<Vec<_>>>();
-            let mode = match output_kinds.as_deref() {
-                Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Sheet) => {
-                    SweepMode::Surface {}
+        let FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Unresolved { sections, .. },
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if feature.evaluation.outputs().is_empty() {
+            continue;
+        }
+        let section_count = sections.len();
+        let mut all_sheet = true;
+        let mut all_solid = true;
+        for output in feature.evaluation.outputs() {
+            ctx.charge_work(1, "resolve F3D sweep output kind")?;
+            match body_kinds.get(output) {
+                Some(BodyKind::Sheet) => all_solid = false,
+                Some(BodyKind::Solid) => all_sheet = false,
+                _ => {
+                    all_sheet = false;
+                    all_solid = false;
                 }
-                Some(kinds) if kinds.iter().all(|kind| *kind == BodyKind::Solid) => {
-                    SweepMode::Solid {
-                        op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            }
+        }
+        let mode = if all_sheet {
+            SweepMode::Surface {}
+        } else if all_solid {
+            SweepMode::Solid {
+                op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            }
+        } else {
+            SweepMode::Unresolved {}
+        };
+        let mut solid_sections = Vec::new();
+        if matches!(mode, SweepMode::Solid { .. }) {
+            let count = u64::try_from(section_count).map_err(|_| {
+                ctx.refuse_codec_limit("convert F3D solid sweep sections", 0, u64::MAX)
+            })?;
+            ctx.charge_collection_items(count, "convert F3D solid sweep sections")?;
+            solid_sections.try_reserve(section_count).map_err(|_| {
+                ctx.refuse_codec_limit("convert F3D solid sweep sections", 0, count)
+            })?;
+        }
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition
+            else {
+                return;
+            };
+            let SweepShape::Unresolved { section, sections } =
+                std::mem::replace(shape, SweepShape::unresolved(None))
+            else {
+                return;
+            };
+            *shape = match mode {
+                SweepMode::Solid { op } => {
+                    solid_sections.extend(sections.into_iter().map(Into::into));
+                    SweepShape::Solid {
+                        op,
+                        section: section.into(),
+                        sections: solid_sections,
                     }
                 }
-                _ => SweepMode::Unresolved {},
+                _ => SweepShape::sheet_sections(mode, section, sections),
             };
-            // The guard above admits only the unresolved shape, whose sections
-            // generate no geometry, so the shape is built once under the mode
-            // the outputs name.
-            let cadmpeg_ir::features::SweepShape::Unresolved { section, sections } =
-                std::mem::replace(shape, cadmpeg_ir::features::SweepShape::unresolved(None))
-            else {
-                break 'feature_edit;
-            };
-            *shape = cadmpeg_ir::features::SweepShape::sheet_sections(mode, section, sections);
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
+    Ok(())
 }
 
 /// Native history and neutral topology used to resolve feature body operands.
