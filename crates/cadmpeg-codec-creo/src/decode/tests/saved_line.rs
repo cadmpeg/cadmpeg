@@ -126,7 +126,8 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        section_entity_external_ids(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &definition))
+            .expect("service section identities"),
         BTreeSet::from([42])
     );
     assert_eq!(
@@ -210,7 +211,8 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        section_entity_external_ids(&incomplete),
+        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
+            .expect("service section identities"),
         BTreeSet::from([42])
     );
     assert!(
@@ -230,7 +232,8 @@ fn saved_line_joins_through_order_table() {
             .as_ref()
             .expect("saved section")
             .entities[0],
-        &unique_saved_section_internal_ids(&incomplete),
+        &crate::decode::with_test_decode_ctx(|ctx| unique_saved_section_internal_ids(ctx, &incomplete))
+            .expect("service saved identities"),
         &BTreeSet::new(),
     )
     .expect("valid test fixture");
@@ -278,8 +281,10 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         saved_section_external_id(
             definition.order_table.as_ref().expect("order table"),
-            &unique_saved_section_internal_ids(&definition),
-            &ambiguous_section_segment_external_ids(&definition),
+            &crate::decode::with_test_decode_ctx(|ctx| unique_saved_section_internal_ids(ctx, &definition))
+                .expect("service saved identities"),
+            &crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(ctx, &definition))
+                .expect("service ambiguous identities"),
             3,
         ),
         Some(42)

@@ -110,9 +110,9 @@ pub(in super::super) fn transfer_sketches(
             continue;
         };
         let segments = section_segment_rows(ctx, definition)?;
-        let unique_segment_ids = unique_section_segment_external_ids(definition);
-        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
-        let unique_saved_ids = unique_saved_section_internal_ids(definition);
+        let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
+        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(ctx, definition)?;
+        let unique_saved_ids = unique_saved_section_internal_ids(ctx, definition)?;
         let complete_segment_table = definition
             .segments
             .as_ref()
@@ -752,11 +752,12 @@ pub(in super::super) fn transfer_sketches(
             constraints.push(constraint);
         }
         for (constraint, offset) in section_segment_radius_constraints_for_emitted(
+            ctx,
             definition,
             &sketch_id,
             &emitted_entity_ids,
             &available_parameter_ids,
-        ) {
+        )? {
             annotate(
                 annotations,
                 constraint.id.as_str(),

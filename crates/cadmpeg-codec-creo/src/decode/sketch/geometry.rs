@@ -15,7 +15,7 @@ use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
     saved_section_ordinary_geometry_allowed, semantic_saved_section_entities,
-    unique_saved_section_internal_ids,
+    saved_section_internal_id_is_unique,
 };
 use crate::decode::sketch_transfer::loci::section_saved_entity;
 
@@ -308,9 +308,7 @@ pub(in crate::decode) fn saved_section_line_geometry(
             }
         });
     let internal_id = internal_id?;
-    unique_saved_section_internal_ids(definition)
-        .contains(&internal_id)
-        .then_some(())?;
+    saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
     let line = semantic_saved_section_entities(definition).find_map(|entity| match entity {
         crate::feature::definitions::FeatureSavedEntity::Line(line)
             if line.entity_id == internal_id =>
@@ -343,9 +341,7 @@ pub(super) fn saved_section_arc_record<'a>(
         .order_table
         .as_ref()?
         .internal_id(segment.external_id)?;
-    unique_saved_section_internal_ids(definition)
-        .contains(&internal_id)
-        .then_some(())?;
+    saved_section_internal_id_is_unique(definition, internal_id).then_some(())?;
     semantic_saved_section_entities(definition).find_map(|entity| match entity {
         crate::feature::definitions::FeatureSavedEntity::Arc(arc)
             if arc.entity_id == internal_id =>

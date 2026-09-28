@@ -50,7 +50,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 *counts.entry(skamp.id).or_default() += 1;
                 counts
             });
-    let section_entities = section_entity_external_ids(definition);
+    let section_entities = section_entity_external_ids(ctx, definition)?;
     let available_entities = geometry.map_or_else(
         || section_entities.clone(),
         |geometry| {

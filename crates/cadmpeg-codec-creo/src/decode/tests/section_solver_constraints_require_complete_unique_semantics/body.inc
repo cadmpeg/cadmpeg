@@ -2391,7 +2391,8 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_line));
-    let unique_ids = unique_section_segment_external_ids(&duplicate_entity);
+    let unique_ids = crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &duplicate_entity))
+        .expect("service unique identities");
     assert!(!unique_ids.contains(&12));
     assert_eq!(
         section_segment_identity_suffix(
@@ -2434,8 +2435,10 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque_segment.clone()));
-    assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
-    assert!(section_entity_external_ids(&opaque_entity).contains(&99));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &opaque_entity))
+        .expect("service unique identities").contains(&99));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_entity))
+        .expect("service section identities").contains(&99));
 
     let mut opaque_point = definition.clone();
     opaque_point
@@ -2948,9 +2951,12 @@ offset: 30,
             external_id: 12,
             ..opaque_segment
         }));
-    assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
-    assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
-    assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &opaque_collision))
+        .expect("service unique identities").contains(&12));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(ctx, &opaque_collision))
+        .expect("service ambiguous identities").contains(&12));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_collision))
+        .expect("service section identities").contains(&12));
     let mut equivalent_skamp = definition.clone();
     let mut redundant = equivalent_skamp
         .relations
