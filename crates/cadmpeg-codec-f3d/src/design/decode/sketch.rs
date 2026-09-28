@@ -1252,9 +1252,11 @@ pub(crate) fn decode_entity_headers(
                 .and_then(|modules| modules.get(&entity_suffix))
                 .cloned();
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
-            let list = in_sketch_module
-                .then(|| decode_reference_list(bytes, end))
-                .flatten();
+            let list = if in_sketch_module {
+                decode_reference_list(ctx, bytes, end)?
+            } else {
+                None
+            };
             let record_end = list.as_ref().map_or(end, |list| list.end);
             let references =
                 list.map(
@@ -4710,24 +4712,47 @@ struct SketchReferenceList {
     end: usize,
 }
 
-fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenceList> {
+fn decode_reference_list(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    position: usize,
+) -> Result<Option<SketchReferenceList>, CodecError> {
     // The eight-byte base-record slot is either a u32 record reference with a
     // zero high half or the all-ones sentinel marking a sketch with no base
     // record; the list grammar is identical in both forms.
-    let mut view = View::over_retained(bytes);
-    view.seek(position)?;
-    let low = view.u32_le()?;
-    let high = view.u32_le()?;
-    let record_reference = match (low, high) {
-        (u32::MAX, u32::MAX) => None,
-        (reference, 0) => Some(reference),
-        _ => return None,
+    let parsed = (|| {
+        let mut view = View::over_retained(bytes);
+        view.seek(position)?;
+        let low = view.u32_le()?;
+        let high = view.u32_le()?;
+        let record_reference = match (low, high) {
+            (u32::MAX, u32::MAX) => None,
+            (reference, 0) => Some(reference),
+            _ => return None,
+        };
+        if view.u8()? != 1 {
+            return None;
+        }
+        let declared_count = usize::try_from(view.u32_le()?).ok()?;
+        Some((view, record_reference, declared_count))
+    })();
+    let Some((mut view, record_reference, declared_count)) = parsed else {
+        return Ok(None);
     };
-    if view.u8()? != 1 {
-        return None;
+    let Some(required_bytes) = declared_count.checked_mul(11) else {
+        return Ok(None);
+    };
+    let Some(remaining_bytes) = bytes.len().checked_sub(view.position()) else {
+        return Ok(None);
+    };
+    if remaining_bytes < required_bytes {
+        return Ok(None);
     }
-    let declared_count = view.u32_le()?;
+    ctx.charge_collection_items(declared_count as u64, "f3d sketch header references")?;
     let mut references = Vec::new();
+    references.try_reserve_exact(declared_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch header reference allocation", 0, declared_count as u64)
+    })?;
     loop {
         let mut probe = view;
         if probe.u8() != Some(1) {
@@ -4740,20 +4765,23 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         if probe.take(6) != Some(&[0; 6]) {
             break;
         }
+        if references.len() == declared_count {
+            return Ok(None);
+        }
         references.push(crate::records::identity::Located {
             value: reference,
             offset: offset as u64,
         });
         view = probe;
     }
-    (references.len() == declared_count as usize).then_some(SketchReferenceList {
+    Ok((references.len() == declared_count).then_some(SketchReferenceList {
         record_reference: crate::records::identity::Located {
             value: record_reference,
             offset: position as u64,
         },
         references,
         end: view.position(),
-    })
+    }))
 }
 
 fn decode_sketch_streams<T>(
