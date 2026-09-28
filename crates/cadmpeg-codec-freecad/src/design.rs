@@ -2119,13 +2119,12 @@ fn parse_constraints(
         } else {
             None
         };
-        let internal_alignment = || {
+        let internal_alignment = || -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
             use cadmpeg_ir::sketches::SketchInternalAlignment as Alignment;
-            let index = || {
-                node.attribute("InternalAlignmentIndex")
-                    .and_then(|value| value.parse::<u32>().ok())
-            };
-            let alignment = match int_attr(node, "InternalAlignmentType")? {
+            let alignment = (|| {
+                let index = || node.attribute("InternalAlignmentIndex")
+                    .and_then(|value| value.parse::<u32>().ok());
+                Some(match int_attr(node, "InternalAlignmentType")? {
                 1 => Alignment::EllipseMajorDiameter,
                 2 => Alignment::EllipseMinorDiameter,
                 3 => Alignment::EllipseFocus1,
@@ -2138,38 +2137,51 @@ fn parse_constraints(
                 10 => Alignment::BsplineKnotPoint(index()?),
                 11 => Alignment::ParabolaFocalAxis,
                 _ => return None,
-            };
-            Some(SketchConstraintDefinitionInput::InternalAlignment {
-                helper: locus_entity(resolved.first()?).clone(),
-                parent: locus_entity(resolved.get(1)?).clone(),
+                })
+            })();
+            let Some(alignment) = alignment else { return Ok(None); };
+            let Some(helper) = resolved.first() else { return Ok(None); };
+            let Some(parent) = resolved.get(1) else { return Ok(None); };
+            Ok(Some(SketchConstraintDefinitionInput::InternalAlignment {
+                helper: copy_constraint_entity(ctx, locus_entity(helper))?,
+                parent: copy_constraint_entity(ctx, locus_entity(parent))?,
                 alignment,
-            })
+            }))
         };
-        let grouped_geometry = || {
+        let grouped_geometry = || -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
             if !all_resolved || resolved.is_empty() {
-                return None;
+                return Ok(None);
             }
             match type_code {
-                Some(20) => Some(SketchConstraintDefinitionInput::Group {
-                    elements: resolved.clone(),
-                }),
+                Some(20) => Ok(Some(SketchConstraintDefinitionInput::Group {
+                    elements: copy_constraint_loci(ctx, &resolved)?,
+                })),
                 Some(21) => {
-                    let metadata = node.attribute("MetaData")?;
-                    let metadata: serde_json::Value = serde_json::from_str(metadata).ok()?;
-                    Some(SketchConstraintDefinitionInput::Text {
-                        elements: resolved.clone(),
-                        text: metadata.get("text")?.as_str()?.to_owned(),
+                    let Some(metadata) = node.attribute("MetaData") else { return Ok(None); };
+                    let _reservation = ctx.reserve_scoped(
+                        metadata.len() as u64, "fcstd constraint text metadata parse",
+                    )?;
+                    let Ok(metadata) = serde_json::from_str::<serde_json::Value>(metadata) else {
+                        return Ok(None);
+                    };
+                    let Some(text) = metadata.get("text").and_then(serde_json::Value::as_str) else {
+                        return Ok(None);
+                    };
+                    Ok(Some(SketchConstraintDefinitionInput::Text {
+                        elements: copy_constraint_loci(ctx, &resolved)?,
+                        text: retained_string(ctx, text, "fcstd constraint text")?,
                         font: metadata
                             .get("font")
                             .and_then(serde_json::Value::as_str)
-                            .map(str::to_owned),
+                            .map(|font| retained_string(ctx, font, "fcstd constraint font"))
+                            .transpose()?,
                         is_text_height: metadata
                             .get("isTextHeight")
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(true),
-                    })
+                    }))
                 }
-                _ => None,
+                _ => Ok(None),
             }
         };
         let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
@@ -2193,10 +2205,14 @@ fn parse_constraints(
                 native_ref: None,
             });
         }
-        let mut definition = (type_code == Some(15) && all_resolved)
-            .then(internal_alignment)
-            .flatten()
-            .or_else(grouped_geometry);
+        let mut definition = if type_code == Some(15) && all_resolved {
+            internal_alignment()?
+        } else {
+            None
+        };
+        if definition.is_none() {
+            definition = grouped_geometry()?;
+        }
         if definition.is_none() {
             definition = type_code.map(|kind| midpoint_constraint(ctx, kind, &operands, entities))
                 .transpose()?.flatten();
@@ -2206,15 +2222,23 @@ fn parse_constraints(
                 definition = neutral_constraint(ctx, type_code, &resolved, parameter.as_ref(), all_resolved)?;
             }
         }
-        let definition = definition.unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
+        let definition = if let Some(definition) = definition {
+            definition
+        } else {
+            let mut entities = collection_vec(ctx, resolved.len(), "fcstd native constraint entities")?;
+            for locus in &resolved {
+                entities.push(copy_constraint_entity(ctx, locus_entity(locus))?);
+            }
+            SketchConstraintDefinitionInput::Native {
                 native_kind,
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: resolved.iter().map(locus_entity).cloned().collect(),
+                entities,
                 parameter,
                 operands: native_operands,
-            });
+            }
+        };
         reserve_vec_items(ctx, &mut constraints, 1, "fcstd sketch constraints")?;
         constraints.push(SketchConstraint {
             id: SketchConstraintId::mint(design_identity_text(
