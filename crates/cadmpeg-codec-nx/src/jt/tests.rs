@@ -115,7 +115,9 @@ fn decode_vertex_flags(bytes: &[u8], count: usize) -> Option<(Vec<u32>, usize)> 
 }
 
 fn parse_probability_context(bytes: &[u8]) -> Option<(Vec<super::ProbabilityEntry>, usize)> {
-    with_context(bytes, |ctx| super::parse_probability_context(ctx, bytes))
+    with_context(bytes, |ctx| {
+        super::parse_probability_context(ctx, bytes).expect("service decode budget")
+    })
 }
 
 fn decode_arithmetic(
@@ -125,7 +127,7 @@ fn decode_arithmetic(
     entries: &[super::ProbabilityEntry],
 ) -> Option<Vec<Option<i32>>> {
     with_context(bytes, |ctx| {
-        super::decode_arithmetic(ctx, bytes, bits, count, entries)
+        super::decode_arithmetic(ctx, bytes, bits, count, entries).expect("service decode budget")
     })
 }
 
