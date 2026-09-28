@@ -17,7 +17,6 @@ use crate::records::{
             DesignAssemblySolvedFrame,
         },
         scope::DesignParameterScope,
-        work_geometry::DesignWorkPointRule,
     },
     parameters::DesignParameterOwner,
     recipes::ConstructionRecipe,
@@ -289,7 +288,12 @@ pub(super) fn exact_legacy_as_built_421_operands(
             .iter()
             .map(|reference| reference.value)
             .eq([second_selection_record_index])
-        || point_rule_input_indices(&point.rule).as_slice() != [first_selection_record_index]
+        || !point
+            .rule
+            .inputs()
+            .iter()
+            .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
+            .eq([first_selection_record_index])
     {
         return None;
     }
@@ -351,20 +355,10 @@ pub(super) fn exact_legacy_as_built_421_operands(
     })().transpose()
 }
 
-fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {
-    rule.inputs()
-        .iter()
-        .map(crate::records::feature::work_geometry::DesignWorkPointInput::record_index)
-        .collect()
-}
-
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
     let start = usize::try_from(byte_offset).ok()?;
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
-    (after_tag == start.checked_add(7)?
-        && class_tag.len() == 3
-        && class_tag.bytes().all(|byte| byte.is_ascii_digit()))
-    .then_some(class_tag)
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    (after_tag == start.checked_add(7)?).then_some(class_tag)
 }
 
 fn exact_legacy_as_built_face_selection(
@@ -393,7 +387,7 @@ fn exact_legacy_as_built_face_selection(
                 .find(|offset| *offset > scope_start)
         })
         .and_then(|offset| u64::try_from(offset).ok());
-    let candidates = records
+    let mut candidates = records
         .offsets(record_index)
         .iter()
         .copied()
@@ -435,10 +429,7 @@ fn exact_legacy_as_built_face_selection(
                 recipe_references: operand.recipe_references,
                 next_byte_offset,
             })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
