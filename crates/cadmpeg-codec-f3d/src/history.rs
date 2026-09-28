@@ -1512,9 +1512,13 @@ pub(crate) fn bind_feature_body_selections(
     }
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let native_ref = feature.native_ref.as_deref();
+        let feature_id = &feature.id;
+        let dependencies = &feature.dependencies;
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
+            let Some(native_ref) = native_ref else {
                 break 'feature_edit;
             };
             let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
@@ -1524,15 +1528,14 @@ pub(crate) fn bind_feature_body_selections(
             if matching_scopes.next().is_some() {
                 break 'feature_edit;
             }
-            let feature_id = feature.id.clone();
             if matches!(
-                &definition,
+                definition,
                 FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
             ) {
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
-                &mut definition
+                definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -1562,9 +1565,9 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
-                &mut definition
+                definition
             {
-                operands
+                let edit = operands
                     .try_edit(|target, tools| {
                         let (Some(state_id), Some(previous_state_id)) =
                             (scope.history_state_id(), scope.previous_history_state_id())
@@ -1754,8 +1757,7 @@ pub(crate) fn bind_feature_body_selections(
                                 };
                                 return;
                             }
-                            let dependency_sets = feature
-                                .dependencies
+                            let dependency_sets = dependencies
                                 .iter()
                                 .filter_map(|dependency| pattern_body_slots.get(dependency))
                                 .collect::<Vec<_>>();
@@ -1793,14 +1795,16 @@ pub(crate) fn bind_feature_body_selections(
                                 }
                             }
                         }
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    });
+                if let Err(error) = edit {
+                    edit_result = Err(cadmpeg_core::CodecError::malformed(error));
+                }
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Coil {
                 result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
                 ..
-            }) = &mut definition
+            }) = definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -1817,7 +1821,7 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
-                &mut definition
+                definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -1834,7 +1838,7 @@ pub(crate) fn bind_feature_body_selections(
                 break 'feature_edit;
             }
             if let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
-                &mut definition
+                definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -1853,7 +1857,7 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            let (bodies, proof) = match &mut definition {
+            let (bodies, proof) = match definition {
                 FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
                     (bodies, BodySelectionProof::TopologyStableRevision)
                 }
@@ -1919,10 +1923,10 @@ pub(crate) fn bind_feature_body_selections(
             let Some(body) = body else {
                 break 'feature_edit;
             };
-            let prefix = feature_input_prefix(&feature.id, previous_state_id);
+            let prefix = feature_input_prefix(feature_id, previous_state_id);
             *bodies = BodySelection::historical(
                 crate::design::edge_resolve::feature_input_topology_id(
-                    &feature.id,
+                    feature_id,
                     previous_state_id,
                 ),
                 vec![crate::ids::history_input_body_id(&prefix, body)],
@@ -1930,7 +1934,8 @@ pub(crate) fn bind_feature_body_selections(
             )
             .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
         }
-        feature.evaluation.set_definition(definition);
+        });
+        edit_result?;
     }
 
     Ok(())
