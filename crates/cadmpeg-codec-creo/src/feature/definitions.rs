@@ -7559,44 +7559,41 @@ pub(crate) fn depdb_section_definition(
 /// Bind an owner omitted by `feat_id` through the section's unique generated
 /// datum entry. An explicit canonical `feat_id` remains authoritative.
 pub(crate) fn bind_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    mut definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
 ) -> Vec<FeatureDefinition> {
+    for definition in &mut definitions {
+        if definition.identity.owner_feature_id().is_some() {
+            continue;
+        }
+        let Some(sketch_plane) = definition
+            .section_3d
+            .as_ref()
+            .and_then(|section| section.sketch_plane_entity_id)
+        else {
+            continue;
+        };
+        let mut owners = geometry_tables
+            .iter()
+            .filter(|table| {
+                table
+                    .kind
+                    .datum_ids()
+                    .is_some_and(|ids| ids.contains(&sketch_plane))
+            })
+            .map(|table| table.feature_id);
+        let Some(owner) = owners.next() else {
+            continue;
+        };
+        if owners.any(|candidate| candidate != owner) {
+            continue;
+        }
+        definition.identity = DefinitionIdentity::Parsed {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: Some(owner),
+        };
+    }
     definitions
-        .into_iter()
-        .map(|definition| {
-            if definition.identity.owner_feature_id().is_some() {
-                return definition;
-            }
-            let Some(sketch_plane) = definition
-                .section_3d
-                .as_ref()
-                .and_then(|section| section.sketch_plane_entity_id)
-            else {
-                return definition;
-            };
-            let owners = geometry_tables
-                .iter()
-                .filter(|table| {
-                    table
-                        .kind
-                        .datum_ids()
-                        .is_some_and(|ids| ids.contains(&sketch_plane))
-                })
-                .map(|table| table.feature_id)
-                .collect::<BTreeSet<_>>();
-            let Some(owner) = owners.first().copied().filter(|_| owners.len() == 1) else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::Parsed {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: Some(owner),
-                },
-                ..definition
-            }
-        })
-        .collect()
 }
 
 /// Bind instantiated saved sections through the exact set of trimmed section
