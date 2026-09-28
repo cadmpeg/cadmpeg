@@ -3,6 +3,8 @@
 
 use crate::vecmath::unit_length;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::decode::analytic::edges::{
     nonperiodic_conic_parameter, periodic_conic_frame, PeriodicConicFrame,
@@ -48,25 +50,38 @@ pub(super) fn multi_component_intersection_candidates(
 }
 
 fn carrier_intersection_components(
+    ctx: &DecodeContext<'_>,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Vec<(CurveGeometry, &'static str)> {
-    carrier_intersection_curve(first, second)
+) -> Result<Vec<(CurveGeometry, &'static str)>, CodecError> {
+    let mut components = Vec::new();
+    for component in carrier_intersection_curve(first, second)
         .into_iter()
         .chain(multi_component_intersection_candidates(first, second))
-        .collect()
+    {
+        ctx.try_reserve_items(&mut components, 1, "creo carrier intersection components")?;
+        components.push(component);
+    }
+    Ok(components)
 }
 
 pub(in super::super) fn intersect_plane_with_carrier_components(
+    ctx: &DecodeContext<'_>,
     plane: PlaneEquation,
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Vec<[f64; 3]> {
-    carrier_intersection_components(first, second)
-        .into_iter()
-        .filter_map(|(geometry, _)| circle_parameters(&geometry))
-        .flat_map(|(center, axis, radius)| intersect_plane_with_circle(plane, center, axis, radius))
-        .collect()
+) -> Result<Vec<[f64; 3]>, CodecError> {
+    let mut intersections = Vec::new();
+    for (geometry, _) in carrier_intersection_components(ctx, first, second)? {
+        let Some((center, axis, radius)) = circle_parameters(&geometry) else {
+            continue;
+        };
+        for point in intersect_plane_with_circle(ctx, plane, center, axis, radius)? {
+            ctx.try_reserve_items(&mut intersections, 1, "creo plane-carrier component intersections")?;
+            intersections.push(point);
+        }
+    }
+    Ok(intersections)
 }
 
 pub(in super::super) fn curve_contains_points(
@@ -202,8 +217,74 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
 
 #[cfg(test)]
 mod tests {
-    use super::{curve_contains_points, CurveGeometry, SolvedCurveGeometry};
+    use super::{curve_contains_points, CarrierEquation, CurveGeometry, SolvedCurveGeometry};
+    use crate::decode::analytic::equations::{ConeEquation, PlaneEquation, SphereEquation};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn cone_sphere_circle_carriers() -> (CarrierEquation, CarrierEquation) {
+        let cone = ConeEquation::new(
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone");
+        let sphere = SphereEquation {
+            center: [0.0; 3],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0_f64.sqrt(),
+        };
+        (CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
+    }
+
+    #[test]
+    fn carrier_intersection_components_refuse_before_vec_growth() {
+        let (cone, sphere) = cone_sphere_circle_carriers();
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::carrier_intersection_components(&ctx, cone, sphere)
+        };
+        assert!(matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo carrier intersection components"));
+        assert!(!run(u64::MAX).expect("service budget admits the circle").is_empty());
+    }
+
+    #[test]
+    fn plane_carrier_component_intersections_refuse_before_vec_growth() {
+        let (cone, sphere) = cone_sphere_circle_carriers();
+        let plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_plane_with_carrier_components(&ctx, plane, cone, sphere)
+        };
+        let limit = (0..64)
+            .find(|limit| matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "creo plane-carrier component intersections"))
+            .expect("the carrier circle reaches the output boundary");
+        assert!(matches!(run(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-carrier component intersections"));
+        let points = run(u64::MAX).expect("service budget admits the circle cut");
+        assert!(points.contains(&[0.0, -1.0, -1.0]));
+        assert!(points.contains(&[0.0, 1.0, -1.0]));
+    }
+
     #[test]
     fn audit_regression_line_membership_ignores_along_line_origin() {
         let line = |x| {

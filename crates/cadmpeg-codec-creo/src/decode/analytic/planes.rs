@@ -223,10 +223,11 @@ pub(super) fn solve_carriers_with_diagnostics(
                 {
                     let reduced = if let [first, second] = cones.as_slice() {
                         intersect_plane_with_carrier_components(
+                            ctx,
                             planes[0],
                             CarrierEquation::Cone(*first),
                             CarrierEquation::Cone(*second),
-                        )
+                        )?
                     } else {
                         Vec::new()
                     };
@@ -287,10 +288,11 @@ pub(super) fn solve_carriers_with_diagnostics(
                 {
                     if cones.is_empty() && spheres.is_empty() {
                         let intersections = intersect_plane_with_carrier_components(
+                            ctx,
                             *plane,
                             CarrierEquation::Cylinder(*cylinder),
                             CarrierEquation::Torus(*torus),
-                        );
+                        )?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }
@@ -299,10 +301,11 @@ pub(super) fn solve_carriers_with_diagnostics(
                 {
                     if cylinders.is_empty() && tori.is_empty() {
                         let intersections = intersect_plane_with_carrier_components(
+                            ctx,
                             *plane,
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Sphere(*sphere),
-                        );
+                        )?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }
@@ -311,10 +314,11 @@ pub(super) fn solve_carriers_with_diagnostics(
                 {
                     if cylinders.is_empty() && spheres.is_empty() {
                         let intersections = intersect_plane_with_carrier_components(
+                            ctx,
                             *plane,
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Torus(*torus),
-                        );
+                        )?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }
@@ -323,20 +327,22 @@ pub(super) fn solve_carriers_with_diagnostics(
                 {
                     if cylinders.is_empty() && cones.is_empty() {
                         let intersections = intersect_plane_with_carrier_components(
+                            ctx,
                             *plane,
                             CarrierEquation::Sphere(*sphere),
                             CarrierEquation::Torus(*torus),
-                        );
+                        )?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }
                 } else if let ([plane], [first, second]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
                         let intersections = intersect_plane_with_carrier_components(
+                            ctx,
                             *plane,
                             CarrierEquation::Torus(*first),
                             CarrierEquation::Torus(*second),
-                        );
+                        )?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }

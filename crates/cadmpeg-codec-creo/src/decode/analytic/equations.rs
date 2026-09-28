@@ -1464,20 +1464,21 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
 }
 
 pub(in crate::decode) fn intersect_plane_with_circle(
+    ctx: &DecodeContext<'_>,
     plane: PlaneEquation,
     center: [f64; 3],
     circle_axis: [f64; 3],
     radius: PositiveLength,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let (Some(plane_normal), Some(circle_normal)) =
         (normalize(plane.normal), normalize(circle_axis))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let direction = cross(plane_normal, circle_normal);
     let sine = direction[0].hypot(direction[1]).hypot(direction[2]);
     if sine <= EPS_PLANE_CIRCLE_PARALLEL {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let radius = radius.get();
     let direction = direction.map(|value| value / sine);
@@ -1498,7 +1499,7 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         radius,
     )
     .map(|hits| hits.map(|(parameter, _)| parameter.get())) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let nearest: [f64; 3] =
         std::array::from_fn(|index| center[index] + distance * radial_direction[index]);
@@ -1507,10 +1508,11 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         let signed_chord = parameter * radius;
         let point = std::array::from_fn(|index| nearest[index] + signed_chord * direction[index]);
         if point.iter().all(|value| value.is_finite()) && !points.contains(&point) {
+            ctx.try_reserve_items(&mut points, 1, "creo plane-circle intersections")?;
             points.push(point);
         }
     }
-    points
+    Ok(points)
 }
 
 pub(in crate::decode) fn circle_parameters(
@@ -2288,10 +2290,41 @@ mod tests {
 
     const SMALL_SECTION_CIRCLE_RADIUS: f64 = 1.0e-7;
     #[test]
+    fn plane_circle_intersections_refuse_before_vec_growth() {
+        let plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let radius = PositiveLength::new(1.0).expect("positive circle radius");
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_plane_with_circle(
+                &ctx,
+                plane,
+                [0.0; 3],
+                [0.0, 0.0, 1.0],
+                radius,
+            )
+        };
+        assert!(matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-circle intersections"));
+        let points = run(u64::MAX).expect("service budget admits circle points");
+        assert_eq!(points.len(), 2);
+        assert!(points.contains(&[0.0, -1.0, 0.0]));
+        assert!(points.contains(&[0.0, 1.0, 0.0]));
+    }
+
+    #[test]
     fn numerical_seventh_plane_circle_preserves_intersection_multiplicity() {
         for radius in [SMALL_SECTION_CIRCLE_RADIUS, 1.0, 1.0e200] {
             let cut = |x| {
-                super::intersect_plane_with_circle(
+                crate::decode::with_test_decode_ctx(|ctx| super::intersect_plane_with_circle(
+                    ctx,
                     PlaneEquation {
                         origin: [x, 0.0, 0.0],
                         normal: [1.0, 0.0, 0.0],
@@ -2299,7 +2332,8 @@ mod tests {
                     [0.0; 3],
                     [0.0, 0.0, 1.0],
                     PositiveLength::new(radius).expect("positive circle radius"),
-                )
+                ))
+                .expect("service profile admits circle intersections")
             };
             let points = cut(0.0);
             assert_eq!(points.len(), 2);
@@ -2316,7 +2350,8 @@ mod tests {
         // The offsets are exact multiples of the last bit of the radius, and the
         // plane normal reaches the radial offset without rounding it.
         let cut = |offset: f64| {
-            super::intersect_plane_with_circle(
+            crate::decode::with_test_decode_ctx(|ctx| super::intersect_plane_with_circle(
+                ctx,
                 PlaneEquation {
                     origin: [offset, 0.0, 0.0],
                     normal: [1.0, 0.0, 0.0],
@@ -2324,7 +2359,8 @@ mod tests {
                 [0.0; 3],
                 [0.0, 0.0, 1.0],
                 PositiveLength::new(TANGENT_CIRCLE_RADIUS).expect("positive circle radius"),
-            )
+            ))
+            .expect("service profile admits circle intersections")
         };
         let last_bit = f64::EPSILON * TANGENT_CIRCLE_RADIUS;
         assert_eq!(cut(TANGENT_CIRCLE_RADIUS), vec![[4.0, 0.0, 0.0]]);
