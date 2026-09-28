@@ -282,6 +282,56 @@ fn persistent_surface_sources_bind_feature_appearances() {
 }
 
 #[test]
+fn display_feature_binding_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let source = display_fixture(
+        [128; 3],
+        &[vec![("moFromSktEntSurfIdRep_c", 36, 1)]],
+        &[],
+        &[(36, 10, [236, 255, 0])],
+    );
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
+        binding.source_entity_id.as_deref()
+            == Some("Contents/DisplayLists::DisplayFace[0]")
+    }));
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 0;
+    for _ in 0..1024 {
+        let error = SldprtCodec
+            .decode(&mut Cursor::new(source.clone()), &options)
+            .expect_err("retained limit must refuse the display route");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected a retained-byte refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        if limit.operation == "retain SLDPRT DisplayFace source identity" {
+            options.policy.limits.max_retained_bytes = limit.used + limit.additional - 1;
+            let repeated = SldprtCodec
+                .decode(&mut Cursor::new(source), &options)
+                .expect_err("one byte below the DisplayFace source identity must refuse");
+            assert!(matches!(
+                repeated,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == "retain SLDPRT DisplayFace source identity"
+            ));
+            return;
+        }
+        let next = limit.used + limit.additional;
+        assert!(next > options.policy.limits.max_retained_bytes);
+        options.policy.limits.max_retained_bytes = next;
+    }
+    panic!("display binding charge was not reached within fixture admissions");
+}
+
+#[test]
 fn face_local_wins_and_conflicting_or_missing_feature_sources_do_not_guess() {
     let faces = vec![
         vec![

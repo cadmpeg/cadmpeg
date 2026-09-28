@@ -3311,6 +3311,30 @@ fn build_geometry_ir(
             );
             display_links.push(id.clone());
             if let Some(definition) = resolved.by_face.get(&table_index) {
+                let table_index_text = table_index.to_string();
+                let source_stream = display_stream.as_str();
+                let source_id_len = source_stream
+                    .len()
+                    .checked_add("::DisplayFace[".len())
+                    .and_then(|len| len.checked_add(table_index_text.len()))
+                    .and_then(|len| len.checked_add(1))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "retain SLDPRT DisplayFace source identity",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                let mut source_entity_id = String::new();
+                ctx.reserve_retained_string(
+                    &mut source_entity_id,
+                    source_id_len,
+                    "retain SLDPRT DisplayFace source identity",
+                )?;
+                source_entity_id.push_str(source_stream);
+                source_entity_id.push_str("::DisplayFace[");
+                source_entity_id.push_str(&table_index_text);
+                source_entity_id.push(']');
                 let appearance = ensure_display_appearance(
                     ctx,
                     &mut ir,
@@ -3332,11 +3356,7 @@ fn build_geometry_ir(
                     ),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
-                    source_entity_id: Some(format!(
-                        "{}::DisplayFace[{}]",
-                        display_stream.as_str(),
-                        table_index
-                    )),
+                    source_entity_id: Some(source_entity_id),
                     object_type: Some("DisplayFace".into()),
                     visible: None,
                     channels: BTreeMap::new(),
