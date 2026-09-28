@@ -104,3 +104,83 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
         &mut crate::lane_refusal::LaneRefusals::new(),
     ).expect("service budget").is_some());
 }
+
+fn shared_endpoint_constraints(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+
+    let sketch = SketchId::mint("test:model:sketch#shared").expect("valid sketch ID");
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .expect("valid line");
+    let entities = [
+        SketchEntity::new(
+            SketchEntityId::mint("test:model:sketch-entity#first").expect("valid entity ID"),
+            sketch.clone(),
+            geometry.clone(),
+        )
+        .with_endpoint_refs(vec!["first".into(), "shared".into()]),
+        SketchEntity::new(
+            SketchEntityId::mint("test:model:sketch-entity#second").expect("valid entity ID"),
+            sketch.clone(),
+            geometry,
+        )
+        .with_endpoint_refs(vec!["shared".into(), "second".into()]),
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("empty root fits policy");
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut constraints = Vec::new();
+    super::project_endpoint_constraints(
+        &ctx,
+        &sketch,
+        &entities,
+        0,
+        0,
+        0,
+        &cadmpeg_ir::stream_name!("test:shared-endpoint"),
+        &mut annotations,
+        &mut constraints,
+    )?;
+    Ok(constraints)
+}
+
+#[test]
+fn sketch_projection_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
+    else { panic!("shared endpoints must charge collection items") };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+}
+
+#[test]
+fn sketch_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
+    else { panic!("shared endpoints must charge retained bytes") };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+}
+
+#[test]
+fn sketch_projection_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
+    else { panic!("shared endpoints must charge work") };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+}

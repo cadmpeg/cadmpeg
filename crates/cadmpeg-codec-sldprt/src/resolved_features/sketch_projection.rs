@@ -289,6 +289,7 @@ fn project_brep(
             Exactness::Derived,
         );
         project_endpoint_constraints(
+            ctx,
             &sketch_id,
             &entities[first_entity..],
             block_offset,
@@ -297,7 +298,7 @@ fn project_brep(
             source_stream,
             annotations,
             constraints,
-        );
+        )?;
         sketches.push(Sketch {
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
