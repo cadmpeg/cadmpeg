@@ -724,8 +724,22 @@ fn append_design_losses(
         ctx.charge_retained(bytes as u64, OPERATION)?;
         feature_names.insert(feature.id.clone(), name.clone());
     }
-    let global_parameter_owners =
-        crate::history::parameters::global_parameter_owners(&ir.model.features);
+    let mut global_parameter_owners = HashSet::new();
+    for feature in &ir.model.features {
+        const OPERATION: &str = "index SLDPRT global parameter owners";
+        ctx.charge_work(1, OPERATION)?;
+        if !crate::history::parameters::is_global_parameter_owner(feature)
+            || global_parameter_owners.contains(&feature.id)
+        {
+            continue;
+        }
+        ctx.charge_collection_items(1, OPERATION)?;
+        global_parameter_owners.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_retained(feature.id.as_str().len() as u64, OPERATION)?;
+        global_parameter_owners.insert(feature.id.clone());
+    }
     let incomplete_parameters = ir
         .model
         .parameters
