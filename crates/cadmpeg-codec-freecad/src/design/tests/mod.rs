@@ -12,6 +12,41 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn resolved_constraint_loci_refuse_at_retained_limits() {
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+    let entity = |id, geometry| SketchEntity::new(
+        SketchEntityId::mint(id).expect("valid entity identity"),
+        SketchId::mint("test:test:sketch#constraints").expect("valid sketch identity"),
+        geometry,
+    );
+    let entities = [
+        entity(
+            "test:test:entity#line",
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                end: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            }).expect("valid line"),
+        ),
+        entity(
+            "test:test:entity#point",
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            }).expect("valid point"),
+        ),
+    ];
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd resolved operand identity", |ctx| {
+            super::resolve_operand(ctx, 0, 3, &entities)
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd midpoint line identity", |ctx| {
+            super::midpoint_constraint(ctx, 1, &[(0, 3), (1, 0)], &entities)
+        },
+    );
+}
+
+#[test]
 fn design_profile_references_refuse_at_matching_retained_limits() {
     let sketches = std::collections::HashMap::new();
     crate::test_support::assert_retained_refusal_at(
