@@ -49,7 +49,7 @@ fn scope() -> crate::records::feature::scope::DesignParameterScope {
     }.with_fixture_layout()).unwrap()
 }
 
-fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
+pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
     let group = group();
     let mut native = crate::native::F3dNative::default();
     native.design_extrude_selection_groups.push(group.clone());
