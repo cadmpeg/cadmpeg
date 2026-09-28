@@ -539,15 +539,18 @@ pub(crate) fn bind_work_plane_constructions(
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| {
-            Some((
-                (native_stream(&header.id)?.to_owned(), header.record_index),
-                header,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !header_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d work plane header index")?;
+            header_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d work plane header index allocation", 0, 1)
+            })?;
+        }
+        header_index.insert(key, header);
+    }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
@@ -592,24 +595,19 @@ pub(crate) fn bind_work_plane_constructions(
         }) {
             continue;
         }
-        let inputs = [first, second, third]
-            .into_iter()
-            .map(|record_index| {
+        let [Some(first_input), Some(second_input), Some(third_input)] =
+            [first, second, third].map(|record_index| {
                 parse_vertex_recipe(
                     bytes,
                     records,
                     &stream,
-                    headers.get(&(stream.clone(), *record_index))?,
+                    header_index.get(&(stream.as_str(), *record_index))?,
                     recipes,
                 )
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(inputs) = inputs else {
+            }) else {
             continue;
         };
-        let Ok(inputs) = inputs.try_into() else {
-            continue;
-        };
+        let inputs = [first_input, second_input, third_input];
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(

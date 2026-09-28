@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::operands::{
     decode_edge_operands, decode_edge_treatment_vertex_operands, insert_edge_member_index,
+    bind_work_plane_constructions,
 };
 use crate::records::decal::DesignRecordHeader;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -75,6 +76,32 @@ fn vertex_operand_header_index_refuses_collection_limit() {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d vertex operand header index"
+        ));
+    });
+}
+
+#[test]
+fn work_plane_header_index_refuses_collection_limit() {
+    let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let header = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#7".to_owned(),
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+            record_index: 7,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            bind_work_plane_constructions(&ctx, scan, &mut [], std::slice::from_ref(&header),
+                &[], &[], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d work plane header index"
         ));
     });
 }
