@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
-use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+use crate::geometry::nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis};
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PlacedPcurve};
 use crate::geometry::sampled::PolygonalSurface;
 use crate::geometry::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -121,6 +121,48 @@ fn polygonal_surface_copy_refuses_vertex_limit() {
     let ctx = context_with_limit(&arena, &policy);
     assert!(matches!(geometry.try_clone_for_decode(&ctx, "step_trim_surface_carrier"),
         Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn nurbs_surface_copy_refuses_inner_row_limit() {
+    let points = [
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+        [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+    ];
+    let geometry = SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsPoleGrid::Polynomial { rows: points.map(Vec::from).into() },
+            false,
+        ).expect("valid NURBS surface"),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 11;
+    let ctx = context_with_limit(&arena, &policy);
+    assert!(matches!(geometry.try_clone_for_decode(&ctx, "step_trim_surface_carrier"),
+        Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_trim_surface_carrier"));
+}
+
+#[test]
+fn pcurve_nurbs_copy_refuses_pole_limit() {
+    let geometry = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::new(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            PcurveNurbsPoles::Polynomial { points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)] },
+            false,
+        ).expect("valid pcurve NURBS"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let ctx = context_with_limit(&arena, &policy);
+    assert!(matches!(geometry.try_clone_for_decode(&ctx, "step_pcurve_carrier_copy"),
+        Err(CodecError::ResourceLimit(refusal)) if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "step_pcurve_carrier_copy"));
 }
 
 #[test]
