@@ -3668,6 +3668,7 @@ fn mesh_texture_assignments(
     let mut triangles =
         ctx.alloc_filled(textures.len(), Vec::new(), "f3d mesh texture assignments")?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
+        ctx.charge_work(1, "resolve F3D mesh texture triangle")?;
         if *texture_id == 0 {
             continue;
         }
@@ -3680,23 +3681,37 @@ fn mesh_texture_assignments(
                     "F3D mesh triangle texture id names no Design texture resource".into(),
                 )
             })?;
+        ctx.charge_collection_items(1, "collect F3D mesh texture triangles")?;
+        triangles[index]
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("collect F3D mesh texture triangles", 0, 1))?;
         triangles[index].push(u32::try_from(triangle).map_err(|_| {
             CodecError::Malformed("F3D mesh triangle ordinal is out of range".into())
         })?);
     }
-    Ok(textures
-        .iter()
-        .cloned()
-        .zip(triangles)
-        .filter(|(_, triangles)| !triangles.is_empty())
-        .map(|((source_id, texture), triangles)| {
-            cadmpeg_ir::tessellation::TessellationTextureAssignment {
-                source_id: Some(source_id),
-                texture,
-                triangles,
-            }
-        })
-        .collect())
+    let mut assignments = Vec::new();
+    for ((source_id, texture), triangles) in textures.iter().zip(triangles) {
+        if triangles.is_empty() {
+            continue;
+        }
+        ctx.charge_collection_items(1, "collect F3D mesh texture assignments")?;
+        assignments
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("collect F3D mesh texture assignments", 0, 1))?;
+        let source_id = copy_decode_string(ctx, source_id, "copy F3D mesh texture source ID")?;
+        let texture = cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+            ctx,
+            texture.as_str(),
+            "copy F3D mesh texture asset ID",
+        )?)
+        .map_err(CodecError::malformed)?;
+        assignments.push(cadmpeg_ir::tessellation::TessellationTextureAssignment {
+            source_id: Some(source_id),
+            texture,
+            triangles,
+        });
+    }
+    Ok(assignments)
 }
 
 /// Replace the native definition of each mesh-import scope with its exact
