@@ -8,8 +8,10 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
     FeatureInputScalar,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::fmt::{self, Write};
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
@@ -48,6 +50,95 @@ pub(crate) fn named_scalars(
             },
         )
         .collect()
+}
+
+pub(crate) fn named_scalars_charged(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    parent: &str,
+    names: &[FeatureInputName],
+) -> Result<Vec<FeatureInputScalar>, CodecError> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let mut scalars = Vec::new();
+    for name in names {
+        let Some(name_offset) = usize::try_from(name.offset).ok() else {
+            continue;
+        };
+        let Some(value_offset) = scalar_value_offset(payload, name_offset) else {
+            continue;
+        };
+        let Some(value) = View::f64_le_at(payload, value_offset).and_then(FiniteReal::new) else {
+            continue;
+        };
+        let Some(trailer_offset) = value_offset.checked_add(8) else {
+            continue;
+        };
+        let Some(object_id) = trailer_offset
+            .checked_add(3)
+            .and_then(|offset| View::u32_le_at(payload, offset))
+        else {
+            continue;
+        };
+        let ordinal = u32::try_from(scalars.len()).map_err(|_| {
+            ctx.refuse_codec_limit("number SLDPRT named scalars", u64::MAX - 1, u64::MAX)
+        })?;
+        let offset = u64::try_from(value_offset).map_err(|_| {
+            ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
+        })?;
+        let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
+        let id = format_scalar_text(
+            ctx,
+            format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
+        )?;
+        let parent = copy_scalar_text(ctx, parent)?;
+        let name_id = copy_scalar_text(ctx, &name.id)?;
+        ctx.reserve_collection_vec(&mut scalars, 1, "collect SLDPRT named scalars")?;
+        scalars.push(FeatureInputScalar {
+            id,
+            parent,
+            feature_ref: None,
+            ordinal,
+            offset,
+            object_id,
+            name: name_id,
+            value,
+            role: scalar_role(payload, trailer_offset),
+            operands,
+        });
+    }
+    Ok(scalars)
+}
+
+fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
+    copy.push_str(text);
+    Ok(copy)
+}
+
+struct ScalarTextSize(usize);
+
+impl Write for ScalarTextSize {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn format_scalar_text(
+    ctx: &DecodeContext<'_>,
+    message: fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    let mut size = ScalarTextSize(0);
+    fmt::write(&mut size, message).map_err(|_| {
+        ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut text = String::new();
+    ctx.reserve_retained_string(&mut text, size.0, "retain SLDPRT scalar identity")?;
+    fmt::write(&mut text, message).map_err(|_| {
+        CodecError::Malformed("cannot format SLDPRT scalar identity".into())
+    })?;
+    Ok(text)
 }
 
 /// The scalar payload offset that follows the serialized object name at
@@ -121,54 +212,87 @@ fn scalar_operands(
     parent: &str,
 ) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    if compact_scalar_layout(payload, trailer_offset) {
-        return [35, 43]
-            .into_iter()
-            .filter_map(|relative| {
-                let offset = trailer_offset.checked_add(relative)?;
-                let cell = payload.get(offset..offset + 8)?;
-                if cell[4..8] != [0xff; 4] {
-                    return None;
-                }
-                let kind = operand_kind([cell[0], cell[1]])?;
-                Some(FeatureInputOperand {
-                    offset: offset as u64,
-                    reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-                    kind,
-                    entity_index: View::u16_le_at(cell, 2)?,
-                    entity_ref: None,
-                })
-            })
-            .collect();
-    }
-    let first = if legacy_scalar_layout(payload, trailer_offset) {
-        36
-    } else {
-        35
-    };
-    [first, first + operand_cell::LEN]
+    operand_cells(payload, trailer_offset)
         .into_iter()
-        .filter_map(|relative| {
-            let offset = trailer_offset.checked_add(relative)?;
-            let cell = payload.get(offset..offset + operand_cell::LEN)?;
-            if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
-                || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
-            {
-                return None;
-            }
-            let kind = operand_kind([
-                cell[operand_cell::CLASS_TOKEN],
-                cell[operand_cell::CLASS_TOKEN + 1],
-            ])?;
-            Some(FeatureInputOperand {
+        .flatten()
+        .map(|(offset, kind, entity_index)| FeatureInputOperand {
                 offset: offset as u64,
                 reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
                 kind,
-                entity_index: View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+                entity_index,
                 entity_ref: None,
             })
-        })
         .collect()
+}
+
+fn scalar_operands_charged(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    trailer_offset: usize,
+    parent: &str,
+) -> Result<Vec<FeatureInputOperand>, CodecError> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let mut operands = Vec::new();
+    for (offset, kind, entity_index) in operand_cells(payload, trailer_offset).into_iter().flatten()
+    {
+        let offset_u64 = u64::try_from(offset).map_err(|_| {
+            ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
+        })?;
+        let reference_ref = format_scalar_text(
+            ctx,
+            format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
+        )?;
+        ctx.reserve_collection_vec(&mut operands, 1, "collect SLDPRT scalar operands")?;
+        operands.push(FeatureInputOperand {
+            offset: offset_u64,
+            reference_ref,
+            kind,
+            entity_index,
+            entity_ref: None,
+        });
+    }
+    Ok(operands)
+}
+
+fn operand_cells(
+    payload: &[u8],
+    trailer_offset: usize,
+) -> [Option<(usize, FeatureInputOperandKind, u16)>; 2] {
+    let compact = compact_scalar_layout(payload, trailer_offset);
+    let first = if compact || !legacy_scalar_layout(payload, trailer_offset) {
+        35
+    } else {
+        36
+    };
+    let second = if compact { 43 } else { first + operand_cell::LEN };
+    [first, second].map(|relative| {
+        let offset = trailer_offset.checked_add(relative)?;
+        if compact {
+            let cell = payload.get(offset..offset.checked_add(8)?)?;
+            if cell[4..8] != [0xff; 4] {
+                return None;
+            }
+            return Some((
+                offset,
+                operand_kind([cell[0], cell[1]])?,
+                View::u16_le_at(cell, 2)?,
+            ));
+        }
+        let cell = payload.get(offset..offset.checked_add(operand_cell::LEN)?)?;
+        if cell[operand_cell::REFERENCE_SENTINEL..operand_cell::ZERO_TRAILER] != [0xff; 4]
+            || cell[operand_cell::ZERO_TRAILER..operand_cell::LEN] != [0; 4]
+        {
+            return None;
+        }
+        Some((
+            offset,
+            operand_kind([
+                cell[operand_cell::CLASS_TOKEN],
+                cell[operand_cell::CLASS_TOKEN + 1],
+            ])?,
+            View::u16_le_at(cell, operand_cell::MARKER_ADDRESS)?,
+        ))
+    })
 }
 
 pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {

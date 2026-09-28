@@ -2,7 +2,7 @@
 
 use super::markers::{admit_sketch_input_entities, reference_cells, relation_bindings};
 use super::names::{class_declarations, configuration, object_names};
-use super::scalars::named_scalars;
+use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
@@ -85,7 +85,7 @@ fn feature_input_lane(
     let payload = source.payload();
     let classes = class_declarations(ctx, payload, &parent)?;
     let names = object_names(ctx, payload, &parent)?;
-    let scalars = named_scalars(payload, &parent, &names);
+    let scalars = named_scalars_charged(ctx, payload, &parent, &names)?;
     let relation_bindings = relation_bindings(&parent, &classes, &scalars);
     let references = reference_cells(&scalars, &classes);
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;

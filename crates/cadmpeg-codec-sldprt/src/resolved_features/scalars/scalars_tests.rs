@@ -2,7 +2,7 @@
 
 use super::super::names::object_names;
 use super::super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
-use super::named_scalars;
+use super::{named_scalars, named_scalars_charged};
 use crate::records::operand_tag::NativeOperandTag;
 use crate::records::FeatureInputOperandKind;
 
@@ -12,6 +12,42 @@ fn decoded_names(payload: &[u8]) -> Vec<crate::records::FeatureInputName> {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("test context");
     object_names(&ctx, payload, "lane").expect("service profile admits names")
+}
+
+#[test]
+fn named_scalar_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut payload = Vec::new();
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(2);
+    for unit in "D1".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(SCALAR_HEADER);
+    payload.extend_from_slice(&0.025f64.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 7, 0);
+    payload[trailer + 3..trailer + 7].copy_from_slice(&42u32.to_le_bytes());
+    let names = decoded_names(&payload);
+    assert_eq!(names.len(), 1);
+
+    let arena = DecodeArena::new();
+    let mut limited_policy = DecodePolicy::service();
+    limited_policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&payload, &arena, &limited_policy).unwrap();
+    let error = named_scalars_charged(&limited, &payload, "lane", &names).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT scalar identity"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        named_scalars_charged(&service, &payload, "lane", &names).unwrap(),
+        named_scalars(&payload, "lane", &names)
+    );
 }
 
 #[test]
