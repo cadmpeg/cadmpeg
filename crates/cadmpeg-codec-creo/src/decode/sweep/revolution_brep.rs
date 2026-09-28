@@ -411,8 +411,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new())
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        cadmpeg_ir::topology::LoopRing::new_admitted(
+                            ctx,
+                            ring_coedges,
+                            Vec::new(),
+                            "creo revolution loop validation nodes",
+                        )?,
                     ),
                 });
                 let mut pcurve_uses = Vec::new();

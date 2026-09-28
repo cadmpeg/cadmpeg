@@ -596,8 +596,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: bottom_loop.clone(),
                 face: bottom_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(bottom_coedges.clone(), Vec::new())
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                        ctx,
+                        bottom_coedges.clone(),
+                        Vec::new(),
+                        "creo extrusion bottom loop validation nodes",
+                    )?,
                 ),
             });
             ctx.charge_entities(1, "admit Creo model loops")?;
@@ -605,8 +609,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 id: top_loop.clone(),
                 face: top_face.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new(top_coedges.clone(), Vec::new())
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                        ctx,
+                        top_coedges.clone(),
+                        Vec::new(),
+                        "creo extrusion top loop validation nodes",
+                    )?,
                 ),
             });
             for ring_index in 0..count {
@@ -875,8 +883,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     id: loop_id.clone(),
                     face: face_id.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(coedges.to_vec(), Vec::new())
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        cadmpeg_ir::topology::LoopRing::new_admitted(
+                            ctx,
+                            coedges.to_vec(),
+                            Vec::new(),
+                            "creo extrusion side loop validation nodes",
+                        )?,
                     ),
                 });
                 let edge_uses = [

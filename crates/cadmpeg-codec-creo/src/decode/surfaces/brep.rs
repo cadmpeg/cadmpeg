@@ -2566,12 +2566,20 @@ pub(in super::super) fn transfer_native_brep(
                     id: loop_id.clone(),
                     face: face.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), Vec::new())
-                            .map_err(|error| {
+                        cadmpeg_ir::topology::LoopRing::new_admitted(
+                            ctx,
+                            coedge_ids.clone(),
+                            Vec::new(),
+                            "creo native loop ring validation nodes",
+                        )
+                        .map_err(|error| match error {
+                            cadmpeg_core::CodecError::Malformed(message) => {
                                 cadmpeg_core::CodecError::malformed(format!(
-                                    "VisibGeom face {face_id} loop ring: {error}"
+                                    "VisibGeom face {face_id} loop ring: {message}"
                                 ))
-                            })?,
+                            }
+                            other => other,
+                        })?,
                     ),
                 });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
