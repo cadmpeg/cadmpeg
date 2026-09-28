@@ -119,12 +119,16 @@ struct OwnershipPlan {
 }
 
 impl OwnershipPlan {
-    fn components(&self) -> BTreeMap<usize, Vec<usize>> {
+    fn components(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>)
+        -> Result<BTreeMap<usize, Vec<usize>>, cadmpeg_core::CodecError> {
         let mut components = BTreeMap::<usize, Vec<usize>>::new();
         for (face, &component) in self.face_components.iter().enumerate() {
-            components.entry(component).or_default().push(face);
+            crate::resource::admit_btree_entry(ctx, &components, &component,
+                "catia_b5_face_component_groups")?;
+            crate::resource::push(ctx, components.entry(component).or_default(), face,
+                "catia_b5_face_component_members")?;
         }
-        components
+        Ok(components)
     }
 }
 
@@ -219,11 +223,13 @@ pub(in crate::families) fn transfer(
                 .iter()
                 .all(|loop_id| loop_owner_counts.get(loop_id).copied() == Some(1))
         });
-        let referenced_loops: HashSet<u32> = graph
-            .faces
-            .iter()
-            .flat_map(|face| face.loops.iter().copied())
-            .collect();
+        let mut referenced_loops = HashSet::new();
+        for face in &graph.faces {
+            for &loop_id in &face.loops {
+                crate::resource::insert_set(admission.ctx, &mut referenced_loops,
+                    loop_id, "catia_b5_transfer_referenced_loops")?;
+            }
+        }
         graph
             .loops
             .retain(|loop_id, _| referenced_loops.contains(loop_id));
@@ -297,47 +303,51 @@ fn semantic_fallthrough_or_resource(
     }
 }
 
+fn add_referenced_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    referenced: &mut HashSet<u32>,
+    pending: &mut Vec<u32>,
+    surface_id: u32,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if crate::resource::insert_set(ctx, referenced, surface_id,
+        "catia_b5_referenced_surface_ids")? {
+        crate::resource::push(ctx, pending, surface_id,
+            "catia_b5_pending_surface_ids")?;
+    }
+    Ok(())
+}
+
 fn referenced_surface_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     roots: impl IntoIterator<Item = u32>,
     offsets: &BTreeMap<u32, B5OffsetSurface>,
     supported: &BTreeMap<u32, B5SupportedSurface>,
     extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
     aliases: &BTreeMap<u32, u32>,
-) -> HashSet<u32> {
-    let mut referenced = roots.into_iter().collect::<HashSet<_>>();
-    let mut pending = referenced.iter().copied().collect::<Vec<_>>();
+) -> Result<HashSet<u32>, cadmpeg_core::CodecError> {
+    let mut referenced = HashSet::new();
+    let mut pending = Vec::new();
+    for root in roots { add_referenced_surface(ctx, &mut referenced, &mut pending, root)?; }
     while let Some(surface_id) = pending.pop() {
         let Some(construction_id) = super::graph::canonical_surface_id(aliases, surface_id) else {
             continue;
         };
-        let dependencies = offsets
-            .get(&construction_id)
-            .map(|offset| vec![offset.source_surface, offset.carrier_surface])
-            .or_else(|| {
-                supported.get(&construction_id).map(|construction| {
-                    let mut dependencies = construction.support_surfaces.to_vec();
-                    dependencies.push(construction.carrier_surface);
-                    dependencies
-                })
-            })
-            .or_else(|| {
-                extrusions.get(&construction_id).map(|extrusion| {
-                    extrusion
-                        .directrix
-                        .supports()
-                        .into_iter()
-                        .map(|(support, _, _)| *support)
-                        .collect()
-                })
-            })
-            .unwrap_or_default();
-        for dependency in dependencies {
-            if referenced.insert(dependency) {
-                pending.push(dependency);
+        if let Some(offset) = offsets.get(&construction_id) {
+            add_referenced_surface(ctx, &mut referenced, &mut pending, offset.source_surface)?;
+            add_referenced_surface(ctx, &mut referenced, &mut pending, offset.carrier_surface)?;
+        } else if let Some(construction) = supported.get(&construction_id) {
+            for &support in &construction.support_surfaces {
+                add_referenced_surface(ctx, &mut referenced, &mut pending, support)?;
+            }
+            add_referenced_surface(ctx, &mut referenced, &mut pending,
+                construction.carrier_surface)?;
+        } else if let Some(extrusion) = extrusions.get(&construction_id) {
+            for (support, _, _) in extrusion.directrix.supports() {
+                add_referenced_surface(ctx, &mut referenced, &mut pending, *support)?;
             }
         }
     }
-    referenced
+    Ok(referenced)
 }
 
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
@@ -360,13 +370,16 @@ fn build_plan(
             Err(error) => return Some(Err(error)),
         };
 
-        let referenced_surfaces = referenced_surface_ids(
+        let referenced_surfaces = match referenced_surface_ids(ctx,
             graph.faces.iter().map(|face| face.surface),
             &graph.offset_surfaces,
             &graph.supported_surfaces,
             &graph.extrusion_surfaces,
             &graph.surface_aliases,
-        );
+        ) {
+            Ok(referenced) => referenced,
+            Err(error) => return Some(Err(error)),
+        };
         let mut surface_plan = BTreeMap::new();
         for surface_id in referenced_surfaces {
             let surface = graph.surfaces.get(&surface_id)?;
