@@ -6,6 +6,7 @@
 //! convert model lengths before insertion into the IR.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
 use cadmpeg_ir::geometry::scaling::ScaleRefusal;
@@ -152,6 +153,7 @@ fn scale_datum_point_construction(
 }
 
 pub(in crate::decode) fn scale_feature_definition(
+    ctx: &DecodeContext<'_>,
     definition: &mut FeatureDefinition,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -161,14 +163,15 @@ pub(in crate::decode) fn scale_feature_definition(
             fuzzy_tolerance,
             ..
         } => {
-            scale_feature_operation(operation, scale)?;
+            scale_feature_operation(ctx, operation, scale)?;
             scale_fuzzy_tolerance(fuzzy_tolerance, scale)
         }
-        FeatureDefinition::Operation(operation) => scale_feature_operation(operation, scale),
+        FeatureDefinition::Operation(operation) => scale_feature_operation(ctx, operation, scale),
     }
 }
 
 fn scale_feature_operation(
+    ctx: &DecodeContext<'_>,
     definition: &mut FeatureOperation,
     scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -280,16 +283,15 @@ fn scale_feature_operation(
             *arc = scaled.with_center(center);
         }
         FeatureOperation::Polyline { chain } => {
-            let points = chain
-                .points()
-                .iter()
-                .map(|point| {
-                    let mut point = point.get();
-                    scale_point3(&mut point, scale);
-                    point
-                })
-                .collect();
-            *chain = cadmpeg_ir::features::FeaturePolyline::new(points, chain.closed())
+            let mut points = Vec::new();
+            ctx.try_reserve_items(&mut points, chain.points().len(), "creo scaled feature polyline points")?;
+            for point in chain.points() {
+                let scaled = point.scaled(scale).ok_or_else(|| {
+                    CodecError::Malformed("Creo scaled polyline must have finite distinct adjacent vertices".into())
+                })?;
+                points.push(scaled);
+            }
+            *chain = cadmpeg_ir::features::FeaturePolyline::from_parts(points, chain.closed())
                 .ok_or_else(|| {
                     CodecError::Malformed(
                         "Creo scaled polyline must have finite distinct adjacent vertices".into(),
@@ -1230,6 +1232,40 @@ mod tests {
     };
 
     #[test]
+    fn scaled_feature_polyline_refuses_point_collection_limit() {
+        let definition = || {
+            FeatureDefinition::Operation(FeatureOperation::Polyline {
+                chain: cadmpeg_ir::features::FeaturePolyline::new(
+                    vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+                    false,
+                )
+                .expect("two distinct source points"),
+            })
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut limited = definition();
+        let error = scale_feature_definition(&ctx, &mut limited, positive(25.4))
+            .expect_err("two scaled points exceed one collection item");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo scaled feature polyline points"), "{error:?}");
+
+        let mut scaled = definition();
+        crate::decode::with_test_decode_ctx(|ctx| {
+            scale_feature_definition(ctx, &mut scaled, positive(25.4))
+        })
+        .expect("service-profile scaling");
+        let FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) = scaled else {
+            panic!("scaled feature changed family");
+        };
+        assert_point3(chain.points()[0].get(), [25.4, 50.8, 76.2]);
+        assert_point3(chain.points()[1].get(), [101.6, 127.0, 152.4]);
+    }
+
+    #[test]
     fn feature_and_parameter_lengths_are_in_millimeters_at_admission() {
         let mut ir = CadIr::empty();
         let carriers =
@@ -1503,7 +1539,10 @@ mod tests {
             ),
         };
 
-        scale_feature_definition(&mut definition, positive(25.4)).expect("valid test fixture");
+        crate::decode::with_test_decode_ctx(|ctx| {
+            scale_feature_definition(ctx, &mut definition, positive(25.4))
+        })
+        .expect("valid test fixture");
 
         let FeatureDefinition::PostProcess {
             fuzzy_tolerance, ..
@@ -1871,7 +1910,10 @@ mod tests {
     fn an_elliptic_arc_keeps_radii_that_round_to_one_value() {
         let [low, high] = collapsing_pair();
         let mut definition = elliptic_arc(Point3::new(1.0, 2.0, 3.0), [high, low]);
-        scale_feature_definition(&mut definition, positive(25.4)).expect("ordered radii");
+        crate::decode::with_test_decode_ctx(|ctx| {
+            scale_feature_definition(ctx, &mut definition, positive(25.4))
+        })
+        .expect("ordered radii");
         let FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc }) = definition else {
             panic!("test feature changed family");
         };
@@ -1893,7 +1935,9 @@ mod tests {
             ),
         ] {
             let mut definition = definition;
-            let error = scale_feature_definition(&mut definition, positive(25.4))
+            let error = crate::decode::with_test_decode_ctx(|ctx| {
+                scale_feature_definition(ctx, &mut definition, positive(25.4))
+            })
                 .expect_err("an overflowing arc")
                 .to_string();
             assert!(error.contains(text), "{error}");

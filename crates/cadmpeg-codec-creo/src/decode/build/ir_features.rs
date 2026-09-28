@@ -363,7 +363,7 @@ pub(super) fn emit_model_features(
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 );
             if upgrade_legacy_round {
-                source_carriers.replace_feature_definition(existing, definition)?;
+                source_carriers.replace_feature_definition(ctx, existing, definition)?;
             }
             if name.is_some() {
                 existing.name = name;
