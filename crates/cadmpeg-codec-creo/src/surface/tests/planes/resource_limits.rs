@@ -29,6 +29,16 @@ fn assert_surface_limit(
         if limit.dimension == dimension && limit.operation == operation));
 }
 
+fn limit_reaching_operation(
+    operation: &'static str,
+    run: impl Fn(u64) -> cadmpeg_core::CodecError,
+) -> u64 {
+    (0..128)
+        .find(|limit| matches!(run(*limit), cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.operation == operation))
+        .expect("the fixture reaches the named resource boundary")
+}
+
 #[test]
 fn surface_parameter_refuses_header_vector() {
     use cadmpeg_core::decode::ResourceDimension;
@@ -282,10 +292,13 @@ fn plane_envelope_limit_error(
 #[test]
 fn plane_envelope_refuses_scalar_token_vector() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_envelope_limit_error(0, u64::MAX);
+    let limit = limit_reaching_operation("creo plane envelope scalar token items", |limit| {
+        plane_envelope_limit_error(limit, u64::MAX)
+    });
+    let error = plane_envelope_limit_error(limit, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelope scalar token items"));
+            && limit.operation == "creo plane envelope scalar token items"), "{error:?}");
 }
 
 #[test]
@@ -309,10 +322,13 @@ fn plane_envelope_refuses_body_copy() {
 #[test]
 fn plane_envelope_refuses_output_vector() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_envelope_limit_error(10, u64::MAX);
+    let limit = limit_reaching_operation("creo plane envelopes", |limit| {
+        plane_envelope_limit_error(limit, u64::MAX)
+    });
+    let error = plane_envelope_limit_error(limit, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelopes"));
+            && limit.operation == "creo plane envelopes"), "{error:?}");
 }
 
 #[test]
@@ -320,15 +336,19 @@ fn named_plane_outline_refuses_envelope_output_vector() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\xf9\x02\x03\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
     let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
-        .expect("named outline fits root input limit");
-    let error = crate::surface::plane_envelopes(&ctx, payload)
-        .expect_err("six tokens leave no envelope output slot");
+    let run = |limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("named outline fits root input limit");
+        crate::surface::plane_envelopes(&ctx, payload)
+            .expect_err("six tokens and row admission leave no envelope output slot")
+    };
+    let limit = limit_reaching_operation("creo plane envelopes", run);
+    let error = run(limit);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane envelopes"));
+            && limit.operation == "creo plane envelopes"), "{error:?}");
 }
 
 fn plane_local_system_limit_error(
@@ -365,28 +385,37 @@ fn plane_local_system_limit_error(
 #[test]
 fn plane_local_system_refuses_retained_body() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_local_system_limit_error(u64::MAX, 0);
+    let limit = limit_reaching_operation("creo plane local-system body", |limit| {
+        plane_local_system_limit_error(u64::MAX, limit)
+    });
+    let error = plane_local_system_limit_error(u64::MAX, limit);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "creo plane local-system body"));
+            && limit.operation == "creo plane local-system body"), "{error:?}");
 }
 
 #[test]
 fn plane_local_system_refuses_row_system_vector() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_local_system_limit_error(0, u64::MAX);
+    let limit = limit_reaching_operation("creo plane row systems", |limit| {
+        plane_local_system_limit_error(limit, u64::MAX)
+    });
+    let error = plane_local_system_limit_error(limit, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane row systems"));
+            && limit.operation == "creo plane row systems"), "{error:?}");
 }
 
 #[test]
 fn plane_local_system_refuses_output_vector() {
     use cadmpeg_core::decode::ResourceDimension;
-    let error = plane_local_system_limit_error(1, u64::MAX);
+    let limit = limit_reaching_operation("creo plane local systems", |limit| {
+        plane_local_system_limit_error(limit, u64::MAX)
+    });
+    let error = plane_local_system_limit_error(limit, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "creo plane local systems"));
+            && limit.operation == "creo plane local systems"), "{error:?}");
 }
 
 #[test]

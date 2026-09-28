@@ -9,17 +9,17 @@ use super::plane_local_systems_for_rows;
 use super::positional_spline_replay_body_end;
 use super::positional_spline_replay_prototype;
 use crate::scalar;
-use crate::surface::complete_surface_array_bounds;
+use crate::surface::complete_surface_array_bounds as checked_complete_surface_array_bounds;
 use crate::surface::contour_records_for_rows;
-use crate::surface::counted_row_bounds;
-use crate::surface::cross_section_rows;
+use crate::surface::counted_row_bounds as checked_counted_row_bounds;
+use crate::surface::cross_section_rows as checked_cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
-use crate::surface::rows;
+use crate::surface::rows as checked_rows;
 use crate::surface::scalar_tokens;
 use crate::surface::spline_replay_shape;
 use crate::surface::surface_body_compound_close;
@@ -33,6 +33,214 @@ use crate::surface::SurfaceNamedValue;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
 use crate::surface::TabulatedCylinderFrame;
+
+fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
+        .expect("surface rows are admitted")
+}
+
+fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_cross_section_rows(ctx, payload))
+        .expect("cross-section rows are admitted")
+}
+
+fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_counted_row_bounds(ctx, payload))
+        .expect("counted row bounds are admitted")
+}
+
+fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_complete_surface_array_bounds(ctx, payload))
+        .expect("surface array bounds are admitted")
+}
+
+fn surface_limit_result<T>(
+    payload: &[u8],
+    limit: u64,
+    decode: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>, &[u8]) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<T, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("row fixture fits the root-byte limit");
+    decode(&ctx, payload)
+}
+
+fn last_limit_before_counted_scalar_array(payload: &[u8]) -> u64 {
+    use cadmpeg_core::decode::ResourceDimension;
+    (0..128)
+        .filter(|limit| matches!(surface_limit_result(payload, *limit, |ctx, input| {
+            crate::surface::named_prototype_records(
+                ctx,
+                input,
+                &mut crate::lane_refusal::LaneRefusals::new(),
+            )
+            .map(|records| records.len())
+        }), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "admit Creo counted scalar array"))
+        .last()
+        .expect("the fixture reaches its counted scalar array boundary")
+}
+
+#[test]
+fn surface_rows_refuse_before_row_vector_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = [7, 0x22, 4, 0x01, 0, 0];
+    let error = surface_limit_result(&payload, 0, checked_rows)
+        .expect_err("one row needs one collection item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo surface rows"));
+}
+
+#[test]
+fn surface_row_id_nodes_refuse_before_btree_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = [7, 0x22, 4, 0x01, 0, 0];
+    let error = surface_limit_result(&payload, 1, checked_rows)
+        .expect_err("one unique row ID needs a BTree node");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo surface row ID nodes"));
+    assert_eq!(surface_limit_result(&payload, 2, checked_rows).expect("row and ID admitted").len(), 1);
+}
+
+#[test]
+fn surface_framed_rows_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 2, checked_rows)
+        .expect_err("framed row needs a collection item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo framed surface rows"));
+    assert_eq!(surface_limit_result(payload, 3, checked_rows).expect("frame admitted").len(), 1);
+}
+
+#[test]
+fn counted_surface_row_bounds_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 3, checked_counted_row_bounds)
+        .expect_err("counted row bound needs a collection item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo counted surface row bounds"));
+    assert_eq!(surface_limit_result(payload, 4, checked_counted_row_bounds).expect("bound admitted").len(), 1);
+}
+
+#[test]
+fn complete_surface_array_bounds_refuse_before_result_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_array\0\xf8\x01\x07\x22\x04\x01\x00\x00";
+    let error = surface_limit_result(payload, 3, checked_complete_surface_array_bounds)
+        .expect_err("complete frame needs a collection item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo complete surface array bounds"));
+    assert_eq!(surface_limit_result(payload, 4, checked_complete_surface_array_bounds).expect("bound admitted").len(), 1);
+}
+
+#[test]
+fn named_prototype_scan_refuses_each_vector_boundary() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    for (limit, operation) in [
+        (0, "creo named prototype field positions"),
+        (2, "creo named prototype field ranges"),
+        (3, "creo named prototype frames"),
+    ] {
+        let error = surface_limit_result(payload, limit, |ctx, input| {
+            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+        })
+        .expect_err("named prototype scan needs another collection item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation));
+    }
+    assert_eq!(
+        surface_limit_result(payload, 4, |ctx, input| {
+            crate::surface::named_prototype_frames(ctx, input).map(|frames| frames.len())
+        })
+            .expect("named prototype scan admitted"),
+        1
+    );
+}
+
+#[test]
+fn prototype_parameter_spans_refuse_before_row_filter_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    let error = surface_limit_result(payload, 4, checked_rows)
+        .expect_err("one named parameter needs a span item");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo prototype parameter spans"));
+    assert!(surface_limit_result(payload, 5, checked_rows).expect("span admitted").is_empty());
+}
+
+#[test]
+fn unknown_prototype_family_refuses_before_name_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_prim_ptr(foobar)\0";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("prototype fixture fits the root-byte limit");
+    let error = crate::surface::named_prototype_frames(&ctx, payload)
+        .expect_err("six-byte family name needs a retained copy");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo prototype family name"));
+    let frames = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::named_prototype_frames(ctx, payload)
+    })
+    .expect("unknown family admitted under service policy");
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].family.name(), "foobar");
+}
+
+#[test]
+fn lossy_prototype_family_formatter_preserves_utf8_replacement() {
+    let raw = b"a\xff\xf0\x9f\x92z";
+    assert_eq!(
+        format!("{}", crate::surface::LossyPrototypeName(raw)),
+        String::from_utf8_lossy(raw)
+    );
+}
+
+#[test]
+fn named_prototype_parameter_name_refuses_before_retained_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+    let run = |retained| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("prototype fixture fits the root-byte limit");
+        crate::surface::named_prototype_records(
+            &ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .map(|records| records.len())
+    };
+    let limit = (0..32)
+        .find(|limit| matches!(run(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "creo named prototype parameter name"))
+        .expect("one retained limit reaches the parameter-name copy");
+    let error = run(limit).expect_err("parameter name needs retained bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+        if refusal.dimension == ResourceDimension::RetainedBytes
+            && refusal.operation == "creo named prototype parameter name"));
+    assert_eq!(run(u64::MAX).expect("prototype admitted under service limits"), 1);
+}
 
 #[test]
 fn contour_surface_frames_refuse_before_aggregate_growth() {
@@ -770,7 +978,7 @@ fn u_params_refuses_collection_limit_before_allocating_slots() {
     let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("small prototype payload is admitted");
     let error = crate::surface::named_prototype_records(
@@ -811,7 +1019,7 @@ fn v_params_refuses_collection_limit_before_allocating_slots() {
     let payload = b"srf_prim_ptr(splsrf)\0\xe0\x02v_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 3;
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("small prototype payload is admitted");
     let error = crate::surface::named_prototype_records(
@@ -852,7 +1060,7 @@ fn params_refuses_collection_limit_before_allocating_slots() {
     let payload = b"srf_prim_ptr(tab_cyl)\0\xe0\x02params\0\xf8\x03\xe6\xe3";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("small prototype payload is admitted");
     let error = crate::surface::named_prototype_records(
@@ -895,7 +1103,7 @@ fn counted_surface_arrays_share_the_collection_item_limit() {
         \xe0\x02v_params\0\xf8\x02\x0f\x0f\xe3";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 7;
+    policy.limits.max_collection_items = last_limit_before_counted_scalar_array(payload);
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
         .expect("small prototype payload is admitted");
     let error = crate::surface::named_prototype_records(

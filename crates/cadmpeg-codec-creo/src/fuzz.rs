@@ -28,8 +28,9 @@ pub fn curve_prototypes(
 }
 
 /// Exercise Creo surface namespace row extraction.
-pub fn surface_rows(data: &[u8]) {
-    let _probe = crate::surface::rows(data);
+pub fn surface_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+    let _probe = crate::surface::rows(ctx, data)?;
+    Ok(())
 }
 
 /// Exercise Creo PSB scalar decoding.
@@ -91,7 +92,8 @@ mod tests {
             .expect("datum fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &[]))
             .expect("curve fuzz wrapper");
-        super::surface_rows(&[]);
+        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &[]))
+            .expect("surface row fuzz wrapper");
         super::scalar(&[]);
         super::compact_int(&[]);
         super::psb_tokens(&[]);
@@ -106,7 +108,8 @@ mod tests {
             .expect("datum fuzz wrapper");
         crate::decode::with_test_decode_ctx(|ctx| super::curve_prototypes(ctx, &data))
             .expect("curve fuzz wrapper");
-        super::surface_rows(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::surface_rows(ctx, &data))
+            .expect("surface row fuzz wrapper");
         super::scalar(&data);
         super::compact_int(&data);
         super::psb_tokens(&data);
