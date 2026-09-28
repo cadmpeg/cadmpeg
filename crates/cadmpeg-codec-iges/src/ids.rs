@@ -16,6 +16,28 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 
+/// Format a directory-derived lookup key in caller-owned stack storage.
+pub(crate) fn directory_lookup_key<'a>(
+    prefix: &str,
+    sequence: u32,
+    storage: &'a mut [u8],
+) -> Option<&'a str> {
+    let mut digits = [0_u8; 10];
+    let mut value = sequence;
+    let mut start = digits.len();
+    loop {
+        start -= 1;
+        digits[start] = b'0' + u8::try_from(value % 10).ok()?;
+        value /= 10;
+        if value == 0 { break; }
+    }
+    let length = prefix.len().checked_add(digits.len() - start)?;
+    let result = storage.get_mut(..length)?;
+    result[..prefix.len()].copy_from_slice(prefix.as_bytes());
+    result[prefix.len()..].copy_from_slice(&digits[start..]);
+    std::str::from_utf8(result).ok()
+}
+
 /// A decoded number an identity key may be spelled with.
 ///
 /// A decimal spelling is an identity key by construction, so the conversion
@@ -328,3 +350,17 @@ minter!(
     "model",
     "appearance-binding"
 );
+
+#[cfg(test)]
+mod tests {
+    use super::directory_lookup_key;
+
+    #[test]
+    fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
+        let mut storage = [0_u8; 64];
+        assert_eq!(directory_lookup_key("iges:model:surface#D", 0, &mut storage), Some("iges:model:surface#D0"));
+        assert_eq!(directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage), Some("iges:model:edge#D4294967295"));
+        let mut short = [0_u8; 3];
+        assert_eq!(directory_lookup_key("iges:model:edge#D", 1, &mut short), None);
+    }
+}

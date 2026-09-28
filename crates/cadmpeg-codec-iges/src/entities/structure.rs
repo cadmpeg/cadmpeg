@@ -1360,7 +1360,9 @@ fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> 
 }
 
 fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
-    let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
+    let mut key_storage = [0_u8; 64];
+    let key = crate::ids::directory_lookup_key("iges:model:surface#D", sequence, &mut key_storage)?;
+    let surface = index.surfaces(key)?;
     match surface.geometry.solved() {
         Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -1683,8 +1685,11 @@ fn plane_boundary_edge(
     resolution: f64,
     ctx: &DecodeContext<'_>,
 ) -> Result<Edge, PlaneBoundaryError> {
+    let mut key_storage = [0_u8; 64];
+    let key = crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
+        .ok_or(PlaneBoundaryError::MissingEdge)?;
     let source_edge = index
-        .edges(&format!("iges:model:edge#D{boundary_sequence}"))
+        .edges(key)
         .ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
         .curve()
