@@ -11,20 +11,16 @@ use super::plane_local_systems;
 use crate::psb;
 use crate::scalar;
 use crate::surface::admitted_counted_parameter_body;
-use crate::surface::complete_plane_compact_scalar_suffix;
 use crate::surface::complete_plane_local_system_slots;
 use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
-use crate::surface::opaque_spans;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
 use crate::surface::rows;
-use crate::surface::scalar_frames;
 use crate::surface::scalar_slots_with_tokens_and_end;
-use crate::surface::scalar_tokens;
 use crate::surface::slot_equality;
 use crate::surface::LocalSystemClassification;
 use crate::surface::OutlinePlane;
@@ -41,6 +37,38 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn service_scalar_tokens(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Vec<SurfaceParameterScalar> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_tokens(ctx, kind, body, cache))
+        .expect("scalar tokens fit service limits")
+}
+
+fn service_opaque_spans(
+    body: &[u8],
+    tokens: &[SurfaceParameterScalar],
+) -> Vec<SurfaceParameterOpaqueSpan> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::opaque_spans(ctx, body, tokens))
+        .expect("opaque spans fit service limits")
+}
+
+fn service_scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScalarFrame> {
+    crate::decode::with_test_decode_ctx(|ctx| crate::surface::scalar_frames(ctx, tokens))
+        .expect("scalar frames fit service limits")
+}
+
+fn service_complete_plane_compact_scalar_suffix(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::surface::complete_plane_compact_scalar_suffix(ctx, body, cache)
+    })
+    .expect("compact suffix fits service limits")
+}
 
 fn frame_bound_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
@@ -464,12 +492,12 @@ fn derives_plane_from_auxiliary_corner_frame() {
         0xd5, 0xd6, 0x25, 0xa6, 0xec, 0x06, 0x18, 0x46, 0x18, 0x81, 0x99, 0x6a, 0xa2, 0x99, 0x53,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    compact_prefix.scalar_tokens = scalar_tokens(
+    compact_prefix.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &compact_prefix.body,
         &scalar::ScalarCache::default(),
     );
-    compact_prefix.scalar_frames = scalar_frames(&compact_prefix.scalar_tokens);
+    compact_prefix.scalar_frames = service_scalar_frames(&compact_prefix.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[compact_prefix], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -624,11 +652,11 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0xdc, 0x9c, 0x95, 0x35, 0x00, 0x80, 0xf8, 0x46, 0x1a, 0xa3, 0x11, 0xff, 0x6a, 0x47,
         0x68, 0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    let tokens = scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
-    let frames = scalar_frames(&tokens);
+    let tokens = service_scalar_tokens(SurfaceKind::Plane, &body, &scalar::ScalarCache::default());
+    let frames = service_scalar_frames(&tokens);
     let record = SurfaceParameterRecord {
         surface_id: 41,
-        opaque_spans: opaque_spans(&body, &tokens),
+        opaque_spans: service_opaque_spans(&body, &tokens),
         scalar_tokens: tokens,
         scalar_frames: frames,
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
@@ -676,12 +704,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x20, 0x00, 0x46, 0x1e, 0x3e, 0x61, 0xf5, 0x38, 0x92, 0x68, 0x46, 0x18, 0xfa, 0xaf, 0xda,
         0xc1, 0x51, 0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_eight_byte.scalar_tokens = scalar_tokens(
+    prefixed_eight_byte.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_eight_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_eight_byte.scalar_frames = scalar_frames(&prefixed_eight_byte.scalar_tokens);
+    prefixed_eight_byte.scalar_frames = service_scalar_frames(&prefixed_eight_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_eight_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -700,12 +728,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x00, 0x4a, 0x19, 0x29, 0x8e, 0x22, 0xd2, 0x2c, 0x46, 0x18, 0xfa, 0xaf, 0xda, 0xc1, 0x51,
         0xa5, 0x2e, 0x20, 0x33,
     ];
-    prefixed_seven_byte.scalar_tokens = scalar_tokens(
+    prefixed_seven_byte.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &prefixed_seven_byte.body,
         &scalar::ScalarCache::default(),
     );
-    prefixed_seven_byte.scalar_frames = scalar_frames(&prefixed_seven_byte.scalar_tokens);
+    prefixed_seven_byte.scalar_frames = service_scalar_frames(&prefixed_seven_byte.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[prefixed_seven_byte], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -719,12 +747,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
 
     let mut unterminated = record.clone();
     unterminated.body.truncate(unterminated.body.len() - 2);
-    unterminated.scalar_tokens = scalar_tokens(
+    unterminated.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &unterminated.body,
         &scalar::ScalarCache::default(),
     );
-    unterminated.scalar_frames = scalar_frames(&unterminated.scalar_tokens);
+    unterminated.scalar_frames = service_scalar_frames(&unterminated.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[unterminated], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -743,12 +771,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0xd0, 0x0d, 0x05, 0xd2, 0xf6, 0xc4, 0x80, 0x46, 0x1b, 0x1c, 0x28, 0x70, 0x5d, 0x7a, 0x9b,
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
-    y_held.scalar_tokens = scalar_tokens(
+    y_held.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &y_held.body,
         &scalar::ScalarCache::default(),
     );
-    y_held.scalar_frames = scalar_frames(&y_held.scalar_tokens);
+    y_held.scalar_frames = service_scalar_frames(&y_held.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[y_held], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -767,12 +795,12 @@ fn derives_plane_from_marker_bounded_corner_frames() {
         0x46, 0x18, 0xb0, 0x77, 0xb6, 0x05, 0x5f, 0x34, 0x46, 0x1a, 0x29, 0xfb, 0x8f, 0x4b, 0x8f,
         0x16, 0x2e, 0x20, 0x33,
     ];
-    mixed_width.scalar_tokens = scalar_tokens(
+    mixed_width.scalar_tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &mixed_width.body,
         &scalar::ScalarCache::default(),
     );
-    mixed_width.scalar_frames = scalar_frames(&mixed_width.scalar_tokens);
+    mixed_width.scalar_frames = service_scalar_frames(&mixed_width.scalar_tokens);
     assert_eq!(
         positional_frame_planes(&[mixed_width], std::slice::from_ref(&row)),
         vec![OutlinePlane {
@@ -786,13 +814,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
 
     let mut malformed = record;
     malformed.body[31] = 0x00;
-    let tokens = scalar_tokens(
+    let tokens = service_scalar_tokens(
         SurfaceKind::Plane,
         &malformed.body,
         &scalar::ScalarCache::default(),
     );
     assert!(tokens.iter().all(|token| token.offset != 13));
-    malformed.scalar_frames = scalar_frames(&tokens);
+    malformed.scalar_frames = service_scalar_frames(&tokens);
     assert!(positional_frame_planes(&[malformed], &[row]).is_empty());
 }
 
@@ -801,7 +829,7 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
     let body = [
         0x32, 0xbe, 0xe4, 0xe4, 0xe4, 0x0d, 0x0f, 0xe4, 0x0d, 0xe4, 0x0f,
     ];
-    let slots = complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+    let slots = service_complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
         .expect("unique compact scalar suffix");
 
     assert_eq!(
@@ -819,7 +847,7 @@ fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
         ]
     );
     assert!(
-        complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default()).is_none()
+        service_complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default()).is_none()
     );
 }
 

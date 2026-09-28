@@ -3748,20 +3748,24 @@ fn cone_half_angle_before_close(body: &[u8]) -> Option<ConeHalfAngleLayout> {
 }
 
 fn scalar_tokens(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Vec<SurfaceParameterScalar> {
+) -> Result<Vec<SurfaceParameterScalar>, CodecError> {
     let mut tokens = Vec::new();
-    let positional_plane_corners = (kind == SurfaceKind::Plane)
-        .then(|| first_coordinate_plane_corner_tokens(body, cache))
-        .flatten()
-        .unwrap_or_default();
-    let outline_markers = if kind == SurfaceKind::TorusOrSphere {
-        torus_outline_markers(body).collect::<Vec<_>>()
+    let positional_plane_corners = if kind == SurfaceKind::Plane {
+        first_coordinate_plane_corner_tokens(ctx, body, cache)?.unwrap_or_default()
     } else {
         Vec::new()
     };
+    let mut outline_markers = Vec::new();
+    if kind == SurfaceKind::TorusOrSphere {
+        for marker in torus_outline_markers(body) {
+            ctx.try_reserve_items(&mut outline_markers, 1, "creo torus outline marker items")?;
+            outline_markers.push(marker);
+        }
+    }
     let radius_layout = if kind == SurfaceKind::TorusOrSphere {
         torus_radius_override_layout(body)
     } else {
@@ -3778,7 +3782,12 @@ fn scalar_tokens(
             .iter()
             .find(|token| token.offset == cursor)
         {
-            tokens.push(token.clone());
+            ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
+            tokens.push(SurfaceParameterScalar {
+                value: token.value,
+                raw: ctx.copy_retained(&token.raw, "creo surface scalar token bytes")?,
+                offset: token.offset,
+            });
             cursor += token.raw.len();
             continue;
         }
@@ -3801,9 +3810,14 @@ fn scalar_tokens(
         }
         if let Some(layout) = cone_half_angle {
             if cursor == layout.start {
+                let raw = ctx.copy_retained(
+                    &body[layout.start..layout.end],
+                    "creo surface scalar token bytes",
+                )?;
+                ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
                 tokens.push(SurfaceParameterScalar {
                     value: Some(layout.value.get().get()),
-                    raw: body[layout.start..layout.end].to_vec(),
+                    raw,
                     offset: layout.start,
                 });
                 cursor = layout.end;
@@ -3835,9 +3849,11 @@ fn scalar_tokens(
                 cursor += 1;
                 continue;
             }
+            let raw = ctx.copy_retained(&body[cursor..next], "creo surface scalar token bytes")?;
+            ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
-                raw: body[cursor..next].to_vec(),
+                raw,
                 offset: cursor,
             });
             cursor = next;
@@ -3845,15 +3861,16 @@ fn scalar_tokens(
             cursor += 1;
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 fn first_coordinate_plane_corner_tokens(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<Vec<SurfaceParameterScalar>> {
+) -> Result<Option<Vec<SurfaceParameterScalar>>, CodecError> {
     let frame_end = if body.ends_with(&[0xf7, 0x0c]) {
-        body.len().checked_sub(2)?
+        body.len() - 2
     } else {
         body.len()
     };
@@ -3877,46 +3894,69 @@ fn first_coordinate_plane_corner_tokens(
             && stored_second_x < 0.0
             && second_y_start > second_x_start)
             .then_some(())?;
-        let slot = |value, offset, end| SurfaceParameterScalar {
-            value: Some(value),
-            raw: body[offset..end].to_vec(),
-            offset,
-        };
-        Some(vec![
-            slot(-stored_first_x, start, first_end),
-            slot(first_y, first_end, first_z_start),
-            slot(first_z, first_z_start, second_x_start),
-            slot(-stored_second_x, second_x_start, second_y_start),
-            slot(second_y, second_y_start, second_z_start),
-            slot(second_z, second_z_start, end),
+        Some([
+            (-stored_first_x, start, first_end),
+            (first_y, first_end, first_z_start),
+            (first_z, first_z_start, second_x_start),
+            (-stored_second_x, second_x_start, second_y_start),
+            (second_y, second_y_start, second_z_start),
+            (second_z, second_z_start, end),
         ])
     });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+    let Some(candidate) = candidates.next() else {
+        return Ok(None);
+    };
+    if candidates.next().is_some() {
+        return Ok(None);
+    }
+    let mut tokens = Vec::new();
+    ctx.try_reserve_items(&mut tokens, candidate.len(), "creo plane corner token items")?;
+    for (value, offset, end) in candidate {
+        tokens.push(SurfaceParameterScalar {
+            value: Some(value),
+            raw: ctx.copy_retained(&body[offset..end], "creo plane corner token bytes")?,
+            offset,
+        });
+    }
+    Ok(Some(tokens))
 }
 
-fn opaque_spans(body: &[u8], tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterOpaqueSpan> {
+fn opaque_spans(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    tokens: &[SurfaceParameterScalar],
+) -> Result<Vec<SurfaceParameterOpaqueSpan>, CodecError> {
     let mut spans = Vec::new();
     let mut cursor = 0;
     for token in tokens {
         if cursor < token.offset {
+            let raw = ctx.copy_retained(
+                &body[cursor..token.offset],
+                "creo surface opaque span bytes",
+            )?;
+            ctx.try_reserve_items(&mut spans, 1, "creo surface opaque span items")?;
             spans.push(SurfaceParameterOpaqueSpan {
-                raw: body[cursor..token.offset].to_vec(),
+                raw,
                 offset: cursor,
             });
         }
         cursor = token.offset + token.raw.len();
     }
     if cursor < body.len() {
+        let raw = ctx.copy_retained(&body[cursor..], "creo surface opaque span bytes")?;
+        ctx.try_reserve_items(&mut spans, 1, "creo surface opaque span items")?;
         spans.push(SurfaceParameterOpaqueSpan {
-            raw: body[cursor..].to_vec(),
+            raw,
             offset: cursor,
         });
     }
-    spans
+    Ok(spans)
 }
 
-fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScalarFrame> {
+fn scalar_frames(
+    ctx: &DecodeContext<'_>,
+    tokens: &[SurfaceParameterScalar],
+) -> Result<Vec<SurfaceParameterScalarFrame>, CodecError> {
     let mut frames = Vec::new();
     let mut start = 0;
     while start < tokens.len() {
@@ -3926,13 +3966,23 @@ fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScala
         {
             end += 1;
         }
+        let mut slots = Vec::new();
+        ctx.try_reserve_items(&mut slots, end - start, "creo surface scalar frame slots")?;
+        for token in &tokens[start..end] {
+            slots.push(SurfaceParameterScalar {
+                value: token.value,
+                raw: ctx.copy_retained(&token.raw, "creo surface scalar frame bytes")?,
+                offset: token.offset,
+            });
+        }
+        ctx.try_reserve_items(&mut frames, 1, "creo surface scalar frame items")?;
         frames.push(SurfaceParameterScalarFrame {
             offset: tokens[start].offset,
-            slots: tokens[start..end].to_vec(),
+            slots,
         });
         start = end;
     }
-    frames
+    Ok(frames)
 }
 
 fn terminal_scalar_frame_of<'a>(
@@ -5014,6 +5064,7 @@ fn parameter_records_for_rows(
         {
             continue;
         }
+        ctx.try_reserve_items(&mut headers, 1, "creo surface parameter headers")?;
         headers.push((row.clone(), body_start));
     }
     let mut records = Vec::new();
@@ -5065,10 +5116,13 @@ fn parameter_records_for_rows(
                 boundary = SurfaceBodyBoundary::NamedRecord;
             }
         }
-        let body = payload[*body_start..body_end].to_vec();
-        let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
-        let opaque_spans = opaque_spans(&body, &scalar_tokens);
-        let scalar_frames = scalar_frames(&scalar_tokens);
+        let body = ctx.copy_retained(
+            &payload[*body_start..body_end],
+            "creo surface parameter body",
+        )?;
+        let scalar_tokens = scalar_tokens(ctx, row.kind, &body, &cache)?;
+        let opaque_spans = opaque_spans(ctx, &body, &scalar_tokens)?;
+        let scalar_frames = scalar_frames(ctx, &scalar_tokens)?;
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_tokens,
@@ -5123,6 +5177,7 @@ fn parameter_records_for_rows(
         if let Some(carrier) = carrier {
             record.carrier = SurfaceParameterCarrier::Resolved(carrier);
         }
+        ctx.try_reserve_items(&mut records, 1, "creo surface parameter records")?;
         records.push(record);
     }
     Ok(records)
@@ -7046,7 +7101,7 @@ fn plane_envelopes_for_rows(
                 ],
                 slots,
             )
-        } else if let Some(slots) = complete_plane_compact_scalar_suffix(&body, &cache) {
+        } else if let Some(slots) = complete_plane_compact_scalar_suffix(ctx, &body, &cache)? {
             (
                 PlaneEnvelope::Compact {
                     prefix: [slots[0].0, slots[1].0, slots[2].0],
@@ -7172,21 +7227,25 @@ fn plane_envelopes_for_rows(
 }
 
 fn complete_plane_compact_scalar_suffix(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
+) -> Result<Option<Vec<(Option<f64>, Vec<u8>)>>, CodecError> {
     if complete_plane_envelope_slots(body, 10, cache).is_some() {
-        return None;
+        return Ok(None);
     }
-    let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
-    let frames = scalar_frames(&tokens);
-    let frame = terminal_scalar_frame_of(body, &frames)?;
-    (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
-    let slots = complete_plane_envelope_slots(&body[frame.offset..], 9, cache)?;
-    slots
-        .into_iter()
-        .map(|(value, raw)| Some((Some(value?), raw)))
-        .collect()
+    let tokens = scalar_tokens(ctx, SurfaceKind::Plane, body, cache)?;
+    let frames = scalar_frames(ctx, &tokens)?;
+    let Some(frame) = terminal_scalar_frame_of(body, &frames) else {
+        return Ok(None);
+    };
+    if frame.offset == 0 || frame.slots.len() != 9 {
+        return Ok(None);
+    }
+    let Some(slots) = complete_plane_envelope_slots(&body[frame.offset..], 9, cache) else {
+        return Ok(None);
+    };
+    Ok(slots.iter().all(|(value, _)| value.is_some()).then_some(slots))
 }
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
