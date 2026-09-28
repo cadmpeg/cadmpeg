@@ -69,7 +69,11 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
         transfer_ledger: Default::default(),
     };
 
-    report_design_projection_gaps(&mut report, &ir, &native);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    report_design_projection_gaps(&ctx, &mut report, &ir, &native).unwrap();
 
     let loss = report
         .losses
@@ -1081,10 +1085,89 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         "Canvas",
     ));
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     assert_eq!(
-        incomplete_feature_families(&ir),
+        incomplete_feature_families(&ctx, &ir).unwrap(),
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
     );
+}
+
+#[test]
+fn incomplete_feature_family_index_refuses_collection_limit() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:feature#1").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("EdgeFlange".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "EdgeFlange".into(),
+                parameters: Default::default(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = incomplete_feature_families(&ctx, &ir).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index incomplete F3D feature families"));
+}
+
+#[test]
+fn projection_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::push_decode_loss(
+        &ctx,
+        &mut report,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D projection losses"));
+}
+
+#[test]
+fn projection_loss_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::push_decode_loss(
+        &ctx,
+        &mut report,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D projection loss"));
 }
 
 #[test]

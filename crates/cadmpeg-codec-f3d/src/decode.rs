@@ -1084,7 +1084,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
     }
 }
 
-fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, usize> {
+fn incomplete_feature_families<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &'a CadIr,
+) -> Result<std::collections::BTreeMap<&'a str, usize>, CodecError> {
     let mut families = std::collections::BTreeMap::new();
     for feature in &ir.model.features {
         if !feature_definition_is_incomplete(feature.evaluation.definition()) {
@@ -1100,9 +1103,12 @@ fn incomplete_feature_families(ir: &CadIr) -> std::collections::BTreeMap<&str, u
                 "<missing source tag>"
             }
         });
+        if !families.contains_key(family) {
+            ctx.charge_collection_items(1, "index incomplete F3D feature families")?;
+        }
         *families.entry(family).or_default() += 1;
     }
-    families
+    Ok(families)
 }
 
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
@@ -1807,18 +1813,57 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     gaps
 }
 
-fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F3dNative) {
+struct IncompleteFamilyCounts<'a>(&'a std::collections::BTreeMap<&'a str, usize>);
+
+impl std::fmt::Display for IncompleteFamilyCounts<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (family, count)) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "{family}={count}")?;
+        }
+        Ok(())
+    }
+}
+
+fn push_decode_loss(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    code: F3dLossCode,
+    args: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "collect F3D projection losses";
+    ctx.charge_collection_items(1, OPERATION)?;
+    report
+        .losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    report.losses.push(code.note(format_decode_string(
+        ctx,
+        "retain F3D projection loss",
+        args,
+    )?));
+    Ok(())
+}
+
+fn report_design_projection_gaps(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    ir: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
     let gaps = design_projection_gaps(ir, native);
-    let incomplete_families = incomplete_feature_families(ir);
+    let incomplete_families = incomplete_feature_families(ctx, ir)?;
     let history_budget_skips = native
         .asm_histories
         .iter()
         .filter(|history| history.record_table_binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
-        report.losses.push(F3dLossCode::HistoryBindingBudgetExceeded.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
             "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
-        )));
+        ))?;
     }
     for error in native
         .asm_histories
@@ -1827,256 +1872,250 @@ fn report_design_projection_gaps(report: &mut DecodeBody, ir: &CadIr, native: &F
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error())
     {
-        report
-            .losses
-            .push(F3dLossCode::HistoryRecordFramingFailed.note(format!(
-                "An ASM history span remains opaque because record framing failed: {error}."
-            )));
+        push_decode_loss(ctx, report, F3dLossCode::HistoryRecordFramingFailed, format_args!(
+            "An ASM history span remains opaque because record framing failed: {error}."
+        ))?;
     }
     if gaps.unresolved_body_bindings != 0 {
-        report
-            .losses
-            .push(F3dLossCode::DesignBodyBindingUnresolved.note(format!(
-                "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
-                gaps.unresolved_body_bindings
-            )));
+        push_decode_loss(ctx, report, F3dLossCode::DesignBodyBindingUnresolved, format_args!(
+            "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
+            gaps.unresolved_body_bindings
+        ))?;
     }
     if gaps.native_reference_images != 0 {
-        report.losses.push(F3dLossCode::ReferenceImageNativeRetained.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ReferenceImageNativeRetained, format_args!(
             "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
             gaps.native_reference_images
-        )));
+        ))?;
     }
     if gaps.native_decals != 0 {
-        report.losses.push(F3dLossCode::DecalNativeRetained.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::DecalNativeRetained, format_args!(
             "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
             gaps.native_decals
-        )));
+        ))?;
     }
     if gaps.unrepaired_lost_edge_references != 0 {
-        report.losses.push(F3dLossCode::EdgeReferenceLostUnrepaired.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::EdgeReferenceLostUnrepaired, format_args!(
             "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
             gaps.unrepaired_lost_edge_references
-        )));
+        ))?;
     }
-    let mut push = |code: F3dLossCode, count: usize, message: String| {
+    let mut push = |code: F3dLossCode, count: usize, message: std::fmt::Arguments<'_>| -> Result<(), CodecError> {
         if count != 0 {
-            report.losses.push(code.note(message));
+            push_decode_loss(ctx, report, code, message)?;
         }
+        Ok(())
     };
     push(
         F3dLossCode::FeatureDefinitionIncomplete,
         gaps.incomplete_features,
-        format!(
+        format_args!(
             "{} feature scope(s) have no complete neutral feature definition: {}.",
             gaps.incomplete_features,
-            incomplete_families
-                .iter()
-                .map(|(family, count)| format!("{family}={count}"))
-                .collect::<Vec<_>>()
-                .join(", ")
+            IncompleteFamilyCounts(&incomplete_families)
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
-        format!(
+        format_args!(
             "{} decoded feature scope(s) have no neutral construction-history feature.",
             gaps.unprojected_feature_scopes
         ),
-    );
+    )?;
     push(
         F3dLossCode::ParameterUnprojected,
         gaps.unprojected_parameters,
-        format!(
+        format_args!(
             "{} decoded Design parameter(s) have no neutral parameter.",
             gaps.unprojected_parameters
         ),
-    );
+    )?;
     push(
         F3dLossCode::ParameterOwnerUnrecognized,
         gaps.unresolved_parameter_owners,
-        format!(
+        format_args!(
             "{} decoded Design parameter owner binding(s) have no recognized feature scope.",
             gaps.unresolved_parameter_owners
         ),
-    );
+    )?;
     push(
         F3dLossCode::ParameterUnitUntyped,
         gaps.untyped_parameter_units,
-        format!(
+        format_args!(
             "{} decoded Design parameter(s) retain unit tokens without a settled neutral quantity kind.",
             gaps.untyped_parameter_units
         ),
-    );
+    )?;
     push(
         F3dLossCode::ParameterExpressionUnbound,
         gaps.unresolved_expression_dependencies,
-        format!(
+        format_args!(
             "{} decoded parameter expression symbol(s) name same-stream parameters without a neutral dependency edge.",
             gaps.unresolved_expression_dependencies
         ),
-    );
+    )?;
     push(
         F3dLossCode::HistoryDependencyUnprojected,
         gaps.unprojected_history_dependencies,
-        format!(
+        format_args!(
             "{} feature history-state dependency link(s) were not projected into neutral construction history.",
             gaps.unprojected_history_dependencies
         ),
-    );
+    )?;
     push(
         F3dLossCode::HistoryDependencyAmbiguous,
         gaps.ambiguous_history_dependencies,
-        format!(
+        format_args!(
             "{} feature history-state dependency link(s) have multiple source scopes for the preceding state identity.",
             gaps.ambiguous_history_dependencies
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchRelationNativeRetained,
         gaps.native_sketch_relations,
-        format!(
+        format_args!(
             "{} sketch relation(s) retain native operands because no unique neutral relation was resolved.",
             gaps.native_sketch_relations
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
-        format!(
+        format_args!(
             "{} sketch dimension(s) retain native operands because no unique neutral dimension was resolved.",
             gaps.native_dimensions
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchPlacementUnprojected,
         gaps.unprojected_sketch_placements,
-        format!(
+        format_args!(
             "{} decoded Sketch placement(s) have no neutral sketch.",
             gaps.unprojected_sketch_placements
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchPointUnprojected,
         gaps.unprojected_sketch_points,
-        format!(
+        format_args!(
             "{} decoded sketch point(s) have no neutral sketch entity.",
             gaps.unprojected_sketch_points
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchCurveUnprojected,
         gaps.unprojected_sketch_curves,
-        format!(
+        format_args!(
             "{} decoded sketch curve(s) have no neutral sketch entity.",
             gaps.unprojected_sketch_curves
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchSurfaceUnprojected,
         gaps.unprojected_sketch_surfaces,
-        format!(
+        format_args!(
             "{} decoded sketch surface(s) have no neutral spatial sketch entity.",
             gaps.unprojected_sketch_surfaces
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchTextUnprojected,
         gaps.unprojected_sketch_texts,
-        format!(
+        format_args!(
             "{} decoded sketch text record(s) have no neutral sketch entity.",
             gaps.unprojected_sketch_texts
         ),
-    );
+    )?;
     push(
         F3dLossCode::SketchRelationUnprojected,
         gaps.unprojected_sketch_relations,
-        format!(
+        format_args!(
             "{} decoded sketch relation(s) have no neutral constraint.",
             gaps.unprojected_sketch_relations
         ),
-    );
+    )?;
     push(
         F3dLossCode::DimensionUnprojected,
         gaps.unprojected_dimensions,
-        format!(
+        format_args!(
             "{} Design dimension parameter(s) have no parameter-backed neutral or native sketch constraint.",
             gaps.unprojected_dimensions
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureProfileSelectionNative,
         gaps.profile_selections,
-        format!(
+        format_args!(
             "{} feature profile selection(s) retain native selection identities because no unique neutral profile was resolved.",
             gaps.profile_selections
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeaturePathSelectionNative,
         gaps.path_selections,
-        format!(
+        format_args!(
             "{} feature path selection(s) retain native selection identities because no unique neutral path was resolved.",
             gaps.path_selections
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureFaceSelectionNative,
         gaps.face_selections,
-        format!(
+        format_args!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureFaceSelectionActiveSubstituted,
         gaps.active_face_substitutions,
-        format!(
+        format_args!(
             "{} legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.",
             gaps.active_face_substitutions
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureBodySelectionNative,
         gaps.body_selections,
-        format!(
+        format_args!(
             "{} feature body selection(s) retain native identities because no unique solved body was resolved.",
             gaps.body_selections
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureFaceOperandUnresolved,
         gaps.partially_resolved_face_members,
-        format!(
+        format_args!(
             "{} feature face operand(s) remain unresolved inside state-bound historical selections.",
             gaps.partially_resolved_face_members
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureEdgeSelectionNative,
         gaps.native_edge_selections,
-        format!(
+        format_args!(
             "{} edge-treatment selection(s) retain native construction recipes because no neutral historical edge selection was resolved.",
             gaps.native_edge_selections
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureEdgeOperandUnresolved,
         gaps.partially_resolved_edge_members,
-        format!(
+        format_args!(
             "{} edge-treatment operand(s) remain unresolved inside state-bound historical selections.",
             gaps.partially_resolved_edge_members
         ),
-    );
+    )?;
     push(
         F3dLossCode::FeatureEdgeSelectionLost,
         gaps.unresolved_edge_selections,
-        format!(
+        format_args!(
             "{} edge-treatment selection(s) are unresolved because their source edge references were lost.",
             gaps.unresolved_edge_selections
         ),
-    );
+    )?;
+    Ok(())
 }
 
 fn model_brep_candidates(
@@ -3021,7 +3060,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.native.design_parameter_scopes,
                     &mesh_projection,
                 )?;
-                report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+                report_design_projection_gaps(ctx, &mut self.report, &self.ir, &self.native)?;
                 ctx.admit_entities(
                     self.ir.model.entity_count() as u64,
                     &mut self.admitted_entities,
@@ -3073,7 +3112,7 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
 
-        report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
+        report_design_projection_gaps(ctx, &mut self.report, &self.ir, &self.native)?;
         ctx.admit_entities(
             self.ir.model.entity_count() as u64,
             &mut self.admitted_entities,
