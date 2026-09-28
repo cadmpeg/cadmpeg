@@ -170,6 +170,72 @@ pub(crate) fn collect_options<T>(
     Ok(Some(collected))
 }
 
+pub(crate) fn collect_set<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<HashSet<T>, CodecError> {
+    let mut collected = HashSet::new();
+    for value in values {
+        insert_set(ctx, &mut collected, value, operation)?;
+    }
+    Ok(collected)
+}
+
+pub(crate) fn collect_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, CodecError> {
+    let mut collected = HashMap::new();
+    for (key, value) in values {
+        insert_map(ctx, &mut collected, key, value, operation)?;
+    }
+    Ok(collected)
+}
+
+pub(crate) fn collect_string_set<'a>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = &'a str>,
+    operation: &'static str,
+) -> Result<HashSet<String>, CodecError> {
+    let mut collected = HashSet::new();
+    for value in values {
+        if !collected.contains(value) {
+            let owned = copy_retained_str(ctx, value, operation)?;
+            insert_set(ctx, &mut collected, owned, operation)?;
+        }
+    }
+    Ok(collected)
+}
+
+#[cfg(test)]
+mod collection_tests {
+    #[test]
+    fn report_index_collections_refuse_before_growth() {
+        let set = crate::test_support::with_collection_limit(0, |ctx| {
+            super::collect_set(ctx, [7u32], "catia_report_set_test")
+        });
+        assert!(matches!(set, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_set_test"));
+        let map = crate::test_support::with_collection_limit(0, |ctx| {
+            super::collect_map(ctx, [(7u32, 9u32)], "catia_report_map_test")
+        });
+        assert!(matches!(map, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_map_test"));
+        let owned = crate::test_support::with_retained_limit(0, |ctx| {
+            super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
+        });
+        assert!(matches!(owned, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_owned_set_test"));
+        let service = crate::test_support::with_service_context(|ctx| {
+            super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
+        })
+        .expect("service profile admits one report key");
+        assert!(service.contains("entity"));
+    }
+}
+
 pub(crate) fn copy_retained_slice<T: Clone>(
     ctx: &DecodeContext<'_>,
     values: &[T],
