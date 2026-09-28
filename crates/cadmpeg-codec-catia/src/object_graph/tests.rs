@@ -12,6 +12,123 @@ use crate::test_support::test_object_graph::{
     sequential_entity_backed_object_graph, value_block_stream,
 };
 
+fn parse(data: &[u8]) -> Option<super::ObjectGraph> {
+    crate::test_support::with_service_context(|ctx| super::parse(ctx, data))
+        .expect("object graph fixture fits the service limits")
+}
+
+fn parse_all(data: &[u8]) -> Vec<super::ObjectGraph> {
+    crate::test_support::with_service_context(|ctx| super::parse_all(ctx, data))
+        .expect("object graph fixture fits the service limits")
+}
+
+fn parse_all_with_paired_roots(
+    data: &[u8],
+    paired_roots: &std::collections::HashMap<usize, usize>,
+) -> Vec<super::ObjectGraph> {
+    crate::test_support::with_service_context(|ctx| {
+        super::parse_all_with_paired_roots(ctx, data, paired_roots)
+    })
+    .expect("paired object graph fixture fits the service limits")
+}
+
+fn surface_aliases(data: &[u8]) -> Vec<super::SurfaceAlias> {
+    crate::test_support::with_service_context(|ctx| super::surface_aliases(ctx, data))
+        .expect("alias fixture fits the service limits")
+}
+
+fn decode_payload(data: &[u8]) -> Option<super::ObjectPayload> {
+    crate::test_support::with_service_context(|ctx| super::decode_payload(ctx, data))
+        .expect("payload fixture fits the service limits")
+}
+
+#[test]
+fn object_graph_head_tokens_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = object_graph_stream();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("object graph fixture fits the input limit");
+    let error = super::parse(&ctx, &bytes)
+        .expect_err("a decoded head token exceeds zero collection items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_object_head_tokens"));
+    assert!(parse(&bytes).is_some());
+}
+
+#[test]
+fn grouped_alias_storage_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    bytes.extend(surface_alias_stream());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("alias fixture fits the input limit");
+    let error = super::surface_aliases(&ctx, &bytes)
+        .expect_err("group storage requires a retained copy");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "catia_alias_group_storage"));
+    assert_eq!(surface_aliases(&bytes).len(), 1);
+}
+
+#[test]
+fn object_payload_fields_and_list_items_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for (payload, operation) in [
+        (&[0x83, 0xfe][..], "catia_object_payload_fields"),
+        (&[0x3b, 0x81, 0x82, 0xfe][..], "catia_object_list_items"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("payload fixture fits the input limit");
+        let error = super::decode_payload(&ctx, payload)
+            .expect_err("a payload collection exceeds zero items");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation));
+        assert!(decode_payload(payload).is_some());
+    }
+}
+
+#[test]
+fn object_bulk_rows_refuse_declared_count_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = [0x81, 0x82, 0x80, 0, 0, 0, 0];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("bulk row fixture fits the input limit");
+    let error = super::parse_bulk_table_rows(&ctx, &bytes, 0, 1)
+        .expect_err("one declared row exceeds zero items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_object_bulk_table_rows"));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        super::parse_bulk_table_rows(ctx, &bytes, 0, 1)
+    }).expect("service budget").expect("one row");
+    assert_eq!(parsed.0.len(), 1);
+}
+
 fn owner_ref(record: &ObjectRecord) -> Option<u32> {
     match record.roles().owner {
         Some(HeadOwner::Entity(value)) => Some(value),
@@ -23,7 +140,7 @@ fn owner_ref(record: &ObjectRecord) -> Option<u32> {
 fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     use crate::object_graph::{PayloadField, PayloadSubtype};
 
-    let graph = crate::object_graph::parse(&object_graph_stream()).unwrap();
+    let graph = parse(&object_graph_stream()).unwrap();
     assert_eq!(graph.records.len(), 2);
     assert_eq!(owner_ref(&graph.records[0]), Some(2));
     assert_eq!(graph.records[0].roles().class_ref, Some(3));
@@ -53,7 +170,7 @@ fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]),
     ];
-    let graph = crate::object_graph::parse(&object_graph_from_records(&records))
+    let graph = parse(&object_graph_from_records(&records))
         .expect("length-closing object payload");
     assert_eq!(graph.records.len(), 2);
     assert_eq!(owner_ref(&graph.records[0]), None);
@@ -78,7 +195,7 @@ fn outer_object_graph_rejects_ambiguous_length_closing_child_frames() {
     first[2..6].copy_from_slice(&record_len.to_le_bytes());
 
     let second = object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]);
-    assert!(crate::object_graph::parse(&object_graph_from_records(&[first, second])).is_none());
+    assert!(parse(&object_graph_from_records(&[first, second])).is_none());
 }
 
 #[test]
@@ -88,7 +205,7 @@ fn outer_object_graph_requires_records_to_cover_the_root_extent() {
     let declared_len = u32::try_from(bytes.len()).expect("fixture graph length");
     bytes[2..6].copy_from_slice(&declared_len.to_le_bytes());
 
-    assert!(crate::object_graph::parse(&bytes).is_none());
+    assert!(parse(&bytes).is_none());
 }
 
 #[test]
@@ -96,7 +213,7 @@ fn outer_object_graph_requires_a_final_payload_terminator() {
     for payload in [&[0xfe, 0xaa][..], &[0xe5, 1, 0, 0, 0, 0xfe][..]] {
         let bytes =
             object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], payload)]);
-        assert!(crate::object_graph::parse(&bytes).is_none());
+        assert!(parse(&bytes).is_none());
     }
 }
 
@@ -108,7 +225,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
         &[0x04],
         &[0xe5, 1, 0, 0, 0, 0xaa, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&valid).expect("bounded blob");
+    let graph = parse(&valid).expect("bounded blob");
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
         [
@@ -124,7 +241,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
         &[0x04],
         &[0xe5, 0xfd, 0xd8, 0xc1, 0x74, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&unbounded).expect("literal E5 atom");
+    let graph = parse(&unbounded).expect("literal E5 atom");
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
         [
@@ -142,7 +259,7 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
 fn object_graph_payload_preserves_the_complete_terminator_run() {
     let bytes =
         object_graph_from_records(&[object_graph_record(&[0x04], &[0x83, 0xfe, 0xfe, 0xfe])]);
-    let graph = crate::object_graph::parse(&bytes).expect("multi-terminator payload");
+    let graph = parse(&bytes).expect("multi-terminator payload");
 
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
@@ -163,7 +280,7 @@ fn object_graph_payload_reads_tagged_fixed_width_references() {
             0x81, 0x80, 0xfe, 0x1e, 0, 0, 0x81, 0x32, 0xeb, 0, 0, 0, 0xfe,
         ],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("tagged fixed-width references");
+    let graph = parse(&bytes).expect("tagged fixed-width references");
 
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
@@ -209,14 +326,14 @@ fn object_graph_lists_retain_direct_fixed_width_references() {
 #[test]
 fn outer_object_graph_requires_a_stored_head_lead() {
     let bytes = object_graph_from_records(&[object_graph_record(&[], &[0xfe])]);
-    assert!(crate::object_graph::parse(&bytes).is_none());
+    assert!(parse(&bytes).is_none());
 }
 
 #[test]
 fn outer_object_graph_accepts_one_length_closed_record() {
     let bytes =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
-    let graph = crate::object_graph::parse(&bytes).expect("one-record object graph");
+    let graph = parse(&bytes).expect("one-record object graph");
 
     assert_eq!(graph.records.len(), 1);
     assert_eq!(owner_ref(&graph.records[0]), Some(1));
@@ -233,7 +350,7 @@ fn outer_object_graph_preserves_inline_records() {
     let inline = inline_object_graph_record(&[
         0x10, 0xfe, 0xd3, 0x77, 0x82, 0xf2, 0xf0, 0x82, 0xd3, 0x5f, 0x81, 0x06,
     ]);
-    let graph = crate::object_graph::parse(&object_graph_from_records(&[nested, inline]))
+    let graph = parse(&object_graph_from_records(&[nested, inline]))
         .expect("inline control record");
 
     assert_eq!(graph.records.len(), 2);
@@ -267,7 +384,7 @@ fn outer_object_graph_accepts_each_inline_layout() {
 
     for body in bodies {
         let graph =
-            crate::object_graph::parse(&object_graph_from_records(&[inline_object_graph_record(
+            parse(&object_graph_from_records(&[inline_object_graph_record(
                 &body,
             )]))
             .expect("assigned inline control layout");
@@ -283,13 +400,13 @@ fn outer_object_graph_rejects_unassigned_childless_records() {
     for index in [0, 1, 4, 10, 11] {
         let mut body = valid;
         body[index] ^= 1;
-        assert!(crate::object_graph::parse(&object_graph_from_records(&[
+        assert!(parse(&object_graph_from_records(&[
             inline_object_graph_record(&body)
         ]))
         .is_none());
     }
     assert!(
-        crate::object_graph::parse(&object_graph_from_records(&[inline_object_graph_record(
+        parse(&object_graph_from_records(&[inline_object_graph_record(
             &[0x10, 0xfe, 0x81, 0x06]
         )]))
         .is_none()
@@ -302,14 +419,14 @@ fn paired_entity_table_admits_an_opaque_childless_object_record() {
     let bytes = object_graph_from_records(&[inline_object_graph_record(&body)]);
     let paired_roots = std::collections::HashMap::from([(0, 1)]);
 
-    let [graph] = crate::object_graph::parse_all_with_paired_roots(&bytes, &paired_roots)
+    let [graph] = parse_all_with_paired_roots(&bytes, &paired_roots)
         .try_into()
         .expect("one entity-paired object graph");
     assert_eq!(graph.records[0].lead, 0x00);
     assert_eq!(graph.records[0].inline_body(), Some(body.as_slice()));
     assert!(graph.records[0].head().is_empty());
 
-    assert!(crate::object_graph::parse_all_with_paired_roots(
+    assert!(parse_all_with_paired_roots(
         &bytes,
         &std::collections::HashMap::from([(0, 2)]),
     )
@@ -322,7 +439,7 @@ fn object_graph_payload_lists_keep_direct_fixed_width_atoms() {
         &[0x04, 0x01, 0x81, 0x81],
         &[0x3b, 0x81, 0x80, 0x78, 0x56, 0x34, 0x12, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("fixed-width list atom");
+    let graph = parse(&bytes).expect("fixed-width list atom");
 
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
@@ -346,7 +463,7 @@ fn object_graph_payload_preserves_nonterminal_fe_atoms() {
         &[0x04, 0x01, 0x81, 0x81],
         &[0x85, 0x81, 0xfe, 0x81, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("interior FE atom");
+    let graph = parse(&bytes).expect("interior FE atom");
 
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
@@ -368,7 +485,7 @@ fn object_graph_payload_lists_preserve_nonterminal_fe_atoms() {
         &[0x04, 0x01, 0x81, 0x81],
         &[0x3b, 0x82, 0xfe, 0x85, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("interior FE list atom");
+    let graph = parse(&bytes).expect("interior FE list atom");
 
     assert!(matches!(
         graph.records[0].payload().fields.as_slice(),
@@ -398,7 +515,7 @@ fn outer_object_graph_keeps_adjacent_compact_head_references_separate() {
         &[0x04, 0x01, 0x81, 0x83, 0x84],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("compact object head");
+    let graph = parse(&bytes).expect("compact object head");
     let record = &graph.records[0];
 
     assert_eq!(owner_ref(record), Some(1));
@@ -420,7 +537,7 @@ fn outer_object_graph_does_not_slide_head_roles_across_null_handles() {
         &[0x04, 0x01, 0x82, 0xff, 0xff, 0xff, 0xff, 0x83],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("null-interrupted object head");
+    let graph = parse(&bytes).expect("null-interrupted object head");
     let record = &graph.records[0];
 
     assert_eq!(owner_ref(record), Some(2));
@@ -438,7 +555,7 @@ fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
         &[0x04, 0x01, 0xe5, 0xff, 0xff, 0xff, 0xe4],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("literal head bytes");
+    let graph = parse(&bytes).expect("literal head bytes");
 
     assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
@@ -459,7 +576,7 @@ fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
 fn outer_object_graph_requires_the_head_separator_for_relations() {
     let bytes =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x82, 0x83, 0x84], &[0xfe])]);
-    let graph = crate::object_graph::parse(&bytes).expect("retained malformed head");
+    let graph = parse(&bytes).expect("retained malformed head");
 
     assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
@@ -477,7 +594,7 @@ fn outer_object_graph_reads_compact_owner_and_field_roles() {
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
         object_graph_record(&[0x52, 0x82, 0x83, 0x84], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("compact heads");
+    let graph = parse(&bytes).expect("compact heads");
 
     assert_eq!(owner_ref(&graph.records[0]), Some(2));
     assert_eq!(graph.records[0].roles().class_ref, None);
@@ -495,7 +612,7 @@ fn outer_object_graph_reads_extended_compact_owner_roles() {
         object_graph_record(&[0x12, 0x82, 0x80, 0x83, 0, 0], &[0xfe]),
         object_graph_record(&[0x12, 0x82, 0x80, 0xe8, 0x16, 0, 0], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
+    let graph = parse(&bytes).expect("extended compact heads");
 
     for record in &graph.records {
         assert_eq!(owner_ref(record), Some(2));
@@ -512,7 +629,7 @@ fn outer_object_graph_rejects_incomplete_extended_compact_owner_framing() {
         &[0x12, 0x80, 0x80, 0x83, 0, 0][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
@@ -529,7 +646,7 @@ fn outer_object_graph_reads_extended_class_storage_owner_roles() {
         ),
         object_graph_record(&[0x16, 0x94, 0x80, 0x95, 0, 0, 0x80, 17, 28, 0, 0], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
+    let graph = parse(&bytes).expect("extended compact heads");
 
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
@@ -544,7 +661,7 @@ fn outer_object_graph_reads_short_extended_class_storage_owner_roles() {
         object_graph_record(&[0x16, 0x94, 0x95, 0x80, 0x96, 20, 0, 0], &[0xfe]),
         object_graph_record(&[0x16, 0x94, 0x95, 0x80, 17, 21, 0, 0], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("short extended compact heads");
+    let graph = parse(&bytes).expect("short extended compact heads");
 
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
@@ -560,7 +677,7 @@ fn outer_object_graph_reads_reference_terminated_class_storage_owner_roles() {
         object_graph_record(&[0x16, 0x94, 0x80, 0x96, 23, 0, 0, 0xd2, 0x2b], &[0xfe]),
         object_graph_record(&[0x16, 0x94, 0x80, 123, 21, 0, 0, 0xd2, 0x2b], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("reference-terminated compact heads");
+    let graph = parse(&bytes).expect("reference-terminated compact heads");
 
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
@@ -589,7 +706,7 @@ fn outer_object_graph_rejects_partial_reference_terminated_roles() {
         &[0x16, 0x94, 0x80, 0x80, 0x97, 0, 0][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -605,7 +722,7 @@ fn outer_object_graph_rejects_partial_short_extended_class_storage_owner_roles()
         &[0x16, 0x94, 0x80, 0x80, 0x96, 20, 0, 0][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -629,7 +746,7 @@ fn outer_object_graph_reads_two_block_extended_class_storage_owner_roles() {
             &[0xfe],
         ),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("two-block extended compact heads");
+    let graph = parse(&bytes).expect("two-block extended compact heads");
 
     assert_eq!(owner_ref(&graph.records[0]), Some(21));
     for record in &graph.records {
@@ -646,7 +763,7 @@ fn outer_object_graph_retains_roles_before_a_literal_short_extended_owner() {
         &[0x16, 0x94, 0x80, 66, 23, 0, 0, 0x80, 0x97, 0, 0],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("literal-owner extended head");
+    let graph = parse(&bytes).expect("literal-owner extended head");
     let record = &graph.records[0];
 
     assert_eq!(record.roles().class_ref, Some(20));
@@ -669,7 +786,7 @@ fn outer_object_graph_rejects_partial_two_block_extended_roles() {
         &[0x16, 0x94, 0x80, 0x95, 23, 0, 0, 0x80, 0x96, 26, 0, 0][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -685,7 +802,7 @@ fn outer_object_graph_rejects_partial_extended_class_storage_owner_roles() {
         &[0x16, 0x94, 0x80, 0x80, 22, 0, 0, 0x80, 0x96, 0, 0][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -699,7 +816,7 @@ fn outer_object_graph_reads_class_storage_owner_compact_roles() {
         &[0x16, 0x92, 0xd2, 0x2b, 0xd2, 0x39],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("class-storage-owner compact head");
+    let graph = parse(&bytes).expect("class-storage-owner compact head");
     let record = &graph.records[0];
 
     assert_eq!(record.roles().class_ref, Some(18));
@@ -713,7 +830,7 @@ fn outer_object_graph_retains_class_first_roles_before_an_unassigned_slot() {
         object_graph_record(&[0x16, 0x94, 0x95, 95], &[0xfe]),
         object_graph_record(&[0x16, 0x94, 95, 0x96], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("class-first compact heads");
+    let graph = parse(&bytes).expect("class-first compact heads");
 
     assert_eq!(graph.records[0].roles().class_ref, Some(20));
     assert_eq!(graph.records[0].roles().storage_ref, Some(21));
@@ -745,7 +862,7 @@ fn outer_object_graph_reads_null_lane_class_storage_owner_roles() {
             &[0xfe],
         ),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("null-lane compact head");
+    let graph = parse(&bytes).expect("null-lane compact head");
 
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
@@ -763,7 +880,7 @@ fn outer_object_graph_reads_terminal_null_lane_roles() {
         &[0x5a, 0x94, 0x80, 0xff, 0xff, 0xff, 0xff, 0xd2, 0x2b, 0x83],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("terminal null-lane head");
+    let graph = parse(&bytes).expect("terminal null-lane head");
     let record = &graph.records[0];
 
     assert_eq!(record.roles().class_ref, Some(20));
@@ -783,7 +900,7 @@ fn outer_object_graph_rejects_incomplete_terminal_null_lane_roles() {
         &[0x5a, 0x94, 0x80, 0xff, 0xff, 0xff, 0xff, 0x80, 0x83][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained terminal null-lane head");
+        let graph = parse(&bytes).expect("retained terminal null-lane head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -797,7 +914,7 @@ fn outer_object_graph_reads_terminal_lane_class_storage_owner_roles() {
         &[0x56, 0x94, 0x95, 0x96, 0x83],
         &[0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("terminal-lane compact head");
+    let graph = parse(&bytes).expect("terminal-lane compact head");
     let record = &graph.records[0];
 
     assert_eq!(record.roles().class_ref, Some(20));
@@ -821,7 +938,7 @@ fn outer_object_graph_reads_extended_terminal_lane_roles() {
             &[0xfe],
         ),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("extended terminal-lane heads");
+    let graph = parse(&bytes).expect("extended terminal-lane heads");
 
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
@@ -840,7 +957,7 @@ fn outer_object_graph_rejects_incomplete_terminal_lane_roles() {
         &[0x56, 0x94, 0x80, 0x96, 22, 0, 0, 0x80, 0x97, 0, 0, 0x84][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
@@ -862,7 +979,7 @@ fn outer_object_graph_rejects_incomplete_null_lane_roles() {
         ][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
@@ -882,7 +999,7 @@ fn outer_object_graph_reads_extended_owner_class_storage_roles() {
             &[0xfe],
         ),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
+    let graph = parse(&bytes).expect("extended compact heads");
 
     for record in &graph.records {
         assert_eq!(owner_ref(record), Some(18));
@@ -904,7 +1021,7 @@ fn outer_object_graph_rejects_incomplete_extended_owner_class_storage_roles() {
         &[0x52, 0x80, 0x80, 0x95, 22, 0, 0, 0x83][..],
     ] {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
-        let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
+        let graph = parse(&bytes).expect("retained compact head");
 
         assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
@@ -926,7 +1043,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
     ];
     let bytes = object_graph_from_records(&records);
-    let graph = crate::object_graph::parse(&bytes).expect("fixed-width object payload");
+    let graph = parse(&bytes).expect("fixed-width object payload");
     assert_eq!(
         graph.records[0].payload().fields,
         [
@@ -977,7 +1094,7 @@ fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
             &[0x04, 0x01, 0x81, 0x81],
             &[tag, 0xfe],
         )]);
-        let graph = crate::object_graph::parse(&bytes).expect("terminated tagged payload");
+        let graph = parse(&bytes).expect("terminated tagged payload");
         let record = &graph.records[0];
 
         assert_eq!(
@@ -1088,7 +1205,7 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
         "Sketch",
     ]));
 
-    let graph = crate::object_graph::parse(&bytes).expect("object graph with schema");
+    let graph = parse(&bytes).expect("object graph with schema");
     assert_eq!(graph.total_len, graph_len);
     assert_eq!(graph.catalog_pos, Some(catalog_pos));
     assert_eq!(graph.records[0].roles().class_ref, Some(3));
@@ -1138,7 +1255,7 @@ fn outer_object_graph_parser_preserves_every_root() {
     let first = object_graph_stream();
     let mut bytes = first.clone();
     bytes.extend(object_graph_vm_stream());
-    let graphs = crate::object_graph::parse_all(&bytes);
+    let graphs = parse_all(&bytes);
     assert_eq!(graphs.len(), 2);
     assert_eq!(graphs[0].pos, 0);
     assert_eq!(graphs[1].pos, first.len());
@@ -1159,7 +1276,7 @@ fn outer_object_graph_suppresses_roots_inside_framed_payloads() {
     let outer =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)]);
 
-    let graphs = crate::object_graph::parse_all(&outer);
+    let graphs = parse_all(&outer);
     assert_eq!(graphs.len(), 1);
     assert_eq!(graphs[0].pos, 0);
 }
@@ -1185,7 +1302,7 @@ fn outer_object_graph_resolves_paged_class_ordinals() {
     let schema_len = u32::try_from(schema.len()).expect("fixture schema length");
     schema[2..6].copy_from_slice(&schema_len.to_le_bytes());
     bytes.extend(schema);
-    let graph = crate::object_graph::parse(&bytes).expect("paged class graph");
+    let graph = parse(&bytes).expect("paged class graph");
     assert_eq!(graph.records[0].roles().class_ref, Some(137));
 }
 
@@ -1197,7 +1314,7 @@ fn object_graph_payload_does_not_consume_terminator_as_fixed_width_atom_data() {
         &[0x04, 0x01, 0x81, 0x83],
         &[0x8d, 0x80, 0x8f, 0x81, 0x8b, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded object payload");
+    let graph = parse(&bytes).expect("terminator-bounded object payload");
 
     assert_eq!(
         graph.records[0].payload().fields,
@@ -1231,7 +1348,7 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
         &[0x04, 0x01, 0x81, 0x83],
         &[0x8d, 0xd2, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("terminator-bounded paged atom");
+    let graph = parse(&bytes).expect("terminator-bounded paged atom");
 
     assert_eq!(
         graph.records[0].payload().fields,
@@ -1253,7 +1370,7 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
 fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
-    let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
+    let graph = parse(&object_graph_vm_stream()).unwrap();
     assert!(graph.records[0].head().contains(&HeadToken::NullHandle));
     assert_eq!(graph.records[0].subtype(), PayloadSubtype::ListAggregator);
     assert!(matches!(
@@ -1278,14 +1395,14 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
 
 #[test]
 fn outer_object_graph_rejects_an_ambiguous_3c_bulk_row_id() {
-    assert!(crate::object_graph::parse(&object_graph_ambiguous_3c_stream()).is_none());
+    assert!(parse(&object_graph_ambiguous_3c_stream()).is_none());
 }
 
 #[test]
 fn object_graph_payload_decodes_3c_bulk_table_rows() {
     use crate::object_graph::{BulkTableRow, PayloadField};
 
-    let graph = crate::object_graph::parse(&object_graph_bulk_table_stream()).expect("bulk table");
+    let graph = parse(&object_graph_bulk_table_stream()).expect("bulk table");
     assert_eq!(
         graph.records[0].payload().fields,
         [
@@ -1328,7 +1445,7 @@ fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
         &[0x04, 0x01, 0x81, 0x83],
         &[0x3c, 0xfe],
     )]);
-    let graph = crate::object_graph::parse(&bytes).expect("literal 3c payload");
+    let graph = parse(&bytes).expect("literal 3c payload");
     assert_eq!(
         graph.records[0].payload().fields,
         [
@@ -1345,7 +1462,7 @@ fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
 fn outer_surface_alias_parser_reads_fixed_core() {
     use crate::object_graph::AliasLead;
 
-    let rows = crate::object_graph::surface_aliases(&surface_alias_stream());
+    let rows = surface_aliases(&surface_alias_stream());
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].lead(), AliasLead::SurfaceSupportStorage);
     assert_eq!(rows[0].tag(), 0x0012_3456);
@@ -1364,7 +1481,7 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
     ] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        let [row] = crate::object_graph::surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes)
             .try_into()
             .expect("one ordinal-linked alias row");
         assert_eq!(row.lead(), expected);
@@ -1378,7 +1495,7 @@ fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
 
     let mut bytes = surface_alias_stream();
     bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
-    let [row] = crate::object_graph::surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes)
         .try_into()
         .expect("one unclassified alias row");
     assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
@@ -1390,7 +1507,7 @@ fn outer_alias_parser_rejects_marker_literals_without_an_alias_lead() {
     for lead in [0u32, 0x15] {
         let mut bytes = surface_alias_stream();
         bytes[..4].copy_from_slice(&lead.to_le_bytes());
-        assert!(crate::object_graph::surface_aliases(&bytes).is_empty());
+        assert!(surface_aliases(&bytes).is_empty());
     }
 }
 
@@ -1404,7 +1521,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
     bytes.extend(alias);
 
-    let [row] = crate::object_graph::surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes)
         .try_into()
         .expect("one grouped alias row");
     let group = row.group.as_ref().expect("exact group header");
@@ -1415,7 +1532,7 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     assert_eq!(row.entity_record_ordinal(), 0x7b);
 
     bytes[10] = 1;
-    let [row] = crate::object_graph::surface_aliases(&bytes)
+    let [row] = surface_aliases(&bytes)
         .try_into()
         .expect("one ungrouped alias row");
     assert!(row.group.is_none());
@@ -1439,7 +1556,7 @@ fn outer_alias_group_parser_accepts_each_bounded_storage_prefix() {
         alias[11..15].copy_from_slice(&0x0000_017du32.to_le_bytes());
         bytes.extend(alias);
 
-        let [row] = crate::object_graph::surface_aliases(&bytes)
+        let [row] = surface_aliases(&bytes)
             .try_into()
             .expect("one grouped alias row");
         let group = row.group.expect("bounded group storage");
@@ -1453,7 +1570,7 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
     let mut bytes = surface_alias_stream();
     bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());
 
-    let rows = crate::object_graph::surface_aliases(&bytes);
+    let rows = surface_aliases(&bytes);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].tag(), 0);
     assert_eq!(rows[0].tag_raw, 0xab00_0000);
@@ -1464,13 +1581,13 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 #[test]
 fn outer_surface_alias_parser_requires_the_lead_word() {
     let bytes = surface_alias_stream();
-    assert!(crate::object_graph::surface_aliases(&bytes[4..]).is_empty());
+    assert!(surface_aliases(&bytes[4..]).is_empty());
 }
 
 #[test]
 fn payload_size_preserves_atom_encoding_width() {
-    let compact = super::decode_payload(&[0x83, 0xfe]).unwrap();
-    let wide = super::decode_payload(&[0xd1, 0x02, 0xfe]).unwrap();
+    let compact = decode_payload(&[0x83, 0xfe]).unwrap();
+    let wide = decode_payload(&[0xd1, 0x02, 0xfe]).unwrap();
     assert_eq!(compact.fields, wide.fields);
     assert_eq!(compact.size, 2);
     assert_eq!(wide.size, 3);
