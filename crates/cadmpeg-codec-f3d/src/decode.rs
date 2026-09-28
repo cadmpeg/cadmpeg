@@ -3257,7 +3257,7 @@ impl<'a> F3dDecodeSession<'a> {
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
-                let source_image = preserve_source_image(scan);
+                let source_image = preserve_source_image(ctx, scan)?;
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(ctx, &mut self.report, scan, mesh_projection.count)?;
                 } else {
@@ -3318,7 +3318,7 @@ impl<'a> F3dDecodeSession<'a> {
             )),
             &self.unknowns,
         )?;
-        let source_image = preserve_source_image(scan);
+        let source_image = preserve_source_image(ctx, scan)?;
         let mut admitted_entities = self.admitted_entities;
         decode_result(
             ctx,
@@ -3388,7 +3388,7 @@ fn decode_scanned_document<'a>(
         } = build_metadata_ir(scan)?;
         annotate_docstruct(ctx, &mut source_attributes, scan)?;
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
-        let source_image = preserve_source_image(scan);
+        let source_image = preserve_source_image(ctx, scan)?;
         let mut report = crate::report::build_decode_report(
             ctx,
             scan,
@@ -4320,13 +4320,16 @@ fn decode_result(
     })
 }
 
-pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
-    UnknownRecord::retained(
+pub(crate) fn preserve_source_image(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<UnknownRecord, CodecError> {
+    Ok(UnknownRecord::retained(
         crate::ids::file_source_image_id(),
         0,
-        scan.source_image.to_vec(),
+        ctx.copy_retained(scan.source_image, "retain F3D source image")?,
         Vec::new(),
-    )
+    ))
 }
 
 /// Machine-local `document_local_sha256` for the F3D write-path edit oracle.

@@ -114,7 +114,7 @@ pub(crate) fn decode<'a>(
         source_fidelity: mut fidelity,
     } = crate::decode::decode_archive_member(ctx, root_scan, &outer.layers)?;
     fidelity.remove_retained_record(crate::ids::FILE_SOURCE_IMAGE_ID);
-    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(ctx, scan)?])?;
     if let Some(drawing_root) = omitted_drawing_root {
         push_loss(ctx, &mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
