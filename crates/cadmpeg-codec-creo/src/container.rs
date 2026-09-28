@@ -3035,6 +3035,7 @@ pub(crate) fn scan_bytes<'a>(
         &feature_operations,
     )?;
     let feature_section_transforms = placement::resolve(
+        ctx,
         &feature_definitions,
         &placement::PlacementSources {
             datums: &datum_planes,
@@ -3047,7 +3048,7 @@ pub(crate) fn scan_bytes<'a>(
             affected_ids: &feature_affected_ids,
         },
         &feature_entity_tables,
-    );
+    )?;
     let (feature_entities, feature_entity_references) = feature_entity_graph(ctx, &sections)?;
     let declared_body_count = geomlists_value(&sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&sections, b"first_quilt_ptr\0").or_else(|| {

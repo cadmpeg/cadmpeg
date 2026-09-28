@@ -281,14 +281,17 @@ impl FeatureVariableTable {
     }
 
     /// Reconcile repeated and complementary section-point rows by identity.
-    pub(crate) fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
-        let point_ids = self
-            .rows
-            .iter()
-            .filter_map(|row| {
-                matches!(row.variable_type, VariableType::U | VariableType::V).then_some(row.key)
-            })
-            .collect::<BTreeSet<_>>();
+    pub(crate) fn reconciled_points(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>), CodecError> {
+        let mut point_ids = BTreeSet::new();
+        for row in self.rows.iter().filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V)) {
+            if !point_ids.contains(&row.key) {
+                ctx.charge_collection_items(1, "creo reconciled point ID nodes")?;
+                point_ids.insert(row.key);
+            }
+        }
         let mut points = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
         for point_id in point_ids {
@@ -296,19 +299,15 @@ impl FeatureVariableTable {
             let mut conflict = false;
             for coordinate in 0..2 {
                 let variable_type = [VariableType::U, VariableType::V][coordinate];
-                let values = self
-                    .rows
-                    .iter()
+                let values = || self.rows.iter()
                     .filter(|row| row.key == point_id && row.variable_type == variable_type)
-                    .filter_map(|row| row.value.value())
-                    .collect::<Vec<_>>();
-                let Some(first) = values.first().copied() else {
+                    .filter_map(|row| row.value.value());
+                let Some(first) = values().next() else {
                     continue;
                 };
-                let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-                if values
-                    .iter()
-                    .all(|candidate| (*candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+                let scale = values().map(f64::abs).fold(1.0, f64::max);
+                if values()
+                    .all(|candidate| (candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
                 {
                     point[coordinate] = Some(first);
                 } else {
@@ -316,12 +315,14 @@ impl FeatureVariableTable {
                 }
             }
             if conflict {
+                ctx.charge_collection_items(1, "creo ambiguous point nodes")?;
                 ambiguous.insert(point_id);
             } else {
+                ctx.charge_collection_items(1, "creo reconciled point nodes")?;
                 points.insert(point_id, point);
             }
         }
-        (points, ambiguous)
+        Ok((points, ambiguous))
     }
 }
 
@@ -3377,8 +3378,8 @@ fn trim_vertex_table(
                     ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
                     rows.push(FeatureTrimVertex {
                         section_coordinates: trim_vertex_intersection(
-                            &entities, segments, variables,
-                        ),
+                            ctx, &entities, segments, variables,
+                        )?,
                         vertex_id,
                         entities,
                         offset: cursor,
@@ -3402,8 +3403,8 @@ fn trim_vertex_table(
                         ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
                         rows.push(FeatureTrimVertex {
                             section_coordinates: trim_vertex_intersection(
-                                &entities, segments, variables,
-                            ),
+                                ctx, &entities, segments, variables,
+                            )?,
                             vertex_id,
                             entities,
                             offset: next,
@@ -3430,7 +3431,7 @@ fn trim_vertex_table(
         };
         ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: trim_vertex_intersection(&entities, segments, variables),
+            section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
             entities,
             offset: row_offset,
@@ -3494,7 +3495,7 @@ fn positional_trim_vertex_table(
         };
         ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
-            section_coordinates: trim_vertex_intersection(&entities, segments, variables),
+            section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
             entities,
             offset: row_offset,
@@ -3538,12 +3539,13 @@ enum TrimCarrier {
 }
 
 fn trim_vertex_intersection(
+    ctx: &DecodeContext<'_>,
     entities: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<cadmpeg_ir::units::FinitePoint2> {
-    let [u, v] = entity_intersection(entities, segments, variables)?;
-    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(u, v))
+) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
+    Ok(entity_intersection(ctx, entities, segments, variables)?
+        .and_then(|[u, v]| cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(u, v))))
 }
 
 fn resolved_trim_scalar(
@@ -3780,56 +3782,61 @@ fn trim_circle_circle_intersection(
 }
 
 fn entity_intersection(
+    ctx: &DecodeContext<'_>,
     entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<[f64; 2]> {
-    let segments = segments?;
-    let variables = variables?;
-    (variables.is_complete() && entity_ids.len() >= 2).then_some(())?;
-    let mut unique_entities = BTreeSet::new();
-    if !entity_ids
-        .iter()
-        .all(|entity_id| unique_entities.insert(*entity_id))
-    {
-        return None;
+) -> Result<Option<[f64; 2]>, CodecError> {
+    let (Some(segments), Some(variables)) = (segments, variables) else {
+        return Ok(None);
+    };
+    if !variables.is_complete() || entity_ids.len() < 2 {
+        return Ok(None);
     }
-    let (points, ambiguous_points) = variables.reconciled_points();
-    let segments = entity_ids
-        .iter()
-        .map(|entity_id| segments.unique_segment(*entity_id))
-        .collect::<Option<Vec<_>>>()?;
-    let common_point_ids = segments
-        .iter()
-        .skip(1)
-        .fold(
-            segments[0].point_ids().into_iter().collect::<BTreeSet<_>>(),
-            |common, segment| {
-                let segment_points = segment.point_ids().into_iter().collect::<BTreeSet<_>>();
-                common.intersection(&segment_points).copied().collect()
-            },
-        )
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut unique_entities = BTreeSet::new();
+    for entity_id in entity_ids {
+        if unique_entities.contains(entity_id) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "creo trim intersection entity nodes")?;
+        unique_entities.insert(*entity_id);
+    }
+    let (points, ambiguous_points) = variables.reconciled_points(ctx)?;
+    let mut segments_for_intersection = Vec::new();
+    for entity_id in entity_ids {
+        let Some(segment) = segments.unique_segment(*entity_id) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut segments_for_intersection, 1, "creo trim intersection segments")?;
+        segments_for_intersection.push(segment);
+    }
     if entity_ids.len() == 2 {
-        if let [point_id] = common_point_ids.as_slice() {
-            if !ambiguous_points.contains(point_id) {
-                if let Some([Some(u), Some(v)]) = points.get(point_id).copied() {
+        let first_ids = segments_for_intersection[0].point_ids();
+        let second_ids = segments_for_intersection[1].point_ids();
+        let mut common = first_ids.into_iter().filter(|id| second_ids.contains(id));
+        let point_id = common.next();
+        if let Some(point_id) = point_id.filter(|id| common.all(|other| other == *id)) {
+            if !ambiguous_points.contains(&point_id) {
+                if let Some([Some(u), Some(v)]) = points.get(&point_id).copied() {
                     if u.is_finite() && v.is_finite() {
-                        return Some([u, v]);
+                        return Ok(Some([u, v]));
                     }
                 }
             }
         }
     }
-    let carriers = segments
-        .iter()
-        .map(|segment| trim_carrier(segment, &points, variables))
-        .collect::<Option<Vec<_>>>()?;
+    let mut carriers = Vec::new();
+    for segment in &segments_for_intersection {
+        let Some(carrier) = trim_carrier(segment, &points, variables) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut carriers, 1, "creo trim intersection carriers")?;
+        carriers.push(carrier);
+    }
     let mut intersections = Vec::new();
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
-            let coordinate = match (carriers[first], carriers[second]) {
+            let Some(coordinate) = (match (carriers[first], carriers[second]) {
                 (
                     TrimCarrier::Line { start, end },
                     TrimCarrier::Line {
@@ -3853,11 +3860,16 @@ fn entity_intersection(
                     second_center,
                     second_radius.get(),
                 ),
-            }?;
+            }) else {
+                return Ok(None);
+            };
+            ctx.try_reserve_items(&mut intersections, 1, "creo trim intersections")?;
             intersections.push(coordinate);
         }
     }
-    let first = *intersections.first()?;
+    let Some(first) = intersections.first().copied() else {
+        return Ok(None);
+    };
     let rest = &intersections[1..];
     let scale = first
         .into_iter()
@@ -3867,12 +3879,12 @@ fn entity_intersection(
         )
         .map(f64::abs)
         .fold(1.0, f64::max);
-    rest.iter()
+    Ok(rest.iter()
         .all(|coordinate| {
             (coordinate[0] - first[0]).hypot(coordinate[1] - first[1])
                 <= TRIM_COORDINATE_EPS * scale
         })
-        .then_some(first)
+        .then_some(first))
 }
 
 fn order_table(

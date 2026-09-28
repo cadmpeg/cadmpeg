@@ -6,7 +6,7 @@ use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
 use crate::feature::definitions::dimension_table as parse_dimension_table;
-use crate::feature::definitions::entity_intersection;
+use crate::feature::definitions::entity_intersection as parse_entity_intersection;
 use crate::feature::definitions::equation_table as parse_equation_table;
 use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
 use crate::feature::definitions::feature_skamps as parse_feature_skamps;
@@ -52,6 +52,24 @@ use crate::psb;
 use crate::scalar;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+
+fn entity_intersection(
+    entity_ids: &[u32],
+    segments: Option<&FeatureSegmentTable>,
+    variables: Option<&FeatureVariableTable>,
+) -> Option<[f64; 2]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_entity_intersection(ctx, entity_ids, segments, variables)
+    })
+    .expect("test trim intersection")
+}
+
+fn reconciled_points(
+    variables: &FeatureVariableTable,
+) -> (std::collections::BTreeMap<u32, [Option<f64>; 2]>, std::collections::BTreeSet<u32>) {
+    crate::decode::with_test_decode_ctx(|ctx| variables.reconciled_points(ctx))
+        .expect("test point reconciliation")
+}
 
 const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
     \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
@@ -1147,10 +1165,29 @@ fn radius_variables_do_not_create_section_points() {
 
     assert_eq!(table.points().len(), 1);
     assert_eq!(table.points()[0].point_id, 7);
-    let (points, ambiguous) = table.reconciled_points();
+    let (points, ambiguous) = reconciled_points(&table);
     assert_eq!(points.get(&7), Some(&[Some(2.0), Some(3.0)]));
     assert!(!points.contains_key(&99));
     assert!(ambiguous.is_empty());
+}
+
+#[test]
+fn reconciled_points_refuses_before_point_id_node() {
+    let table = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![FeatureSectionPoint { point_id: 7, u: Some(2.0), v: Some(3.0) }],
+    );
+    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX,
+        |ctx| table.reconciled_points(ctx)),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo reconciled point ID nodes"));
+    assert_eq!(reconciled_points(&table).0.get(&7), Some(&[Some(2.0), Some(3.0)]));
 }
 
 #[test]
@@ -2122,7 +2159,7 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     duplicate_points.rows.extend(variables.rows.clone());
     duplicate_points.declared_count += variables.declared_count;
     assert_eq!(
-        duplicate_points.reconciled_points().0.get(&2),
+        reconciled_points(&duplicate_points).0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
     );
     assert_eq!(
@@ -2130,7 +2167,7 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         Some([3.0, 4.0])
     );
     duplicate_points.rows[2].value = ScalarLane::Value(5.0);
-    assert!(duplicate_points.reconciled_points().1.contains(&2));
+    assert!(reconciled_points(&duplicate_points).1.contains(&2));
     assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     let row = |variable_type, value, offset| FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::from(variable_type),
@@ -2147,11 +2184,44 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     let mut repeated_raw = variables.clone();
     repeated_raw.rows = vec![row(1, 3.0, 30), row(1, 3.0, 31), row(2, 4.0, 32)];
     assert_eq!(
-        repeated_raw.reconciled_points().0.get(&2),
+        reconciled_points(&repeated_raw).0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
     );
     repeated_raw.rows[1].value = ScalarLane::Value(5.0);
-    assert!(repeated_raw.reconciled_points().1.contains(&2));
+    assert!(reconciled_points(&repeated_raw).1.contains(&2));
+}
+
+#[test]
+fn trim_intersection_refuses_before_entity_node() {
+    let segment = |external_id, points| FeatureSegment {
+        kind: FeatureSegmentKind::Line(points),
+        directions: [None; 3],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 2,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![segment(9, [1, 2]), segment(10, [2, 3])]
+            .into_iter().map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
+        offset: 0,
+    };
+    let variables = with_points(FeatureVariableTable {
+        declared_count: 0, entity_ref: None, rows: Vec::new(), offset: 0,
+    }, vec![FeatureSectionPoint { point_id: 2, u: Some(3.0), v: Some(4.0) }]);
+    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX, |ctx| {
+        parse_entity_intersection(ctx, &[9, 10], Some(&segments), Some(&variables))
+    }), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo trim intersection entity nodes"));
+    assert_eq!(entity_intersection(&[9, 10], Some(&segments), Some(&variables)), Some([3.0, 4.0]));
 }
 
 #[test]

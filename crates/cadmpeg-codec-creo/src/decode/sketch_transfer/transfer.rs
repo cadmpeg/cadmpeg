@@ -190,7 +190,7 @@ pub(in super::super) fn transfer_sketches(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points, &radii);
+        let trim_vertex_coordinates = resolved_trim_vertex_coordinates(ctx, definition, &points, &radii)?;
         let resolved_segment_geometries = segments
             .iter()
             .map(|segment| {

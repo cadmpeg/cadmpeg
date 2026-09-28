@@ -2449,7 +2449,7 @@ pub(super) fn sketch_records(
                         offset: section.offset,
                     }),
                 table_headers: sketch_table_headers(ctx, definition)?,
-                section_points: sketch_section_point_records(definition),
+                section_points: sketch_section_point_records(ctx, definition)?,
                 solved_external_ids: definition
                     .trim_entities
                     .as_ref()
@@ -2823,17 +2823,25 @@ pub(super) fn sketch_records(
 }
 
 pub(super) fn sketch_section_point_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<CreoSketchSectionPoint> {
+) -> Result<Vec<CreoSketchSectionPoint>, cadmpeg_core::CodecError> {
     let Some(variables) = &definition.variables else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let (points, ambiguous) = variables.reconciled_points();
-    points
+    let (points, ambiguous) = variables.reconciled_points(ctx)?;
+    let mut point_ids = BTreeSet::new();
+    for point_id in points
         .keys()
         .copied()
         .chain(ambiguous.iter().copied())
-        .collect::<BTreeSet<_>>()
+    {
+        if !point_ids.contains(&point_id) {
+            ctx.charge_collection_items(1, "creo sketch section point ID nodes")?;
+            point_ids.insert(point_id);
+        }
+    }
+    crate::decode::collect_items(ctx, point_ids
         .into_iter()
         .map(|point_id| {
             let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
@@ -2849,7 +2857,7 @@ pub(super) fn sketch_section_point_records(
             };
             CreoSketchSectionPoint { point_id, state }
         })
-        .collect()
+        , "creo sketch section point records")
 }
 
 pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {

@@ -58,6 +58,7 @@ fn section_equation_function_ten_axis_alignment(
     variables: &crate::feature::definitions::FeatureVariableTable,
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_equality_values: &BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>>,
+    points: &BTreeMap<u32, [Option<f64>; 2]>,
 ) -> Option<(u32, u32, SectionAxis)> {
     if equation.function_id != 10 || equation.arguments.len() != 7 {
         return None;
@@ -132,7 +133,6 @@ fn section_equation_function_ten_axis_alignment(
         return None;
     }
 
-    let (points, _) = variables.reconciled_points();
     let first_point = points.get(&first_axis.key).copied()?;
     let second_point = points.get(&second_axis.key).copied()?;
     let target_point = points.get(&target_axis.key).copied()?;
@@ -196,6 +196,11 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         return Ok(Vec::new());
     }
     let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    let function_ten_points = if equations.rows.iter().any(|row| row.function_id == 10) {
+        Some(variables.reconciled_points(ctx)?.0)
+    } else {
+        None
+    };
     crate::decode::collect_items(ctx,
     equations
         .rows
@@ -207,6 +212,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
                     variables,
                     ambiguous_point_ids,
                     &scalar_equality_values,
+                    function_ten_points.as_ref()?,
                 )?;
                 return Some(SectionEquationCoordinateEquality {
                     first,
@@ -701,7 +707,7 @@ pub(super) fn section_equation_scalar_seed_values(
     else {
         return Ok(BTreeMap::new());
     };
-    let ambiguous_point_ids = variables.reconciled_points().1;
+    let ambiguous_point_ids = variables.reconciled_points(ctx)?.1;
     let mut values = BTreeMap::new();
     for row in &variables.rows {
         if matches!(row.variable_type, VariableType::U | VariableType::V) {
@@ -920,7 +926,9 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
-        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
+        .unwrap_or_default();
     let constraints = section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
     let seed_values = section_equation_scalar_seed_values(ctx, definition)?;
     let mut derived = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
@@ -1506,7 +1514,9 @@ pub(in crate::decode) fn resolved_section_scalar_values(
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
-        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
+        .unwrap_or_default();
     let mut values = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     for (variable, value) in section_equation_scalar_equalities(ctx, definition)? {
         ctx.charge_collection_items(1, "creo resolved scalar candidate nodes")?;

@@ -869,7 +869,8 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     crate::decode::collect_items(ctx, super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
         ctx,
@@ -985,7 +986,8 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
     let constraints =
@@ -1044,7 +1046,8 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let constraints = section_equation_function_forty_two_midpoint_coordinate_rows(
         ctx,
@@ -1108,7 +1111,8 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let constraints = section_equation_function_thirty_one_point_coordinate_rows(
         ctx,
@@ -1252,7 +1256,8 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
     let constraints =
@@ -1443,7 +1448,8 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let rows = super::super::sketch::equations_scalar::section_equation_coordinate_equality_rows(
         ctx,
@@ -1501,7 +1507,8 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let unique_segment_ids = unique_section_segment_external_ids(definition);
     let segments = section_segment_rows(definition);
@@ -1590,7 +1597,8 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let constraints = section_equation_function_forty_three_axis_distance_rows(
         ctx,
@@ -1668,7 +1676,8 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     crate::decode::collect_items(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
@@ -1895,7 +1904,8 @@ pub(in super::super) fn section_dimension_constraints(
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
-        .map(|variables| variables.reconciled_points().1)
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
         .unwrap_or_default();
     let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
     let saved_coordinate_witnesses =
