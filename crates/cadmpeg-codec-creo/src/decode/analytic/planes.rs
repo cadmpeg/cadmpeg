@@ -275,7 +275,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                     candidates.extend(intersections);
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
-                        let intersections = intersect_two_planes_with_torus(*first, *second, *torus);
+                        let intersections = intersect_two_planes_with_torus(ctx, *first, *second, *torus)?;
                         ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                         candidates.extend(intersections);
                     }
