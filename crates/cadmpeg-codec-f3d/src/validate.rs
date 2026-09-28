@@ -2004,7 +2004,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 // check is that every role names a distinct table entry and that
                 // the entries no role claims are exactly the width owners.
                 let edge_count = operation.selection.shape().edges().count();
-                let claimed = operation
+                let claimed = ctx.collect_vec(operation
                     .selection
                     .shape()
                     .edges()
@@ -2024,7 +2024,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         operation.angle_owner_record_index,
                         operation.settings_record_index,
                     ])
-                    .collect::<Vec<_>>();
+                    , "collect F3D edge flange claimed references")?;
                 let mut claimed = claimed;
                 if let records::feature::sheet_metal::DesignEdgeFlangeHeightExtent::ToObject {
                     target_group_record_index,
@@ -2033,15 +2033,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     ..
                 } = operation.selection.shape().height()
                 {
-                    claimed.extend([
+                    for index in [
                         target_group_record_index,
                         target_operand_record_index,
                         offset_owner_record_index,
-                    ]);
+                    ] {
+                        ctx.charge_item("collect F3D edge flange target references")?;
+                        claimed.try_reserve(1).map_err(|_| {
+                            ctx.decode.map_or_else(
+                                || CodecError::malformed("F3D edge flange reference allocation failed"),
+                                |decode| decode.refuse_codec_limit(
+                                    "collect F3D edge flange target references", 0, 1),
+                            )
+                        })?;
+                        claimed.push(index);
+                    }
                 }
+                let unique_claimed = ctx.collect_set(claimed.iter().copied(),
+                    "index F3D edge flange claimed references")?;
                 edge_count > 0
                     && claimed.len() == scope.reference_members().len()
-                    && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
+                    && unique_claimed.len() == claimed.len()
                     && claimed.iter().all(|index| {
                         scope
                             .reference_members()
@@ -2913,20 +2925,20 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             Some(construction) => {
                 let expected_groups: Vec<_> = match construction.form {
                     records::feature::thread::DesignThreadForm::Standard
-                    | records::feature::thread::DesignThreadForm::StandardLegacy => scope
+                    | records::feature::thread::DesignThreadForm::StandardLegacy => ctx.collect_vec(scope
                         .reference_members()
                         .values()
                         .next()
                         .copied()
                         .into_iter()
-                        .collect(),
+                        , "collect F3D standard thread face groups")?,
                     records::feature::thread::DesignThreadForm::Compact(_)
-                    | records::feature::thread::DesignThreadForm::CompactLegacy => scope
+                    | records::feature::thread::DesignThreadForm::CompactLegacy => ctx.collect_vec(scope
                         .reference_members()
                         .values()
                         .step_by(2)
                         .copied()
-                        .collect(),
+                        , "collect F3D compact thread face groups")?,
                 };
                 scope.reference_members().len() >= 2
                     && scope.reference_members().len().is_multiple_of(2)
