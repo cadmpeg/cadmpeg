@@ -388,6 +388,7 @@ macro_rules! design_feature_kinds {
         /// Mutable construction fields with a fixed feature family.
         pub(crate) enum DesignScopePayloadMut<'a> {
             $($variant(&'a mut $payload),)+
+            $($fixed(&'a mut $fixed_payload),)+
             Other,
         }
 
@@ -395,6 +396,7 @@ macro_rules! design_feature_kinds {
             fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
                 match self {
                     $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+
+                    $(Self::$fixed(value) => DesignScopePayloadMut::$fixed(value),)+
                     _ => DesignScopePayloadMut::Other,
                 }
             }
