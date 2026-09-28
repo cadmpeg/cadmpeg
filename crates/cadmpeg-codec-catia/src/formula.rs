@@ -759,7 +759,7 @@ fn collect_legacy_parameters(
             let Some(name) = &scalar.name else {
                 continue;
             };
-            let Some((value_type, selected)) = resolved_legacy_type(run, scalar.entity_id) else {
+            let Some((value_type, selected)) = resolved_legacy_type(ctx, run, scalar.entity_id)? else {
                 continue;
             };
             let evaluation = match scalar.evaluation {
@@ -825,13 +825,14 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
+                ctx,
                 run,
                 string.entity_id,
                 string.byte_offset,
                 string.name_field,
                 name,
                 "String",
-            ) else {
+            )? else {
                 continue;
             };
             if value_type != "String" {
@@ -882,13 +883,14 @@ fn collect_legacy_parameters(
                 continue;
             };
             let Some((value_type, selected)) = resolved_or_intrinsic_legacy_type(
+                ctx,
                 run,
                 integer.entity_id,
                 integer.byte_offset,
                 integer.name_field,
                 name,
                 "Integer",
-            ) else {
+            )? else {
                 continue;
             };
             if !matches!(value_type, "Integer" | "I") {
@@ -1122,27 +1124,30 @@ fn outer_container_in_scope(
     }
 }
 
-fn resolved_legacy_type(
-    run: &crate::native::CatiaLegacyEntityRun,
+fn resolved_legacy_type<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    run: &'a crate::native::CatiaLegacyEntityRun,
     mut entity_id: u32,
-) -> Option<(&str, bool)> {
-    let mut visited = HashSet::new();
+) -> Result<Option<(&'a str, bool)>, cadmpeg_core::CodecError> {
+    let mut steps = 0usize;
     let mut selected = false;
     loop {
-        if !visited.insert(entity_id) {
-            return None;
+        if steps >= run.type_descriptors.len() {
+            return Ok(None);
         }
+        steps += 1;
+        ctx.charge_work(1, "catia_legacy_type_selector_chain")?;
         let mut descriptors = run
             .type_descriptors
             .iter()
             .filter(|descriptor| descriptor.entity_id == entity_id);
-        let descriptor = descriptors.next()?;
+        let Some(descriptor) = descriptors.next() else { return Ok(None) };
         if descriptors.next().is_some() {
-            return None;
+            return Ok(None);
         }
         match &descriptor.value {
             crate::native::CatiaLegacyTypeValue::Name { value } => {
-                return Some((value, selected));
+                return Ok(Some((value, selected)));
             }
             crate::native::CatiaLegacyTypeValue::Selector { value } => {
                 entity_id = *value;
@@ -1153,32 +1158,33 @@ fn resolved_legacy_type(
 }
 
 fn resolved_or_intrinsic_legacy_type<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     run: &'a crate::native::CatiaLegacyEntityRun,
     entity_id: u32,
     value_offset: u64,
     name_field: Option<u64>,
     name: &str,
     intrinsic_type: &'static str,
-) -> Option<(&'a str, bool)> {
-    if let Some(resolved) = resolved_legacy_type(run, entity_id) {
-        return Some(resolved);
+) -> Result<Option<(&'a str, bool)>, cadmpeg_core::CodecError> {
+    if let Some(resolved) = resolved_legacy_type(ctx, run, entity_id)? {
+        return Ok(Some(resolved));
     }
     if run
         .type_descriptors
         .iter()
         .any(|descriptor| descriptor.entity_id == entity_id)
     {
-        return None;
+        return Ok(None);
     }
-    let name_field = name_field?;
-    crate::native::legacy_evaluated_value_name(
+    let Some(name_field) = name_field else { return Ok(None) };
+    Ok(crate::native::legacy_evaluated_value_name(
         &run.role_selectors,
         &run.text_fields,
         entity_id,
         value_offset,
     )
     .is_some_and(|field| field.byte_offset == name_field && field.value == name)
-    .then_some((intrinsic_type, false))
+    .then_some((intrinsic_type, false)))
 }
 
 struct FormulaParameterCandidate {
