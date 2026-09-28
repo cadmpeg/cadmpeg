@@ -679,6 +679,24 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(values.insert(key))
     }
 
+    fn charge_map_key<K: Eq + Hash, V>(
+        &self,
+        values: &mut HashMap<K, V>,
+        key: &K,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if !values.contains_key(key) {
+            self.charge_item(operation)?;
+            values.try_reserve(1).map_err(|_| {
+                self.decode.map_or_else(
+                    || CodecError::malformed("F3D validation map allocation failed"),
+                    |decode| decode.refuse_codec_limit(operation, 0, 1),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     fn collect_vec<T>(
         &self,
         values: impl IntoIterator<Item = T>,
@@ -1064,7 +1082,7 @@ fn validate_loaded(
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings)?;
-    validate_feature_timelines(&ctx, &mut findings);
+    validate_feature_timelines(&ctx, &mut findings)?;
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings)?;
@@ -1325,13 +1343,14 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Re
 }
 
 /// Validate authored Design timeline order and its exact type and scope joins.
-fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut type_ordinals = HashMap::<&str, u32>::new();
     let mut timeline_ordinals = HashMap::<&str, u32>::new();
     let mut entity_type_counts = HashMap::<(&str, u64), usize>::new();
     let mut expected = HashMap::<(&str, u64), (String, u32, bool, &str)>::new();
-    let mut design_types = native.design_types.iter().collect::<Vec<_>>();
+    let mut design_types = ctx.collect_vec(native.design_types.iter(),
+        "order F3D feature timeline types")?;
     design_types.sort_by_key(|design_type| {
         (
             ids::native_stream(&design_type.id).unwrap_or_default(),
@@ -1345,10 +1364,14 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Some(segment) = ids::design_segment(&design_type.id) else {
             continue;
         };
+        ctx.charge_map_key(&mut type_ordinals, &meta_stream,
+            "index F3D feature timeline type ordinals")?;
         let type_ordinal = type_ordinals.entry(meta_stream).or_default();
         let class_tag = type_ordinal.checked_add(256).map(|tag| tag.to_string());
         *type_ordinal = type_ordinal.saturating_add(1);
         for entity_id in design_type.entities.values() {
+            ctx.charge_map_key(&mut entity_type_counts, &(segment, *entity_id),
+                "index F3D feature timeline entity types")?;
             *entity_type_counts.entry((segment, *entity_id)).or_default() += 1;
         }
         if !design_type
@@ -1358,6 +1381,8 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         {
             continue;
         }
+        ctx.charge_map_key(&mut timeline_ordinals, &segment,
+            "index F3D feature timeline source ordinals")?;
         let source_ordinal = timeline_ordinals.entry(segment).or_default();
         for entity_id in design_type.entities.values() {
             let valid_type =
@@ -1368,6 +1393,8 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };
+            ctx.charge_map_key(&mut expected, &(segment, *entity_id),
+                "index F3D expected feature timelines")?;
             if expected
                 .insert(
                     (segment, *entity_id),
@@ -1380,26 +1407,25 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 )
                 .is_some()
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion Design feature-timeline type repeats an entity identity"
-                        .into(),
-                    entity: Some(design_type.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design feature-timeline type repeats an entity identity",
+                    Some(ctx.copy_entity(&design_type.id)?))?;
             }
             *source_ordinal = source_ordinal.saturating_add(1);
         }
     }
 
-    let mut actual = native.design_feature_timelines.iter().collect::<Vec<_>>();
+    let mut actual = ctx.collect_vec(native.design_feature_timelines.iter(),
+        "order F3D feature timeline records")?;
     actual.sort_by_key(|timeline| (timeline.segment(), timeline.source_ordinal));
     let mut actual_records = HashSet::<(&str, u64)>::new();
     let mut item_records = HashSet::<(&str, u64)>::new();
     for timeline in actual {
         let segment = timeline.segment();
         let expected_type = expected.get(&(segment, timeline.record_index.get()));
-        let unique_record = actual_records.insert((segment, timeline.record_index.get()));
+        let unique_record = ctx.insert_unique(&mut actual_records,
+            (segment, timeline.record_index.get()),
+            "index F3D feature timeline record identities")?;
         let record_valid =
             expected_type.is_some_and(|(class_tag, source_ordinal, valid_type, _)| {
                 *valid_type
@@ -1412,25 +1438,20 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let mut items_valid = true;
         for item in timeline.frame().items().iter().map(|item| item.value) {
             items_valid &= entity_type_counts.get(&(segment, item)) == Some(&1)
-                && item_records.insert((segment, item));
+                && ctx.insert_unique(&mut item_records, (segment, item),
+                    "index F3D feature timeline item identities")?;
         }
         if !record_valid || !items_valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design feature timeline has an invalid typed frame".into(),
-                entity: Some(timeline.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design feature timeline has an invalid typed frame",
+                Some(ctx.copy_entity(timeline.id())?))?;
         }
     }
     for ((segment, entity_id), (_, _, _, type_id)) in &expected {
         if !actual_records.contains(&(*segment, *entity_id)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design feature-timeline type has no decoded record".into(),
-                entity: Some((*type_id).to_owned()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design feature-timeline type has no decoded record",
+                Some(ctx.copy_entity(type_id)?))?;
         }
     }
 
@@ -1445,19 +1466,16 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let Some(position) = authored.get(&(stream, scope.record_index)) else {
                     continue;
                 };
+                ctx.charge_map_key(&mut scope_positions, &scope.id.as_str(),
+                    "index F3D feature timeline scope positions")?;
                 scope_positions.insert(scope.id.as_str(), *position);
             }
         }
         Err(_) => {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design scopes have no complete authored order".into(),
-                entity: native
-                    .design_parameter_scopes
-                    .first()
-                    .map(|scope| scope.id.clone()),
-            });
+            let entity = native.design_parameter_scopes.first()
+                .map(|scope| ctx.copy_entity(&scope.id)).transpose()?;
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design scopes have no complete authored order", entity)?;
         }
     }
 
@@ -1480,27 +1498,21 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .get(predecessor.id.as_str())
                     .is_some_and(|predecessor| *predecessor >= position)
                 {
-                    findings.push(Finding {
-                        check: Check::NativeLinks,
-                        severity: Severity::Error,
-                        message: "Fusion Design history edge runs forward in its feature timeline"
-                            .into(),
-                        entity: Some(scope.id.clone()),
-                    });
+                    ctx.push_constant_finding(findings, Check::NativeLinks,
+                        "Fusion Design history edge runs forward in its feature timeline",
+                        Some(ctx.copy_entity(&scope.id)?))?;
                 }
             }
-            Err(_) => findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design scope history-state dependency is cyclic".into(),
-                entity: Some(scope.id.clone()),
-            }),
+            Err(_) => ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design scope history-state dependency is cyclic",
+                Some(ctx.copy_entity(&scope.id)?))?,
             Ok(
                 crate::design::feature_project::ScopeHistoryPredecessor::None
                 | crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous,
             ) => {}
         }
     }
+    Ok(())
 }
 
 fn mesh_record_offset_is(
