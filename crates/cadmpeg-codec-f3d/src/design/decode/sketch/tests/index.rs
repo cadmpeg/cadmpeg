@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::sketch::{
-    decode_headers_for_indices_from_stream, extend_sketch_stream, native_scope_scoped,
-    wanted_record_indices, IndexedRecordOffsets,
+    copy_entity_module_text, decode_headers_for_indices_from_stream, entity_meta_scope,
+    extend_sketch_stream, insert_charged_u32, insert_entity_module, insert_legacy_candidate,
+    native_scope_scoped, push_entity_header, wanted_record_indices, IndexedRecordOffsets,
 };
 
 #[test]
@@ -226,4 +227,114 @@ fn record_header_stream_charges_emitted_index_output_and_id() {
     ).unwrap();
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].id, crate::ids::native_design_record_header_id("BulkStream.dat", 0));
+}
+
+#[test]
+fn entity_header_type_indices_refuse_collection_limits() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let mut modules = std::collections::HashMap::new();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        insert_entity_module(&ctx, &mut modules, "f3d:MetaStream.dat", 7, "MSketch"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d entity module stream"
+    ));
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        insert_entity_module(&ctx, &mut modules, "f3d:MetaStream.dat", 7, "MSketch"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d entity module index"
+    ));
+
+    let mut candidates = std::collections::HashMap::new();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        insert_legacy_candidate(&ctx, &mut candidates, "f3d:", 7),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d legacy sketch stream"
+    ));
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        insert_legacy_candidate(&ctx, &mut candidates, "f3d:", 7),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d legacy sketch candidate"
+    ));
+}
+
+#[test]
+fn entity_header_existing_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut indices = std::collections::HashSet::new();
+    assert!(matches!(
+        insert_charged_u32(&ctx, &mut indices, 7,
+            "f3d existing entity index", "f3d existing entity index allocation"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d existing entity index"
+    ));
+}
+
+#[test]
+fn entity_header_meta_scope_and_module_refuse_byte_limits() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let bulk_scope = crate::ids::native_scope("a/BulkStream.dat");
+    let expected = crate::ids::native_scope("a/MetaStream.dat");
+    policy.limits.max_materialized_bytes = expected.len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        entity_meta_scope(&ctx, &bulk_scope),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::MaterializedBytes
+    ));
+    policy.limits.max_materialized_bytes = expected.len() as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (_reservation, actual) = entity_meta_scope(&ctx, &bulk_scope).unwrap().unwrap();
+    assert_eq!(actual, expected);
+
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        copy_entity_module_text(&ctx, "Mα"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn entity_header_output_refuses_collection_limit() {
+    use crate::records::entity_header::{DesignEntityHeader, DesignEntityRegistration};
+    use crate::records::identity::{DesignEntityId, ReferenceRun};
+    let header = DesignEntityHeader {
+        id: "f3d:design-entity-header#0".to_owned(),
+        byte_offset: 0,
+        entity_id: DesignEntityId::from_parts("Sketch", 7),
+        class_tag: crate::records::references::DesignClassTag::try_from("001".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: DesignEntityRegistration::new(None, None, ReferenceRun::unlocated(Vec::new())).unwrap(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut out = Vec::new();
+    assert!(matches!(
+        push_entity_header(&ctx, &mut out, header),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d entity header output"
+    ));
+    assert!(out.is_empty());
 }

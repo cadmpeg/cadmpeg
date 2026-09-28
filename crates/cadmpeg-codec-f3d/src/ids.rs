@@ -939,11 +939,6 @@ native_record_id!(
     "design-type"
 );
 native_record_id!(
-    /// The native design-entity-header record key.
-    native_design_entity_header_id,
-    "design-entity-header"
-);
-native_record_id!(
     /// The native design-record-header record key.
     native_design_record_header_id,
     "design-record-header"

@@ -176,6 +176,28 @@ fn append_native_scope(name: &str, out: &mut String) {
     }
 }
 
+fn entity_meta_scope<'a>(
+    ctx: &'a DecodeContext<'_>,
+    bulk_scope: &str,
+) -> Result<Option<(cadmpeg_core::decode::ScopedReservation<'a>, String)>, CodecError> {
+    let Some(prefix) = bulk_scope.strip_suffix("BulkStream.dat") else {
+        return Ok(None);
+    };
+    let meta_len = prefix.len().checked_add("MetaStream.dat".len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("f3d entity meta scope length", 0, 1)
+    })?;
+    let reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(meta_len), "f3d entity meta scope"
+    )?;
+    let mut meta_scope = String::new();
+    meta_scope.try_reserve_exact(meta_len).map_err(|_| {
+        ctx.refuse_codec_limit("f3d entity meta scope allocation", 0, 1)
+    })?;
+    meta_scope.push_str(prefix);
+    meta_scope.push_str("MetaStream.dat");
+    Ok(Some((reservation, meta_scope)))
+}
+
 /// Copy a stream identity for a mutable decode pass under a scoped byte charge.
 pub(in crate::design) fn copy_scoped_stream<'a>(
     ctx: &'a DecodeContext<'_>,
@@ -1212,39 +1234,27 @@ pub(crate) fn decode_entity_headers(
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     // Entity ids are unique per Design stream, not archive-wide.
-    let mut entity_modules = HashMap::<String, HashMap<u64, String>>::new();
+    let mut entity_modules = HashMap::<&str, HashMap<u64, &str>>::new();
     let types = decode_types(ctx, scan)?;
-    let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
-    for design_type in types {
+    let mut legacy_sketch_candidates = HashMap::<&str, std::collections::HashSet<u32>>::new();
+    for design_type in &types {
         if let Some(stream) = native_stream(&design_type.id) {
-            let stream_modules = entity_modules.entry(stream.to_owned()).or_default();
             for &entity_id in design_type.entities.values() {
-                stream_modules
-                    .entry(entity_id)
-                    .or_insert_with(|| design_type.module.clone());
+                insert_entity_module(ctx, &mut entity_modules, stream, entity_id, &design_type.module)?;
             }
         }
         if design_type.module == DESIGN_MODULE_SKETCH {
             let Some(stream) = native_stream(&design_type.id) else {
                 continue;
             };
-            let Some(meta_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
+            let Some(prefix) = stream
+                .strip_prefix(ids::SCHEME_PREFIX)
+                .and_then(|name| name.strip_suffix("MetaStream.dat")) else {
                 continue;
             };
-            let Some(prefix) = meta_name.strip_suffix("MetaStream.dat") else {
-                continue;
-            };
-            let bulk_name = format!("{prefix}BulkStream.dat");
-            legacy_sketch_candidates
-                .entry(bulk_name)
-                .or_default()
-                .extend(
-                    design_type
-                        .entities
-                        .values()
-                        .copied()
-                        .filter_map(|identity| u32::try_from(identity).ok()),
-                );
+            for identity in design_type.entities.values().copied().filter_map(|id| u32::try_from(id).ok()) {
+                insert_legacy_candidate(ctx, &mut legacy_sketch_candidates, prefix, identity)?;
+            }
         }
     }
     for entry in scan
@@ -1254,13 +1264,11 @@ pub(crate) fn decode_entity_headers(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
-        let stream_modules = entry
-            .name
-            .strip_suffix("BulkStream.dat")
-            .map(|prefix| ids::native_scope(&format!("{prefix}MetaStream.dat")))
-            .and_then(|meta_scope| entity_modules.get(&meta_scope));
-        let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
-        for header in &indexed_offsets {
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let meta_scope = entity_meta_scope(ctx, &scope)?;
+        let stream_modules = meta_scope.as_ref()
+            .and_then(|(_, name)| entity_modules.get(name.as_str()));
+        for header in indexed_record_offsets(bytes) {
             let start = header.offset;
             let class_tag = header.class_tag.clone();
             let settled = parse_settled_entity_header(ctx, bytes, start)?;
@@ -1280,7 +1288,8 @@ pub(crate) fn decode_entity_headers(
             let entity_suffix = entity_id.suffix();
             let module = stream_modules
                 .and_then(|modules| modules.get(&entity_suffix))
-                .cloned();
+                .map(|module| copy_entity_module_text(ctx, module))
+                .transpose()?;
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
             let list = if in_sketch_module {
                 decode_reference_list(ctx, bytes, end)?
@@ -1301,8 +1310,9 @@ pub(crate) fn decode_entity_headers(
             } else {
                 Vec::new()
             };
-            out.push(DesignEntityHeader {
-                id: ids::native_design_entity_header_id(&entry.name, start),
+            push_entity_header(ctx, &mut out, DesignEntityHeader {
+                id: design_record_id_charged(ctx, &entry.name, ":design-entity-header#", start as u64,
+                    "f3d entity header ID", "f3d entity header ID allocation")?,
                 byte_offset: start as u64,
 
                 entity_id,
@@ -1314,7 +1324,7 @@ pub(crate) fn decode_entity_headers(
                     crate::records::identity::ReferenceRun::located(members),
                 )
                 .map_err(CodecError::Malformed)?,
-            });
+            })?;
         }
 
         // Legacy Design streams do not carry textual entity headers. Their
@@ -1322,21 +1332,19 @@ pub(crate) fn decode_entity_headers(
         // containers have a consecutive same-index pair with the legacy
         // counted member run. Materialize the same ownership abstraction used
         // by later entity-header forms so downstream binding remains uniform.
-        let candidates = legacy_sketch_candidates
-            .get(&entry.name)
-            .cloned()
-            .unwrap_or_default();
-        if candidates.is_empty() {
+        let candidates = entry.name.strip_suffix("BulkStream.dat")
+            .and_then(|prefix| legacy_sketch_candidates.get(prefix));
+        let Some(candidates) = candidates.filter(|candidates| !candidates.is_empty()) else {
             continue;
-        }
+        };
         let records = IndexedRecordOffsets::build(ctx, bytes)?;
-        let scope = ids::native_scope(&entry.name);
-        let mut existing = out
-            .iter()
-            .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
-            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
-            .collect::<std::collections::HashSet<_>>();
-        for header in &indexed_offsets {
+        let mut existing = std::collections::HashSet::new();
+        for entity in out.iter().filter(|entity| native_stream(&entity.id) == Some(scope.as_str())) {
+            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else { continue; };
+            insert_charged_u32(ctx, &mut existing, index,
+                "f3d existing entity index", "f3d existing entity index allocation")?;
+        }
+        for header in indexed_record_offsets(bytes) {
             let start = header.offset;
             let entity_suffix = header.record_index;
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
@@ -1348,9 +1356,11 @@ pub(crate) fn decode_entity_headers(
             else {
                 continue;
             };
-            existing.insert(entity_suffix);
-            out.push(DesignEntityHeader {
-                id: ids::native_design_entity_header_id(&entry.name, start),
+            insert_charged_u32(ctx, &mut existing, entity_suffix,
+                "f3d existing entity index", "f3d existing entity index allocation")?;
+            push_entity_header(ctx, &mut out, DesignEntityHeader {
+                id: design_record_id_charged(ctx, &entry.name, ":design-entity-header#", start as u64,
+                    "f3d entity header ID", "f3d entity header ID allocation")?,
                 byte_offset: start as u64,
 
                 entity_id: crate::records::identity::DesignEntityId::from_parts(
@@ -1365,11 +1375,93 @@ pub(crate) fn decode_entity_headers(
                     crate::records::identity::ReferenceRun::located(members),
                 )
                 .map_err(CodecError::Malformed)?,
-            });
+            })?;
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn insert_entity_module<'a>(
+    ctx: &DecodeContext<'_>,
+    entity_modules: &mut HashMap<&'a str, HashMap<u64, &'a str>>,
+    stream: &'a str,
+    entity_id: u64,
+    module: &'a str,
+) -> Result<(), CodecError> {
+    if !entity_modules.contains_key(stream) {
+        ctx.charge_collection_items(1, "f3d entity module stream")?;
+        entity_modules.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d entity module stream allocation", 0, 1)
+        })?;
+    }
+    let stream_modules = entity_modules.entry(stream).or_default();
+    if !stream_modules.contains_key(&entity_id) {
+        ctx.charge_collection_items(1, "f3d entity module index")?;
+        stream_modules.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d entity module index allocation", 0, 1)
+        })?;
+        stream_modules.insert(entity_id, module);
+    }
+    Ok(())
+}
+
+fn insert_legacy_candidate<'a>(
+    ctx: &DecodeContext<'_>,
+    streams: &mut HashMap<&'a str, std::collections::HashSet<u32>>,
+    prefix: &'a str,
+    identity: u32,
+) -> Result<(), CodecError> {
+    if !streams.contains_key(prefix) {
+        ctx.charge_collection_items(1, "f3d legacy sketch stream")?;
+        streams.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d legacy sketch stream allocation", 0, 1)
+        })?;
+    }
+    let candidates = streams.entry(prefix).or_default();
+    insert_charged_u32(ctx, candidates, identity,
+        "f3d legacy sketch candidate", "f3d legacy sketch candidate allocation")?;
+    Ok(())
+}
+
+fn insert_charged_u32(
+    ctx: &DecodeContext<'_>,
+    indices: &mut std::collections::HashSet<u32>,
+    index: u32,
+    charge_operation: &'static str,
+    allocation_operation: &'static str,
+) -> Result<(), CodecError> {
+    if !indices.contains(&index) {
+        ctx.charge_collection_items(1, charge_operation)?;
+        indices.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(allocation_operation, 0, 1)
+        })?;
+        indices.insert(index);
+    }
+    Ok(())
+}
+
+fn copy_entity_module_text(ctx: &DecodeContext<'_>, module: &str) -> Result<String, CodecError> {
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(module.len()), "f3d entity module text")?;
+    let mut text = String::new();
+    text.try_reserve_exact(module.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d entity module text allocation", 0, 1)
+    })?;
+    text.push_str(module);
+    Ok(text)
+}
+
+fn push_entity_header(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignEntityHeader>,
+    header: DesignEntityHeader,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d entity header output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d entity header output allocation", 0, 1)
+    })?;
+    out.push(header);
+    Ok(())
 }
 
 /// Decode the indexed dynamic-class record headers ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) that `entities`'
