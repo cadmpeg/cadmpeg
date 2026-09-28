@@ -329,6 +329,7 @@ pub(super) fn try_decode_geometry(
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
     let mut completion_streams = Vec::new();
+    let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
@@ -347,11 +348,8 @@ pub(super) fn try_decode_geometry(
             let unknown_index = unknowns.len();
             reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
             let unknown = unknown_stream_metadata(ctx, si, stream)?;
-            let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-            annotations
-                .note(unknown.id(), &container_stream, stream.file_offset as u64)
-                .tag(stream.kind().label());
-            annotations.exactness(unknown.id(), Exactness::Derived);
+            super::annotations::note(ctx, &mut annotations, unknown.id().as_str(), &container_stream, stream.file_offset as u64, stream.kind().label())?;
+            super::annotations::exactness(ctx, &mut annotations, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -367,6 +365,7 @@ pub(super) fn try_decode_geometry(
             carrier_refusals.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx carrier refusal losses", 0, 1)
             })?;
+            super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(render_retained_text(
                 ctx,
                 format_args!(
@@ -419,9 +418,7 @@ pub(super) fn try_decode_geometry(
             let pid: PointId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pt"), pi)?;
             let vid: VertexId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("v"), pi)?;
             annotate_node(ctx, &mut annotations, pid.as_str(), &source_stream, node, "POINT")?;
-            annotations
-                .derived(&pid, "position")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::derived(ctx, &mut annotations, pid.as_str(), "position")?;
             ctx.charge_collection_items(1, "nx geometry points")?;
             ir.model.points.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx geometry points", 0, 1)
@@ -478,9 +475,7 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             )?;
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
             ctx.charge_collection_items(1, "nx geometry surfaces")?;
             ir.model.surfaces.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx geometry surfaces", 0, 1)
@@ -497,12 +492,8 @@ pub(super) fn try_decode_geometry(
             counts.nurbs_surfaces += 1;
             let id: SurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
-            annotations
-                .note(&id, &source_stream, surf.pos as u64)
-                .tag("B_SPLINE_SURFACE");
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::note(ctx, &mut annotations, id.as_str(), &source_stream, surf.pos as u64, "B_SPLINE_SURFACE")?;
+            super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
             ctx.charge_collection_items(1, "nx geometry surfaces")?;
             ir.model.surfaces.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx geometry surfaces", 0, 1)
@@ -541,12 +532,8 @@ pub(super) fn try_decode_geometry(
                 } else {
                     let surface_id: SurfaceId =
                         scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset-surf"), oi)?;
-                    annotations
-                        .note(&surface_id, &source_stream, offset.pos as u64)
-                        .tag("OFFSET_SURF");
-                    annotations
-                        .derived(&surface_id, "geometry")
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    super::annotations::note(ctx, &mut annotations, surface_id.as_str(), &source_stream, offset.pos as u64, "OFFSET_SURF")?;
+                    super::annotations::derived(ctx, &mut annotations, surface_id.as_str(), "geometry")?;
                     ctx.charge_collection_items(1, "nx offset surfaces")?;
                     ir.model.surfaces.try_reserve(1).map_err(|_| {
                         ctx.refuse_codec_limit("nx offset surfaces", 0, 1)
@@ -582,12 +569,8 @@ pub(super) fn try_decode_geometry(
                     });
                     (surface_id, None)
                 };
-            annotations
-                .note(&procedural_id, &source_stream, offset.pos as u64)
-                .tag("OFFSET_SURF");
-            annotations
-                .derived(&procedural_id, "definition")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::note(ctx, &mut annotations, procedural_id.as_str(), &source_stream, offset.pos as u64, "OFFSET_SURF")?;
+            super::annotations::derived(ctx, &mut annotations, procedural_id.as_str(), "definition")?;
             let admitted_payload =
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     support,
@@ -629,12 +612,8 @@ pub(super) fn try_decode_geometry(
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend-surf"), bi)?;
             let procedural_id: ProceduralSurfaceId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend"), bi)?;
-            annotations
-                .note(&surface_id, &source_stream, blend.pos as u64)
-                .tag("BLEND_SURF");
-            annotations
-                .derived(&surface_id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::note(ctx, &mut annotations, surface_id.as_str(), &source_stream, blend.pos as u64, "BLEND_SURF")?;
+            super::annotations::derived(ctx, &mut annotations, surface_id.as_str(), "geometry")?;
             ctx.charge_collection_items(1, "nx blend surfaces")?;
             ir.model.surfaces.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx blend surfaces", 0, 1)
@@ -666,12 +645,8 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations
-                .note(&procedural_id, &source_stream, blend.pos as u64)
-                .tag("BLEND_SURF");
-            annotations
-                .derived(&procedural_id, "definition")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::note(ctx, &mut annotations, procedural_id.as_str(), &source_stream, blend.pos as u64, "BLEND_SURF")?;
+            super::annotations::derived(ctx, &mut annotations, procedural_id.as_str(), "definition")?;
             let procedural_index = ir.model.procedural_surfaces.len();
             ctx.charge_collection_items(1, "nx blend constructions")?;
             ir.model.procedural_surfaces.try_reserve(1).map_err(|_| {
@@ -778,49 +753,48 @@ pub(super) fn try_decode_geometry(
                     )
                 })?),
             )?;
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
+            ctx.charge_collection_items(1, "nx geometry curves")?;
+            ir.model.curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx geometry curves", 0, 1))?;
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: copy_typed_id(ctx, id.as_str(), "nx geometry curve identity")?,
                 geometry,
                 source_object: None,
             });
+            ctx.charge_collection_items(1, "nx curve node index")?;
             curves_by_xmt.insert(node.xmt, id);
         }
         for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
-            let id: CurveId = scope.id(&cadmpeg_ir::identity_component!("nurbs-crv"), ci);
-            annotations
-                .note(&id, &source_stream, crv.pos as u64)
-                .tag("B_SPLINE_CURVE");
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id: CurveId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-crv"), ci)?;
+            super::annotations::note(ctx, &mut annotations, id.as_str(), &source_stream, crv.pos as u64, "B_SPLINE_CURVE")?;
+            super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
+            ctx.charge_collection_items(1, "nx NURBS curves")?;
+            ir.model.curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx NURBS curves", 0, 1))?;
             ir.model.curves.push(Curve {
-                id: id.clone(),
+                id: copy_typed_id(ctx, id.as_str(), "nx NURBS curve identity")?,
                 geometry: crv.geometry,
                 source_object: None,
             });
             if let Some(node) = graph.at_pos(crv.pos) {
+                ctx.charge_collection_items(1, "nx curve node index")?;
                 curves_by_xmt.insert(node.xmt, id);
             }
         }
 
         for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
-            let id: PcurveId = scope.id(&cadmpeg_ir::identity_component!("pcurve"), pi);
-            annotations
-                .note(&id, &source_stream, pcurve.pos as u64)
-                .tag("B_CURVE_2D");
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            let id: PcurveId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pcurve"), pi)?;
+            super::annotations::note(ctx, &mut annotations, id.as_str(), &source_stream, pcurve.pos as u64, "B_CURVE_2D")?;
+            super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
+            ctx.charge_collection_items(1, "nx NURBS pcurves")?;
+            ir.model.pcurves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx NURBS pcurves", 0, 1))?;
             ir.model.pcurves.push(Pcurve {
-                id: id.clone(),
+                id: copy_typed_id(ctx, id.as_str(), "nx NURBS pcurve identity")?,
                 geometry: pcurve.geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
             });
             if let Some(node) = graph.at_pos(pcurve.pos) {
+                ctx.charge_collection_items(1, "nx pcurve node index")?;
                 pcurves_by_xmt.insert(node.xmt, id);
             }
         }
@@ -962,15 +936,11 @@ pub(super) fn try_decode_geometry(
                     },
                 ));
             }
-            annotations
-                .note(&curve_id, &source_stream, construction.pos as u64)
-                .tag("INTERSECTION");
+            super::annotations::note(ctx, &mut annotations, curve_id.as_str(), &source_stream, construction.pos as u64, "INTERSECTION")?;
             if charted.is_some() || uncharted.is_some() {
-                annotations
-                    .derived(&curve_id, "geometry")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                super::annotations::derived(ctx, &mut annotations, curve_id.as_str(), "geometry")?;
             } else {
-                annotations.exactness(&curve_id, Exactness::Unknown);
+                super::annotations::exactness(ctx, &mut annotations, curve_id.as_str(), Exactness::Unknown)?;
             }
             ctx.charge_collection_items(1, "nx intersection curves")?;
             ir.model.curves.try_reserve(1).map_err(|_| {
@@ -1024,15 +994,11 @@ pub(super) fn try_decode_geometry(
                     instance_path: Vec::new(),
                 }),
             });
-            annotations
-                .note(&procedural_id, &source_stream, construction.pos as u64)
-                .tag("INTERSECTION");
+            super::annotations::note(ctx, &mut annotations, procedural_id.as_str(), &source_stream, construction.pos as u64, "INTERSECTION")?;
             if charted.is_some() || uncharted.is_some() {
-                annotations
-                    .derived(&procedural_id, "definition")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                super::annotations::derived(ctx, &mut annotations, procedural_id.as_str(), "definition")?;
             } else {
-                annotations.exactness(&procedural_id, Exactness::Unknown);
+                super::annotations::exactness(ctx, &mut annotations, procedural_id.as_str(), Exactness::Unknown)?;
             }
             let definition = if let Some(charted) = charted {
                 let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt) {
@@ -1390,11 +1356,8 @@ pub(super) fn try_decode_geometry(
         for curve in &ir.model.curves[first_curve..] {
             push_unknown_link(ctx, &mut unknown, curve.id.as_str())?;
         }
-        let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-        annotations
-            .note(unknown.id(), &container_stream, stream.file_offset as u64)
-            .tag(stream.kind().label());
-        annotations.exactness(unknown.id(), Exactness::Derived);
+        super::annotations::note(ctx, &mut annotations, unknown.id().as_str(), &container_stream, stream.file_offset as u64, stream.kind().label())?;
+        super::annotations::exactness(ctx, &mut annotations, unknown.id().as_str(), Exactness::Derived)?;
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -1800,9 +1763,7 @@ fn retain_live_unknown_links(
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
-            annotations
-                .derived(unknown.id(), "links")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            super::annotations::derived(ctx, annotations, unknown.id().as_str(), "links")?;
         }
     }
     Ok(())
@@ -2324,16 +2285,8 @@ fn finalize_point_topology(
         derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-shell"), 0)?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
-        ctx.charge_collection_items(2, "nx point topology annotations")?;
-        let text_bytes = cadmpeg_core::decode::u64_from_index(id.len());
-        let both_text_bytes = text_bytes.checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx point topology annotation identity", 0, text_bytes)
-        })?;
-        ctx.charge_retained(both_text_bytes, "nx point topology annotation identity")?;
-        annotations
-            .note(id, &stream, 0)
-            .tag("derived_point_topology");
-        annotations.exactness(id, Exactness::Inferred);
+        super::annotations::note(ctx, annotations, id, &stream, 0, "derived_point_topology")?;
+        super::annotations::exactness(ctx, annotations, id, Exactness::Inferred)?;
     }
 
     let point_count = ir.model.points.len();
@@ -2363,16 +2316,8 @@ fn finalize_point_topology(
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;
-        ctx.charge_collection_items(2, "nx point topology annotations")?;
-        let text_bytes = cadmpeg_core::decode::u64_from_index(vertex_id.as_str().len());
-        let both_text_bytes = text_bytes.checked_mul(2).ok_or_else(|| {
-            ctx.refuse_codec_limit("nx point topology annotation identity", 0, text_bytes)
-        })?;
-        ctx.charge_retained(both_text_bytes, "nx point topology annotation identity")?;
-        annotations
-            .note(&vertex_id, &stream, 0)
-            .tag("derived_point_topology");
-        annotations.exactness(&vertex_id, Exactness::Inferred);
+        super::annotations::note(ctx, annotations, vertex_id.as_str(), &stream, 0, "derived_point_topology")?;
+        super::annotations::exactness(ctx, annotations, vertex_id.as_str(), Exactness::Inferred)?;
         ir.model.vertices.push(Vertex {
             id: copy_typed_id(ctx, vertex_id.as_str(), "nx point vertex identity copy")?,
             point: copy_typed_id(ctx, point.id.as_str(), "nx point reference identity")?,
