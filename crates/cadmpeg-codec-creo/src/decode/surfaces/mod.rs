@@ -82,8 +82,30 @@ fn native_surface_namespace(
 }
 
 /// Construct the selected surface identity for a native topology identifier.
-pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> SurfaceId {
-    SurfaceId::compose(&native_surface_namespace(scan, surface_id).0, surface_id)
+pub(super) fn native_surface_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    surface_id: u32,
+) -> Result<SurfaceId, cadmpeg_core::CodecError> {
+    crate::identity::compose_checked(
+        ctx,
+        &native_surface_namespace(scan, surface_id).0,
+        surface_id,
+        "creo native surface identity",
+    )
+}
+
+/// Compare a selected native surface identity without constructing one.
+pub(super) fn matches_native_surface_id(
+    scan: &ContainerScan,
+    surface_id: u32,
+    candidate: &SurfaceId,
+) -> bool {
+    crate::identity::matches_numbered_identity(
+        candidate.as_str(),
+        native_surface_namespace(scan, surface_id).1,
+        surface_id,
+    )
 }
 
 /// Return a native surface row only when its compact identifier is unique
@@ -104,7 +126,7 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{native_surface_id, native_surface_namespace, transfer_part_product};
+    use super::{matches_native_surface_id, native_surface_id, native_surface_namespace, transfer_part_product};
     use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -204,14 +226,14 @@ mod tests {
             offset: 0,
         });
 
-        assert_eq!(
-            native_surface_id(&scan, 17).as_str(),
-            "creo:novisgeom:surface#17"
-        );
+        let native = crate::decode::with_test_decode_ctx(|ctx| native_surface_id(ctx, &scan, 17))
+            .expect("service native surface identity admitted");
+        assert_eq!(native.as_str(), "creo:novisgeom:surface#17");
         let prefix = native_surface_namespace(&scan, 17).1;
         assert!(crate::identity::matches_numbered_identity(
-            native_surface_id(&scan, 17).as_str(), prefix, 17,
+            native.as_str(), prefix, 17,
         ));
+        assert!(matches_native_surface_id(&scan, 17, &native));
         let visible = cadmpeg_ir::ids::SurfaceId::compose(
             &crate::identity::VISIBGEOM_SURFACE,
             17,
@@ -219,6 +241,23 @@ mod tests {
         assert!(!crate::identity::matches_numbered_identity(
             visible.as_str(), prefix, 17,
         ));
+        assert!(!matches_native_surface_id(&scan, 17, &visible));
+    }
+
+    #[test]
+    fn native_surface_id_refuses_retained_limit() {
+        let scan = named_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = native_surface_id(&ctx, &scan, 17)
+            .err()
+            .expect("surface ID refused");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native surface identity"));
     }
 }
 

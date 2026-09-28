@@ -109,7 +109,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let mut transferred = 0;
     for datum in &scan.planes.datum_cylinders {
-        let id = super::native_surface_id(scan, datum.id);
+        let id = super::native_surface_id(ctx, scan, datum.id)?;
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }

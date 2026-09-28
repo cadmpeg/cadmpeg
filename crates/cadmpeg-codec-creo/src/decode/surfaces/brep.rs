@@ -48,7 +48,7 @@ use crate::decode::analytic::vertices::{
     solve_topological_vertices, TopologicalVertexSolveDiagnostics,
 };
 
-use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id, native_surface_namespace};
+use super::{fc05_cap_pair_model_frame, fc05_model_frame, matches_native_surface_id, native_surface_id, native_surface_namespace};
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
@@ -1935,12 +1935,11 @@ pub(in super::super) fn transfer_native_brep(
         }
         let mut two_edge_loops_are_proven = true;
         for lp in loops.iter().filter(|lp| lp.half_edges.len() == 2) {
-            let surface_id = native_surface_id(scan, face_id);
             let Some(surface) = exactly_one(
                 ir.model
                     .surfaces
                     .iter()
-                    .filter(|candidate| candidate.id == surface_id),
+                    .filter(|candidate| matches_native_surface_id(scan, face_id, &candidate.id)),
             ) else {
                 two_edge_loops_are_proven = false;
                 break;
@@ -1975,12 +1974,11 @@ pub(in super::super) fn transfer_native_brep(
         let ordered = if ordered.is_some() {
             ordered
         } else {
-            let surface_id = native_surface_id(scan, face_id);
             let surface = exactly_one(
                 ir.model
                     .surfaces
                     .iter()
-                    .filter(|candidate| candidate.id == surface_id),
+                    .filter(|candidate| matches_native_surface_id(scan, face_id, &candidate.id)),
             );
             if let Some(surface) = surface {
                 ordered_native_parameter_face_loops(
@@ -2413,7 +2411,7 @@ pub(in super::super) fn transfer_native_brep(
             } else {
                 "VisibGeom"
             };
-            let surface = native_surface_id(scan, *face_id);
+            let surface = native_surface_id(ctx, scan, *face_id)?;
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
                 annotate(
                     annotations,
@@ -2555,12 +2553,11 @@ pub(in super::super) fn transfer_native_brep(
                                 solved_vertices[&incidence.start_vertex_id],
                                 solved_vertices[&end],
                             ];
-                            let surface_id = native_surface_id(scan, *face_id);
                             let surface = exactly_one(
                                 ir.model
                                     .surfaces
                                     .iter()
-                                    .filter(|candidate| candidate.id == surface_id),
+                                    .filter(|candidate| matches_native_surface_id(scan, *face_id, &candidate.id)),
                             )?;
                             unique_oriented_native_pcurve(
                                 source_carriers.surface_geometry(surface),
@@ -2578,12 +2575,11 @@ pub(in super::super) fn transfer_native_brep(
                         })
                         .or_else(|| {
                             native_candidates.is_none().then_some(())?;
-                            let surface_id = native_surface_id(scan, *face_id);
                             let surface = exactly_one(
                                 ir.model
                                     .surfaces
                                     .iter()
-                                    .filter(|candidate| candidate.id == surface_id),
+                                    .filter(|candidate| matches_native_surface_id(scan, *face_id, &candidate.id)),
                             )?;
                             let curve_id = CurveId::compose(
                                 &crate::identity::VISIBGEOM_CURVE,
@@ -2697,7 +2693,7 @@ pub(in super::super) fn transfer_native_brep(
                                         geometry,
                                         metadata,
                                     },
-                                    &native_surface_id(scan, *face_id),
+                                    &native_surface_id(ctx, scan, *face_id)?,
                                 )?;
                             }
                             Ok(Some(PcurveUse {
