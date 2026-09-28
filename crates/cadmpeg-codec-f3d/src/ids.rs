@@ -949,11 +949,6 @@ native_record_id!(
     "design-record-header"
 );
 native_record_id!(
-    /// The native sketch-relation record key.
-    native_sketch_relation_id,
-    "sketch-relation"
-);
-native_record_id!(
     /// The native sketch-text record key.
     native_sketch_text_id,
     "sketch-text"

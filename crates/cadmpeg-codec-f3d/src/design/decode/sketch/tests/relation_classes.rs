@@ -1,11 +1,97 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::sketch::{
-    decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
+    admit_sketch_relation, decode_pattern_definition, parse_classed_sketch_relation, relation_mask_width,
     SketchRelationClass, SketchRelationMaskWidth,
 };
 use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
 use crate::test_support::push_reference_u64;
+
+#[test]
+fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::sketch_relations::SketchRelationDefinition;
+
+    let record = relation_record(&[(300, 0)], &[], 201, 1, &[300]);
+    let header = DesignRecordHeader {
+        id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
+        record_index: 7,
+        class_tag: crate::records::references::DesignClassTag::try_from("298".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    for (collection_limit, retained_limit, auxiliary, dimension, operation) in [
+        (Some(0), None, false, ResourceDimension::CollectionItems, "f3d sketch relation output"),
+        (Some(1), None, true, ResourceDimension::CollectionItems, "f3d sketch relation auxiliary output"),
+        (
+            None,
+            Some(crate::ids::native_scope("BulkStream.dat").len() as u64),
+            false,
+            ResourceDimension::RetainedBytes,
+            "f3d sketch relation ID",
+        ),
+        (
+            None,
+            Some(format!("{}:sketch-relation#7", crate::ids::native_scope("BulkStream.dat")).len() as u64),
+            false,
+            ResourceDimension::RetainedBytes,
+            "f3d sketch relation raw bytes",
+        ),
+    ] {
+        let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+            .expect("plain relation parse");
+        if auxiliary {
+            parsed.auxiliary_references.push(crate::records::identity::Located {
+                value: 301,
+                offset: 0,
+            });
+        }
+        let definition = SketchRelationDefinition::new(parsed.state, None)
+            .expect("plain relation definition");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if let Some(limit) = collection_limit {
+            policy.limits.max_collection_items = limit;
+        }
+        if let Some(limit) = retained_limit {
+            policy.limits.max_retained_bytes = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = admit_sketch_relation(
+            &ctx,
+            &mut Vec::new(),
+            "BulkStream.dat",
+            &header,
+            &record,
+            parsed,
+            definition,
+        )
+        .expect_err("resource limit must refuse relation assembly");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == dimension && failure.operation == operation));
+    }
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain)
+        .expect("plain relation parse");
+    let definition = SketchRelationDefinition::new(parsed.state, None)
+        .expect("plain relation definition");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut admitted = Vec::new();
+    admit_sketch_relation(
+        &ctx,
+        &mut admitted,
+        "BulkStream.dat",
+        &header,
+        &record,
+        parsed,
+        definition,
+    )
+    .expect("relation admission");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].id, format!("{}:sketch-relation#7", crate::ids::native_scope("BulkStream.dat")));
+    assert_eq!(admitted[0].raw_bytes(), record);
+}
 
 fn tested_parse_classed_sketch_relation(
     payload: &[u8],
