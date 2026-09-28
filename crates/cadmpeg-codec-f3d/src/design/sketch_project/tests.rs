@@ -1414,6 +1414,53 @@ fn spline_segment_index_refuses_collection_limit() {
 }
 
 #[test]
+fn spatial_spline_member_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let members = [
+        SketchRelationReturnMember::from_index(10),
+        SketchRelationReturnMember::from_index(11),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::distinct_return_member_indices(Some(&ctx), &members),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial spline member index"
+    ));
+    assert!(super::distinct_return_member_indices(None, &members).unwrap());
+    let duplicates = [
+        SketchRelationReturnMember::from_index(10),
+        SketchRelationReturnMember::from_index(10),
+    ];
+    assert!(!super::distinct_return_member_indices(None, &duplicates).unwrap());
+}
+
+#[test]
+fn spatial_spline_segment_candidate_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut segments = Vec::new();
+    let candidate = (10, [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
+    assert!(matches!(
+        super::push_project_item(
+            Some(&ctx), &mut segments, candidate, "f3d spatial spline segment candidates",
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d spatial spline segment candidates"
+    ));
+    assert!(segments.is_empty());
+}
+
+#[test]
 fn spatial_constraint_indices_refuse_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
