@@ -774,7 +774,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_choice",
         Exactness::ByteExact,
     )?;
-    let feature_choice_fields = feature_choice_field_records(scan);
+    let feature_choice_fields = feature_choice_field_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,

@@ -732,13 +732,13 @@ pub(super) struct CreoFeatureSurfaceReplayAssociation {
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum CreoFeatureFieldValue {
+pub(super) enum CreoFeatureFieldValue<'a> {
     Empty,
     CompactInt {
         value: u32,
     },
     CompactIntArray {
-        values: Vec<u32>,
+        values: &'a [u32],
     },
     EntityReference {
         entity_id: u32,
@@ -747,11 +747,11 @@ pub(super) enum CreoFeatureFieldValue {
     ScalarArray {
         dimensions: u32,
         count: u32,
-        body: Vec<u8>,
-        decoded_values: Option<Vec<f64>>,
+        body: &'a [u8],
+        decoded_values: Option<&'a [f64]>,
     },
     Raw {
-        bytes: Vec<u8>,
+        bytes: &'a [u8],
     },
 }
 
