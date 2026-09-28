@@ -28,6 +28,7 @@ mod radius_allocation;
 mod transition_recipe_allocation;
 mod partial_historical_allocation;
 mod context_only_allocation;
+mod boundary_candidate_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -1546,14 +1547,14 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
             first.as_slice(),
             context.as_slice(),
             last.as_slice(),
-        ]),
+        ], None).unwrap(),
         Some(vec![17, 18, 19])
     );
     assert_eq!(
         crate::design::edge_resolve::changed_boundary_count_edge_group_candidates([
             first.as_slice(),
             last.as_slice(),
-        ]),
+        ], None).unwrap(),
         None
     );
     assert_eq!(
@@ -1561,7 +1562,7 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
             first.as_slice(),
             context.as_slice(),
             &[],
-        ]),
+        ], None).unwrap(),
         None
     );
     assert_eq!(
@@ -1569,7 +1570,7 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
             (true, &[19, 17, 18, 17][..]),
             (true, &[18, 19, 17][..]),
             (true, &[17, 18, 19][..]),
-        ],),
+        ], None).unwrap(),
         Some(vec![17, 18, 19])
     );
     assert_eq!(
@@ -1577,14 +1578,14 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
             (true, &[17, 18, 19][..]),
             (true, &[17, 18][..]),
             (true, &[17, 18, 19][..]),
-        ],),
+        ], None).unwrap(),
         None
     );
     assert_eq!(
         crate::design::edge_resolve::common_deleted_edge_group_candidates([
             (true, &[17, 18, 19][..]),
             (true, &[17, 18, 19][..]),
-        ]),
+        ], None).unwrap(),
         None
     );
     assert_eq!(
@@ -1592,14 +1593,14 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
             (true, &[17, 18][..]),
             (false, &[][..]),
             (true, &[18, 17][..]),
-        ]),
+        ], None).unwrap(),
         Some(vec![17, 18])
     );
     assert_eq!(
         crate::design::edge_resolve::common_deleted_edge_group_candidates(std::iter::empty::<(
             bool,
             &[i64]
-        )>()),
+        )>(), None).unwrap(),
         None
     );
     let deleted = vec![17, 18, 19, 20];
@@ -1667,20 +1668,20 @@ fn deleted_boundary_group_requires_complete_contextual_group_cardinality() {
     let third = operand(12, &[19, 20]);
     let fourth = operand(13, &[19, 20]);
     assert_eq!(
-        deleted_boundary_edge_group_candidates(&[&first, &second, &third, &fourth]),
+        deleted_boundary_edge_group_candidates(&[&first, &second, &third, &fourth], None).unwrap(),
         Some(vec![17, 18, 19, 20])
     );
 
     let too_many_edges = operand(11, &[17, 18, 19]);
     assert_eq!(
-        deleted_boundary_edge_group_candidates(&[&first, &too_many_edges]),
+        deleted_boundary_edge_group_candidates(&[&first, &too_many_edges], None).unwrap(),
         None
     );
 
     let mut unreferenced = operand(12, &[19, 20]);
     unreferenced.recipe_reference_contexts = vec![context(&[21])];
     assert_eq!(
-        deleted_boundary_edge_group_candidates(&[&first, &second, &unreferenced, &fourth]),
+        deleted_boundary_edge_group_candidates(&[&first, &second, &unreferenced, &fourth], None).unwrap(),
         None
     );
 }
@@ -1768,20 +1769,20 @@ fn result_boundary_reference_group_requires_one_persistent_contextual_edge() {
     operand.preceding_boundary_edge_slots = vec![17, 18];
     operand.result_boundary_edge_slots = vec![19, 20];
     assert_eq!(
-        result_boundary_reference_edge_group_candidates(&[&operand]),
+        result_boundary_reference_edge_group_candidates(&[&operand], None).unwrap(),
         Some(vec![19])
     );
 
     operand.recipe_reference_contexts[1] = context(&[20]);
     assert_eq!(
-        result_boundary_reference_edge_group_candidates(&[&operand]),
+        result_boundary_reference_edge_group_candidates(&[&operand], None).unwrap(),
         None
     );
 
     operand.recipe_reference_contexts[1] = context(&[19]);
     operand.preceding_boundary_edge_slots.push(19);
     assert_eq!(
-        result_boundary_reference_edge_group_candidates(&[&operand]),
+        result_boundary_reference_edge_group_candidates(&[&operand], None).unwrap(),
         None
     );
 }

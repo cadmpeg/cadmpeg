@@ -1017,7 +1017,8 @@ fn resolved_edge_group_with_transition_chain(
                     matched_operands
                         .iter()
                         .map(|operand| operand.recipe_selectors.as_slice()),
-                );
+                    ctx,
+                )?;
         }
         if slots.is_none() {
             slots = deleted_reference_edge_group_candidates(&matched_operands, ctx)?;
@@ -1028,16 +1029,16 @@ fn resolved_edge_group_with_transition_chain(
                     !operand.changed_boundary_edge_slots.is_empty(),
                     operand.deleted_boundary_edge_slots.as_slice(),
                 )
-            }));
+            }), ctx)?;
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
             slots = contextual_deleted_edge_group_candidates(&matched_operands, ctx)?;
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
-            slots = result_boundary_reference_edge_group_candidates(&matched_operands);
+            slots = result_boundary_reference_edge_group_candidates(&matched_operands, ctx)?;
         }
         if slots.is_none() && allow_edge_treatment_transition_chain {
-            slots = deleted_boundary_edge_group_candidates(&matched_operands);
+            slots = deleted_boundary_edge_group_candidates(&matched_operands, ctx)?;
         }
         if slots.is_none() {
             slots = scope_partition_edge_group_candidates(group, groups, operands, members, ctx)?;
@@ -1928,31 +1929,33 @@ fn partition_unique_incomplete_edge_group(
 
 fn common_deleted_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (bool, &'a [i64])>,
-) -> Option<Vec<i64>> {
-    let candidate_sets = members
-        .into_iter()
-        .filter_map(|(edge_bearing, candidates)| edge_bearing.then_some(candidates))
-        .collect::<Vec<_>>();
-    let member_count = candidate_sets.len();
-    if member_count == 0 {
-        return None;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut candidate_sets = members.into_iter()
+        .filter_map(|(edge_bearing, candidates)| edge_bearing.then_some(candidates));
+    let Some(first) = candidate_sets.next() else { return Ok(None); };
+    let mut member_count = 1;
+    let mut candidates = Vec::new();
+    for candidate in first {
+        push_edge_item(ctx, &mut candidates, *candidate,
+            "f3d common deleted candidate")?;
     }
-    let mut candidate_sets = candidate_sets.into_iter();
-    let mut candidates = candidate_sets.next()?.to_vec();
     candidates.sort_unstable();
     candidates.dedup();
-    if candidates.len() != member_count {
-        return None;
-    }
     for candidate_set in candidate_sets {
-        let mut normalized = candidate_set.to_vec();
+        member_count += 1;
+        let mut normalized = Vec::new();
+        for candidate in candidate_set {
+            push_edge_item(ctx, &mut normalized, *candidate,
+                "f3d common deleted normalized edge")?;
+        }
         normalized.sort_unstable();
         normalized.dedup();
         if normalized != candidates {
-            return None;
+            return Ok(None);
         }
     }
-    Some(candidates)
+    Ok((candidates.len() == member_count).then_some(candidates))
 }
 
 /// Resolve a treatment group whose recipe members expose the complete deleted
@@ -1965,9 +1968,12 @@ fn common_deleted_edge_group_candidates<'a>(
 /// requirement excludes topology deletions that are visible only in the
 /// feature transition; the cardinality requirement excludes a member recipe
 /// that represents an edge chain rather than one selected edge.
-fn deleted_boundary_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Option<Vec<i64>> {
+fn deleted_boundary_edge_group_candidates(
+    operands: &[&DesignEdgeOperand],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     if operands.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut deleted = Vec::new();
     let mut contextual = Vec::new();
@@ -1982,29 +1988,31 @@ fn deleted_boundary_edge_group_candidates(operands: &[&DesignEdgeOperand]) -> Op
                     || !operand.changed_boundary_edge_slots.contains(edge)
             })
         {
-            return None;
+            return Ok(None);
         }
-        let member_contextual = operand
-            .recipe_reference_contexts
-            .iter()
+        let mut member_contextual = false;
+        for edge in operand.recipe_reference_contexts.iter()
             .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
-            .filter(|edge| operand.deleted_boundary_edge_slots.contains(edge))
-            .collect::<Vec<_>>();
-        if member_contextual.is_empty() {
-            return None;
+            .filter(|edge| operand.deleted_boundary_edge_slots.contains(edge)) {
+            member_contextual = true;
+            push_edge_item(ctx, &mut contextual, edge,
+                "f3d deleted boundary contextual edge")?;
         }
-        deleted.extend(operand.deleted_boundary_edge_slots.iter().copied());
-        contextual.extend(member_contextual);
+        if !member_contextual { return Ok(None); }
+        for edge in &operand.deleted_boundary_edge_slots {
+            push_edge_item(ctx, &mut deleted, *edge,
+                "f3d deleted boundary edge")?;
+        }
     }
     deleted.sort_unstable();
     deleted.dedup();
     contextual.sort_unstable();
     contextual.dedup();
-    (deleted.len() == operands.len()
+    Ok((deleted.len() == operands.len()
         && deleted
             .iter()
             .all(|edge| contextual.binary_search(edge).is_ok()))
-    .then_some(deleted)
+    .then_some(deleted))
 }
 
 /// Resolve a treatment group when the deleted predecessor-edge set is complete
@@ -2082,11 +2090,12 @@ fn contextual_deleted_edge_group_candidates(
 /// ambiguous reference sets native.
 fn result_boundary_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     let [operand] = operands else {
-        return None;
+        return Ok(None);
     };
-    let structure = operand.recipe_structure.as_ref()?;
+    let Some(structure) = operand.recipe_structure.as_ref() else { return Ok(None); };
     if structure.root != 2
         || structure.sides.len() != 2
         || structure.sides.iter().any(|side| {
@@ -2098,18 +2107,19 @@ fn result_boundary_reference_edge_group_candidates(
         || !operand.changed_boundary_edge_slots.is_empty()
         || !operand.deleted_boundary_edge_slots.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = operand
-        .recipe_reference_contexts
-        .iter()
+    let mut candidates = Vec::new();
+    for edge in operand.recipe_reference_contexts.iter()
         .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
-        .filter(|edge| operand.result_boundary_edge_slots.contains(edge))
-        .collect::<Vec<_>>();
+        .filter(|edge| operand.result_boundary_edge_slots.contains(edge)) {
+        push_edge_item(ctx, &mut candidates, edge,
+            "f3d result boundary candidate")?;
+    }
     candidates.sort_unstable();
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
     if operand.preceding_boundary_edge_slots.contains(candidate)
         || operand
@@ -2119,28 +2129,31 @@ fn result_boundary_reference_edge_group_candidates(
             .count()
             < 2
     {
-        return None;
+        return Ok(None);
     }
-    Some(vec![*candidate])
+    Ok(Some(vec![*candidate]))
 }
 
 fn changed_boundary_count_edge_group_candidates<'a>(
     members: impl IntoIterator<
         Item = &'a [crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     >,
-) -> Option<Vec<i64>> {
-    let members = members.into_iter().collect::<Vec<_>>();
-    if members.is_empty() || members.iter().any(|selectors| selectors.is_empty()) {
-        return None;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut member_count = 0;
+    let mut candidates = Vec::new();
+    for selectors in members {
+        if selectors.is_empty() { return Ok(None); }
+        member_count += 1;
+        for edge in selectors.iter()
+            .flat_map(|selector| selector.boundary_count_matching_edge_slots.iter().copied()) {
+            push_edge_item(ctx, &mut candidates, edge,
+                "f3d boundary-count candidate")?;
+        }
     }
-    let mut candidates = members
-        .iter()
-        .flat_map(|selectors| selectors.iter())
-        .flat_map(|selector| selector.boundary_count_matching_edge_slots.iter().copied())
-        .collect::<Vec<_>>();
     candidates.sort_unstable();
     candidates.dedup();
-    (candidates.len() == members.len()).then_some(candidates)
+    Ok((member_count > 0 && candidates.len() == member_count).then_some(candidates))
 }
 
 pub(super) fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
