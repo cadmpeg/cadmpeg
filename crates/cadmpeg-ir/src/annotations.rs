@@ -455,6 +455,85 @@ impl Annotations {
         Ok(())
     }
 
+    /// Remap both tables while charging temporary indices and retained keys.
+    /// A collision leaves both tables unchanged.
+    pub fn map_ids_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for id in self.provenance.keys().chain(self.exactness.keys()) {
+            if !ids.contains(id) {
+                ctx.charge_collection_items(1, "index annotation identities")?;
+                ids.insert(id);
+            }
+        }
+        let mut targets = std::collections::BTreeSet::new();
+        let mut remapping = Vec::new();
+        ctx.reserve_collection_vec(&mut remapping, ids.len(), "collect annotation identity remapping")?;
+        let mut scoped_reservations = Vec::new();
+        for id in ids {
+            ctx.charge_work(1, "remap annotation identities")?;
+            let target = map(id)?;
+            if targets.contains(&target) {
+                return Err(AnnotationIdentityCollision { id: target }.into());
+            }
+            let (mut target_check, target_reservation) =
+                ctx.reserve_scoped_string(target.len(), "index qualified annotation targets")?;
+            target_check.push_str(&target);
+            ctx.charge_collection_items(1, "index qualified annotation targets")?;
+            targets.insert(target_check);
+            ctx.reserve_collection_vec(
+                &mut scoped_reservations,
+                1,
+                "retain annotation remap reservations",
+            )?;
+            scoped_reservations.push(target_reservation);
+            let (mut source, source_reservation) =
+                ctx.reserve_scoped_string(id.len(), "copy source annotation identity")?;
+            source.push_str(id);
+            ctx.reserve_collection_vec(
+                &mut scoped_reservations,
+                1,
+                "retain annotation remap reservations",
+            )?;
+            scoped_reservations.push(source_reservation);
+            remapping.push((source, target));
+        }
+        let mut remapped = Self::default();
+        for (id, target) in remapping {
+            let provenance = self.provenance.remove(&id);
+            let exactness = self.exactness.remove(&id);
+            match (provenance, exactness) {
+                (Some(provenance), Some(exactness)) => {
+                    let mut provenance_key = String::new();
+                    ctx.reserve_retained_string(
+                        &mut provenance_key,
+                        target.len(),
+                        "copy qualified provenance identity",
+                    )?;
+                    provenance_key.push_str(&target);
+                    ctx.charge_collection_items(1, "store qualified provenance")?;
+                    remapped.provenance.insert(provenance_key, provenance);
+                    ctx.charge_collection_items(1, "store qualified exactness")?;
+                    remapped.exactness.insert(target, exactness);
+                }
+                (Some(provenance), None) => {
+                    ctx.charge_collection_items(1, "store qualified provenance")?;
+                    remapped.provenance.insert(target, provenance);
+                }
+                (None, Some(exactness)) => {
+                    ctx.charge_collection_items(1, "store qualified exactness")?;
+                    remapped.exactness.insert(target, exactness);
+                }
+                (None, None) => {}
+            }
+        }
+        *self = remapped;
+        Ok(())
+    }
+
     /// Sparse non-byte-exact annotations keyed by entity identity.
     pub fn exactness(&self) -> &BTreeMap<String, ExactnessNote> {
         &self.exactness

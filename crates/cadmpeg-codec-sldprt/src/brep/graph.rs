@@ -163,203 +163,207 @@ impl Brep {
     }
 
     /// Qualify every document-arena identity and internal reference by one site key.
-    pub(crate) fn qualify_ids(&mut self, site: &str) -> Result<(), cadmpeg_core::CodecError> {
+    pub(crate) fn qualify_ids(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        site: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         // The site qualifier is admitted once, here, as a key tail. Appending
         // an admitted tail to an admitted key cannot leave the grammar, so no
         // identity below is rebuilt from text.
+        let tail_len = site.len().checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("qualify SLDPRT site", u64::MAX - 1, u64::MAX)
+        })?;
+        let (mut tail_text, _tail_reservation) =
+            ctx.reserve_scoped_string(tail_len, "qualify SLDPRT site")?;
+        tail_text.push('@');
+        tail_text.push_str(site);
         let tail =
-            cadmpeg_ir::ids::IdentityKeyTail::try_new(format!("@{site}")).map_err(|error| {
+            cadmpeg_ir::ids::IdentityKeyTail::try_new(tail_text).map_err(|error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT site qualifier is not identity key text: {error}"
                 ))
             })?;
-        let qualify = |value: &str| {
-            value.split_once('#').map_or_else(
-                || value.to_owned(),
-                |(namespace, key)| format!("{namespace}#{key}@{site}"),
-            )
-        };
+        let qualify = |value: &str| qualified_reference(ctx, value, site);
         for body in &mut self.bodies {
-            body.id = qualified(&body.id, &tail);
-            body.regions
-                .iter_mut()
-                .for_each(|id| *id = qualified(id, &tail));
+            body.id = qualified(ctx, &body.id, &tail)?;
+            for id in &mut body.regions {
+                *id = qualified(ctx, id, &tail)?;
+            }
         }
         for region in &mut self.regions {
-            region.id = qualified(&region.id, &tail);
-            region.body = qualified(&region.body, &tail);
-            region
-                .shells
-                .iter_mut()
-                .for_each(|id| *id = qualified(id, &tail));
+            region.id = qualified(ctx, &region.id, &tail)?;
+            region.body = qualified(ctx, &region.body, &tail)?;
+            for id in &mut region.shells {
+                *id = qualified(ctx, id, &tail)?;
+            }
         }
         for shell in &mut self.shells {
-            shell.id = qualified(&shell.id, &tail);
-            shell.region = qualified(&shell.region, &tail);
-            shell
-                .edit_topology(|faces, wire_edges, free_vertices| {
-                    for id in faces {
-                        *id = qualified(id, &tail);
-                    }
-                    for id in wire_edges {
-                        *id = qualified(id, &tail);
-                    }
-                    for id in free_vertices {
-                        *id = qualified(id, &tail);
-                    }
-                })
-                .map_err(|error| {
+            let id = qualified(ctx, &shell.id, &tail)?;
+            let region = qualified(ctx, &shell.region, &tail)?;
+            let faces = qualified_ids(ctx, shell.faces(), &tail)?;
+            let wire_edges = qualified_ids(ctx, shell.wire_edges(), &tail)?;
+            let free_vertices = qualified_ids(ctx, shell.free_vertices(), &tail)?;
+            *shell = Shell::new(id, region, faces, wire_edges, free_vertices).map_err(|error| {
                     cadmpeg_core::CodecError::malformed(format_args!(
                         "qualified shell topology is invalid: {error}"
                     ))
                 })?;
         }
         for face in &mut self.faces {
-            face.id = qualified(&face.id, &tail);
-            face.shell = qualified(&face.shell, &tail);
-            face.surface = qualified(&face.surface, &tail);
-            let qualify_loop =
-                |id: &cadmpeg_ir::ids::LoopId| -> cadmpeg_ir::ids::LoopId { qualified(id, &tail) };
+            face.id = qualified(ctx, &face.id, &tail)?;
+            face.shell = qualified(ctx, &face.shell, &tail)?;
+            face.surface = qualified(ctx, &face.surface, &tail)?;
             face.loops = match &face.loops {
                 cadmpeg_ir::topology::FaceLoops::Unspecified { loops } => {
                     cadmpeg_ir::topology::FaceLoops::unspecified(
-                        loops.iter().map(qualify_loop).collect(),
+                        qualified_ids(ctx, loops, &tail)?,
                     )
                 }
                 cadmpeg_ir::topology::FaceLoops::Classified { outer, inner } => {
                     cadmpeg_ir::topology::FaceLoops::classified(
-                        qualify_loop(outer),
-                        inner.iter().map(qualify_loop).collect(),
+                        qualified(ctx, outer, &tail)?,
+                        qualified_ids(ctx, inner, &tail)?,
                     )
                 }
             };
         }
         for loop_ in &mut self.loops {
-            loop_.id = qualified(&loop_.id, &tail);
-            loop_.face = qualified(&loop_.face, &tail);
+            loop_.id = qualified(ctx, &loop_.id, &tail)?;
+            loop_.face = qualified(ctx, &loop_.face, &tail)?;
             match &mut loop_.boundary {
                 cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, pcurves } => {
-                    *vertex = qualified(vertex, &tail);
+                    *vertex = qualified(ctx, vertex, &tail)?;
                     for pcurve in pcurves {
-                        pcurve.pcurve = qualified(&pcurve.pcurve, &tail);
+                        pcurve.pcurve = qualified(ctx, &pcurve.pcurve, &tail)?;
                     }
                 }
                 cadmpeg_ir::topology::LoopBoundary::Ring(ring) => {
-                    let mut coedges = ring.coedges().to_vec();
-                    let mut vertex_uses = ring.vertex_uses().to_vec();
-                    for id in &mut coedges {
-                        *id = qualified(id, &tail);
-                    }
-                    for vertex_use in &mut vertex_uses {
-                        vertex_use.vertex = qualified(&vertex_use.vertex, &tail);
-                        vertex_use.after = qualified(&vertex_use.after, &tail);
-                        for pcurve in &mut vertex_use.pcurves {
-                            pcurve.pcurve = qualified(&pcurve.pcurve, &tail);
-                        }
-                    }
-                    *ring = cadmpeg_ir::topology::LoopRing::new(coedges, vertex_uses).map_err(
-                        |error| {
-                            cadmpeg_core::CodecError::malformed(format_args!(
-                                "qualified loop ring is invalid: {error}"
-                            ))
-                        },
+                    let coedges = qualified_ids(ctx, ring.coedges(), &tail)?;
+                    let mut vertex_uses = Vec::new();
+                    ctx.reserve_collection_vec(
+                        &mut vertex_uses,
+                        ring.vertex_uses().len(),
+                        "collect qualified SLDPRT vertex uses",
                     )?;
+                    for vertex_use in ring.vertex_uses() {
+                        vertex_uses.push(cadmpeg_ir::topology::AnchoredVertexUse {
+                            vertex: qualified(ctx, &vertex_use.vertex, &tail)?,
+                            after: qualified(ctx, &vertex_use.after, &tail)?,
+                            pcurves: qualified_pcurve_uses(ctx, &vertex_use.pcurves, &tail)?,
+                        });
+                    }
+                    *ring = cadmpeg_ir::topology::LoopRing::new_charged(ctx, coedges, vertex_uses)
+                        .map_err(|error| match error {
+                            cadmpeg_core::CodecError::ResourceLimit(_) => error,
+                            _ => cadmpeg_core::CodecError::malformed(format_args!(
+                                "qualified loop ring is invalid: {error}"
+                            )),
+                        })?;
                 }
             }
         }
         for coedge in &mut self.coedges {
-            coedge.id = qualified(&coedge.id, &tail);
-            coedge.owner_loop = qualified(&coedge.owner_loop, &tail);
-            coedge.edge = qualified(&coedge.edge, &tail);
-            coedge.radial_next = qualified(&coedge.radial_next, &tail);
+            coedge.id = qualified(ctx, &coedge.id, &tail)?;
+            coedge.owner_loop = qualified(ctx, &coedge.owner_loop, &tail)?;
+            coedge.edge = qualified(ctx, &coedge.edge, &tail)?;
+            coedge.radial_next = qualified(ctx, &coedge.radial_next, &tail)?;
             for use_ in &mut coedge.pcurves {
-                use_.pcurve = qualified(&use_.pcurve, &tail);
+                use_.pcurve = qualified(ctx, &use_.pcurve, &tail)?;
             }
         }
         for edge in &mut self.edges {
-            edge.id = qualified(&edge.id, &tail);
-            edge.map_curve(|curve| qualified(curve, &tail));
-            edge.start = qualified(&edge.start, &tail);
-            edge.end = qualified(&edge.end, &tail);
+            edge.id = qualified(ctx, &edge.id, &tail)?;
+            if let Some(curve) = edge.curve() {
+                let curve = qualified(ctx, curve, &tail)?;
+                edge.map_curve(|_| curve);
+            }
+            edge.start = qualified(ctx, &edge.start, &tail)?;
+            edge.end = qualified(ctx, &edge.end, &tail)?;
         }
         for vertex in &mut self.vertices {
-            vertex.id = qualified(&vertex.id, &tail);
-            vertex.point = qualified(&vertex.point, &tail);
+            vertex.id = qualified(ctx, &vertex.id, &tail)?;
+            vertex.point = qualified(ctx, &vertex.point, &tail)?;
         }
-        self.points.iter_mut().for_each(|point| {
-            point.id = qualified(&point.id, &tail);
-        });
+        for point in &mut self.points {
+            point.id = qualified(ctx, &point.id, &tail)?;
+        }
         for surface in &mut self.surfaces {
-            surface.id = qualified(&surface.id, &tail);
+            surface.id = qualified(ctx, &surface.id, &tail)?;
             match &mut surface.geometry {
                 SurfaceGeometry::Procedural { construction, .. } => {
-                    *construction = qualified(construction, &tail);
+                    *construction = qualified(ctx, construction, &tail)?;
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                     record: Some(record),
                 }) => {
-                    *record = qualified(record, &tail);
+                    *record = qualified(ctx, record, &tail)?;
                 }
                 SurfaceGeometry::Solved(_) => {}
             }
         }
         for procedural in &mut self.procedural_surfaces {
-            procedural.id = qualified(&procedural.id, &tail);
-            procedural.edit_definition(|definition| match definition {
-                ProceduralSurfaceDefinition::Blend(definition_payload) => {
-                    let mut supports = definition_payload.supports().clone();
-                    let mut spine = definition_payload.spine().clone();
+            procedural.id = qualified(ctx, &procedural.id, &tail)?;
+            procedural.edit_definition(|definition| {
+                match definition {
+                    ProceduralSurfaceDefinition::Blend(definition_payload) => {
+                        let mut supports = definition_payload.supports().clone();
+                        let mut spine = definition_payload.spine().clone();
 
-                    for support in supports.iter_mut().flatten() {
-                        support.surface = qualified(&support.surface, &tail);
+                        for support in supports.iter_mut().flatten() {
+                            support.surface = qualified(ctx, &support.surface, &tail)?;
+                        }
+                        if let Some(spine) = &mut spine {
+                            *spine = qualified(ctx, spine, &tail)?;
+                        }
+                        definition_payload.set_supports(supports);
+                        definition_payload.set_spine(spine);
                     }
-                    if let Some(spine) = &mut spine {
-                        *spine = qualified(spine, &tail);
+                    ProceduralSurfaceDefinition::Offset(definition_payload) => {
+                        definition_payload.set_support(qualified(ctx, definition_payload.support(), &tail)?);
                     }
-                    definition_payload.set_supports(supports);
-                    definition_payload.set_spine(spine);
+                    _ => {}
                 }
-                ProceduralSurfaceDefinition::Offset(definition_payload) => {
-                    definition_payload.set_support(qualified(definition_payload.support(), &tail));
-                }
-                _ => {}
-            });
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })?;
         }
         for curve in &mut self.curves {
-            curve.id = qualified(&curve.id, &tail);
+            curve.id = qualified(ctx, &curve.id, &tail)?;
             if let CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(record),
             }) = &mut curve.geometry
             {
-                *record = qualified(record, &tail);
+                *record = qualified(ctx, record, &tail)?;
             }
         }
-        self.pcurves.iter_mut().for_each(|pcurve| {
-            pcurve.id = qualified(&pcurve.id, &tail);
-        });
+        for pcurve in &mut self.pcurves {
+            pcurve.id = qualified(ctx, &pcurve.id, &tail)?;
+        }
         for record in &mut self.unknowns {
-            let id = qualified(record.id(), &tail);
+            let id = qualified(ctx, record.id(), &tail)?;
             record.set_id(id);
-            record
-                .links_mut()
-                .iter_mut()
-                .for_each(|link| *link = qualify(link));
+            for link in record.links_mut() {
+                *link = qualify(link)?;
+            }
         }
         for color in &mut self.face_colors {
             if let Some(target) = &mut color.value.target {
-                *target = qualify(target);
+                *target = qualify(target)?;
             }
-            color.site_key = Some(site.to_owned());
+            let mut site_key = String::new();
+            ctx.reserve_retained_string(&mut site_key, site.len(), "copy SLDPRT face color site")?;
+            site_key.push_str(site);
+            color.site_key = Some(site_key);
         }
         for atom in &mut self.face_atoms {
-            atom.face = qualified(&atom.face, &tail);
+            atom.face = qualified(ctx, &atom.face, &tail)?;
         }
         for modifier in &mut self.body_modifiers {
             if let Some(target) = &mut modifier.target {
-                *target = qualify(target);
+                *target = qualify(target)?;
             }
         }
-        self.annotations.map_ids(qualify)?;
+        self.annotations.map_ids_charged(ctx, qualify)?;
 
         Ok(())
     }
@@ -645,13 +649,89 @@ fn shell_component(shell: &ShellId, component: usize) -> ShellId {
 
 /// Append the site qualifier to one typed identity's key.
 ///
-/// The tail carries the key grammar, and appending it to an admitted key
-/// keeps it, so this operation has no failing branch.
-fn qualified<T>(id: &T, site: &cadmpeg_ir::ids::IdentityKeyTail) -> T
+/// The admitted tail preserves the key grammar. The caller context charges
+/// the resulting retained text before the append reserves capacity.
+fn qualified<T>(
+    ctx: &DecodeContext<'_>,
+    id: &T,
+    site: &cadmpeg_ir::ids::IdentityKeyTail,
+) -> Result<T, cadmpeg_core::CodecError>
 where
     T: Clone + Into<cadmpeg_ir::ids::Identity> + From<cadmpeg_ir::ids::Identity>,
 {
-    T::from(id.clone().into().with_key_tail(site))
+    let identity: cadmpeg_ir::ids::Identity = id.clone().into();
+    let length = identity
+        .as_str()
+        .len()
+        .checked_add(site.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("qualify SLDPRT identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_retained(
+        u64::try_from(length).map_err(|_| {
+            ctx.refuse_codec_limit("qualify SLDPRT identity", u64::MAX - 1, u64::MAX)
+        })?,
+        "qualify SLDPRT identity",
+    )?;
+    let identity = identity.try_with_key_tail(site).map_err(|_| {
+        ctx.refuse_codec_limit("qualify SLDPRT identity", u64::MAX - 1, u64::MAX)
+    })?;
+    Ok(T::from(identity))
+}
+
+fn qualified_ids<T>(
+    ctx: &DecodeContext<'_>,
+    ids: &[T],
+    site: &cadmpeg_ir::ids::IdentityKeyTail,
+) -> Result<Vec<T>, cadmpeg_core::CodecError>
+where
+    T: Clone + Into<cadmpeg_ir::ids::Identity> + From<cadmpeg_ir::ids::Identity>,
+{
+    let mut qualified_ids = Vec::new();
+    ctx.reserve_collection_vec(&mut qualified_ids, ids.len(), "collect qualified SLDPRT identities")?;
+    for id in ids {
+        qualified_ids.push(qualified(ctx, id, site)?);
+    }
+    Ok(qualified_ids)
+}
+
+fn qualified_pcurve_uses(
+    ctx: &DecodeContext<'_>,
+    uses: &[cadmpeg_ir::topology::PcurveUse],
+    site: &cadmpeg_ir::ids::IdentityKeyTail,
+) -> Result<Vec<cadmpeg_ir::topology::PcurveUse>, cadmpeg_core::CodecError> {
+    let mut qualified_uses = Vec::new();
+    ctx.reserve_collection_vec(&mut qualified_uses, uses.len(), "collect qualified SLDPRT pcurve uses")?;
+    for use_ in uses {
+        qualified_uses.push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: qualified(ctx, &use_.pcurve, site)?,
+            isoparametric: use_.isoparametric,
+            parameter_range: use_.parameter_range,
+        });
+    }
+    Ok(qualified_uses)
+}
+
+fn qualified_reference(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    site: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let tail = if value.contains('#') {
+        site.len().checked_add(1)
+    } else {
+        Some(0)
+    }
+    .ok_or_else(|| ctx.refuse_codec_limit("qualify SLDPRT reference", u64::MAX - 1, u64::MAX))?;
+    let size = value.len().checked_add(tail).ok_or_else(|| {
+        ctx.refuse_codec_limit("qualify SLDPRT reference", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut result = String::new();
+    ctx.reserve_retained_string(&mut result, size, "qualify SLDPRT reference")?;
+    result.push_str(value);
+    if tail != 0 {
+        result.push('@');
+        result.push_str(site);
+    }
+    Ok(result)
 }
 
 fn id_face(a: u16) -> FaceId {
