@@ -208,6 +208,76 @@ fn body_visibility_collection_refuses_collection_limit() {
         if limit.operation == "collect F3D body visibilities"));
 }
 
+macro_rules! mesh_outcome_loss_refuses_collection_limit {
+    ($name:ident, $outcome:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let ctx = context(&arena, 0);
+            let mut bodies = Vec::new();
+            let mut report = cadmpeg_ir::codec::DecodeBody::new(
+                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+            );
+            let error = super::super::collect_mesh_outcome(
+                &ctx,
+                &mut bodies,
+                &mut report,
+                $outcome,
+            )
+            .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+            assert!(report.losses.is_empty());
+        }
+    };
+}
+
+mesh_outcome_loss_refuses_collection_limit!(
+    unjoined_mesh_loss_refuses_collection_limit,
+    crate::design::decode::mesh::MeshContainerOutcome::Unjoined {
+        entry_name: "mesh.paramesh".into(),
+    },
+    "collect F3D unjoined mesh loss"
+);
+mesh_outcome_loss_refuses_collection_limit!(
+    undecoded_mesh_loss_refuses_collection_limit,
+    crate::design::decode::mesh::MeshContainerOutcome::Failed {
+        entry_name: "mesh.paramesh".into(),
+        error: cadmpeg_core::CodecError::Malformed("bad mesh".into()),
+    },
+    "collect F3D undecoded mesh loss"
+);
+mesh_outcome_loss_refuses_collection_limit!(
+    missing_mesh_loss_refuses_collection_limit,
+    crate::design::decode::mesh::MeshContainerOutcome::Missing {
+        entry_name: "mesh.paramesh".into(),
+    },
+    "collect F3D missing mesh loss"
+);
+
+#[test]
+fn failed_mesh_resource_limit_propagates() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut bodies = Vec::new();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::collect_mesh_outcome(
+        &ctx,
+        &mut bodies,
+        &mut report,
+        crate::design::decode::mesh::MeshContainerOutcome::Failed {
+            entry_name: "mesh.paramesh".into(),
+            error: ctx.refuse_codec_limit("synthetic mesh refusal", 0, 1),
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "synthetic mesh refusal"));
+    assert!(report.losses.is_empty());
+}
+
 #[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);

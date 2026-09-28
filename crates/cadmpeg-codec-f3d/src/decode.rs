@@ -3625,6 +3625,53 @@ fn extend_unique_assets(
     Ok(())
 }
 
+fn collect_mesh_outcome(
+    ctx: &DecodeContext<'_>,
+    bodies: &mut Vec<crate::design::decode::mesh::MeshBody>,
+    report: &mut DecodeBody,
+    outcome: crate::design::decode::mesh::MeshContainerOutcome,
+) -> Result<(), CodecError> {
+    use crate::design::decode::mesh::MeshContainerOutcome;
+    match outcome {
+        MeshContainerOutcome::Joined(body) => {
+            push_decode_item(ctx, bodies, body, "collect F3D joined mesh bodies")?;
+        }
+        MeshContainerOutcome::Unjoined { entry_name } => push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::MeshContainerUnjoined,
+            format_args!(
+                "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
+            ),
+            "collect F3D unjoined mesh loss",
+            "retain F3D unjoined mesh loss",
+        )?,
+        MeshContainerOutcome::Failed {
+            error: error @ CodecError::ResourceLimit(_),
+            ..
+        } => return Err(error),
+        MeshContainerOutcome::Failed { entry_name, error } => push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::MeshContainerUndecoded,
+            format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
+            "collect F3D undecoded mesh loss",
+            "retain F3D undecoded mesh loss",
+        )?,
+        MeshContainerOutcome::Missing { entry_name } => push_decode_loss(
+            ctx,
+            report,
+            F3dLossCode::MeshContainerMissing,
+            format_args!(
+                "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
+            ),
+            "collect F3D missing mesh loss",
+            "retain F3D missing mesh loss",
+        )?,
+    }
+    Ok(())
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -3638,8 +3685,6 @@ fn project_mesh_bodies(
     native: &mut F3dNative,
     report: &mut DecodeBody,
 ) -> Result<MeshProjection, CodecError> {
-    use crate::design::decode::mesh::MeshContainerOutcome;
-
     let decoded = crate::design::decode::mesh::decode_mesh_bodies(ctx, scan)?;
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
@@ -3712,26 +3757,7 @@ fn project_mesh_bodies(
     }
     let mut bodies = Vec::new();
     for outcome in decoded.outcomes {
-        match outcome {
-            MeshContainerOutcome::Joined(body) => bodies.push(body),
-            MeshContainerOutcome::Unjoined { entry_name } => {
-                report.losses.push(F3dLossCode::MeshContainerUnjoined.note(format!(
-                    "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-                )));
-            }
-            MeshContainerOutcome::Failed { entry_name, error } => {
-                report
-                    .losses
-                    .push(F3dLossCode::MeshContainerUndecoded.note(format!(
-                        "mesh geometry container `{entry_name}` was not decoded: {error}"
-                    )));
-            }
-            MeshContainerOutcome::Missing { entry_name } => {
-                report.losses.push(F3dLossCode::MeshContainerMissing.note(format!(
-                    "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-                )));
-            }
-        }
+        collect_mesh_outcome(ctx, &mut bodies, report, outcome)?;
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
