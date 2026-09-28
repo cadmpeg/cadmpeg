@@ -860,10 +860,10 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::malformed(format_args!(
-                            "property {} references missing side entry {side_entry}",
-                            property.id
-                        )));
+                        return Err(CodecError::Malformed(resource::retained_format(ctx,
+                            format_args!("property {} references missing side entry {side_entry}", property.id),
+                            "FCStd missing side entry diagnostic",
+                        )?));
                     }
                 }
             }

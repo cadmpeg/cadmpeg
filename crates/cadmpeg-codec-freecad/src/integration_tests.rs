@@ -4,7 +4,7 @@
 
 use super::FcstdCodec;
 use crate::test_support::test_archive::{
-    archive, assert_valid_document, rewrite_schema_version, streaming_archive,
+    archive, archive_entries, assert_valid_document, rewrite_schema_version, streaming_archive,
     streaming_archive_with_options, CORE_OPERATIONS,
 };
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -56,6 +56,64 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("synthesized FCStd archive should decode")
+}
+
+fn assert_decode_refusal_at(
+    bytes: &[u8],
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+) {
+    let mut options = DecodeOptions::default();
+    let set_limit = |options: &mut DecodeOptions, value| match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => options.policy.limits.max_collection_items = value,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => options.policy.limits.max_retained_bytes = value,
+        _ => panic!("unsupported test dimension"),
+    };
+    set_limit(&mut options, 0);
+    for _ in 0..8192 {
+        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect_err("resource cap must refuse decode");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
+        else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(limit.dimension, dimension);
+        let threshold = limit.used.checked_add(limit.additional).expect("resource threshold fits");
+        if limit.operation == operation {
+            set_limit(&mut options, threshold - 1);
+            let exact = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+                .expect_err("one below site must refuse");
+            assert!(matches!(exact,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref found))
+                    if found.dimension == dimension && found.operation == operation
+                        && found.used + found.additional == threshold), "{exact:?}");
+            return;
+        }
+        set_limit(&mut options, threshold);
+    }
+    panic!("{operation} was not reached within 8192 admissions");
+}
+
+#[test]
+fn thumbnail_copy_refuses_at_matching_retained_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document), ("thumbnails/Thumbnail.png", b"PNG")]);
+    assert_decode_refusal_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "retain FCStd thumbnail");
+}
+
+#[test]
+fn dialect_loss_output_refuses_at_matching_collection_limit() {
+    let document = br#"<Document SchemaVersion="9" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document)]);
+    assert_decode_refusal_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd dialect loss output");
+}
+
+#[test]
+fn missing_side_entry_diagnostic_refuses_at_matching_retained_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Absent.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document)]);
+    assert_decode_refusal_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd missing side entry diagnostic");
 }
 
 #[test]
