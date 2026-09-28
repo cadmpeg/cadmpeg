@@ -2334,7 +2334,7 @@ fn incidence_vertex_coordinates(
                 break;
             }
             for lane in incidence.lanes {
-                let Some(point) = lift_parameter_incidence(lane.curve, lane.parameter, geometry) else {
+                let Some(point) = lift_parameter_incidence(ctx, lane.curve, lane.parameter, geometry)? else {
                     valid = false;
                     break 'incidences;
                 };
@@ -2361,27 +2361,31 @@ fn incidence_vertex_coordinates(
 /// unsupported, malformed, or out-of-domain member withholds the identity
 /// coordinate instead of allowing an earlier member to win.
 fn lift_parameter_incidence(
+    ctx: &DecodeContext<'_>,
     pcurve_id: u32,
     parameter: FiniteReal,
     geometry: &B5PcurveContext<'_>,
-) -> Option<FinitePoint3> {
+) -> Result<Option<FinitePoint3>, CodecError> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
-        let domain = pcurve_parameter_domain(pcurve)?;
-        (parameter >= domain[0] && parameter <= domain[1]).then_some(())?;
-        let uv = evaluate_pcurve(pcurve, parameter.get())?;
-        return lift_pcurve_endpoints(
-            geometry.surfaces.get(&pcurve.surface)?,
+        let Some(domain) = pcurve_parameter_domain(pcurve) else { return Ok(None) };
+        if parameter < domain[0] || parameter > domain[1] { return Ok(None) }
+        let Some(uv) = evaluate_pcurve(ctx, pcurve, parameter.get())? else { return Ok(None) };
+        let Some(surface) = geometry.surfaces.get(&pcurve.surface) else { return Ok(None) };
+        return Ok(lift_pcurve_endpoints(
+            surface,
             geometry.profiles,
             [uv, uv],
         )
-        .map(|[point, _]| point);
+        .map(|[point, _]| point));
     }
-    let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
-    sphere_great_circle_point(
-        opaque.sphere_great_circle.as_ref()?,
-        geometry.surfaces.get(&opaque.surface)?,
+    let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else { return Ok(None) };
+    let Some(pcurve) = opaque.sphere_great_circle.as_ref() else { return Ok(None) };
+    let Some(surface) = geometry.surfaces.get(&opaque.surface) else { return Ok(None) };
+    Ok(sphere_great_circle_point(
+        pcurve,
+        surface,
         parameter,
-    )
+    ))
 }
 
 fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLink> {
@@ -2506,70 +2510,84 @@ fn implicit_pcurve_bindings(
     Ok(bindings)
 }
 
-pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
-    let knots = pcurve_nurbs_knots(pcurve)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    let control_points: Vec<Point2> = pcurve
-        .control_points
-        .iter()
-        .map(|point| Point2::new(point[0], point[1]))
-        .collect();
+pub(super) fn evaluate_pcurve(ctx: &DecodeContext<'_>, pcurve: &B5Pcurve, parameter: f64) -> Result<Option<[f64; 2]>, CodecError> {
+    let Some(knots) = pcurve_nurbs_knots(ctx, pcurve)? else { return Ok(None) };
+    let knots = crate::resource::collect_vec(ctx, knots.into_iter().map(FiniteReal::get),
+        "catia_b5_evaluation_knots")?;
+    let control_points = crate::resource::collect_vec(ctx,
+        pcurve.control_points.iter().map(|point| Point2::new(point[0], point[1])),
+        "catia_b5_evaluation_points")?;
     let weights = pcurve.weights.as_ref().map(|weights| {
-        weights
-            .iter()
-            .copied()
-            .map(PositiveReal::get)
-            .collect::<Vec<_>>()
-    });
-    let point = Point2::from(
-        nurbs_pcurve_uv(
+        crate::resource::collect_vec(ctx, weights.iter().copied().map(PositiveReal::get),
+            "catia_b5_evaluation_weights")
+    }).transpose()?;
+    let point = nurbs_pcurve_uv(
             pcurve.degree,
             &knots,
             &control_points,
             weights.as_deref(),
             parameter,
         )
-        .ok()?,
-    );
-    Some([point.u, point.v])
+        .ok().map(Point2::from);
+    Ok(point.map(|point| [point.u, point.v]))
 }
 
-fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
+fn pcurve_knots(ctx: &DecodeContext<'_>, pcurve: &B5Pcurve) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    let Some(count) = pcurve.distinct_knots.iter().zip(&pcurve.multiplicities).try_fold(0usize,
+        |count, (_, multiplicity)| {
+        usize::try_from(*multiplicity).ok().and_then(|multiplicity| count.checked_add(multiplicity))
+    }) else { return Ok(None) };
     let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, count, "catia_b5_expanded_pcurve_knots")?;
     for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
-        knots.extend(std::iter::repeat_n(
-            knot,
-            usize::try_from(multiplicity).ok()?,
-        ));
+        let Some(multiplicity) = usize::try_from(multiplicity).ok() else { return Ok(None) };
+        knots.extend(std::iter::repeat_n(knot, multiplicity));
     }
-    Some(knots)
+    Ok(Some(knots))
 }
 
 /// Return the knot vector in the pcurve's occurrence coordinate system. A
 /// translated knot is admitted finite, since the translation can overflow.
-pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
-    let knots = pcurve_knots(pcurve)?;
+pub(super) fn pcurve_nurbs_knots(ctx: &DecodeContext<'_>, pcurve: &B5Pcurve) -> Result<Option<Vec<FiniteReal>>, CodecError> {
+    let Some(mut knots) = pcurve_knots(ctx, pcurve)? else { return Ok(None) };
     match pcurve.parameterization {
-        B5PcurveParameterization::Native => Some(knots),
-        B5PcurveParameterization::Translated { native_origin } => knots
-            .into_iter()
-            .map(|knot| FiniteReal::new(knot.get() - native_origin.get()))
-            .collect(),
+        B5PcurveParameterization::Native => {}
+        B5PcurveParameterization::Translated { native_origin } => {
+            for knot in &mut knots {
+                let Some(value) = FiniteReal::new(knot.get() - native_origin.get()) else {
+                    return Ok(None);
+                };
+                *knot = value;
+            }
+        }
     }
+    Ok(Some(knots))
 }
 
 pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[FiniteReal; 2]> {
-    let knots = pcurve_nurbs_knots(pcurve)?;
     let degree = usize::try_from(pcurve.degree).ok()?;
-    let spline_domain = [
-        *knots.get(degree)?,
-        *knots
-            .len()
-            .checked_sub(degree + 1)
-            .and_then(|index| knots.get(index))?,
-    ];
+    let total = pcurve.distinct_knots.iter().zip(&pcurve.multiplicities).try_fold(0usize,
+        |count, (_, multiplicity)| {
+        count.checked_add(usize::try_from(*multiplicity).ok()?)
+    })?;
+    let last = total.checked_sub(degree.checked_add(1)?)?;
+    let mut first_knot = None;
+    let mut last_knot = None;
+    let mut index = 0usize;
+    for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
+        let next = index.checked_add(usize::try_from(multiplicity).ok()?)?;
+        if index < next {
+            let knot = match pcurve.parameterization {
+                B5PcurveParameterization::Native => knot,
+                B5PcurveParameterization::Translated { native_origin } =>
+                    FiniteReal::new(knot.get() - native_origin.get())?,
+            };
+            if index <= degree && degree < next { first_knot = Some(knot); }
+            if index <= last && last < next { last_knot = Some(knot); }
+        }
+        index = next;
+    }
+    let spline_domain = [first_knot?, last_knot?];
     if spline_domain[0] >= spline_domain[1] {
         return None;
     }
@@ -2656,7 +2674,7 @@ fn bind_native_vertices(
         for member in &loop_.members {
             let (Some(vertices), Some(lifted)) = (
                 native_edges.get(&member.edge),
-                pcurve_endpoints(member.pcurve, member.edge, geometry),
+                pcurve_endpoints(ctx, member.pcurve, member.edge, geometry)?,
             ) else {
                 continue;
             };
@@ -2697,7 +2715,7 @@ fn bind_native_vertices(
     let mut tolerances = BTreeMap::<usize, PositiveReal>::new();
     for loop_ in loops.values() {
         for member in &loop_.members {
-            let Some(lifted) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
+            let Some(lifted) = pcurve_endpoints(ctx, member.pcurve, member.edge, geometry)? else {
                 continue;
             };
             let lifted = lifted.map(coordinates);
@@ -2952,7 +2970,7 @@ fn bind_edge_vertices(
             if conflicts.contains(&member.edge) {
                 continue;
             }
-            let Some(endpoints) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
+            let Some(endpoints) = pcurve_endpoints(ctx, member.pcurve, member.edge, geometry)? else {
                 continue;
             };
             let [Some(start), Some(end)] = endpoints
@@ -2980,10 +2998,11 @@ fn bind_edge_vertices(
 }
 
 fn pcurve_endpoints(
+    ctx: &DecodeContext<'_>,
     pcurve_id: u32,
     edge_id: u32,
     geometry: &B5PcurveContext<'_>,
-) -> Option<[FinitePoint3; 2]> {
+) -> Result<Option<[FinitePoint3; 2]>, CodecError> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
         let parameters = edge_pcurve_parameter_values(
             geometry.edge_parameter_incidences,
@@ -2999,20 +3018,19 @@ fn pcurve_endpoints(
         // permission to use an arbitrary control-polygon endpoint.
         .or_else(|| pcurve_parameter_domain(pcurve));
         let Some(parameters) = parameters else {
-            return pcurve.lifted_endpoints;
+            return Ok(pcurve.lifted_endpoints);
         };
-        let uv = [
-            evaluate_pcurve(pcurve, parameters[0].get())?,
-            evaluate_pcurve(pcurve, parameters[1].get())?,
-        ];
+        let Some(first) = evaluate_pcurve(ctx, pcurve, parameters[0].get())? else { return Ok(None) };
+        let Some(second) = evaluate_pcurve(ctx, pcurve, parameters[1].get())? else { return Ok(None) };
+        let uv = [first, second];
         let Some(surface) = geometry.surfaces.get(&pcurve.surface) else {
-            return pcurve.lifted_endpoints;
+            return Ok(pcurve.lifted_endpoints);
         };
-        return lift_pcurve_endpoints(surface, geometry.profiles, uv).or(pcurve.lifted_endpoints);
+        return Ok(lift_pcurve_endpoints(surface, geometry.profiles, uv).or(pcurve.lifted_endpoints));
     }
-    let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
-    let pcurve = opaque.sphere_great_circle.as_ref()?;
-    let surface = geometry.surfaces.get(&opaque.surface)?;
+    let Some(opaque) = geometry.opaque_pcurves.get(&pcurve_id) else { return Ok(None) };
+    let Some(pcurve) = opaque.sphere_great_circle.as_ref() else { return Ok(None) };
+    let Some(surface) = geometry.surfaces.get(&opaque.surface) else { return Ok(None) };
     let [start, end] = edge_pcurve_parameter_values(
         geometry.edge_parameter_incidences,
         geometry.parameter_incidences,
@@ -3021,10 +3039,9 @@ fn pcurve_endpoints(
     )
     .and_then(|parameters| bounded_occurrence_range(parameters, pcurve.u_bounds.finite_endpoints()))
     .unwrap_or(pcurve.u_bounds.finite_endpoints());
-    Some([
-        sphere_great_circle_point(pcurve, surface, start)?,
-        sphere_great_circle_point(pcurve, surface, end)?,
-    ])
+    Ok(sphere_great_circle_point(pcurve, surface, start)
+        .zip(sphere_great_circle_point(pcurve, surface, end))
+        .map(|(start, end)| [start, end]))
 }
 
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.

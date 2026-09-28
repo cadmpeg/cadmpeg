@@ -4,13 +4,12 @@ use crate::families::b5::graph::tests::test_pcurve;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
     canonical_point, canonical_surface_id,
-    counted_references, distance_squared, edge_support_pcurve_references, evaluate_pcurve,
-    face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
+    counted_references, distance_squared, edge_support_pcurve_references,
+    face_surface_references, incidence_vertex_coordinates,
     loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
     loop_references_and_metadata,
     parameter_incidence, parse_face,
-    parse_face_record, parse_loop, parse_loop_record, pcurve_endpoints,
-    pcurve_nurbs_knots,
+    parse_face_record, parse_loop, parse_loop_record,
     pcurve_parameter_domain,
     sphere_great_circle_point, typed_face_records_from_records,
     typed_loop_records_from_records,
@@ -23,6 +22,55 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::evaluate_pcurve(ctx, pcurve, parameter)
+    }).expect("service budget")
+}
+
+fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<cadmpeg_ir::scalar::FiniteReal>> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurve_nurbs_knots(ctx, pcurve)
+    }).expect("service budget")
+}
+
+fn pcurve_endpoints(pcurve_id: u32, edge_id: u32, geometry: &B5PcurveContext<'_>)
+    -> Option<[cadmpeg_ir::features::FinitePoint3; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurve_endpoints(ctx, pcurve_id, edge_id, geometry)
+    }).expect("service budget")
+}
+
+fn lift_parameter_incidence(
+    pcurve_id: u32,
+    parameter: cadmpeg_ir::scalar::FiniteReal,
+    geometry: &B5PcurveContext<'_>,
+) -> Option<cadmpeg_ir::features::FinitePoint3> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::lift_parameter_incidence(ctx, pcurve_id, parameter, geometry)
+    }).expect("service budget")
+}
+
+#[test]
+fn pcurve_knot_expansion_and_evaluation_refuse_the_caller_limit() {
+    let pcurve = test_pcurve(1, 2);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurve_nurbs_knots(ctx, &pcurve)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots"));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::evaluate_pcurve(ctx, &pcurve, 0.5)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots"));
+    assert_eq!(evaluate_pcurve(&pcurve, 0.5), Some([0.5, 0.0]));
+    assert_eq!(pcurve_parameter_domain(&pcurve), Some([
+        crate::test_support::test_b5::finite(0.0),
+        crate::test_support::test_b5::finite(1.0),
+    ]));
+}
 
 fn bind_edge_vertices(
     loops: &BTreeMap<u32, B5Loop>,

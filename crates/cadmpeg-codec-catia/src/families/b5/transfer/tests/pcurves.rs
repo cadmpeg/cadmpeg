@@ -13,8 +13,7 @@ const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
-    cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
-    neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+    cylinder_point, neutral_pcurve_point, oriented_line_plan, oriented_nurbs_range,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
 use super::super::surfaces::revolution_surface;
@@ -29,6 +28,68 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::lifted_curve_geometry(ctx, pcurve, surface)
+    }).expect("service budget")
+}
+
+fn isocurve_endpoint_parameters(pcurve: &B5Pcurve, parameters: [f64; 2]) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::isocurve_endpoint_parameters(ctx, pcurve, parameters)
+    }).expect("service budget")
+}
+
+fn oriented_circle_plan(
+    pcurve: &B5Pcurve, surface: &B5Surface, geometry: &CurveGeometry,
+    parameters: [f64; 2], edge_start: [f64; 3], edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::oriented_circle_plan(ctx, pcurve, surface, geometry,
+            parameters, edge_start, edge_end)
+    }).expect("service budget")
+}
+
+fn cylinder_helix(
+    pcurve: &B5Pcurve, surface: &B5Surface, parameters: [f64; 2],
+    edge_start: [f64; 3], edge_end: [f64; 3],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<super::super::HelixPlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::cylinder_helix(ctx, pcurve, surface, parameters,
+            edge_start, edge_end, refusal)
+    }).expect("service budget")
+}
+
+#[test]
+fn lifted_pcurve_refuses_the_caller_collection_limit() {
+    let pcurve = B5Pcurve {
+        object_id: 1, surface: 2, degree: 1,
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
+        weights: None, parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None, lifted_endpoints: None,
+    };
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &plane)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots"));
+    assert!(lifted_curve_geometry(&pcurve, &plane).is_some());
+}
 
 #[test]
 fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {

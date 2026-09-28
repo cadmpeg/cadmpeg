@@ -138,29 +138,31 @@ pub(super) fn oriented_line_plan(
 }
 
 pub(super) fn oriented_circle_plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
     geometry: &CurveGeometry,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<CurvePlan> {
-    let (dimension, scale) = isoparametric_angle_coordinate(pcurve, surface)?;
+) -> Result<Option<CurvePlan>, cadmpeg_core::CodecError> {
+    let Some((dimension, scale)) = isoparametric_angle_coordinate(pcurve, surface) else {
+        return Ok(None);
+    };
     let scale = scale.get();
     if scale == 0.0 {
-        return None;
+        return Ok(None);
     }
     if pcurve
         .weights
         .as_ref()
         .is_some_and(|weights| weights.len() != pcurve.control_points.len())
     {
-        return None;
+        return Ok(None);
     }
-    let endpoints = endpoint_parameters.map(|parameter| evaluate_pcurve(pcurve, parameter));
-    let [Some(start_uv), Some(end_uv)] = endpoints else {
-        return None;
-    };
+    let Some(start_uv) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else { return Ok(None) };
+    let Some(end_uv) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else { return Ok(None) };
+    Ok((|| -> Option<CurvePlan> {
     let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
     let delta = angles[1] - angles[0];
     if !delta.is_finite()
@@ -209,6 +211,7 @@ pub(super) fn oriented_circle_plan(
         },
         cache_fit_tolerance: None,
     })
+    })())
 }
 
 fn isoparametric_angle_coordinate(
@@ -300,22 +303,23 @@ pub(super) fn oriented_nurbs_range(
 }
 
 pub(super) fn isocurve_endpoint_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     endpoint_parameters: [f64; 2],
-) -> Option<[f64; 2]> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let varying_dimension = if constant_coordinate(&pcurve.control_points, 0).is_some() {
         1
     } else if constant_coordinate(&pcurve.control_points, 1).is_some() {
         0
     } else {
-        return None;
+        return Ok(None);
     };
     if pcurve
         .weights
         .as_ref()
         .is_some_and(|weights| weights.len() != pcurve.control_points.len())
     {
-        return None;
+        return Ok(None);
     }
     if !pcurve
         .control_points
@@ -326,15 +330,11 @@ pub(super) fn isocurve_endpoint_parameters(
             .windows(2)
             .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension])
     {
-        return None;
+        return Ok(None);
     }
-    let values = endpoint_parameters
-        .map(|parameter| evaluate_pcurve(pcurve, parameter))
-        .map(|uv| uv.map(|point| point[varying_dimension]));
-    let [Some(start), Some(end)] = values else {
-        return None;
-    };
-    Some([start, end])
+    let Some(start) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else { return Ok(None) };
+    let Some(end) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else { return Ok(None) };
+    Ok(Some([start[varying_dimension], end[varying_dimension]]))
 }
 
 pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
@@ -369,48 +369,32 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
 }
 
 pub(super) fn lifted_curve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
-) -> Option<CurveGeometry> {
-    let knots = pcurve_nurbs_knots(pcurve)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    match surface {
+) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
+    let Some(native_knots) = pcurve_nurbs_knots(ctx, pcurve)? else { return Ok(None) };
+    if let B5Surface::Plane { origin, frame, direction_v, .. } = surface {
+        let knots = crate::resource::collect_vec(ctx, native_knots.into_iter().map(FiniteReal::get),
+            "catia_b5_lifted_plane_knots")?;
+        let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
+        let points = crate::resource::collect_vec(ctx,
+            pcurve.control_points.iter().map(|uv| {
+                point3(add(origin, add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1]))))
+            }), "catia_b5_lifted_plane_points")?;
+        let weights = pcurve.weights.as_ref().map(|weights| {
+            crate::resource::collect_vec(ctx, weights.iter().copied().map(PositiveReal::get),
+                "catia_b5_lifted_plane_weights")
+        }).transpose()?;
+        return Ok(NurbsCurve::from_lanes(pcurve.degree, knots, points, weights, false)
+            .ok().map(SolvedCurveGeometry::Nurbs).map(CurveGeometry::Solved));
+    }
+    Ok((|| -> Option<CurveGeometry> { match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
         | B5Surface::RollingBall { .. }
         | B5Surface::Sphere { .. } => None,
-        B5Surface::Plane {
-            origin,
-            frame,
-            direction_v,
-            ..
-        } => {
-            let (origin, direction_u) = (coordinates(*origin), components(frame.reference()));
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(
-                    pcurve.degree,
-                    knots,
-                    pcurve
-                        .control_points
-                        .iter()
-                        .map(|uv| {
-                            point3(add(
-                                origin,
-                                add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
-                            ))
-                        })
-                        .collect(),
-                    pcurve
-                        .weights
-                        .as_ref()
-                        .map(|weights| weights.iter().copied().map(PositiveReal::get).collect()),
-                    false,
-                )
-                .ok()?,
-            )))
-        }
+        B5Surface::Plane { .. } => None,
         B5Surface::Cylinder {
             origin,
             frame,
@@ -546,7 +530,7 @@ pub(super) fn lifted_curve_geometry(
             .map(SolvedCurveGeometry::Nurbs)
             .map(CurveGeometry::Solved),
         B5Surface::Revolution { .. } => None,
-    }
+    } })())
 }
 
 pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
@@ -601,13 +585,14 @@ pub(super) fn cylinder_point(
 }
 
 pub(super) fn cylinder_helix(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurve: &B5Pcurve,
     surface: &B5Surface,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<HelixPlan> {
+) -> Result<Option<HelixPlan>, cadmpeg_core::CodecError> {
     const FIT_TOLERANCE: PositiveReal = match PositiveReal::new(1e-4) {
         Some(tolerance) => tolerance,
         None => panic!("the helix cache fit tolerance must be positive and finite"),
@@ -621,7 +606,7 @@ pub(super) fn cylinder_helix(
         ..
     } = surface
     else {
-        return None;
+        return Ok(None);
     };
     let (origin, reference_x, axis, radius) = (
         coordinates(*origin),
@@ -630,12 +615,11 @@ pub(super) fn cylinder_helix(
         radius.get(),
     );
     if pcurve.degree != 1 || pcurve.control_points.len() != 2 {
-        return None;
+        return Ok(None);
     }
-    let endpoints = endpoint_parameters.map(|parameter| evaluate_pcurve(pcurve, parameter));
-    let [Some(first), Some(second)] = endpoints else {
-        return None;
-    };
+    let Some(first) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else { return Ok(None) };
+    let Some(second) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else { return Ok(None) };
+    Ok((|| -> Option<HelixPlan> {
     let endpoints = [first, second];
     let lifted = endpoints
         .map(|uv| cylinder_point(origin, reference_x, axis, radius, angular_scale.get(), uv));
@@ -694,6 +678,7 @@ pub(super) fn cylinder_helix(
         parameter_range: [0.0, sweep],
         fit_tolerance: cache.fit_tolerance,
     })
+    })())
 }
 
 /// Emitted pcurve carriers and intervals indexed by native loop and member.
