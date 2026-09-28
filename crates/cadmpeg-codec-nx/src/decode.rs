@@ -24,6 +24,7 @@ use crate::loss::NxLossCode;
 use crate::native::TypedNative;
 use crate::parasolid::{self, Stream, StreamKind};
 
+mod annotations;
 mod blend;
 mod build;
 pub(crate) mod emit;
@@ -323,22 +324,15 @@ fn build_metadata_ir(
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
-            let note_bytes = unknown.id().as_str().len().checked_add(stream.kind().label().len())
-                .ok_or_else(|| ctx.refuse_codec_limit("nx metadata annotation text", 0, u64::MAX))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(note_bytes),
-                "nx metadata annotation text",
+            annotations::note(
+                ctx,
+                &mut annotations,
+                unknown.id().as_str(),
+                &source_stream,
+                stream.file_offset as u64,
+                stream.kind().label(),
             )?;
-            ctx.charge_collection_items(1, "nx metadata provenance annotation")?;
-            annotations
-                .note(unknown.id(), &source_stream, stream.file_offset as u64)
-                .tag(stream.kind().label());
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(unknown.id().as_str().len()),
-                "nx metadata exactness identity",
-            )?;
-            ctx.charge_collection_items(1, "nx metadata exactness annotation")?;
-            annotations.exactness(unknown.id(), Exactness::Derived);
+            annotations::exactness(ctx, &mut annotations, unknown.id().as_str(), Exactness::Derived)?;
             unknowns.push(unknown);
         }
     }
