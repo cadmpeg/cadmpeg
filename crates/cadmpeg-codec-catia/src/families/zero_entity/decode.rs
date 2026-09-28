@@ -1080,7 +1080,7 @@ pub(in crate::families) fn try_decode_zero_entity(
 
     let topology_counts = {
         let mut candidate_ir = ir.clone();
-        let mut candidate_annotations = annotations.clone();
+        let mut candidate_annotations = admitted!(annotations.copy_charged(ctx, "catia_zero_topology_annotations"));
         let topology_budget = ctx.work_budget(
             crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS as u64,
         );

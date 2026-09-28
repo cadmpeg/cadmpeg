@@ -318,7 +318,7 @@ pub(in crate::families) fn try_decode_e5(
             ));
         }
         let mut topology_ir = ir.clone();
-        let mut topology_annotations = annotations.clone();
+        let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_e5_topology_annotations"));
         let topology_transferred = if let Some(topology) = topology.as_ref() {
             let transferred = match transfer_e5_topology(
                 ctx,

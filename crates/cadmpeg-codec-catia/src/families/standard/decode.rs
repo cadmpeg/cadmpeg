@@ -3008,7 +3008,7 @@ fn try_decode_standard_population(
         admitted!(annotate(ctx, &mut annotations, &id, stream, offset as u64, tag, exactness));
     }
     let mut topology_ir = ir.clone();
-    let mut topology_annotations = annotations.clone();
+    let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_standard_topology_annotations"));
     match attach_standard_faces(
         ctx,
         &mut topology_ir,
