@@ -320,12 +320,29 @@ impl AnnotationBuilder {
         offset: u64,
         tag: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        self.note_charged_optional(ctx, id, stream, offset, Some(tag))
+    }
+
+    /// Record an optionally tagged source location under the caller's budget.
+    pub fn note_charged_optional(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &str,
+        stream: &StreamHandle,
+        offset: u64,
+        tag: Option<&str>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         if !self.annotations.provenance.contains_key(id) {
             ctx.charge_collection_items(1, "collect source provenance")?;
         }
         let id = copy_annotation_text(ctx, id, "retain source provenance identity")?;
-        let tag = copy_annotation_text(ctx, tag, "retain source provenance tag")?;
-        self.note_owned(id, stream, offset).tag(tag);
+        let tag = tag
+            .map(|tag| copy_annotation_text(ctx, tag, "retain source provenance tag"))
+            .transpose()?;
+        let note = self.note_owned(id, stream, offset);
+        if let Some(tag) = tag {
+            note.tag(tag);
+        }
         Ok(())
     }
 

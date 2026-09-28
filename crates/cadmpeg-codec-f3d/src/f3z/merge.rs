@@ -363,30 +363,52 @@ fn rescope_fidelity(
     })?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
-    let owner = cadmpeg_ir::stream_name!("f3d:xref/")
-        .with_suffix(crate::ids::identity_key_component(occurrence).replace('/', "%2F"))
-        .with_suffix("/");
+    let owner = cadmpeg_ir::StreamName::try_from(crate::container::format_retained(
+        ctx,
+        "retain F3Z fidelity owner",
+        format_args!("f3d:xref/{}/", EscapedOccurrenceComponent(occurrence)),
+    )?)
+    .map_err(CodecError::malformed)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
-    let mut streams = std::collections::BTreeMap::new();
     for (id, provenance) in provenance {
-        let stream = streams
-            .entry(provenance.stream().to_owned())
-            .or_insert_with(|| StreamHandle::new(owner.clone().with_suffix(provenance.stream())));
-        let note = builder.note(id, stream, provenance.offset);
-        if let Some(tag) = provenance.tag {
-            note.tag(tag);
-        }
+        let stream = cadmpeg_ir::StreamName::try_from(crate::container::format_retained(
+            ctx,
+            "retain F3Z provenance stream",
+            format_args!("{}{}", owner.as_str(), provenance.stream()),
+        )?)
+        .map_err(CodecError::malformed)?;
+        ctx.charge_collection_items(1, "create F3Z provenance stream handle")?;
+        let stream = StreamHandle::new(stream);
+        builder.note_charged_optional(
+            ctx,
+            &id,
+            &stream,
+            provenance.offset,
+            provenance.tag.as_deref(),
+        )?;
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build());
     for (id, record) in records {
-        let id = UnknownId::mint(
-            rescope(id.as_str(), occurrence).unwrap_or_else(|| id.as_str().to_owned()),
-        )
+        let id_text = match rescope_charged(ctx, id.as_str(), occurrence)? {
+            Some(id) => id,
+            None => crate::container::format_retained(
+                ctx,
+                "copy F3Z retained record identity",
+                format_args!("{id}"),
+            )?,
+        };
+        let id = UnknownId::mint(id_text)
         .map_err(|error| {
             CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
         })?;
-        let stream = owner.clone().with_suffix(record.stream());
+        let stream = cadmpeg_ir::StreamName::try_from(crate::container::format_retained(
+            ctx,
+            "retain F3Z record stream",
+            format_args!("{}{}", owner.as_str(), record.stream()),
+        )?)
+        .map_err(CodecError::malformed)?;
+        ctx.charge_collection_items(1, "collect F3Z rescoped retained records")?;
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
     }
     Ok(rescoped)
