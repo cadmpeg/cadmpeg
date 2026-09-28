@@ -10,6 +10,15 @@ use crate::design::test_support::push_genesis_block;
 use crate::design::test_support::push_reference;
 use crate::records::sketch_relations::SketchConstraintKind;
 
+fn tested_parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_classed_sketch_relation(ctx, payload, class).unwrap()
+    })
+}
+
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     // The eleven-byte reference form puts each pair at fifteen bytes: the
@@ -42,7 +51,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
             .members
@@ -117,7 +126,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
             .members
@@ -201,7 +210,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = parse_classed_sketch_relation(
+    let parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -296,7 +305,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         &[291, 327, 330, 280],
     );
     let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
     assert_eq!(
         parsed
             .members
@@ -359,7 +368,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         &[353, 352, 442, 445],
     );
     let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
     assert_eq!(
         parsed
             .members

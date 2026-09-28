@@ -1386,7 +1386,10 @@ pub(crate) fn decode_sketch_relations(
                 .and_then(|design_type| {
                     SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version)
                 });
-            let parsed = class.and_then(|class| parse_classed_sketch_relation(payload, class));
+            let parsed = match class {
+                Some(class) => parse_classed_sketch_relation(ctx, payload, class)?,
+                None => None,
+            };
             let Some(parsed) = parsed else {
                 continue;
             };
@@ -4094,21 +4097,29 @@ enum AuxiliaryRelationReference {
 /// the auxiliary run when it is present. An absent reference is one zero byte
 /// and names nothing, so it contributes no entry.
 fn take_auxiliary_relation_reference(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     cursor: &mut usize,
     auxiliary_references: &mut Vec<crate::records::identity::Located<u32, usize>>,
-) -> Option<AuxiliaryRelationReference> {
+) -> Result<Option<AuxiliaryRelationReference>, CodecError> {
     let at = *cursor;
-    let reference = take_reference(payload, cursor)?;
+    let Some(reference) = take_reference(payload, cursor) else {
+        return Ok(None);
+    };
     let Some(target) = reference.target() else {
-        return Some(AuxiliaryRelationReference::Absent);
+        return Ok(Some(AuxiliaryRelationReference::Absent));
+    };
+    let Some(value) = u32::try_from(target).ok() else {
+        return Ok(None);
     };
     let located = crate::records::identity::Located {
-        value: u32::try_from(target).ok()?,
+        value,
         offset: at + 1,
     };
+    ctx.charge_collection_items(1, "f3d sketch auxiliary relation references")?;
+    auxiliary_references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("f3d sketch auxiliary relation references allocation", 0, 1))?;
     auxiliary_references.push(located);
-    Some(AuxiliaryRelationReference::Present(located))
+    Ok(Some(AuxiliaryRelationReference::Present(located)))
 }
 
 /// Skip the two tables both pattern classes write after their own leading
@@ -4155,17 +4166,22 @@ enum RelationClassMembers {
 /// present reference among them in the auxiliary run
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn parse_relation_class_members(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     cursor: &mut usize,
     class: SketchRelationClass,
     auxiliary_references: &mut Vec<crate::records::identity::Located<u32, usize>>,
-) -> Option<RelationClassMembers> {
+) -> Result<Option<RelationClassMembers>, CodecError> {
+    let parsed = (|| {
     macro_rules! take {
         () => {
-            take_auxiliary_relation_reference(payload, cursor, auxiliary_references)
+            match take_auxiliary_relation_reference(ctx, payload, cursor, auxiliary_references) {
+                Ok(reference) => reference,
+                Err(error) => return Some(Err(error)),
+            }
         };
     }
-    Some(match class {
+    Some(Ok(match class {
         SketchRelationClass::Plain => RelationClassMembers::Plain,
         SketchRelationClass::Tangent => {
             for _ in 0..3 {
@@ -4235,7 +4251,17 @@ fn parse_relation_class_members(
                 }
                 *cursor += 1;
             }
-            let (text_reference, transforms, end) = parse_text_glyph_run(payload, *cursor)?;
+            let (text_reference, transforms, end) = match parse_text_glyph_run(ctx, payload, *cursor) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "f3d sketch auxiliary relation references") {
+                return Some(Err(error));
+            }
+            if auxiliary_references.try_reserve(1).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d sketch auxiliary relation references allocation", 0, 1)));
+            }
             auxiliary_references.push(crate::records::identity::Located {
                 value: text_reference,
                 offset: *cursor + 1,
@@ -4245,7 +4271,9 @@ fn parse_relation_class_members(
                 glyph_transforms: transforms,
             }
         }
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Parse one sketch-relation record body whose class is known
@@ -4259,9 +4287,11 @@ fn parse_relation_class_members(
 /// pair list is absent, and the mask is a u32. Both reference runs hold the
 /// same members; only the second is in semantic order.
 fn parse_classed_sketch_relation(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     class: SketchRelationClass,
-) -> Option<ParsedSketchRelation> {
+) -> Result<Option<ParsedSketchRelation>, CodecError> {
+    let parsed = (|| {
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
     let (_, start) = lp_ascii_filtered_view(payload, 15, 0..=256, u8::is_ascii_graphic)?;
@@ -4275,7 +4305,12 @@ fn parse_classed_sketch_relation(
             return None;
         }
         cursor += 4;
-        members.reserve(member_count);
+        if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(member_count), "f3d sketch relation paired members") {
+            return Some(Err(error));
+        }
+        if members.try_reserve(member_count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d sketch relation paired members allocation", 0, 1)));
+        }
         for _ in 0..member_count {
             let reference = take_relation_reference(payload, &mut cursor)?;
             members.push(ParsedSketchRelationMember {
@@ -4290,8 +4325,11 @@ fn parse_classed_sketch_relation(
     // `EntityGenesis` is one such key.
     let entity_genesis = read_property_block(payload, &mut cursor)?.find("EntityGenesis");
     let mut auxiliary_references = Vec::new();
-    let class_members =
-        parse_relation_class_members(payload, &mut cursor, class, &mut auxiliary_references)?;
+    let class_members = match parse_relation_class_members(ctx, payload, &mut cursor, class, &mut auxiliary_references) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let owner = take_relation_reference(payload, &mut cursor)?;
     let state_offset = cursor;
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
@@ -4308,7 +4346,13 @@ fn parse_classed_sketch_relation(
         return None;
     }
     cursor += 4;
-    let mut return_members = Vec::with_capacity(return_count);
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(return_count), "f3d sketch relation return members") {
+        return Some(Err(error));
+    }
+    let mut return_members = Vec::new();
+    if return_members.try_reserve(return_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d sketch relation return members allocation", 0, 1)));
+    }
     for _ in 0..return_count {
         return_members.push(take_relation_reference(payload, &mut cursor)?);
     }
@@ -4316,7 +4360,7 @@ fn parse_classed_sketch_relation(
         return None;
     }
     let parsed_end = cursor + 1;
-    Some(ParsedSketchRelation {
+    Some(Ok(ParsedSketchRelation {
         members,
         auxiliary_references,
         owner_reference: owner.value,
@@ -4327,7 +4371,9 @@ fn parse_classed_sketch_relation(
         class_members,
         return_members,
         parsed_end,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Parse a text-path glyph run at `at`: the marked text-entity reference,
@@ -4337,7 +4383,8 @@ fn parse_classed_sketch_relation(
 /// character order, and the offset directly after the last block.
 type TextGlyphRun = (u32, Vec<SketchGlyphTransform>, usize);
 
-fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
+fn parse_text_glyph_run(ctx: &DecodeContext<'_>, payload: &[u8], at: usize) -> Result<Option<TextGlyphRun>, CodecError> {
+    let parsed = (|| {
     let (text_reference, end) = marked_u32(payload, at)?;
     let mut view = View::over_retained(payload);
     view.seek(end)?;
@@ -4348,7 +4395,13 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
     if !(1..=4096).contains(&count) {
         return None;
     }
-    let mut transforms = Vec::with_capacity(count);
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d sketch text glyph transforms") {
+        return Some(Err(error));
+    }
+    let mut transforms = Vec::new();
+    if transforms.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d sketch text glyph transforms allocation", 0, 1)));
+    }
     for _ in 0..count {
         if view.u32_le()? != 16 {
             return None;
@@ -4361,7 +4414,9 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Option<TextGlyphRun> {
         }
         transforms.push(SketchGlyphTransform::try_from(transform).ok()?);
     }
-    Some((text_reference, transforms, view.position()))
+    Some(Ok((text_reference, transforms, view.position())))
+    })();
+    parsed.transpose()
 }
 
 /// Validated indexed-record identity and byte offset.
