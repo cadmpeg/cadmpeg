@@ -41,18 +41,7 @@ pub(super) fn attach_expanded_sections(
         "unix_compress_expanded_section",
         Exactness::Derived,
     )?;
-    let tables = scan
-        .primitives
-        .double_xar_tables
-        .iter()
-        .map(|table| CreoDoubleXarTableRecord {
-            id: format!(
-                "creo:{}:double_xar#{}:{}",
-                table.section_name, table.section_source_offset, table.expanded_offset
-            ),
-            table,
-        })
-        .collect::<Vec<_>>();
+    let tables = double_xar_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -65,24 +54,50 @@ pub(super) fn attach_expanded_sections(
         "model_scalar_dictionary",
         Exactness::ByteExact,
     )?;
-    let primitive_arrays = scan
-        .primitives
-        .scalar_arrays
-        .iter()
-        .map(|array| CreoPrimitiveScalarArrayRecord {
-            id: format!(
-                "creo:solid_primdata:scalar_array#{}:{}",
-                array.field.as_str(),
-                array.offset
-            ),
-            field: array.field.as_str().to_owned(),
-            expanded_offset: array.offset,
-            count: array.values.len(),
-            values: array.values.iter().map(|value| value.get()).collect(),
-        })
-        .collect::<Vec<_>>();
+    let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
     store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
     Ok(())
+}
+
+fn double_xar_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoDoubleXarTableRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for table in &scan.primitives.double_xar_tables {
+        let id = ctx.format_retained(
+            format_args!(
+                "creo:{}:double_xar#{}:{}",
+                table.section_name, table.section_source_offset, table.expanded_offset
+            ),
+            "creo native double-xar IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native double-xar records")?;
+        records.push(CreoDoubleXarTableRecord { id, table });
+    }
+    Ok(records)
+}
+
+fn primitive_scalar_array_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoPrimitiveScalarArrayRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for array in &scan.primitives.scalar_arrays {
+        let id = ctx.format_retained(
+            format_args!("creo:solid_primdata:scalar_array#{}:{}", array.field.as_str(), array.offset),
+            "creo native scalar-array IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native scalar-array records")?;
+        records.push(CreoPrimitiveScalarArrayRecord {
+            id,
+            field: array.field.as_str(),
+            expanded_offset: array.offset,
+            count: array.values.len(),
+            values: &array.values,
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn feature_surface_replay_associations(
@@ -229,4 +244,101 @@ pub(super) fn fc05_cylinder_cap_pair_records(
             source_section: source_section(scan, record.offset),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{double_xar_records, primitive_scalar_array_records};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn primitive_scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.primitives.double_xar_tables.push(crate::container::ModelDoubleXarTable {
+            section_name: "Body".to_string(),
+            section_source_offset: 0,
+            expanded_offset: 0,
+            entries: Vec::new(),
+        });
+        scan.primitives.scalar_arrays.push(crate::primdata::PrimitiveScalarArray {
+            field: crate::primdata::PrimitiveArrayField::Points,
+            offset: 0,
+            values: vec![cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite scalar")],
+        });
+        scan
+    }
+
+    fn with_limits(
+        retained: u64,
+        items: u64,
+        project: impl FnOnce(&DecodeContext<'_>, &crate::container::ContainerScan<'_>)
+            -> Result<serde_json::Value, cadmpeg_core::CodecError>,
+    ) -> Result<serde_json::Value, cadmpeg_core::CodecError> {
+        let scan = primitive_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = retained;
+        policy.limits.max_collection_items = items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        project(&ctx, &scan)
+    }
+
+    #[test]
+    fn native_double_xar_id_refuses_retained_limit() {
+        let limit = "creo:Body:double_xar#0:0".len() as u64 - 1;
+        let error = with_limits(limit, 1, |ctx, scan| {
+            let records = double_xar_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("table ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native double-xar IDs"));
+    }
+
+    #[test]
+    fn native_double_xar_row_refuses_collection_limit() {
+        let error = with_limits(u64::MAX, 0, |ctx, scan| {
+            let records = double_xar_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("one table needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native double-xar records"));
+        let value = with_limits(u64::MAX, 1, |ctx, scan| {
+            let records = double_xar_records(ctx, scan)?;
+            Ok(serde_json::to_value(&records[0]).expect("record JSON"))
+        }).expect("one table record");
+        assert_eq!(value["id"], "creo:Body:double_xar#0:0");
+        assert_eq!(value["count"], 0);
+    }
+
+    #[test]
+    fn native_scalar_array_id_refuses_retained_limit() {
+        let limit = "creo:solid_primdata:scalar_array#pts:0".len() as u64 - 1;
+        let error = with_limits(limit, 1, |ctx, scan| {
+            let records = primitive_scalar_array_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("scalar-array ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native scalar-array IDs"));
+    }
+
+    #[test]
+    fn native_scalar_array_row_refuses_collection_limit() {
+        let error = with_limits(u64::MAX, 0, |ctx, scan| {
+            let records = primitive_scalar_array_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("one scalar array needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native scalar-array records"));
+        let value = with_limits(u64::MAX, 1, |ctx, scan| {
+            let records = primitive_scalar_array_records(ctx, scan)?;
+            Ok(serde_json::to_value(&records[0]).expect("record JSON"))
+        }).expect("one scalar-array record");
+        assert_eq!(value["id"], "creo:solid_primdata:scalar_array#pts:0");
+        assert_eq!(value["field"], "pts");
+        assert_eq!(value["values"], serde_json::json!([2.5]));
+    }
 }

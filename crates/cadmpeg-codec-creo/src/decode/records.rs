@@ -461,12 +461,12 @@ pub(super) struct CreoExpandedSectionRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoPrimitiveScalarArrayRecord {
+pub(super) struct CreoPrimitiveScalarArrayRecord<'a> {
     pub(super) id: String,
-    pub(super) field: String,
+    pub(super) field: &'static str,
     pub(super) expanded_offset: usize,
     pub(super) count: usize,
-    pub(super) values: Vec<f64>,
+    pub(super) values: &'a [cadmpeg_ir::scalar::FiniteReal],
 }
 
 #[derive(Debug, Serialize)]
