@@ -1639,8 +1639,15 @@ fn record_walk_retains_opaque_a8_surface_nodes() {
     assert_eq!(records[0].class, 0x34);
     assert_eq!(records[0].object_id, 7);
     assert_eq!(records[0].payload, [1, 2, 3]);
+    let limited = crate::test_support::with_retained_limit(2, |ctx| {
+        surface_node(ctx, &records[0], None)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_node_payload"));
     assert_eq!(
-        surface_node(&records[0], None),
+        crate::test_support::with_service_context(|ctx| {
+            surface_node(ctx, &records[0], None)
+        }).expect("service budget"),
         Some(B5Surface::Unknown {
             family: 0xa8,
             class: 0x34,

@@ -388,6 +388,22 @@ pub(in crate::families) struct A8SurfaceHeader {
 }
 
 impl A8SurfaceHeader {
+    pub(in crate::families) fn copy_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            pos: self.pos,
+            object_id: self.object_id,
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots: self.u_knots.copy_charged(ctx)?,
+            v_knots: self.v_knots.copy_charged(ctx)?,
+            rational: self.rational,
+            pole_storage: self.pole_storage,
+        })
+    }
+
     /// U pole count derived from degree and knot multiplicities.
     fn u_count(&self) -> Option<u32> {
         self.u_knots.pole_count(self.u_degree)

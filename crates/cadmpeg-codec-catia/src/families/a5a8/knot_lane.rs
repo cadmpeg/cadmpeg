@@ -9,6 +9,18 @@ pub(super) struct A8KnotLane {
 }
 
 impl A8KnotLane {
+    pub(super) fn copy_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            distinct: crate::resource::copy_retained_slice(ctx, &self.distinct,
+                "catia_a8_copied_distinct_knots")?,
+            multiplicities: crate::resource::copy_retained_slice(ctx, &self.multiplicities,
+                "catia_a8_copied_multiplicities")?,
+        })
+    }
+
     /// Multiplicity of each distinct knot.
     #[cfg(test)]
     pub(super) fn multiplicities(&self) -> &[u32] {
@@ -72,5 +84,23 @@ mod tests {
         assert!(matches!(limited,
             Err(cadmpeg_core::CodecError::ResourceLimit(error))
                 if error.operation == "catia_a8_expanded_knots"));
+    }
+
+    #[test]
+    fn copied_knot_lane_refuses_each_caller_collection_limit() {
+        let lane = A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2])
+            .expect("valid knot lane");
+        for (limit, operation) in [
+            (1, "catia_a8_copied_distinct_knots"),
+            (2, "catia_a8_copied_multiplicities"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                lane.copy_charged(ctx)
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation));
+        }
+        assert_eq!(crate::test_support::with_service_context(|ctx| lane.copy_charged(ctx))
+            .expect("service budget"), lane);
     }
 }

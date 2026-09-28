@@ -11,7 +11,7 @@ use crate::families::b5::graph::{
     merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
     parse_face_record, parse_loop, parse_loop_record, pcurve_endpoints,
     pcurve_nurbs_knots,
-    pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
+    pcurve_parameter_domain, point_index, resolve_surface_aliases,
     sphere_great_circle_point, surface_alias_carrier, typed_face_records_from_records,
     typed_loop_records_from_records,
     B5FaceRecord, B5IncidenceLane,
@@ -23,6 +23,68 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn resolve_targeted_surface(
+    object_id: u32,
+    records: &HashMap<u32, Option<B5Record>>,
+    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    resolved: &HashMap<u32, Option<B5Surface>>,
+    rolling: &HashMap<u32, Option<B5Surface>>,
+) -> Option<B5Surface> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
+    }).expect("service budget")
+}
+
+#[test]
+fn targeted_surface_records_and_resolution_refuse_caller_limits() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 9, &[0x80]);
+    let frames = crate::test_support::with_service_context(|ctx| {
+        super::super::collect_object_stream_frames(ctx, &bytes)
+    }).expect("service budget");
+    let object_ids = HashSet::from([9]);
+    for (limit, operation) in [
+        (1, "catia_b5_targeted_surface_records"),
+        (2, "catia_b5_targeted_surface_visited"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::targeted_surfaces_from_frames(
+                ctx, &bytes, &object_ids, &frames, &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    let surface = B5Surface::Unknown {
+        family: 0xb5,
+        class: 0x27,
+        payload: vec![1, 2, 3],
+    };
+    let candidate = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_targeted_surface(ctx, &mut HashMap::new(), 9, surface.clone())
+    });
+    assert!(matches!(candidate, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_targeted_surface_candidates"));
+    let copied = crate::test_support::with_retained_limit(2, |ctx| {
+        super::super::copy_surface(ctx, &surface)
+    });
+    assert!(matches!(copied, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_copied_unknown_surface_payload"));
+    let resolved = HashMap::from([(9, Some(surface.clone()))]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::resolve_targeted_surface(
+            ctx, 9, &HashMap::new(), &HashMap::new(), &resolved, &HashMap::new(),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_targeted_surface_visited"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        super::super::resolve_targeted_surface(
+            ctx, 9, &HashMap::new(), &HashMap::new(), &resolved, &HashMap::new(),
+        )
+    }).expect("service budget"), Some(surface));
+}
 
 fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
     crate::test_support::with_service_context(|ctx| {
@@ -634,6 +696,28 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
         resolve_targeted_surface(9, &records, &HashMap::new(), &resolved, &HashMap::new(),),
         Some(carrier)
     );
+    let mut refused = std::collections::BTreeSet::new();
+    for limit in 0..20 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::resolve_targeted_surface(
+                ctx, 9, &records, &HashMap::new(), &resolved, &HashMap::new(),
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                refused.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            other => panic!("unexpected offset resolution result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia_b5_targeted_surface_visited",
+        "catia_b5_targeted_visited_copy",
+        "catia_b5_targeted_offset_carrier",
+        "catia_b5_targeted_offset_source",
+    ] {
+        assert!(refused.contains(operation), "missing refusal at {operation}");
+    }
 
     let mut wrong_distance = offset.clone();
     wrong_distance.payload[3..11].copy_from_slice(&(-0.25f64).to_le_bytes());
