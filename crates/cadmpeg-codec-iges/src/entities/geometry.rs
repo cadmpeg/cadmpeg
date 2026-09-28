@@ -27,6 +27,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
@@ -645,19 +646,56 @@ fn validate_declared_transform_frame(
 
 #[derive(Debug)]
 pub(crate) enum TransformResolutionError {
-    Invalid(String),
+    Invalid(TransformFailure),
     Resource(CodecError),
 }
 
-impl From<String> for TransformResolutionError {
-    fn from(message: String) -> Self {
-        Self::Invalid(message)
+#[derive(Debug)]
+pub(crate) enum TransformFailure {
+    Literal(&'static str),
+    Depth,
+    MissingEntry(u32),
+    WrongTypeForm { sequence: u32, entity_type: i64, form: i64 },
+    MissingParameters(u32),
+    NonNumericCoefficient { sequence: u32, index: usize },
+    NonFiniteCoefficient(u32),
+    NotOrthonormal(u32),
+    WrongDeterminant { sequence: u32, form: i64 },
+    FirstAxis(u32),
+    SecondAxis(u32),
+    NonFiniteScaled(u32),
+    NonFiniteComposed(u32),
+}
+
+impl fmt::Display for TransformFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(message) => formatter.write_str(message),
+            Self::Depth => write!(formatter, "transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities"),
+            Self::MissingEntry(sequence) => write!(formatter, "transformation D{sequence} is missing"),
+            Self::WrongTypeForm { sequence, entity_type, form } => write!(formatter, "transformation D{sequence} is type {entity_type} form {form}, expected defining type 124 form 0 or 1"),
+            Self::MissingParameters(sequence) => write!(formatter, "transformation D{sequence} parameters are missing"),
+            Self::NonNumericCoefficient { sequence, index } => write!(formatter, "transformation D{sequence} coefficient {index} is not numeric"),
+            Self::NonFiniteCoefficient(sequence) => write!(formatter, "transformation D{sequence} has a non-finite coefficient"),
+            Self::NotOrthonormal(sequence) => write!(formatter, "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"),
+            Self::WrongDeterminant { sequence, form } => write!(formatter, "transformation D{sequence} determinant disagrees with form {form} within its declared numeric precision"),
+            Self::FirstAxis(sequence) => write!(formatter, "transformation D{sequence} first axis cannot be normalized"),
+            Self::SecondAxis(sequence) => write!(formatter, "transformation D{sequence} second axis cannot be normalized"),
+            Self::NonFiniteScaled(sequence) => write!(formatter, "transformation D{sequence} has non-finite coefficients after length scaling"),
+            Self::NonFiniteComposed(sequence) => write!(formatter, "transformation D{sequence} has non-finite coefficients after composition"),
+        }
     }
 }
 
-impl From<&str> for TransformResolutionError {
-    fn from(message: &str) -> Self {
-        Self::Invalid(message.to_owned())
+impl From<TransformFailure> for TransformResolutionError {
+    fn from(reason: TransformFailure) -> Self {
+        Self::Invalid(reason)
+    }
+}
+
+impl From<&'static str> for TransformResolutionError {
+    fn from(message: &'static str) -> Self {
+        Self::Invalid(TransformFailure::Literal(message))
     }
 }
 
@@ -668,7 +706,7 @@ impl From<CodecError> for TransformResolutionError {
 }
 
 impl TransformResolutionError {
-    pub(crate) fn non_resource(self) -> Result<String, CodecError> {
+    pub(crate) fn non_resource(self) -> Result<TransformFailure, CodecError> {
         match self {
             Self::Invalid(message) => Ok(message),
             Self::Resource(error) => Err(error),
@@ -689,7 +727,7 @@ pub(crate) fn resolve_transform(
         return Ok(Transform::identity());
     }
     let sequence = u32::try_from(sequence)
-        .map_err(|_| "transformation pointer is not a positive sequence".to_string())?;
+        .map_err(|_| TransformFailure::Literal("transformation pointer is not a positive sequence"))?;
     if sequence % 2 == 0 {
         return Err("transformation pointer names an even Directory sequence".into());
     }
@@ -702,7 +740,7 @@ pub(crate) fn resolve_transform(
             policy.min(MAX_TRANSFORM_DEPTH)
         });
     if path.len() >= depth_limit {
-        return Err(format!("transformation chain exceeds {MAX_TRANSFORM_DEPTH} entities").into());
+        return Err(TransformFailure::Depth.into());
     }
     if path.contains(&sequence) {
         return Err("transformation chain is cyclic".into());
@@ -715,28 +753,18 @@ pub(crate) fn resolve_transform(
         let entry = entries
             .get(&sequence)
             .copied()
-            .ok_or_else(|| format!("transformation D{sequence} is missing"))?;
+            .ok_or(TransformFailure::MissingEntry(sequence))?;
         if entry.entity_type != 124 || !matches!(entry.form, 0 | 1) {
-            return Err(format!(
-                "transformation D{sequence} is type {} form {}, expected defining type 124 form 0 or 1",
-                entry.entity_type, entry.form
-            ).into());
+            return Err(TransformFailure::WrongTypeForm { sequence, entity_type: entry.entity_type, form: entry.form }.into());
         }
         let record = records
             .get(&sequence)
             .copied()
-            .ok_or_else(|| format!("transformation D{sequence} parameters are missing"))?;
+            .ok_or(TransformFailure::MissingParameters(sequence))?;
         let mut values = [FiniteReal::ZERO; 12];
         for (index, value) in values.iter_mut().enumerate() {
-            let number = record.number(index + 1).ok_or_else(|| {
-                format!(
-                    "transformation D{sequence} coefficient {} is not numeric",
-                    index + 1
-                )
-            })?;
-            *value = FiniteReal::new(number).ok_or_else(|| {
-                format!("transformation D{sequence} has a non-finite coefficient")
-            })?;
+            let number = record.number(index + 1).ok_or(TransformFailure::NonNumericCoefficient { sequence, index: index + 1 })?;
+            *value = FiniteReal::new(number).ok_or(TransformFailure::NonFiniteCoefficient(sequence))?;
         }
         let mut values = values.map(FiniteReal::get);
         for index in [3, 7, 11] {
@@ -755,15 +783,10 @@ pub(crate) fn resolve_transform(
         match validate_declared_transform_frame(coefficient_intervals, expected_determinant) {
             Ok(()) => {}
             Err(DeclaredTransformFrameError::NotOrthonormal) => {
-                return Err(format!(
-                    "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
-                ).into());
+                return Err(TransformFailure::NotOrthonormal(sequence).into());
             }
             Err(DeclaredTransformFrameError::WrongDeterminant) => {
-                return Err(format!(
-                    "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
-                    entry.form
-                ).into());
+                return Err(TransformFailure::WrongDeterminant { sequence, form: entry.form }.into());
             }
         }
 
@@ -777,14 +800,14 @@ pub(crate) fn resolve_transform(
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
         }
-        .ok_or_else(|| format!("transformation D{sequence} first axis cannot be normalized"))?;
+        .ok_or(TransformFailure::FirstAxis(sequence))?;
         let second_projection = first.dot(raw_columns[1]);
         let second_residual = raw_columns[1] - first.scale(second_projection);
         let second = {
             let n = second_residual.norm();
             (n.is_finite() && n > 0.0).then(|| second_residual.scale(1.0 / n))
         }
-        .ok_or_else(|| format!("transformation D{sequence} second axis cannot be normalized"))?;
+        .ok_or(TransformFailure::SecondAxis(sequence))?;
         let perpendicular = first.cross(second);
         let third = perpendicular.scale(expected_determinant);
         let local = Transform::affine([
@@ -792,9 +815,7 @@ pub(crate) fn resolve_transform(
             [first.y, second.y, third.y, values[7]],
             [first.z, second.z, third.z, values[11]],
         ])
-        .ok_or_else(|| {
-            format!("transformation D{sequence} has non-finite coefficients after length scaling")
-        })?;
+        .ok_or(TransformFailure::NonFiniteScaled(sequence))?;
         let parent = resolve_transform(
             entry.transform,
             entries,
@@ -806,9 +827,7 @@ pub(crate) fn resolve_transform(
         )?;
         parent
             .compose(local)
-            .map_err(|_| {
-                format!("transformation D{sequence} has non-finite coefficients after composition")
-            })
+            .map_err(|_| TransformFailure::NonFiniteComposed(sequence))
             .map_err(TransformResolutionError::from)
     })();
     path.remove(&sequence);

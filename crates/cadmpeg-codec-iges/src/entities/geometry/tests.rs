@@ -1717,6 +1717,30 @@ fn transform_translation_overflow_after_inch_scaling_is_rejected() {
 }
 
 #[test]
+fn transform_failures_render_original_diagnostics_without_allocating_early() {
+    use super::TransformFailure;
+
+    let cases = [
+        (TransformFailure::Literal("transformation chain is cyclic"), "transformation chain is cyclic"),
+        (TransformFailure::Depth, "transformation chain exceeds 64 entities"),
+        (TransformFailure::MissingEntry(7), "transformation D7 is missing"),
+        (TransformFailure::WrongTypeForm { sequence: 7, entity_type: 123, form: 2 }, "transformation D7 is type 123 form 2, expected defining type 124 form 0 or 1"),
+        (TransformFailure::MissingParameters(7), "transformation D7 parameters are missing"),
+        (TransformFailure::NonNumericCoefficient { sequence: 7, index: 12 }, "transformation D7 coefficient 12 is not numeric"),
+        (TransformFailure::NonFiniteCoefficient(7), "transformation D7 has a non-finite coefficient"),
+        (TransformFailure::NotOrthonormal(7), "transformation D7 linear part is not orthonormal within its declared numeric precision"),
+        (TransformFailure::WrongDeterminant { sequence: 7, form: 1 }, "transformation D7 determinant disagrees with form 1 within its declared numeric precision"),
+        (TransformFailure::FirstAxis(7), "transformation D7 first axis cannot be normalized"),
+        (TransformFailure::SecondAxis(7), "transformation D7 second axis cannot be normalized"),
+        (TransformFailure::NonFiniteScaled(7), "transformation D7 has non-finite coefficients after length scaling"),
+        (TransformFailure::NonFiniteComposed(7), "transformation D7 has non-finite coefficients after composition"),
+    ];
+    for (reason, expected) in cases {
+        assert_eq!(reason.to_string(), expected);
+    }
+}
+
+#[test]
 fn transform_chain_path_refuses_collection_limit_before_insertion() {
     use crate::parameter::{ParameterRecord, Token, TokenValue};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
