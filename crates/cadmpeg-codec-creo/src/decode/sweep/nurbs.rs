@@ -25,14 +25,23 @@ const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 /// the byte offset of its entity label. A saved section states the entity
 /// identifier only for entities the solver kept, so the byte offset is the
 /// identity for the rest.
-fn saved_spline_record(spline: &crate::feature::definitions::FeatureSavedSpline) -> String {
-    match spline.entity_id {
-        Some(entity_id) => format!(
-            "creo saved-spline entity {entity_id} at offset {}",
-            spline.offset
-        ),
-        None => format!("creo saved-spline entity at offset {}", spline.offset),
+fn saved_spline_record(
+    spline: &crate::feature::definitions::FeatureSavedSpline,
+) -> impl std::fmt::Display + '_ {
+    struct Record<'a>(&'a crate::feature::definitions::FeatureSavedSpline);
+    impl std::fmt::Display for Record<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self.0.entity_id {
+                Some(entity_id) => write!(
+                    f,
+                    "creo saved-spline entity {entity_id} at offset {}",
+                    self.0.offset
+                ),
+                None => write!(f, "creo saved-spline entity at offset {}", self.0.offset),
+            }
+        }
     }
+    Record(spline)
 }
 
 pub(in super::super) fn extruded_geometry_surface(
@@ -303,8 +312,8 @@ pub(in super::super) fn saved_spline_nurbs(
     match NurbsCurve::from_lanes(3, knots, converted_controls, None, false) {
         Ok(curve) => Ok(Some(curve)),
         Err(error) => {
-            refusal.note(
-                format!("{} NURBS record", saved_spline_record(spline)),
+            refusal.note_checked(ctx,
+                format_args!("{} NURBS record", saved_spline_record(spline)),
                 &error,
             );
             Ok(None)
@@ -323,21 +332,35 @@ pub(in super::super) fn saved_spline_nurbs(
 /// the plane, and the input is the number the record's bytes carry.
 fn saved_spline_off_plane_input(
     spline: &crate::feature::definitions::FeatureSavedSpline,
-) -> Option<(String, f64)> {
+) -> Option<(OffPlaneInput, f64)> {
     let point = spline
         .interpolation_points
         .iter()
         .enumerate()
         .find(|(_, point)| point[2].abs() > EPS_PLANAR_COORDINATE)
-        .map(|(index, point)| (format!("interpolation point {index}"), point[2]));
+        .map(|(index, point)| (OffPlaneInput::Point(index), point[2]));
     let tangent = spline.endpoint_tangents.as_ref().and_then(|tangents| {
         ["start", "end"]
             .into_iter()
             .zip(tangents.value)
             .find(|(_, tangent)| tangent[2].abs() > EPS_PLANAR_COORDINATE)
-            .map(|(end, tangent)| (format!("endpoint tangent {end}"), tangent[2]))
+            .map(|(end, tangent)| (OffPlaneInput::Tangent(end), tangent[2]))
     });
     point.or(tangent)
+}
+
+enum OffPlaneInput {
+    Point(usize),
+    Tangent(&'static str),
+}
+
+impl std::fmt::Display for OffPlaneInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Point(index) => write!(f, "interpolation point {index}"),
+            Self::Tangent(end) => write!(f, "endpoint tangent {end}"),
+        }
+    }
 }
 
 pub(in super::super) fn saved_spline_sketch_geometry(
@@ -346,8 +369,8 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<SketchGeometry>, CodecError> {
     if let Some((subject, z)) = saved_spline_off_plane_input(spline) {
-        refusal.note(
-            format!("{} sketch geometry record", saved_spline_record(spline)),
+        refusal.note_checked(ctx,
+            format_args!("{} sketch geometry record", saved_spline_record(spline)),
             &format_args!("{subject} is not on the sketch plane: z states {z}"),
         );
         return Ok(None);
@@ -398,8 +421,8 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     ) {
         Ok(pcurve) => Ok(Some(SketchGeometry::nurbs(pcurve))),
         Err(error) => {
-            refusal.note(
-                format!("{} sketch geometry record", saved_spline_record(spline)),
+            refusal.note_checked(ctx,
+                format_args!("{} sketch geometry record", saved_spline_record(spline)),
                 &error,
             );
             Ok(None)
@@ -554,8 +577,8 @@ pub(in super::super) fn interpolation_spline_surface(
     ) {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note(
-                format!("creo interpolation-spline surface record for {record}"),
+            refusal.note_checked(ctx,
+                format_args!("creo interpolation-spline surface record for {record}"),
                 &error,
             );
             Ok(None)
@@ -597,6 +620,7 @@ pub(super) fn translated_nurbs_curve(
 }
 
 pub(in super::super) fn extruded_nurbs_surface(
+    ctx: &DecodeContext<'_>,
     directrix: &NurbsCurve,
     sweep: [f64; 3],
     record: &dyn std::fmt::Display,
@@ -637,8 +661,8 @@ pub(in super::super) fn extruded_nurbs_surface(
     }) {
         Ok(surface) => Some(surface),
         Err(error) => {
-            refusal.note(
-                format!("creo extruded NURBS surface record for {record}"),
+            refusal.note_checked(ctx,
+                format_args!("creo extruded NURBS surface record for {record}"),
                 &error,
             );
             None
@@ -697,6 +721,7 @@ pub(super) fn oriented_sketch_nurbs_curve(
 }
 
 pub(super) fn sketch_nurbs_pcurve(
+    ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
     reversed: bool,
     record: &dyn std::fmt::Display,
@@ -719,8 +744,8 @@ pub(super) fn sketch_nurbs_pcurve(
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
         Err(error) => {
-            refusal.note(
-                format!("creo sketch NURBS pcurve record for {record}"),
+            refusal.note_checked(ctx,
+                format_args!("creo sketch NURBS pcurve record for {record}"),
                 &error,
             );
             None
@@ -729,6 +754,7 @@ pub(super) fn sketch_nurbs_pcurve(
 }
 
 pub(in super::super) fn extrusion_brep_side_surface(
+    ctx: &DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
@@ -749,7 +775,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            extruded_nurbs_surface(&translated, sweep, diagnostics.record, diagnostics.refusals)?,
+            extruded_nurbs_surface(ctx, &translated, sweep, diagnostics.record, diagnostics.refusals)?,
         )));
     }
     let section_geometry = match geometry.definition() {
@@ -1064,8 +1090,8 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
     match NurbsCurve::from_lanes(3, knots, controls, None, false) {
         Ok(curve) => Ok(Some((curve, sweep))),
         Err(error) => {
-            refusal.note(
-                format!(
+            refusal.note_checked(ctx,
+                format_args!(
                     "creo placed tabulated-cylinder directrix record for surface {} at offset {}",
                     parameters.surface_id, parameters.offset
                 ),
@@ -1350,6 +1376,30 @@ mod tests {
     }
 
     #[test]
+    fn non_planar_saved_spline_refusal_text_obeys_retained_byte_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test decode context");
+        let mut refusal = crate::lane_refusal::LaneRefusals::new();
+        assert!(super::saved_spline_sketch_geometry(
+            &ctx,
+            &planar_or_offset_spline(2.0),
+            &mut refusal
+        )
+        .expect("candidate route")
+        .is_none());
+        let error = refusal.take_records_checked().expect_err("refusal text exceeds limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "creo lane refusal text"
+        ));
+    }
+
+    #[test]
     fn a_non_planar_saved_spline_tangent_states_the_tangent_that_left_the_sketch_plane() {
         let mut spline = planar_or_offset_spline(0.0);
         spline
@@ -1389,12 +1439,12 @@ mod tests {
             offset: 2048,
         };
         assert_eq!(
-            super::saved_spline_record(&spline),
+            super::saved_spline_record(&spline).to_string(),
             "creo saved-spline entity 7 at offset 2048"
         );
         spline.entity_id = None;
         assert_eq!(
-            super::saved_spline_record(&spline),
+            super::saved_spline_record(&spline).to_string(),
             "creo saved-spline entity at offset 2048"
         );
     }
@@ -1421,18 +1471,17 @@ mod tests {
         )
         .expect("valid directrix");
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let first = extruded_nurbs_surface(
-            &directrix,
-            [f64::MAX, 0.0, 0.0],
-            &"surface 11 at offset 64",
-            &mut refusal,
-        );
-        let second = extruded_nurbs_surface(
-            &directrix,
-            [f64::MAX, 0.0, 0.0],
-            &"surface 12 at offset 128",
-            &mut refusal,
-        );
+        let (first, second) = with_collection_limit(u64::MAX, |ctx| {
+            let first = extruded_nurbs_surface(
+                ctx, &directrix, [f64::MAX, 0.0, 0.0],
+                &"surface 11 at offset 64", &mut refusal,
+            );
+            let second = extruded_nurbs_surface(
+                ctx, &directrix, [f64::MAX, 0.0, 0.0],
+                &"surface 12 at offset 128", &mut refusal,
+            );
+            (first, second)
+        });
         assert!(first.is_none(), "the refused ruling states no surface");
         assert!(second.is_none(), "the refused ruling states no surface");
         let records = refusal.take_records();

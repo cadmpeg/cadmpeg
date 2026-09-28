@@ -276,7 +276,7 @@ pub(in super::super) fn circular_pcurve(
     match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
-            refusal.note(format!("creo circular pcurve record for {record}"), &error);
+            refusal.note_checked(ctx, format_args!("creo circular pcurve record for {record}"), &error);
             Ok(None)
         }
     }
@@ -326,7 +326,7 @@ pub(in super::super) fn extrusion_cap_pcurve(
             )
         }
         SketchGeometryDefinition::Nurbs { .. } => {
-            Ok(sketch_nurbs_pcurve(geometry, reversed, record, refusal))
+            Ok(sketch_nurbs_pcurve(ctx, geometry, reversed, record, refusal))
         }
         _ => Ok(line_pcurve(start, end)),
     }

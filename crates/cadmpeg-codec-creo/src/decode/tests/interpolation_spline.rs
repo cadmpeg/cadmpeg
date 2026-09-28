@@ -276,7 +276,12 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let mut diagnostics =
         crate::lane_refusal::LaneRefusalContext::new(&"spline side surface fixture", &mut refusal);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
     let side = extrusion_brep_side_surface(
+        &ctx,
         &transform,
         &spline,
         false,

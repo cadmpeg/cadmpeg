@@ -273,7 +273,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records();
+                let records = refusal.take_records_checked()?;
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
                     if records.is_empty() {
                         format!(
@@ -461,8 +461,8 @@ pub(in super::super) fn revolved_nurbs_surface(
     ) {
         Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note(
-                format!("creo revolved NURBS surface record for {record}"),
+            refusal.note_checked(ctx,
+                format_args!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
             Ok(None)
@@ -741,7 +741,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         for (native_surface_id, internal_id, spline) in splines {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records();
+                let records = refusal.take_records_checked()?;
                 losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
                     if records.is_empty() {
                         format!(
@@ -765,14 +765,18 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 continue;
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let surface_record = format!(
-                "surface {native_surface_id} from saved-spline entity {internal_id} at offset {}",
-                spline.offset
-            );
-            let Some(surface) =
-                extruded_nurbs_surface(&directrix, sweep, &surface_record, &mut refusal)
+            let Some(surface) = extruded_nurbs_surface(
+                ctx,
+                &directrix,
+                sweep,
+                &format_args!(
+                    "surface {native_surface_id} from saved-spline entity {internal_id} at offset {}",
+                    spline.offset
+                ),
+                &mut refusal,
+            )
             else {
-                for record in refusal.take_records() {
+                for record in refusal.take_records_checked()? {
                     losses.push(
                         crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
                             "Extruded section spline at offset {} states no surface carrier: {record}",

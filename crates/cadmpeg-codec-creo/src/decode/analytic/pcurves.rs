@@ -1957,6 +1957,7 @@ pub(in crate::decode) fn unique_oriented_native_pcurve(
 }
 
 pub(in crate::decode) fn planar_curve_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
     record: &dyn std::fmt::Display,
@@ -2093,8 +2094,8 @@ pub(in crate::decode) fn planar_curve_pcurve(
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                 Err(error) => {
-                    refusal.note(
-                        format!("creo planar-curve pcurve record for {record}"),
+                    refusal.note_checked(ctx,
+                        format_args!("creo planar-curve pcurve record for {record}"),
                         &error,
                     );
                     None

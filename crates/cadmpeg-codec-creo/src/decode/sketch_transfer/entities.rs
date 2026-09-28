@@ -695,7 +695,7 @@ pub(super) fn transfer_section_entities(
     }) {
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let geometry = saved_spline_sketch_geometry(ctx, spline, &mut refusal)?;
-        let refused = refusal.take_records();
+        let refused = refusal.take_records_checked()?;
         let Some(geometry) = geometry.filter(|_| refused.is_empty()) else {
             for record in &refused {
                 losses.push(

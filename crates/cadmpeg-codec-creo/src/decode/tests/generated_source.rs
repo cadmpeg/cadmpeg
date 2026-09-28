@@ -1537,6 +1537,10 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
 
 #[test]
 fn spline_extrusion_preserves_directrix_basis_and_weights() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
     let directrix = NurbsCurve::from_lanes(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -1550,6 +1554,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     )
     .expect("valid directrix");
     let surface = extruded_nurbs_surface(
+        &ctx,
         &directrix,
         [0.0, 0.0, 4.0],
         &"extrusion directrix fixture",

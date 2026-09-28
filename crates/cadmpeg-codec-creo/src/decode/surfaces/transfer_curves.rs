@@ -205,7 +205,7 @@ fn extrusion_plane_boundary_curve(
     if let Some(geometry) = nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal)? {
         return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
     }
-    let refused = refusal.take_records();
+    let refused = refusal.take_records_checked()?;
     let mut fallback_losses = Vec::new();
     let fallback =
         cubic_extrusion_plane_generator_curve(ctx, nurbs, surface_id, plane, &mut fallback_losses)?
@@ -222,9 +222,10 @@ fn note_refused_boundary_lanes(
     curve_row_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) {
-    let records = refusal.take_records();
+) -> Result<(), CodecError> {
+    let records = refusal.take_records_checked()?;
     note_boundary_lane_records(curve_row_id, &records, losses);
+    Ok(())
 }
 
 /// One loss note per refused boundary-lane record, each naming the row.
@@ -339,7 +340,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             _ => None,
         };
         let Some((geometry, kind)) = resolved else {
-            note_refused_boundary_lanes(row.id, refusal, losses);
+            note_refused_boundary_lanes(row.id, refusal, losses)?;
             continue;
         };
         let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, row.id);
@@ -699,7 +700,8 @@ mod tests {
         );
         let mut losses = Vec::new();
 
-        super::note_refused_boundary_lanes(41, &mut refusal, &mut losses);
+        super::note_refused_boundary_lanes(41, &mut refusal, &mut losses)
+            .expect("refusal report is admitted");
 
         let [note] = losses.as_slice() else {
             panic!("one loss note per refused record");

@@ -2092,9 +2092,10 @@ pub(in super::super) fn transfer_native_brep(
                                     .filter(|candidate| candidate.id == edge_id),
                             )?;
                             let (geometry, tag) = planar_curve_pcurve(
+                                ctx,
                                 source_carriers.surface_geometry(surface),
                                 source_carriers.curve_geometry(curve),
-                                &format!(
+                                &format_args!(
                                     "VisibGeom curve-topology row {} on face {face_id}",
                                     half_edge.curve_id
                                 ),
@@ -2129,7 +2130,7 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
-                    let refused = refusal.take_records();
+                    let refused = refusal.take_records_checked()?;
                     if pcurve_geometry.is_none() {
                         for record in refused {
                             losses.push(

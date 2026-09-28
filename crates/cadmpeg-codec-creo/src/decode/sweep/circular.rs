@@ -119,7 +119,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 &cap_record,
                 &mut refusal,
             )?;
-            let records = refusal.take_records();
+            let records = refusal.take_records_checked()?;
             match cap {
                 Some(cap) if records.is_empty() => cap,
                 _ => {

@@ -3227,7 +3227,7 @@ fn named_surface_value(
         return Ok(value);
     }
     if let Some(reason) = refusal.reason() {
-        refusals.note(record, &format_args!("named field `{name}` {reason}"));
+        refusals.note_checked(ctx, record, &format_args!("named field `{name}` {reason}"));
     }
     Ok(SurfaceNamedValue::Opaque(ctx.copy_retained(
         body,

@@ -325,7 +325,7 @@ pub(in super::super) fn transfer_sketches(
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(ctx, definition, &mut refusal)?;
-        for record in refusal.take_records() {
+        for record in refusal.take_records_checked()? {
             losses.push(
                 crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
                     "Feature {} states a saved section entity that materializes no sketch \
