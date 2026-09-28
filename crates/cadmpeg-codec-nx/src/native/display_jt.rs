@@ -44,6 +44,15 @@ use crate::layout::jt_toc_entry as jt_toc;
 use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
 use crate::om::nonempty::NonEmpty;
 
+macro_rules! propagate_display_refusal {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 /// Child whose window is exactly `slice` when `slice` sits inside `source`.
 fn child_for_subslice<'a>(source: View<'a>, slice: &[u8]) -> Option<View<'a>> {
     let window = source.window();
@@ -2608,7 +2617,7 @@ fn jt9_topology_high_degree_lane_count(
     expected_vertex_bindings: u64,
 ) -> Result<Option<usize>, CodecError> {
     let result =
-        jt9_topology_high_degree_lane_count_inner(ctx, representation, expected_vertex_bindings);
+        jt9_topology_high_degree_lane_count_inner(ctx, representation, expected_vertex_bindings)?;
     ctx.charge_work(0, "complete JT topology lane scan")?;
     Ok(result)
 }
@@ -2617,14 +2626,16 @@ fn jt9_topology_high_degree_lane_count_inner(
     ctx: &DecodeContext<'_>,
     representation: &[u8],
     expected_vertex_bindings: u64,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
+    let decoded: Option<Result<_, CodecError>> = (|| {
     const PREFIX_PACKET_COUNT: usize = 21;
     let mut prefix_end = 0usize;
     for _ in 0..PREFIX_PACKET_COUNT {
-        let (_, _, byte_len) =
-            crate::jt::frame_int32_cdp2(ctx, representation.get(prefix_end..)?, 0)
-                .ok()
-                .flatten()?;
+        let (_, _, byte_len) = propagate_display_refusal!(crate::jt::frame_int32_cdp2(
+            ctx,
+            representation.get(prefix_end..)?,
+            0,
+        ))?;
         prefix_end = prefix_end.checked_add(byte_len)?;
     }
     let mut match_count = 0usize;
@@ -2632,9 +2643,11 @@ fn jt9_topology_high_degree_lane_count_inner(
     let mut cursor = prefix_end;
     let mut lane_count = 1usize;
     while cursor < representation.len() {
-        let Some((_, _, byte_len)) = representation
-            .get(cursor..)
-            .and_then(|bytes| crate::jt::frame_int32_cdp2(ctx, bytes, 0).ok().flatten())
+        let Some(bytes) = representation.get(cursor..) else {
+            break;
+        };
+        let Some((_, _, byte_len)) =
+            propagate_display_refusal!(crate::jt::frame_int32_cdp2(ctx, bytes, 0))
         else {
             break;
         };
@@ -2642,9 +2655,12 @@ fn jt9_topology_high_degree_lane_count_inner(
         let mut candidate_end = cursor;
         let mut split_packets_valid = true;
         for _ in 0..2 {
-            let Some((_, _, byte_len)) = representation
-                .get(candidate_end..)
-                .and_then(|bytes| crate::jt::frame_int32_cdp2(ctx, bytes, 0).ok().flatten())
+            let Some(bytes) = representation.get(candidate_end..) else {
+                split_packets_valid = false;
+                break;
+            };
+            let Some((_, _, byte_len)) =
+                propagate_display_refusal!(crate::jt::frame_int32_cdp2(ctx, bytes, 0))
             else {
                 split_packets_valid = false;
                 break;
@@ -2684,7 +2700,9 @@ fn jt9_topology_high_degree_lane_count_inner(
         }
         lane_count = lane_count.checked_add(1)?;
     }
-    (match_count == 1).then_some(matched_lane_count)
+    (match_count == 1).then_some(Ok(matched_lane_count))
+    })();
+    decoded.transpose()
 }
 
 fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, Vec<u32>, &[u8])> {
@@ -5821,15 +5839,6 @@ struct JtPathLookup<'a, 'b> {
     materials: &'a [&'b DisplayJtMaterialAttribute],
 }
 
-macro_rules! propagate_display_refusal {
-    ($result:expr) => {
-        match $result {
-            Ok(value) => value,
-            Err(error) => return Some(Err(error)),
-        }
-    };
-}
-
 fn resolve_display_jt_node_paths(
     ctx: &DecodeContext<'_>,
     object_id: u32,
@@ -8045,6 +8054,29 @@ mod tests {
         let beyond_legacy_ceiling = representation(65, 20);
         assert_eq!(high_degree_lane_count(&beyond_legacy_ceiling, 10), Some(65));
         assert_eq!(high_degree_lane_count(&populated, 11), None);
+    }
+
+    #[test]
+    fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
+        let representation = vec![0; 21 * 4];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &representation,
+            &arena,
+            &policy,
+        )
+        .expect("bounded JT lookahead input");
+        let error = super::jt9_topology_high_degree_lane_count(&ctx, &representation, 10)
+            .err()
+            .expect("the packet frame exceeds the nesting limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                    && limit.operation == "frame JT integer packet"
+        ));
     }
 
     #[test]
