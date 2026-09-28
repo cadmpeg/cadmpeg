@@ -397,7 +397,14 @@ fn build_plan(
             if !loop_chain_closes(loop_, graph.vertices.edges()) {
                 return None;
             }
-            loop_senses.insert(loop_.object_id, loop_.edge_senses());
+            let senses = match loop_.edge_senses(ctx) {
+                Ok(senses) => senses,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Err(error) = crate::resource::insert_btree_map(ctx, &mut loop_senses,
+                loop_.object_id, senses, "catia_b5_transfer_loop_senses") {
+                return Some(Err(error));
+            }
             for member in &loop_.members {
                 let pcurve_id = member.pcurve;
                 let edge_id = member.edge;

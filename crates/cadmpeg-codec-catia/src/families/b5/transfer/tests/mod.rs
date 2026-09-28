@@ -65,7 +65,9 @@ fn b5_loop_orientation_charges_constraint_arrays() {
     let reversed = graph
         .loops
         .iter()
-        .map(|(id, loop_)| (*id, loop_.edge_senses()))
+        .map(|(id, loop_)| (*id, crate::test_support::with_service_context(|ctx| {
+            loop_.edge_senses(ctx)
+        }).expect("service budget")))
         .collect::<BTreeMap<_, _>>();
     let operations = b5_collection_refusals(|ctx| {
         assert!(super::faces::orient_loop_members(ctx, &graph, reversed.clone())?.is_some());
@@ -73,6 +75,25 @@ fn b5_loop_orientation_charges_constraint_arrays() {
     });
     assert!(operations.contains("catia b5 loop orientation constraints"));
     assert!(operations.contains("catia b5 loop orientation assignments"));
+}
+
+#[test]
+fn b5_plan_charges_loop_senses_and_index() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    }).expect("service budget").expect("closed graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint(
+        "catia:test:unknown#b5-plan-senses".to_string(),
+    ).expect("valid test identity");
+    let operations = b5_collection_refusals(|ctx| {
+        let _plan = super::build_plan(
+            ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new(),
+        )?;
+        Ok(())
+    });
+    assert!(operations.contains("catia_b5_loop_edge_senses"));
+    assert!(operations.contains("catia_b5_transfer_loop_senses"));
 }
 
 #[test]
@@ -154,7 +175,9 @@ fn b5_loop_orientation_refuses_loop_id_collection_limit() {
     let reversed = graph
         .loops
         .iter()
-        .map(|(id, loop_)| (*id, loop_.edge_senses()))
+        .map(|(id, loop_)| (*id, crate::test_support::with_service_context(|ctx| {
+            loop_.edge_senses(ctx)
+        }).expect("service budget")))
         .collect::<BTreeMap<_, _>>();
     crate::test_support::with_service_context(|ctx| {
         assert!(

@@ -245,15 +245,14 @@ pub(super) fn orient_loop_members(
         let Some(senses) = reversed.remove(&loop_id) else {
             return Ok(None);
         };
-        charge_collection(ctx, senses.len(), "catia b5 oriented loop members")?;
-        let members = senses
+        let pcurve_senses = graph.loops[&loop_id].pcurve_senses(ctx)?;
+        let members = crate::resource::collect_vec(ctx, senses
             .into_iter()
-            .zip(graph.loops[&loop_id].pcurve_senses())
+            .zip(pcurve_senses)
             .map(|(reversed, pcurve_reversed)| OrientedLoopMember {
                 reversed: reversed ^ flipped,
                 pcurve_reversed: pcurve_reversed ^ flipped,
-            })
-            .collect();
+            }), "catia b5 oriented loop members")?;
         charge_collection(ctx, 1, "catia b5 oriented loops")?;
         oriented.insert(loop_id, OrientedLoop { flipped, members });
     }

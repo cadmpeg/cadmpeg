@@ -224,6 +224,26 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
 }
 
 #[test]
+fn loop_sense_vectors_refuse_the_caller_collection_limit() {
+    let loop_ = B5Loop {
+        object_id: 1,
+        members: test_loop_members(&[2, 3], &[4, 5]),
+        metadata: test_loop_metadata(),
+        surface: 10,
+    };
+    let edges = crate::test_support::with_collection_limit(1, |ctx| loop_.edge_senses(ctx));
+    assert!(matches!(edges, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_loop_edge_senses"));
+    let pcurves = crate::test_support::with_collection_limit(1, |ctx| loop_.pcurve_senses(ctx));
+    assert!(matches!(pcurves, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_loop_pcurve_senses"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+        .expect("service budget").len(), 2);
+    assert_eq!(crate::test_support::with_service_context(|ctx| loop_.pcurve_senses(ctx))
+        .expect("service budget").len(), 2);
+}
+
+#[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
     let record = |payload| B5Record {
