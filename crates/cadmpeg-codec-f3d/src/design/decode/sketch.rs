@@ -1390,7 +1390,7 @@ pub(crate) fn decode_sketch_relations(
                 Some(class) => parse_classed_sketch_relation(ctx, payload, class)?,
                 None => None,
             };
-            let Some(parsed) = parsed else {
+            let Some(mut parsed) = parsed else {
                 continue;
             };
             if payload
@@ -1399,7 +1399,7 @@ pub(crate) fn decode_sketch_relations(
             {
                 continue;
             }
-            let pattern = decode_pattern_definition(payload, &parsed);
+            let pattern = decode_pattern_definition(payload, &mut parsed);
             let Ok(definition) = crate::records::sketch_relations::SketchRelationDefinition::new(
                 parsed.state,
                 pattern,
@@ -1475,11 +1475,11 @@ pub(crate) fn decode_sketch_relations(
 /// auxiliary reference.
 fn decode_pattern_definition(
     payload: &[u8],
-    parsed: &ParsedSketchRelation,
+    parsed: &mut ParsedSketchRelation,
 ) -> Option<crate::records::sketch_relations::SketchPatternDefinition> {
     use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
     let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
-    match &parsed.class_members {
+    match &mut parsed.class_members {
         RelationClassMembers::CircularPattern => {
             if parsed.state != 0x1000_0000 || parsed.auxiliary_references.len() != 2 {
                 return None;
@@ -1557,7 +1557,7 @@ fn decode_pattern_definition(
             {
                 return Some(SketchPatternDefinition::TextPath {
                     text_reference: parsed.auxiliary_references[0].value,
-                    glyph_transforms: glyph_transforms.clone(),
+                    glyph_transforms: std::mem::take(glyph_transforms),
                 });
             }
         }

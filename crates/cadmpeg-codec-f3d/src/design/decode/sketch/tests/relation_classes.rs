@@ -308,7 +308,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
         0x1000_0000,
         &[300, 301],
     );
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(
@@ -321,7 +321,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Circular {
             angle_parameter: 336,
             count_parameter: 333,
@@ -350,12 +350,12 @@ fn circular_pattern_relation_reads_populated_tables_and_absent_parameters() {
     class_members.extend_from_slice(&2u32.to_le_bytes());
     class_members.push(0);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x1000_0000, &[300]);
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert!(parsed.auxiliary_references.is_empty());
     assert_eq!(parsed.parsed_end, record.len());
-    assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
 }
 
 #[test]
@@ -373,7 +373,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
         0x2000_0000,
         &[300, 301],
     );
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(parsed.owner_reference, 201);
     assert_eq!(
@@ -400,7 +400,7 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
     ));
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Rectangular {
             directions: [
                 SketchPatternDirection {
@@ -432,7 +432,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     push_direction_clause(&mut class_members, 4, 464, [1.0, 0.0, 0.0], 2.0, 470);
     push_direction_clause(&mut class_members, 2, 467, [0.0, 1.0, 0.0], 1.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the record");
     assert_eq!(
         parsed
@@ -458,7 +458,7 @@ fn rectangular_pattern_relation_reads_clauses_after_an_empty_reference_run() {
     ));
     assert_eq!(parsed.parsed_end, record.len());
     let Some(SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &parsed)
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected a rectangular pattern definition");
     };
@@ -475,7 +475,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
     push_direction_clause(&mut class_members, 2, 464, [1.0, 0.0, 0.0], 1.5, 470);
     push_direction_clause(&mut class_members, 1, 467, [0.0, 1.0, 0.0], 0.0, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse reads the absent run member");
 
     assert_eq!(
@@ -501,7 +501,7 @@ fn rectangular_pattern_retains_nonempty_count_with_an_absent_reference() {
         } if clauses.as_slice() == &parsed.auxiliary_references[0..4]
     ));
     assert!(matches!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::Rectangular { .. })
     ));
 }
@@ -532,7 +532,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
 
     push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
     let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
         .expect("the classed parse retains the incomplete relation");
 
     assert_eq!(
@@ -554,7 +554,7 @@ fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
         parsed.class_members,
         super::super::RelationClassMembers::Rectangular { clauses: None, .. }
     ));
-    assert_eq!(decode_pattern_definition(&record, &parsed), None);
+    assert_eq!(decode_pattern_definition(&record, &mut parsed), None);
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn text_frame_relation_reads_its_two_references() {
         0x100_0000_0000,
         &[2403],
     );
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame)
         .expect("the classed parse reads the record");
     assert_eq!(
         parsed
@@ -581,7 +581,7 @@ fn text_frame_relation_reads_its_two_references() {
     );
     assert_eq!(parsed.parsed_end, record.len());
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(SketchPatternDefinition::TextFrame {
             text_reference: 2394
         })
@@ -625,7 +625,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
             0x200_0000_0000,
             &[1],
         );
-        let parsed =
+        let mut parsed =
             tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextPath { leading_flag })
                 .expect("the classed parse reads the record");
         assert_eq!(
@@ -640,7 +640,7 @@ fn text_path_relation_reads_its_glyph_run_at_both_versions() {
         let Some(SketchPatternDefinition::TextPath {
             text_reference,
             glyph_transforms,
-        }) = decode_pattern_definition(&record, &parsed)
+        }) = decode_pattern_definition(&record, &mut parsed)
         else {
             panic!("expected a text-path pattern definition");
         };
