@@ -7,8 +7,6 @@ use crate::om::extrude_payload_header;
 use crate::om::identical_instance_output_payload_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
-use crate::om::offset_store_control_form;
-use crate::om::offset_store_control_values;
 fn thru_curve_payload_branch_group_for_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::thru_curve_branches::ThruCurveGroup<()>> {
     crate::test_support::with_decode_context(|ctx| crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)).unwrap()
 }
@@ -77,6 +75,14 @@ fn sketch_payload_references(record: crate::om::operation_record::OperationPaylo
 
 fn one_multi_instance_output_payload() -> Vec<u8> {
     b"\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x02\x26\x27\x01\x02\x65\x01\x02\x07\x28\x02\x02\x00\x3b\x09\x01\x02".to_vec()
+}
+
+fn offset_store_control_form(control: &[u8], first_record: Option<&[u8]>) -> Option<crate::om::OffsetStoreControlForm> {
+    crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, control, first_record)).unwrap()
+}
+
+fn offset_store_control_values(bytes: &[u8]) -> Option<crate::om::nonempty::NonEmpty<crate::om::control_word::ControlWord24>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_values(ctx, bytes)).unwrap()
 }
 
 #[test]

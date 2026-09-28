@@ -184,23 +184,16 @@ pub(super) fn offset_store_control_counts(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<(usize, usize), CodecError> {
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .filter_map(|(_, section)| {
-            section.as_offset_only().map(|(control, _, records)| {
-                (control.clone(), records.first().map(|record| record.bytes))
-            })
-        })
-        .fold((0, 0), |(total, classified), (control, first_record)| {
-            (
-                total + 1,
-                classified
-                    + usize::from(
-                        crate::om::offset_store_control_form(control.bytes, first_record).is_some(),
-                    ),
-            )
-        }))
+    let mut total = 0;
+    let mut classified = 0;
+    for (_, section) in container.indexed_om_sections(ctx)? {
+        let Some((control, _, records)) = section.as_offset_only() else { continue };
+        total += 1;
+        if crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?.is_some() {
+            classified += 1;
+        }
+    }
+    Ok((total, classified))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.

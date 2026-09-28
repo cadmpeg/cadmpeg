@@ -1114,7 +1114,11 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(ctx: &cadmpeg_
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
+                    let lane = match lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset)) {
+                        Ok(Some(lane)) => lane,
+                        Ok(None) => return None,
+                        Err(error) => { failure = Some(error); return None; }
+                    };
                     Some(FeaturePatternConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),

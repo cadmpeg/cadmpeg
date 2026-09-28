@@ -3680,79 +3680,53 @@ pub(super) fn data_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, contain
 }
 
 /// Classify every admitted complete offset-only store control lane.
-pub(super) fn data_block_control_forms(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlForm>, cadmpeg_core::CodecError>
-{
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .filter_map(|(section_ordinal, (entry, section))| {
-            let (control, _, records) = section.as_offset_only()?;
-            let kind = match crate::om::offset_store_control_form(
-                control.bytes,
-                records.first().map(|record| record.bytes),
-            )? {
-                crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                    DataBlockControlFormKind::ZeroPrefixed {
-                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
-                    }
-                }
-                crate::om::OffsetStoreControlForm::ProductAnchored {
-                    leading_value,
-                    values,
-                } => DataBlockControlFormKind::ProductAnchored {
-                    leading: leading_value,
-                    value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
-                    byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
-                },
-            };
-            Some(DataBlockControlForm {
-                id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
-                data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-                kind,
-                source_offset: entry.file_span().map_or(0, |(offset, _)| offset)
-                    + control.offset as u64,
-            })
-        })
-        .collect())
+pub(super) fn data_block_control_forms(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlForm>, CodecError> {
+    let mut forms = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        let Some((control, _, records)) = section.as_offset_only() else { continue };
+        let Some(form) = crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))? else { continue };
+        let kind = match form {
+            crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
+                let Some(value_count) = u32::try_from(values.len()).ok().and_then(std::num::NonZeroU32::new) else { continue };
+                DataBlockControlFormKind::ZeroPrefixed { value_count }
+            }
+            crate::om::OffsetStoreControlForm::ProductAnchored { leading_value, values } => {
+                let Some(value_count) = u32::try_from(values.len()).ok().and_then(std::num::NonZeroU32::new) else { continue };
+                let Some(byte_len) = std::num::NonZeroU64::new(control.bytes.len() as u64) else { continue };
+                DataBlockControlFormKind::ProductAnchored { leading: leading_value, value_count, byte_len }
+            }
+        };
+        forms.push(DataBlockControlForm {
+            id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
+            data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+            kind,
+            source_offset: entry.file_span().map_or(0, |(offset, _)| offset) + control.offset as u64,
+        });
+    }
+    Ok(forms)
 }
 
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
-pub(super) fn data_block_control_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlValue>, cadmpeg_core::CodecError>
-{
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((control, _, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
-                crate::om::offset_store_control_form(
-                    control.bytes,
-                    records.first().map(|record| record.bytes),
-                )
-            else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, value)| DataBlockControlValue {
-                    id: format!(
-                        "nx:om-data-block-control-values-{section_ordinal}:value#{ordinal}"
-                    ),
-                    data_block: data_block.clone(),
-                    ordinal: ordinal as u32,
-                    value,
-                    source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
-                })
-                .collect()
-        })
-        .collect())
+pub(super) fn data_block_control_values(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlValue>, CodecError> {
+    let mut rows = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        let Some((control, _, records)) = section.as_offset_only() else { continue };
+        let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
+            crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?
+        else { continue };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+        for (ordinal, value) in values.into_iter().enumerate() {
+            rows.push(DataBlockControlValue {
+                id: format!("nx:om-data-block-control-values-{section_ordinal}:value#{ordinal}"),
+                data_block: data_block.clone(),
+                ordinal: ordinal as u32,
+                value,
+                source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 /// Resolve each atomic leading control lane through its store-local class registry.
@@ -3770,9 +3744,10 @@ pub(super) fn data_block_control_class_references(
             };
             if !matches!(
                 crate::om::offset_store_control_form(
+                    ctx,
                     control.bytes,
                     records.first().map(|record| record.bytes),
-                ),
+                )?,
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
                 return Ok(Vec::new());
@@ -3834,55 +3809,29 @@ pub(super) fn data_block_control_class_references(
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
-pub(super) fn data_block_control_index_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    container: &Container,
-) -> Result<Vec<DataBlockControlIndexValue>, cadmpeg_core::CodecError>
-{
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((control, _, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value,
-                values,
-            }) = crate::om::offset_store_control_form(
-                control.bytes,
-                records.first().map(|record| record.bytes),
-            )
-            else {
-                return Vec::new();
-            };
-            let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            let block_count = records.len() + 1;
-            values
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, value)| DataBlockControlIndexValue {
-                    id: format!(
-                        "nx:om-data-block-control-index-values-{section_ordinal}:value#{ordinal}"
-                    ),
-                    data_block: data_block.clone(),
-                    ordinal: ordinal as u32,
-                    value,
-                    target_data_block: control_index_data_block(
-                        section_ordinal,
-                        block_count,
-                        value,
-                    ),
-                    source_offset: entry_offset
-                        + control.offset as u64
-                        + leading_value_width as u64
-                        + ordinal as u64 * 4,
-                })
-                .collect()
-        })
-        .collect())
+pub(super) fn data_block_control_index_values(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
+    let mut rows = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        let Some((control, _, records)) = section.as_offset_only() else { continue };
+        let Some(crate::om::OffsetStoreControlForm::ProductAnchored { leading_value, values }) =
+            crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?
+        else { continue };
+        let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+        let block_count = records.len() + 1;
+        for (ordinal, value) in values.into_iter().enumerate() {
+            rows.push(DataBlockControlIndexValue {
+                id: format!("nx:om-data-block-control-index-values-{section_ordinal}:value#{ordinal}"),
+                data_block: data_block.clone(),
+                ordinal: ordinal as u32,
+                value,
+                target_data_block: control_index_data_block(section_ordinal, block_count, value),
+                source_offset: entry_offset + control.offset as u64 + leading_value_width as u64 + ordinal as u64 * 4,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 fn control_index_data_block(
@@ -5704,7 +5653,7 @@ mod tests {
         bytes.extend_from_slice(&0x1020u32.to_le_bytes());
         bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_control_form(&bytes, None),
+            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &bytes, None)).unwrap(),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(
                     crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
@@ -5717,7 +5666,7 @@ mod tests {
         nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
         nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_control_form(&nonzero_leading, None),
+            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &nonzero_leading, None)).unwrap(),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(
                     crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
@@ -5729,7 +5678,7 @@ mod tests {
 
         let mut duplicate = bytes;
         duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-        assert!(crate::om::offset_store_control_form(&duplicate, None).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &duplicate, None)).unwrap().is_none());
         assert_eq!(
             super::control_index_data_block(2, 700, 496).as_deref(),
             Some("nx:om-data-blocks-2:block#496")

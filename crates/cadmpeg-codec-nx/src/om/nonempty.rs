@@ -26,6 +26,20 @@ impl<T> NonEmpty<T> {
         })
     }
 
+    pub(crate) fn new_charged(ctx: &DecodeContext<'_>, values: impl IntoIterator<Item = T>) -> Result<Option<Self>, CodecError> {
+        let mut values = values.into_iter();
+        let Some(first) = values.next() else { return Ok(None) };
+        ctx.charge_collection_items(1, "NX nonempty entries")?;
+        let mut rest = Vec::new();
+        for value in values {
+            ctx.charge_collection_items(1, "NX nonempty entries")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), "NX nonempty entries")?;
+            rest.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX nonempty entries", 0, 1))?;
+            rest.push(value);
+        }
+        Ok(Some(Self { first, rest }))
+    }
+
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + Clone {
         std::iter::once(&self.first).chain(&self.rest)
     }
@@ -48,13 +62,6 @@ impl<T> NonEmpty<T> {
 
     pub(crate) fn last(&self) -> &T {
         self.rest.last().unwrap_or(&self.first)
-    }
-
-    pub(crate) fn map<U>(self, mut map: impl FnMut(T) -> U) -> NonEmpty<U> {
-        NonEmpty {
-            first: map(self.first),
-            rest: self.rest.into_iter().map(map).collect(),
-        }
     }
 
     pub(crate) fn map_charged<U>(self, ctx: &DecodeContext<'_>, mut map: impl FnMut(T) -> U) -> Result<NonEmpty<U>, CodecError> {
@@ -84,12 +91,10 @@ impl<T> NonEmpty<T> {
 }
 
 impl<T> NonEmpty<Option<T>> {
-    pub(super) fn transpose(self) -> Option<NonEmpty<T>> {
-        Some(NonEmpty {
-            first: self.first?,
-            rest: self.rest.into_iter().collect::<Option<Vec<_>>>()?,
-        })
+    pub(super) fn transpose_charged(self, ctx: &DecodeContext<'_>) -> Result<Option<NonEmpty<T>>, CodecError> {
+        self.try_map_charged(ctx, |value| value)
     }
+
 }
 
 impl<T> IntoIterator for NonEmpty<T> {
