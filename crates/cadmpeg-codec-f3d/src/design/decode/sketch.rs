@@ -130,7 +130,7 @@ pub(in crate::design) fn native_scope_charged(
     Ok(out)
 }
 
-fn native_scope_scoped<'a>(
+pub(in crate::design) fn native_scope_scoped<'a>(
     ctx: &'a DecodeContext<'_>,
     name: &str,
 ) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
