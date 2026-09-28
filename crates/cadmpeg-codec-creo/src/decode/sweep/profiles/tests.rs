@@ -217,6 +217,7 @@ fn circular_pcurve_refuses_each_counted_lane_before_allocation() {
         (2, "creo circular pcurve controls"),
         (5, "creo circular pcurve weights"),
         (11, "creo circular pcurve knots"),
+        (12, "creo circular pcurve weighted poles"),
     ] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;

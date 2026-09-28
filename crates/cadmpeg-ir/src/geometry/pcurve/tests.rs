@@ -87,6 +87,37 @@ fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
     .unwrap();
     assert_eq!(geometry, PcurveGeometry::Nurbs { nurbs: expected });
 }
+
+#[test]
+fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
+    use crate::geometry::nurbs::KnotValue;
+    use crate::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
+    use crate::scalar::NonZeroReal;
+    use crate::units::FinitePoint2;
+
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let points = [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
+    let weights = [1.0, 2.0];
+    let raw = PcurveNurbs::from_lanes(1, knots.clone(), points.to_vec(), Some(weights.to_vec()), false)
+        .expect("raw pcurve");
+    let admitted = PcurveNurbs::from_admitted_parts(
+        1,
+        KnotValue::admit(knots).expect("admitted knots"),
+        PcurveNurbsPoles::Rational {
+            points: points
+                .into_iter()
+                .zip(weights)
+                .map(|(point, weight)| WeightedPole2 {
+                    point: FinitePoint2::new(point).expect("finite point"),
+                    weight: NonZeroReal::new(weight).expect("nonzero weight"),
+                })
+                .collect(),
+        },
+        false,
+    )
+    .expect("admitted pcurve");
+    assert_eq!(admitted, raw);
+}
 mod metadata;
 
 #[test]
