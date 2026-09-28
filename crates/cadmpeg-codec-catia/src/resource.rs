@@ -27,7 +27,7 @@ impl std::fmt::Display for HexBytes<'_> {
     }
 }
 
-fn allocation_failed(
+pub(crate) fn allocation_failed(
     used: usize,
     capacity: usize,
     additional: usize,
