@@ -1106,7 +1106,7 @@ fn validate_loaded(
         &face_operand_records,
         &native.design_entity_selection_operands,
     )?;
-    validate_face_source_groups(&ctx, &mut findings);
+    validate_face_source_groups(&ctx, &mut findings)?;
     validate_sketch_placements(&ctx, &mut findings)?;
     validate_parameter_owners(&ctx, &mut findings)?;
     validate_parameter_companions(&ctx, &mut findings)?;
@@ -7068,7 +7068,7 @@ fn validate_face_group_member_resolution(
 }
 
 /// Validate retained Face source carriers and their persistent identities.
-fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut carrier_records = HashSet::new();
     for group in &native.design_face_source_groups {
@@ -7125,40 +7125,48 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
         });
         let mut source_records = HashSet::new();
-        let source_members_valid = source_spec.is_some_and(|layout| {
-            group.source_members.len() == layout.source_count
-                && group
-                    .source_members
-                    .iter()
-                    .map(|member| &member.value)
-                    .all(|member| {
-                        let unique_record = source_records.insert(member.record_index);
+        let source_members_valid = if let Some(layout) = source_spec {
+            if group.source_members.len() != layout.source_count {
+                false
+            } else {
+                let mut valid = true;
+                for member in group.source_members.iter().map(|member| &member.value) {
+                        let unique_record = ctx.insert_unique(&mut source_records,
+                            member.record_index, "index F3D Face source member records")?;
                         let persistent = &member.persistent_identity;
                         let local_id_offset = member.byte_offset.checked_add(21);
                         let asset_id_offset = member.byte_offset.checked_add(33);
-                        unique_record
+                        let member_valid = unique_record
                             && member.byte_offset > group.carrier_span.start()
                             && local_id_offset == Some(persistent.local_id_offset())
                             && asset_id_offset == Some(persistent.asset_id_offset())
                             && persistent.context_id_offset() > persistent.asset_id_offset()
                             && persistent.tail_slot_offset() > persistent.context_id_offset()
-                            && persistent.next_byte_offset() > member.byte_offset
-                    })
-        });
-        let valid = carrier_records.insert((native_stream, group.carrier_record_index))
+                            && persistent.next_byte_offset() > member.byte_offset;
+                        if !member_valid {
+                            valid = false;
+                            break;
+                        }
+                }
+                valid
+            }
+        } else {
+            false
+        };
+        let valid = ctx.insert_unique(&mut carrier_records,
+            (native_stream, group.carrier_record_index),
+            "index F3D Face source carriers")?
             && scope_links_valid
             && headers_valid
             && source_offsets_valid
             && source_members_valid;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Face source carrier has invalid links or offsets".into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Face source carrier has invalid links or offsets",
+                Some(ctx.copy_entity(&group.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate sketch placement frames and their scope links.
