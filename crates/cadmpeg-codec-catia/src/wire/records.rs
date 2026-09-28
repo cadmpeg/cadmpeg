@@ -10,7 +10,7 @@
 //! `families::consolidated::records`; a rename cascades across ~40 call sites
 //! and several `native` field paths, so the names carry naming debt here.
 
-use std::{collections::HashSet, ops::Range};
+use std::{borrow::Borrow, collections::HashSet, ops::Range};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -558,7 +558,8 @@ pub(crate) fn consolidated_records_in_sources<S, R>(
 ) -> Result<Vec<ConsolidatedRecord>, CodecError>
 where
     S: IntoIterator<Item = R>,
-    R: IntoIterator<Item = SourceExtent>,
+    R: IntoIterator,
+    R::Item: Borrow<SourceExtent>,
 {
     let mut records = Vec::new();
     for (source_index, extents) in sources.into_iter().enumerate() {
@@ -566,7 +567,7 @@ where
         // holds no record, so it opens no logical source offset.
         let source_ranges = crate::resource::collect_vec(ctx, extents
             .into_iter()
-            .map(|extent| extent.range())
+            .map(|extent| extent.borrow().range())
             .filter(|range| range.start < range.end),
             "catia_record_source_ranges")?;
         let mut source_records = Vec::new();
@@ -908,6 +909,34 @@ mod tests {
             super::consolidated_records_in_sources(ctx, &bytes,
                 std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))))
         }).expect("service decode");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn borrowed_source_extents_keep_record_inventory_limits() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        let sources = [vec![super::SourceExtent::whole(&bytes)]];
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        });
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_record_source_ranges"
+        ));
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(
+                ctx,
+                &bytes,
+                sources.iter().map(|source| source.iter()),
+            )
+        })
+        .expect("borrowed source inventory fits service profile");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].class, 0x06);
     }
