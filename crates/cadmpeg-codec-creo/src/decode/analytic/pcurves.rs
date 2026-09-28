@@ -582,13 +582,14 @@ fn support_cone_witness_matches(
 }
 
 fn collect_support_cone_plane_witness(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     witnesses: &mut BTreeMap<u32, Vec<SupportConePlaneWitness>>,
     planes: &BTreeMap<u32, PlaneEquation>,
     faces: [Option<NonZeroU32>; 2],
     endpoint_sets: [Option<[[f64; 2]; 2]>; 2],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let [Some(first), Some(second)] = faces else {
-        return;
+        return Ok(());
     };
     let faces = [first.get(), second.get()];
     for face_index in 0..2 {
@@ -598,11 +599,25 @@ fn collect_support_cone_plane_witness(
         let Some(plane) = planes.get(&faces[1 - face_index]).copied() else {
             continue;
         };
-        witnesses
-            .entry(faces[face_index])
-            .or_default()
-            .push((endpoints, plane));
+        match witnesses.entry(faces[face_index]) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                ctx.try_reserve_items(
+                    entry.get_mut(), 1, "creo support cone plane witnesses",
+                )?;
+                entry.get_mut().push((endpoints, plane));
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo support cone witness nodes")?;
+                let mut values = Vec::new();
+                ctx.try_reserve_items(
+                    &mut values, 1, "creo support cone plane witnesses",
+                )?;
+                values.push((endpoints, plane));
+                entry.insert(values);
+            }
+        }
     }
+    Ok(())
 }
 
 fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
@@ -632,6 +647,7 @@ fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&m
 /// Reconcile the signed frame of a radius-zero support cone from a pcurve
 /// endpoint and an independently placed adjacent plane.
 pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -650,11 +666,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             pcurve.face_1_endpoints,
         );
         collect_support_cone_plane_witness(
+            ctx,
             &mut witnesses,
             &planes,
             pcurve.faces,
             endpoint_sets.map(Some),
-        );
+        )?;
     }
     for pcurve in &scan.curves.bound_prototype_pcurves {
         let endpoint_sets = canonicalized_pcurve_endpoints(
@@ -664,11 +681,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             pcurve.face_1_endpoints,
         );
         collect_support_cone_plane_witness(
+            ctx,
             &mut witnesses,
             &planes,
             pcurve.faces,
             endpoint_sets.map(Some),
-        );
+        )?;
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
@@ -680,7 +698,9 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         else {
             continue;
         };
-        collect_support_cone_plane_witness(&mut witnesses, &planes, faces, endpoint_sets.paths());
+        collect_support_cone_plane_witness(
+            ctx, &mut witnesses, &planes, faces, endpoint_sets.paths(),
+        )?;
     }
 
     let mut reconciled = 0;
@@ -688,12 +708,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, face_id) else {
             continue;
         };
-        let source_geometry = source_carriers.surface_geometry(surface).clone();
-        let Some(mirrored) = mirrored_support_apex_cone(&source_geometry) else {
+        let source_geometry = source_carriers.surface_geometry(surface);
+        let Some(mirrored) = mirrored_support_apex_cone(source_geometry) else {
             continue;
         };
         let current_matches = face_witnesses.iter().all(|(endpoints, plane)| {
-            support_cone_witness_matches(&source_geometry, *endpoints, *plane)
+            support_cone_witness_matches(source_geometry, *endpoints, *plane)
         });
         let mirrored_matches = face_witnesses
             .iter()
@@ -2205,6 +2225,62 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && resource.operation == operation));
+    }
+
+    fn support_cone_witness_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        let planes = BTreeMap::from([(2, PlaneEquation {
+            origin: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0],
+        })]);
+        super::collect_support_cone_plane_witness(
+            &ctx,
+            &mut BTreeMap::new(),
+            &planes,
+            [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            [Some([[1.0, 2.0], [3.0, 4.0]]), None],
+        )
+        .expect_err("support cone witness collection exceeds limit")
+    }
+
+    #[test]
+    fn support_cone_witness_refuses_map_node() {
+        assert_pcurve_collection_refusal(
+            support_cone_witness_limit_error(0), "creo support cone witness nodes",
+        );
+    }
+
+    #[test]
+    fn support_cone_witness_refuses_nested_member() {
+        assert_pcurve_collection_refusal(
+            support_cone_witness_limit_error(1), "creo support cone plane witnesses",
+        );
+    }
+
+    #[test]
+    fn support_cone_witness_preserves_service_result() {
+        let planes = BTreeMap::from([(2, PlaneEquation {
+            origin: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0],
+        })]);
+        let mut witnesses = BTreeMap::new();
+        crate::decode::with_test_decode_ctx(|ctx| super::collect_support_cone_plane_witness(
+            ctx,
+            &mut witnesses,
+            &planes,
+            [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
+            [Some([[1.0, 2.0], [3.0, 4.0]]), None],
+        ))
+        .expect("service support cone witness");
+        let witness = witnesses.get(&1).expect("face witness");
+        assert_eq!(witness.len(), 1);
+        assert_eq!(witness[0].0, [[1.0, 2.0], [3.0, 4.0]]);
+        assert_eq!(witness[0].1.origin, planes[&2].origin);
+        assert_eq!(witness[0].1.normal, planes[&2].normal);
     }
 
     #[test]
