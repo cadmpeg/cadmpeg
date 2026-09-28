@@ -153,20 +153,17 @@ pub(crate) fn bind_revolution_operations(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let native_ref = feature.native_ref.as_deref();
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = feature
-                .native_ref
-                .as_deref()
-                .and_then(|native| history_features.get(native).copied())
+            let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
             else {
                 break 'feature_edit;
             };
@@ -188,8 +185,7 @@ pub(crate) fn bind_revolution_operations(
             if operations.all(|operation| operation == first) {
                 *op = first;
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -206,10 +202,10 @@ pub(crate) fn bind_sweep_operations(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let native_ref = feature.native_ref.as_deref();
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -220,10 +216,7 @@ pub(crate) fn bind_sweep_operations(
                 ) {
                     break 'sweep_mode;
                 }
-                let Some(history) = feature
-                    .native_ref
-                    .as_deref()
-                    .and_then(|native| history_features.get(native).copied())
+                let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
                 else {
                     break 'sweep_mode;
                 };
@@ -267,8 +260,7 @@ pub(crate) fn bind_sweep_operations(
                         cadmpeg_ir::features::SweepShape::solid_sections(op, section, sections);
                 }
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -363,20 +355,17 @@ pub(crate) fn bind_extrusion_operations(
         .map(|feature| (feature.id.as_str(), *feature))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let native_ref = feature.native_ref.as_deref();
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
             if *op != BooleanOp::Unresolved {
                 break 'feature_edit;
             }
-            let Some(history) = feature
-                .native_ref
-                .as_deref()
-                .and_then(|native| history_by_id.get(native).copied())
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
             else {
                 break 'feature_edit;
             };
@@ -401,8 +390,7 @@ pub(crate) fn bind_extrusion_operations(
             if operations.all(|operation| operation == first) {
                 *op = first;
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -431,19 +419,17 @@ pub(crate) fn inherit_configuration_operations(
         .map(|feature| (&feature.id, feature.evaluation.definition()))
         .collect::<HashMap<_, _>>();
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(base_definition) = base_definitions.get(&feature.id) else {
+        let native_ref = feature.native_ref.as_deref();
+        let feature_id = &feature.id;
+        feature.evaluation.edit(|definition, _| 'feature_edit: {
+            let Some(base_definition) = base_definitions.get(feature_id) else {
                 break 'feature_edit;
             };
-            let Some(history) = feature
-                .native_ref
-                .as_deref()
-                .and_then(|native| history_by_id.get(native).copied())
+            let Some(history) = native_ref.and_then(|native| history_by_id.get(native).copied())
             else {
                 break 'feature_edit;
             };
-            let operation_kind = match (&definition, *base_definition) {
+            let operation_kind = match (&*definition, *base_definition) {
                 (
                     FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
                     FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
@@ -464,7 +450,7 @@ pub(crate) fn inherit_configuration_operations(
             {
                 break 'feature_edit;
             }
-            match (&mut definition, operation_kind, *base_definition) {
+            match (definition, operation_kind, *base_definition) {
                 (
                     FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
                     OperationKind::Extrusion,
@@ -479,8 +465,7 @@ pub(crate) fn inherit_configuration_operations(
                 }
                 _ => {}
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
