@@ -728,7 +728,11 @@ fn resolved_configuration_snapshots_inherit_only_independent_parameter_values() 
         configuration("synthetic:test:id#unresolved", BTreeMap::new()),
     ];
 
-    complete_resolved_configuration_parameter_snapshots(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+    )
+    .unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values,

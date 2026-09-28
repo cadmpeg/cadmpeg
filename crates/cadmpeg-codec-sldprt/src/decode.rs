@@ -2697,7 +2697,7 @@ fn build_geometry_ir(
         &lanes,
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
-    complete_resolved_configuration_parameter_snapshots(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
     stamp_parameter_baseline(&mut ir)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
@@ -3979,7 +3979,7 @@ fn build_metadata_ir(
         &lanes,
     )?;
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
-    complete_resolved_configuration_parameter_snapshots(&mut ir);
+    complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
     stamp_parameter_baseline(&mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
@@ -4385,30 +4385,45 @@ fn stamp_parameter_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn complete_resolved_configuration_parameter_snapshots(ir: &mut CadIr) {
-    let independent_values = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.dependencies.is_empty())
-        .filter_map(|parameter| {
-            parameter
-                .value
-                .clone()
-                .map(|value| (parameter.id.clone(), value))
-        })
-        .collect::<Vec<_>>();
+fn complete_resolved_configuration_parameter_snapshots(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
     for configuration in &mut ir.model.configurations {
         if configuration.parameter_values.is_empty() && configuration.feature_states.is_empty() {
             continue;
         }
-        for (parameter, value) in &independent_values {
-            configuration
-                .parameter_values
-                .entry(parameter.clone())
-                .or_insert_with(|| value.clone());
+        for parameter in &ir.model.parameters {
+            ctx.charge_work(1, "complete SLDPRT configuration parameter snapshot")?;
+            let Some(value) = parameter.value.as_ref() else {
+                continue;
+            };
+            if !parameter.dependencies.is_empty()
+                || configuration.parameter_values.contains_key(&parameter.id)
+            {
+                continue;
+            }
+            let id = cadmpeg_ir::features::ParameterId::mint(copy_retained_string(
+                ctx,
+                parameter.id.as_str(),
+                "retain SLDPRT snapshot parameter ID",
+            )?)
+            .map_err(CodecError::malformed)?;
+            let value = match value {
+                cadmpeg_ir::features::ParameterValue::String(value) => {
+                    cadmpeg_ir::features::ParameterValue::String(copy_retained_string(
+                        ctx,
+                        value,
+                        "retain SLDPRT snapshot parameter value",
+                    )?)
+                }
+                value => value.clone(),
+            };
+            ctx.charge_collection_items(1, "complete SLDPRT configuration parameter snapshot")?;
+            configuration.parameter_values.insert(id, value);
         }
     }
+    Ok(())
 }
 
 fn mark_active_configuration(ir: &mut CadIr) {
