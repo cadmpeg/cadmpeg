@@ -6686,12 +6686,11 @@ fn singular_reference_link(
     if object.is_empty() {
         return None;
     }
-    let selectors = link_selectors(link).collect::<Vec<_>>();
-    let selector = match selectors.as_slice() {
-        [] => None,
-        [selector] => Some(*selector),
-        _ => return None,
-    };
+    let mut selectors = link_selectors(link);
+    let selector = selectors.next();
+    if selectors.next().is_some() {
+        return None;
+    }
     Some((link, selector))
 }
 
