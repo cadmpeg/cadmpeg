@@ -37,16 +37,39 @@ use crate::IgesCodec;
 fn composite_degradation_reasons_render_at_the_admitted_loss_boundary() {
     use super::{CompositeCurveError, CompositeRefusal, DegreeElevationError};
 
-    assert_eq!(CompositeRefusal::NoChildCarrier.to_string(), "a child has no bounded line or NURBS carrier");
-    assert_eq!(CompositeRefusal::Child(CompositeCurveError::EmptyChildList).to_string(), "a child states no curve carrier: the composite states no child curve");
-    assert_eq!(CompositeRefusal::JoinedCarrier(CompositeCurveError::EmptyChildList).to_string(), "the joined children state no curve carrier: the composite states no child curve");
-    assert_eq!(CompositeRefusal::Elevation(CompositeCurveError::Elevation(DegreeElevationError::SpansDoNotJoin)).to_string(), "a child does not raise to the composite degree: the elevated Bezier spans do not join");
-    assert_eq!(CompositeRefusal::Other(CompositeCurveError::EmptyChildList).to_string(), "the composite states no child curve");
+    assert_eq!(
+        CompositeRefusal::NoChildCarrier.to_string(),
+        "a child has no bounded line or NURBS carrier"
+    );
+    assert_eq!(
+        CompositeRefusal::Child(CompositeCurveError::EmptyChildList).to_string(),
+        "a child states no curve carrier: the composite states no child curve"
+    );
+    assert_eq!(
+        CompositeRefusal::JoinedCarrier(CompositeCurveError::EmptyChildList).to_string(),
+        "the joined children state no curve carrier: the composite states no child curve"
+    );
+    assert_eq!(
+        CompositeRefusal::Elevation(CompositeCurveError::Elevation(
+            DegreeElevationError::SpansDoNotJoin
+        ))
+        .to_string(),
+        "a child does not raise to the composite degree: the elevated Bezier spans do not join"
+    );
+    assert_eq!(
+        CompositeRefusal::Other(CompositeCurveError::EmptyChildList).to_string(),
+        "the composite states no child curve"
+    );
 }
 
 #[test]
 fn composite_index_refuses_each_collection_before_insertion() {
-    let decoded = IgesCodec.decode(&mut Cursor::new(explicit_tetrahedron_solid_file()), &DecodeOptions::default()).unwrap();
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let ir = decoded.ir();
     assert!(!ir.model.curves.is_empty());
     assert!(!ir.model.edges.is_empty());
@@ -68,20 +91,31 @@ fn composite_index_refuses_each_collection_before_insertion() {
             match CompositeIndex::from_ir(ir, Some(&ctx)) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("composite index succeeded before {operation}"),
                 Err(error) => panic!("unexpected composite index failure at {operation}: {error}"),
             }
         }
-        assert!(found, "composite index collection boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite index collection boundary was not reached: {operation}"
+        );
     }
 }
 
 #[test]
 fn composite_index_refuses_each_retained_identity_copy() {
-    let decoded = IgesCodec.decode(&mut Cursor::new(explicit_tetrahedron_solid_file()), &DecodeOptions::default()).unwrap();
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let ir = decoded.ir();
     for operation in [
         "iges composite curve index keys",
@@ -101,14 +135,22 @@ fn composite_index_refuses_each_retained_identity_copy() {
             match CompositeIndex::from_ir(ir, Some(&ctx)) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("composite identity copy succeeded before {operation}"),
-                Err(error) => panic!("unexpected composite identity copy failure at {operation}: {error}"),
+                Err(error) => {
+                    panic!("unexpected composite identity copy failure at {operation}: {error}")
+                }
             }
         }
-        assert!(found, "composite retained boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite retained boundary was not reached: {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -122,19 +164,44 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
     let start = VertexId::mint("test:model:vertex#start").unwrap();
     let end = VertexId::mint("test:model:vertex#end").unwrap();
     let position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
-    let add = |index: &mut CompositeIndex, ctx: &DecodeContext<'_>| index.add_model_entity(
-        curve.clone(), 0,
-        super::CompositeEdge { start: start.clone(), end: end.clone(), param_range: None },
-        [(start.clone(), position), (end.clone(), position)],
-        Some(ctx),
-    );
+    let add = |index: &mut CompositeIndex, ctx: &DecodeContext<'_>| {
+        index.add_model_entity(
+            &curve,
+            0,
+            super::CompositeEdge {
+                start: start.clone(),
+                end: end.clone(),
+                param_range: None,
+            },
+            [(start.clone(), position), (end.clone(), position)],
+            Some(ctx),
+        )
+    };
     for (dimension, operation) in [
-        (ResourceDimension::RetainedBytes, "iges composite added curve index key"),
-        (ResourceDimension::CollectionItems, "iges composite added curve index node"),
-        (ResourceDimension::RetainedBytes, "iges composite added edge index key"),
-        (ResourceDimension::CollectionItems, "iges composite added edge index node"),
-        (ResourceDimension::CollectionItems, "iges composite added edge slots"),
-        (ResourceDimension::CollectionItems, "iges composite added vertex index nodes"),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite added curve index key",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges composite added curve index node",
+        ),
+        (
+            ResourceDimension::RetainedBytes,
+            "iges composite added edge index key",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges composite added edge index node",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges composite added edge slots",
+        ),
+        (
+            ResourceDimension::CollectionItems,
+            "iges composite added vertex index nodes",
+        ),
     ] {
         let mut cap = 0_u64;
         let mut found = false;
@@ -151,14 +218,20 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
             match add(&mut index, &ctx) {
                 Err(CodecError::ResourceLimit(limit)) => {
                     assert_eq!(limit.dimension, dimension);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(()) => panic!("composite index addition succeeded before {operation}"),
                 Err(error) => panic!("unexpected composite index addition failure: {error}"),
             }
         }
-        assert!(found, "composite index addition boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite index addition boundary was not reached: {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -172,17 +245,38 @@ fn composite_index_admits_added_entity_nodes_and_identity_keys() {
 #[test]
 fn composite_projection_refuses_model_and_procedural_slots_before_growth() {
     for (bytes, operation) in [
-        (composite_curve_with_join_gap(0.001_001), "iges composite native point slots"),
-        (composite_curve_with_join_gap(0.001_001), "iges composite native vertex slots"),
-        (composite_curve_with_join_gap(0.001_001), "iges composite native curve slots"),
-        (composite_curve_with_join_gap(0.001_001), "iges composite native edge slots"),
+        (
+            composite_curve_with_join_gap(0.001_001),
+            "iges composite native point slots",
+        ),
+        (
+            composite_curve_with_join_gap(0.001_001),
+            "iges composite native vertex slots",
+        ),
+        (
+            composite_curve_with_join_gap(0.001_001),
+            "iges composite native curve slots",
+        ),
+        (
+            composite_curve_with_join_gap(0.001_001),
+            "iges composite native edge slots",
+        ),
         (composite_curve_file(), "iges composite solved point slots"),
         (composite_curve_file(), "iges composite solved vertex slots"),
         (composite_curve_file(), "iges composite solved curve slots"),
         (composite_curve_file(), "iges composite solved edge slots"),
-        (composite_curve_file(), "iges composite procedural boundaries"),
-        (composite_curve_file(), "iges composite procedural components"),
-        (composite_curve_file(), "iges composite procedural curve slots"),
+        (
+            composite_curve_file(),
+            "iges composite procedural boundaries",
+        ),
+        (
+            composite_curve_file(),
+            "iges composite procedural components",
+        ),
+        (
+            composite_curve_file(),
+            "iges composite procedural curve slots",
+        ),
         (composite_curve_file(), "iges composite wire edge ids"),
     ] {
         let mut cap = 0_u64;
@@ -190,17 +284,31 @@ fn composite_projection_refuses_model_and_procedural_slots_before_growth() {
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
                 Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("composite projection succeeded before {operation}"),
-                Err(error) => panic!("unexpected composite projection failure at {operation}: {error}"),
+                Err(error) => {
+                    panic!("unexpected composite projection failure at {operation}: {error}")
+                }
             }
         }
-        assert!(found, "composite projection boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite projection boundary was not reached: {operation}"
+        );
     }
 }
 
@@ -211,10 +319,18 @@ fn native_composite_segment_curve_ids_refuse_retained_copy() {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges composite native segment curve ids" { return; }
+                if limit.operation == "iges composite native segment curve ids" {
+                    return;
+                }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
             Ok(_) => panic!("native segment copy succeeded before retained refusal"),
@@ -226,14 +342,25 @@ fn native_composite_segment_curve_ids_refuse_retained_copy() {
 
 #[test]
 fn composite_projection_identity_copies_refuse_retained_limit() {
-    for bytes in [composite_curve_with_join_gap(0.001_001), composite_curve_file()] {
-        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    for bytes in [
+        composite_curve_with_join_gap(0.001_001),
+        composite_curve_file(),
+    ] {
+        IgesCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .unwrap();
         let mut cap = 0_u64;
         let mut found = false;
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
                 Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                     if limit.operation == "iges composite projection identity copy" {
@@ -266,17 +393,29 @@ fn composite_child_carriers_refuse_nested_collection_admission() {
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = cap;
-            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
                 Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("composite child admission succeeded before {operation}"),
                 Err(error) => panic!("unexpected composite child admission failure: {error}"),
             }
         }
-        assert!(found, "composite child collection boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite child collection boundary was not reached: {operation}"
+        );
     }
 }
 
@@ -292,17 +431,29 @@ fn composite_child_curve_id_copies_refuse_retained_budget() {
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = cap;
-            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
                 Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("composite child identity copy succeeded before {operation}"),
                 Err(error) => panic!("unexpected composite child identity failure: {error}"),
             }
         }
-        assert!(found, "composite child retained boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite child retained boundary was not reached: {operation}"
+        );
     }
 }
 
@@ -316,7 +467,10 @@ fn composite_source_object_refusal_survives_candidate_projection() {
         policy.limits.max_retained_bytes = cap;
         let result = IgesCodec.decode(
             &mut Cursor::new(&bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         );
         match result {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
@@ -1324,7 +1478,12 @@ fn composite_index_lookups_match_the_unindexed_scan() {
 
 #[test]
 fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
-    let decoded = IgesCodec.decode(&mut Cursor::new(composite_curve_file()), &DecodeOptions::default()).unwrap();
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let ir = decoded.ir();
     let curve_id = ir.model.edges.iter().find_map(|edge| edge.curve()).unwrap();
     for (retained, operation) in [
@@ -1336,15 +1495,25 @@ fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
         let mut found = false;
         for _ in 0..4096 {
             let mut policy = DecodePolicy::service();
-            if retained { policy.limits.max_retained_bytes = cap; }
-            else { policy.limits.max_collection_items = cap; }
+            if retained {
+                policy.limits.max_retained_bytes = cap;
+            } else {
+                policy.limits.max_collection_items = cap;
+            }
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             match super::bounded_edge_for_curve(ir, curve_id, 0.0, None, Some(&ctx)) {
                 Err(CodecError::ResourceLimit(limit)) => {
-                    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+                    let dimension = if retained {
+                        ResourceDimension::RetainedBytes
+                    } else {
+                        ResourceDimension::CollectionItems
+                    };
                     assert_eq!(limit.dimension, dimension);
-                    if limit.operation == operation { found = true; break; }
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
                     cap = limit.used.checked_add(limit.additional).unwrap();
                 }
                 Ok(_) => panic!("scanned edge succeeded before {operation} at cap {cap}"),
@@ -1461,7 +1630,12 @@ fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
     let curve = test_nurbs(
         2,
         vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(2.0, -1.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
         Some(vec![1.0, 0.5, 2.0, 1.0]),
     );
     for operation in [
@@ -1481,7 +1655,10 @@ fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation { found = true; break; }
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
                         cap = limit.used.checked_add(limit.additional).unwrap();
                     }
                     other => panic!("unexpected trimmed lane failure at {operation}: {other:?}"),
@@ -1495,12 +1672,19 @@ fn composite_trimmed_lanes_refuse_fallible_copies_and_weight_conversion() {
 
 #[test]
 fn composite_elevation_refuses_nested_knot_and_weight_storage() {
-    let source = || test_nurbs(
-        2,
-        vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0), Point3::new(2.0, -1.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
-        Some(vec![1.0, 2.0, 1.0, 3.0]),
-    );
+    let source = || {
+        test_nurbs(
+            2,
+            vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, -1.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+            ],
+            Some(vec![1.0, 2.0, 1.0, 3.0]),
+        )
+    };
     for operation in [
         "iges composite elevation knot copy",
         "iges composite internal knot values",
@@ -1520,7 +1704,10 @@ fn composite_elevation_refuses_nested_knot_and_weight_storage() {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation { found = true; break; }
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
                         cap = limit.used.checked_add(limit.additional).unwrap();
                     }
                     other => panic!("unexpected elevation failure at {operation}: {other:?}"),
@@ -1563,8 +1750,26 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
         let first_weights = rational.then(|| vec![1.0, 2.0]);
         let second_weights = rational.then(|| vec![2.0, 1.0]);
         vec![
-            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], first_weights), [0.0, 1.0], ()),
-            (test_nurbs(1, vec![0.0, 0.0, 1.0, 1.0], vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)], second_weights), [0.0, 1.0], ()),
+            (
+                test_nurbs(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    first_weights,
+                ),
+                [0.0, 1.0],
+                (),
+            ),
+            (
+                test_nurbs(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    second_weights,
+                ),
+                [0.0, 1.0],
+                (),
+            ),
         ]
     };
     for (rational, operation) in [
@@ -1587,7 +1792,10 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
                 Err(error) => match error.non_resource() {
                     Err(CodecError::ResourceLimit(limit)) => {
                         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                        if limit.operation == operation { found = true; break; }
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
                         cap = limit.used.checked_add(limit.additional).unwrap();
                     }
                     other => panic!("unexpected composite join refusal at {operation}: {other:?}"),
@@ -1595,11 +1803,16 @@ fn composite_join_refuses_child_and_joined_lane_storage() {
                 Ok(_) => panic!("composite join succeeded before {operation}"),
             }
         }
-        assert!(found, "composite join boundary was not reached: {operation}");
+        assert!(
+            found,
+            "composite join boundary was not reached: {operation}"
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(concatenate_nurbs(Some(&ctx), children(true), Some(0.0)).unwrap().is_some());
+    assert!(concatenate_nurbs(Some(&ctx), children(true), Some(0.0))
+        .unwrap()
+        .is_some());
 }
 
 #[test]
@@ -2176,9 +2389,13 @@ fn composite_analytic_child_refuses_arc_lane_before_projection() {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions {
-            policy, ..DecodeOptions::default()
-        }) {
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 if limit.operation == "iges analytic arc weighted poles" {

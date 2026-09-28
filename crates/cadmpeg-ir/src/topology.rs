@@ -315,7 +315,11 @@ impl Shell {
         Ok(Self {
             id,
             region,
-            members: ShellMembers { faces, wire_edges, free_vertices },
+            members: ShellMembers {
+                faces,
+                wire_edges,
+                free_vertices,
+            },
         })
     }
 
@@ -783,15 +787,30 @@ impl LoopRing {
         let operation = "loop ring validation members";
         ctx.charge_collection_items(u64_from_index(coedges.len()), operation)?;
         let mut members = HashSet::new();
-        members.try_reserve(coedges.len()).map_err(|_| refuse_local_limit(operation, u64_from_index(coedges.len()), u64_from_index(coedges.len())))?;
+        members.try_reserve(coedges.len()).map_err(|_| {
+            refuse_local_limit(
+                operation,
+                u64_from_index(coedges.len()),
+                u64_from_index(coedges.len()),
+            )
+        })?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
             return Err(LoopRingError("loop ring coedges must be distinct".into()).into());
         }
-        if vertex_uses.iter().any(|vertex_use| !members.contains(&vertex_use.after)) {
-            return Err(LoopRingError("loop ring vertex-use after must name a coedge in the ring".into()).into());
+        if vertex_uses
+            .iter()
+            .any(|vertex_use| !members.contains(&vertex_use.after))
+        {
+            return Err(LoopRingError(
+                "loop ring vertex-use after must name a coedge in the ring".into(),
+            )
+            .into());
         }
-        Ok(Self { coedges, vertex_uses })
+        Ok(Self {
+            coedges,
+            vertex_uses,
+        })
     }
 
     /// Coedges in source traversal order.
@@ -1790,7 +1809,8 @@ mod tests {
             faces,
             Vec::new(),
             Vec::new(),
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(shell.faces().as_ptr(), storage);
     }
 
@@ -1880,7 +1900,8 @@ mod tests {
                     && limit.additional == 1
         ));
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let ring = LoopRing::new_admitted(vec![coedge.clone()], Vec::new(), &ctx).unwrap();
         assert_eq!(ring.coedges(), &[coedge]);
     }

@@ -1841,11 +1841,14 @@ pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision() -> Ve
     subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999999")
 }
 
-pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal() -> Vec<u8> {
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal() -> Vec<u8>
+{
     subrange_nurbs_surface_boundary_file_with_source_precision_at("0.1999993")
 }
 
-fn subrange_nurbs_surface_boundary_file_with_source_precision_at(source_coordinate: &str) -> Vec<u8> {
+fn subrange_nurbs_surface_boundary_file_with_source_precision_at(
+    source_coordinate: &str,
+) -> Vec<u8> {
     subrange_nurbs_surface_boundary_file_with_global(
         3,
         &format!("126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,{source_coordinate},{source_coordinate},0,0.5,0.5,0,{source_coordinate},{source_coordinate},0,0,1,0,0,1;"),

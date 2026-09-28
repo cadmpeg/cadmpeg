@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed IGES entity accessors and neutral projection.
 
-use std::collections::BTreeSet;
-use std::fmt;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::collections::BTreeSet;
+use std::fmt;
 
 use crate::decode_resource::{
     format_retained, insert_optional_btree_set, reserve_optional_vec_growth, reserve_vec_growth,
@@ -29,7 +29,10 @@ fn push_attributed_loss(
     reserve_vec_growth(ctx, losses, 1, "iges entity loss slots")?;
     let message = format_retained(ctx, message, "iges entity loss message")?;
     ctx.charge_retained(4 + code.code().len() as u64, "iges entity loss kind")?;
-    losses.push(code.note(message).with_provenance(entry.admitted_loss_provenance(ctx)?));
+    losses.push(
+        code.note(message)
+            .with_provenance(entry.admitted_loss_provenance(ctx)?),
+    );
     Ok(())
 }
 
@@ -74,17 +77,27 @@ fn push_optional_attributed_loss(
     match ctx {
         Some(ctx) => push_attributed_loss(ctx, losses, entry, code, message),
         None => {
-            losses.push(code.note(format!("{message}")).with_provenance(entry.loss_provenance()));
+            losses.push(
+                code.note(format!("{message}"))
+                    .with_provenance(entry.loss_provenance()),
+            );
             Ok(())
         }
     }
 }
 
-fn non_resource_error(error: CodecError, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
+fn non_resource_error(
+    error: CodecError,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
         other => match ctx {
-            Some(ctx) => crate::decode_resource::format_retained(ctx, format_args!("{other}"), "iges diagnostic error text"),
+            Some(ctx) => crate::decode_resource::format_retained(
+                ctx,
+                format_args!("{other}"),
+                "iges diagnostic error text",
+            ),
             None => Ok(other.to_string()),
         },
     }

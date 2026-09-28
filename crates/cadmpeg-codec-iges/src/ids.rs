@@ -30,7 +30,9 @@ pub(crate) fn directory_lookup_key<'a>(
         start -= 1;
         digits[start] = b'0' + u8::try_from(value % 10).ok()?;
         value /= 10;
-        if value == 0 { break; }
+        if value == 0 {
+            break;
+        }
     }
     let length = prefix.len().checked_add(digits.len() - start)?;
     let result = storage.get_mut(..length)?;
@@ -132,11 +134,14 @@ impl fmt::Display for Piece {
     }
 }
 
-const INLINE_PIECES: usize = 16;
+const INLINE_PIECES: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum StemPieces {
-    Inline { items: [Piece; INLINE_PIECES], len: usize },
+    Inline {
+        items: [Piece; INLINE_PIECES],
+        len: usize,
+    },
     Overflow(Vec<Piece>),
 }
 
@@ -185,7 +190,10 @@ pub(crate) struct Stem {
 impl Stem {
     /// The key of one Directory entry: `D{sequence}`.
     pub(crate) fn directory(sequence: impl Ordinal) -> Self {
-        let mut stem = Self { pieces: StemPieces::new(Piece::Text("D")), origin: sequence.sequence() };
+        let mut stem = Self {
+            pieces: StemPieces::new(Piece::Text("D")),
+            origin: sequence.sequence(),
+        };
         stem.pieces.push(sequence.piece());
         stem
     }
@@ -466,10 +474,19 @@ mod tests {
     #[test]
     fn directory_lookup_key_uses_stack_storage_for_full_u32_range() {
         let mut storage = [0_u8; 64];
-        assert_eq!(directory_lookup_key("iges:model:surface#D", 0, &mut storage), Some("iges:model:surface#D0"));
-        assert_eq!(directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage), Some("iges:model:edge#D4294967295"));
+        assert_eq!(
+            directory_lookup_key("iges:model:surface#D", 0, &mut storage),
+            Some("iges:model:surface#D0")
+        );
+        assert_eq!(
+            directory_lookup_key("iges:model:edge#D", u32::MAX, &mut storage),
+            Some("iges:model:edge#D4294967295")
+        );
         let mut short = [0_u8; 3];
-        assert_eq!(directory_lookup_key("iges:model:edge#D", 1, &mut short), None);
+        assert_eq!(
+            directory_lookup_key("iges:model:edge#D", 1, &mut short),
+            None
+        );
     }
 
     #[test]
@@ -478,14 +495,16 @@ mod tests {
         let mut low_policy = DecodePolicy::service();
         low_policy.limits.max_retained_bytes = 0;
         let low_arena = DecodeArena::new();
-        let (low_ctx, _) = DecodeContext::from_root_bytes(&[], &low_arena, &low_policy).unwrap();
+        let (low_ctx, _) =
+            DecodeContext::from_root_bytes(&[], &low_arena, &low_policy).expect("test setup");
         let service_arena = DecodeArena::new();
         let service_policy = DecodePolicy::service();
-        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &service_arena, &service_policy).unwrap();
+        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &service_arena, &service_policy)
+            .expect("test setup");
         macro_rules! check {
             ($old:ident, $admitted:ident) => {
                 assert!(matches!(super::$admitted(&stem, &low_ctx), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges generated identity"));
-                assert_eq!(super::$admitted(&stem, &service_ctx).unwrap().as_str(), super::$old(&stem).as_str());
+                assert_eq!(super::$admitted(&stem, &service_ctx).expect("test setup").as_str(), super::$old(&stem).as_str());
             };
         }
         check!(body, body_admitted);
@@ -512,15 +531,21 @@ mod tests {
         let stem = Stem::directory(u32::MAX)
             .child(u32::MAX)
             .slot(usize::MAX)
-            .slot(usize::MAX)
-            .tail(Word::End);
+            .slot(usize::MAX);
         assert!(matches!(stem.pieces, StemPieces::Inline { .. }));
         assert_eq!(stem.origin(), Some(u32::MAX));
         assert_eq!(
             stem.to_string(),
-            format!("D4294967295:D4294967295:{0}:{0}-end", usize::MAX)
+            format!("D4294967295:D4294967295:{0}:{0}", usize::MAX)
         );
-        assert_eq!(Stem::word_directory(Word::Face, 1_u32).to_string(), "face-D1");
+        assert!(matches!(
+            Stem::directory(1_u32).tail(Word::End).pieces,
+            StemPieces::Inline { .. }
+        ));
+        assert_eq!(
+            Stem::word_directory(Word::Face, 1_u32).to_string(),
+            "face-D1"
+        );
         assert_eq!(Stem::number(-1_i64).to_string(), "-1");
     }
 }

@@ -3,11 +3,12 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    curve_geometry_coplanar, linear_nurbs_parameters,
-    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
-    TransformResolutionError,
+    curve_geometry_coplanar, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    plane_coordinates, resolve_transform, ProjectionOutcome, TransformResolutionError,
 };
-use crate::decode_resource::{collect_optional_vec, copy_optional_identity, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{
+    collect_optional_vec, copy_optional_identity, reserve_vec, reserve_vec_growth,
+};
 use crate::directory::{DirectoryEntry, Hierarchy, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::parameter::{
@@ -18,9 +19,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
-use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -111,7 +110,10 @@ fn network_connect_points(
             None
         } else {
             let Some(sequence) = u32::try_from(value).ok().filter(|sequence| {
-                sequence % 2 == 1 && entries.get(sequence).is_some_and(|entry| entry.entity_type == 132)
+                sequence % 2 == 1
+                    && entries
+                        .get(sequence)
+                        .is_some_and(|entry| entry.entity_type == 132)
             }) else {
                 return Ok(None);
             };
@@ -201,38 +203,53 @@ fn single_target_cycle(
     visited: &mut BTreeSet<u32>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-if visited.contains(&sequence) {
-return Ok(false);
-}
+    if visited.contains(&sequence) {
+        return Ok(false);
+    }
 
-let mut path = Vec::new();
-let mut visiting = BTreeSet::new();
-let mut current = sequence;
-loop {
-ctx.charge_work(1, "iges structure cycle traversal")?;
-if visited.contains(&current) {
-for node in path {
-crate::decode_resource::insert_optional_btree_set(Some(ctx), visited, node, "iges structure visited cycle nodes")?;
-}
-return Ok(false);
-}
-if !crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut visiting, current, "iges structure active cycle nodes")? {
-return Ok(true);
-}
-reserve_vec_growth(ctx, &mut path, 1, "iges structure cycle path")?;
-path.push(current);
+    let mut path = Vec::new();
+    let mut visiting = BTreeSet::new();
+    let mut current = sequence;
+    loop {
+        ctx.charge_work(1, "iges structure cycle traversal")?;
+        if visited.contains(&current) {
+            for node in path {
+                crate::decode_resource::insert_optional_btree_set(
+                    Some(ctx),
+                    visited,
+                    node,
+                    "iges structure visited cycle nodes",
+                )?;
+            }
+            return Ok(false);
+        }
+        if !crate::decode_resource::insert_optional_btree_set(
+            Some(ctx),
+            &mut visiting,
+            current,
+            "iges structure active cycle nodes",
+        )? {
+            return Ok(true);
+        }
+        reserve_vec_growth(ctx, &mut path, 1, "iges structure cycle path")?;
+        path.push(current);
         let Some(target) = targets
             .get(&current)
             .copied()
             .filter(|target| targets.contains_key(target))
         else {
-for node in path {
-crate::decode_resource::insert_optional_btree_set(Some(ctx), visited, node, "iges structure visited cycle nodes")?;
-}
-return Ok(false);
-};
-current = target;
-}
+            for node in path {
+                crate::decode_resource::insert_optional_btree_set(
+                    Some(ctx),
+                    visited,
+                    node,
+                    "iges structure visited cycle nodes",
+                )?;
+            }
+            return Ok(false);
+        };
+        current = target;
+    }
 }
 
 pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
@@ -398,14 +415,17 @@ fn array_mask_valid(
     let mut positions = BTreeSet::new();
     for index in 0..count {
         let Some(position) = record
-                .integer(first_position_index + index)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|position| *position >= 1 && *position <= total)
+            .integer(first_position_index + index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|position| *position >= 1 && *position <= total)
         else {
             return Ok(false);
         };
         if !crate::decode_resource::insert_optional_btree_set(
-            Some(ctx), &mut positions, position, "iges array mask positions",
+            Some(ctx),
+            &mut positions,
+            position,
+            "iges array mask positions",
         )? {
             return Ok(false);
         }
@@ -942,12 +962,15 @@ fn property_fields_valid(
             let Some((independent_values, point_count)) = counts else {
                 return false;
             };
-            let expected_end = dependent_count.checked_mul(point_count).and_then(|dependent_values| {
-                5_usize
-                    .checked_add(2 * independent_count)?
-                    .checked_add(independent_values)?
-                    .checked_add(dependent_values)
-            });
+            let expected_end =
+                dependent_count
+                    .checked_mul(point_count)
+                    .and_then(|dependent_values| {
+                        5_usize
+                            .checked_add(2 * independent_count)?
+                            .checked_add(independent_values)?
+                            .checked_add(dependent_values)
+                    });
             record
                 .integer(2)
                 .is_some_and(|value| matches!(value, 1..=9999))
@@ -1195,7 +1218,9 @@ fn predefined_associativity_valid(
                         .and_then(|sequence| records.get(&sequence))
                         .is_some_and(|owner| {
                             has_association_back_pointer(
-                                owner, entry.sequence, trailing_pointer_analysis,
+                                owner,
+                                entry.sequence,
+                                trailing_pointer_analysis,
                             )
                         })
                 })
@@ -1223,7 +1248,9 @@ fn predefined_associativity_valid(
                         .and_then(|sequence| records.get(&sequence))
                         .is_some_and(|member| {
                             has_association_back_pointer(
-                                member, entry.sequence, trailing_pointer_analysis,
+                                member,
+                                entry.sequence,
+                                trailing_pointer_analysis,
                             )
                         })
                 })
@@ -1331,12 +1358,10 @@ fn predefined_associativity_valid(
                     .unwrap_or_default();
                 arrow_count != 2 || geometry_count == Some(2)
             });
-            let mut back_pointer_owners = records
-                .iter()
-                .filter_map(|(sequence, owner)| {
-                    has_association_back_pointer(owner, entry.sequence, trailing_pointer_analysis)
-                        .then_some(*sequence)
-                });
+            let mut back_pointer_owners = records.iter().filter_map(|(sequence, owner)| {
+                has_association_back_pointer(owner, entry.sequence, trailing_pointer_analysis)
+                    .then_some(*sequence)
+            });
             record.integer(1) == Some(1)
                 && orientation_valid
                 && angle_valid
@@ -1418,8 +1443,12 @@ fn linear_nurbs_boundary_points(
     parameter_range: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    if (0..nurbs.pole_count())
-        .any(|index| nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight <= 0.0)) {
+    if (0..nurbs.pole_count()).any(|index| {
+        nurbs
+            .pole_rows()
+            .weight_at(index)
+            .is_some_and(|weight| weight <= 0.0)
+    }) {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
@@ -1482,7 +1511,10 @@ fn linear_nurbs_is_simple_closed(
     Ok(!planar_polyline_has_self_intersection(&projected))
 }
 
-fn analytic_curve_is_simple_closed(geometry: &SolvedCurveGeometry, parameter_range: [f64; 2]) -> bool {
+fn analytic_curve_is_simple_closed(
+    geometry: &SolvedCurveGeometry,
+    parameter_range: [f64; 2],
+) -> bool {
     let period = parameter_range[1] - parameter_range[0];
     if !period.is_finite() || period <= 0.0 || !angularly_equal(period, std::f64::consts::TAU) {
         return false;
@@ -1531,11 +1563,15 @@ fn bounded_plane_curve_is_simple(
                     return Ok(false);
                 }
                 let active_id = copy_optional_identity(
-                    Some(context.ctx), segment.curve.as_str(),
+                    Some(context.ctx),
+                    segment.curve.as_str(),
                     "iges plane boundary child curve ID",
                 )?;
                 crate::decode_resource::insert_optional_btree_set(
-                    Some(context.ctx), active, active_id, "iges plane boundary active curve",
+                    Some(context.ctx),
+                    active,
+                    active_id,
+                    "iges plane boundary active curve",
                 )?;
                 let Some(geometry) = curve.geometry.solved() else {
                     active.remove(&segment.curve);
@@ -1564,10 +1600,10 @@ fn bounded_plane_curve_is_simple(
                 active,
             )
         }
-        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(parameter_range
-            .is_some_and(|range| {
-                analytic_curve_is_simple_closed(geometry, range)
-            })),
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+            Ok(parameter_range
+                .is_some_and(|range| analytic_curve_is_simple_closed(geometry, range)))
+        }
         SolvedCurveGeometry::Nurbs(nurbs) => {
             if source_is_certified_simple {
                 return Ok(true);
@@ -1610,12 +1646,13 @@ fn bounded_plane_curve_is_simple(
                 return Ok(false);
             };
             if !(points.len() >= 3
-                    && points_coincident(
-                        points[0],
-                        *points.last().unwrap_or(&points[0]),
-                        context.resolution,
-                    )
-                    && !polyline_has_forbidden_duplicate(&points, context.resolution)) {
+                && points_coincident(
+                    points[0],
+                    *points.last().unwrap_or(&points[0]),
+                    context.resolution,
+                )
+                && !polyline_has_forbidden_duplicate(&points, context.resolution))
+            {
                 return Ok(false);
             }
             Ok(plane_coordinates(&points, context.plane, context.ctx)?
@@ -1686,11 +1723,10 @@ fn plane_boundary_edge(
     ctx: &DecodeContext<'_>,
 ) -> Result<Edge, PlaneBoundaryError> {
     let mut key_storage = [0_u8; 64];
-    let key = crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
-        .ok_or(PlaneBoundaryError::MissingEdge)?;
-    let source_edge = index
-        .edges(key)
-        .ok_or(PlaneBoundaryError::MissingEdge)?;
+    let key =
+        crate::ids::directory_lookup_key("iges:model:edge#D", boundary_sequence, &mut key_storage)
+            .ok_or(PlaneBoundaryError::MissingEdge)?;
+    let source_edge = index.edges(key).ok_or(PlaneBoundaryError::MissingEdge)?;
     let curve_id = source_edge
         .curve()
         .ok_or(PlaneBoundaryError::MissingCurve)?;
@@ -1704,24 +1740,31 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id = copy_optional_identity(Some(ctx), curve_id.as_str(), "iges plane boundary active curve ID")?;
-    if !crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut active, active_id, "iges plane boundary active curve")?
-        || !bounded_plane_curve_is_simple(
-            geometry,
-            PlaneBoundarySimplicity {
-                index,
-                plane,
-                resolution,
-                transform: Transform::identity(),
-                ctx,
-            },
-            source_is_certified_simple,
-            source_edge
-                .param_range()
-                .map(cadmpeg_ir::units::FiniteVector::get),
-            &mut active,
-        )?
-    {
+    let active_id = copy_optional_identity(
+        Some(ctx),
+        curve_id.as_str(),
+        "iges plane boundary active curve ID",
+    )?;
+    if !crate::decode_resource::insert_optional_btree_set(
+        Some(ctx),
+        &mut active,
+        active_id,
+        "iges plane boundary active curve",
+    )? || !bounded_plane_curve_is_simple(
+        geometry,
+        PlaneBoundarySimplicity {
+            index,
+            plane,
+            resolution,
+            transform: Transform::identity(),
+            ctx,
+        },
+        source_is_certified_simple,
+        source_edge
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        &mut active,
+    )? {
         return Err(PlaneBoundaryError::NotSimple);
     }
     if !curve_geometry_coplanar(
@@ -1770,35 +1813,79 @@ fn plane_face_draft(
     let mut candidate = ModelDraft::new();
     let mut loop_ids = reserve_vec(ctx, boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
-        let edge_id = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.id, "iges structure identity copy")?;
-        reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges legacy plane edge slots")?;
+        let edge_id = crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &edge.id,
+            "iges structure identity copy",
+        )?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().edges,
+            1,
+            "iges legacy plane edge slots",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().edges.push(edge);
         let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
         let coedge_id = crate::ids::coedge_admitted(&stem.slot(boundary_index), ctx)?;
-        reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges legacy plane coedge slots")?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().coedges,
+            1,
+            "iges legacy plane coedge slots",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges structure identity copy")?,
-            owner_loop: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges structure identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &coedge_id,
+                "iges structure identity copy",
+            )?,
+            owner_loop: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &loop_id,
+                "iges structure identity copy",
+            )?,
             edge: edge_id,
-            radial_next: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges structure identity copy")?,
+            radial_next: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &coedge_id,
+                "iges structure identity copy",
+            )?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
         });
         let mut ring_coedges = reserve_vec(ctx, 1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
-        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(ring_coedges, Vec::new(), ctx) {
+        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(ring_coedges, Vec::new(), ctx)
+        {
             Ok(ring) => ring,
-            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => return Err(error.into()),
-            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => return Err("legacy plane loop ring is invalid".into()),
+            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => {
+                return Err(error.into())
+            }
+            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
+                return Err("legacy plane loop ring is invalid".into())
+            }
         };
-        reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges legacy plane loop slots")?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().loops,
+            1,
+            "iges legacy plane loop slots",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges structure identity copy")?,
-            face: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges structure identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &loop_id,
+                "iges structure identity copy",
+            )?,
+            face: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &face_id,
+                "iges structure identity copy",
+            )?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
@@ -1809,11 +1896,24 @@ fn plane_face_draft(
         let outer = loop_ids.remove(0);
         cadmpeg_ir::topology::FaceLoops::classified(outer, loop_ids)
     };
-    reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges legacy plane face slots")?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().faces,
+        1,
+        "iges legacy plane face slots",
+    )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
-        id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges structure identity copy")?,
-        shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges structure identity copy")?,
+        id: crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &face_id,
+            "iges structure identity copy",
+        )?,
+        shell: crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &shell_id,
+            "iges structure identity copy",
+        )?,
         surface: crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?,
         sense: Sense::Forward,
         loops: face_loops,
@@ -1823,23 +1923,60 @@ fn plane_face_draft(
     });
     let mut shell_faces = reserve_vec(ctx, 1, "iges legacy plane shell faces")?;
     shell_faces.push(face_id);
-    let shell = Shell::new(crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges structure identity copy")?, crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges structure identity copy")?, shell_faces, Vec::new(), Vec::new())
-        .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
-    reserve_vec_growth(ctx, &mut candidate.model_mut().shells, 1, "iges legacy plane shell slots")?;
+    let shell = Shell::new(
+        crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &shell_id,
+            "iges structure identity copy",
+        )?,
+        crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &region_id,
+            "iges structure identity copy",
+        )?,
+        shell_faces,
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().shells,
+        1,
+        "iges legacy plane shell slots",
+    )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().shells.push(shell);
     let mut region_shells = reserve_vec(ctx, 1, "iges legacy plane region shells")?;
     region_shells.push(shell_id);
-    reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges legacy plane region slots")?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().regions,
+        1,
+        "iges legacy plane region slots",
+    )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
-        id: crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges structure identity copy")?,
-        body: crate::decode_resource::clone_optional_identity(Some(ctx), &body_id, "iges structure identity copy")?,
+        id: crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &region_id,
+            "iges structure identity copy",
+        )?,
+        body: crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &body_id,
+            "iges structure identity copy",
+        )?,
         shells: region_shells,
     });
     let mut body_regions = reserve_vec(ctx, 1, "iges legacy plane body regions")?;
     body_regions.push(region_id);
-    reserve_vec_growth(ctx, &mut candidate.model_mut().bodies, 1, "iges legacy plane body slots")?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().bodies,
+        1,
+        "iges legacy plane body slots",
+    )?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
         id: body_id,
@@ -1933,19 +2070,28 @@ fn legacy_single_parent_face(
         );
     }
 
-    let boundary_count = child_count.checked_add(1).ok_or("legacy single-parent plane hole has an invalid child pointer")?;
-    let mut boundary_sequences = reserve_vec(ctx, boundary_count, "iges legacy plane boundary pointers")?;
+    let boundary_count = child_count
+        .checked_add(1)
+        .ok_or("legacy single-parent plane hole has an invalid child pointer")?;
+    let mut boundary_sequences =
+        reserve_vec(ctx, boundary_count, "iges legacy plane boundary pointers")?;
     for sequence in std::iter::once(parent_sequence).chain(children.iter().copied()) {
-        boundary_sequences.push(records
-            .get(&sequence)
-            .and_then(|plane| existing_pointer(plane, 5, entries))
-            .ok_or("legacy single-parent plane has an invalid boundary pointer")?);
+        boundary_sequences.push(
+            records
+                .get(&sequence)
+                .and_then(|plane| existing_pointer(plane, 5, entries))
+                .ok_or("legacy single-parent plane has an invalid boundary pointer")?,
+        );
     }
     let index = ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let parent_plane = plane_carrier(&index, parent_sequence)
         .ok_or("legacy single-parent parent plane was not projected")?;
     let resolution = global.minimum_resolution_mm();
-    let mut boundary_edges = reserve_vec(ctx, boundary_sequences.len(), "iges legacy plane boundary edges")?;
+    let mut boundary_edges = reserve_vec(
+        ctx,
+        boundary_sequences.len(),
+        "iges legacy plane boundary edges",
+    )?;
     for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
         .chain(children.iter().copied())
         .zip(boundary_sequences.iter().copied())
@@ -1965,9 +2111,18 @@ fn legacy_single_parent_face(
         let edge_id = crate::ids::edge_admitted(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
-         ctx)?;
-        edge.id = crate::decode_resource::clone_optional_identity(Some(ctx), &edge_id, "iges structure identity copy")?;
-        edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
+            ctx,
+        )?;
+        edge.id = crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &edge_id,
+            "iges structure identity copy",
+        )?;
+        edge.end = crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &edge.start,
+            "iges structure identity copy",
+        )?;
         boundary_edges.push(edge);
     }
     let stem =
@@ -1988,19 +2143,24 @@ fn legacy_single_parent_face(
     )))
 }
 
+enum FlowPointer {
+    Null,
+    Sequence(u32),
+}
+
 fn read_flow_pointer(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     cursor: &mut usize,
     nullable: bool,
-) -> Option<Option<u32>> {
+) -> Option<FlowPointer> {
     let raw = record.integer(*cursor)?;
     let index = *cursor;
     *cursor = cursor.checked_add(1)?;
     if nullable && raw == 0 {
-        return Some(None);
+        return Some(FlowPointer::Null);
     }
-    existing_pointer(record, index, entries).map(Some)
+    existing_pointer(record, index, entries).map(FlowPointer::Sequence)
 }
 
 fn read_flow_required_pointers(
@@ -2013,7 +2173,9 @@ fn read_flow_required_pointers(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut pointers = reserve_vec(ctx, count, operation)?;
     for _ in 0..count {
-        let Some(Some(sequence)) = read_flow_pointer(record, entries, cursor, false) else {
+        let Some(FlowPointer::Sequence(sequence)) =
+            read_flow_pointer(record, entries, cursor, false)
+        else {
             return Ok(None);
         };
         pointers.push(sequence);
@@ -2033,7 +2195,10 @@ fn read_flow_optional_pointers(
         let Some(pointer) = read_flow_pointer(record, entries, cursor, true) else {
             return Ok(None);
         };
-        pointers.push(pointer);
+        pointers.push(match pointer {
+            FlowPointer::Null => None,
+            FlowPointer::Sequence(sequence) => Some(sequence),
+        });
     }
     Ok(Some(pointers))
 }
@@ -2047,7 +2212,8 @@ fn definition_members(
 ) -> Result<Option<Vec<u32>>, CodecError> {
     let mut members = reserve_vec(ctx, count, operation)?;
     for index in 0..count {
-        let Some(sequence) = record.integer(4 + index)
+        let Some(sequence) = record
+            .integer(4 + index)
             .and_then(|value| u32::try_from(value).ok())
             .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
         else {
@@ -2075,13 +2241,22 @@ fn flow_associativity(
     if record.integer(1) != Some(context_count) {
         return Ok(None);
     }
-    let Some(counts) = (|| Some([
-        record.count(2)?, record.count(3)?, record.count(4)?,
-        record.count(5)?, record.count(6)?, record.count(7)?,
-    ]))() else {
+    let Some(counts) = (|| {
+        Some([
+            record.count(2)?,
+            record.count(3)?,
+            record.count(4)?,
+            record.count(5)?,
+            record.count(6)?,
+            record.count(7)?,
+        ])
+    })() else {
         return Ok(None);
     };
-    if record.integer(8).filter(|value| matches!(value, 0..=2)).is_none() {
+    if record
+        .integer(8)
+        .is_none_or(|value| !matches!(value, 0..=2))
+    {
         return Ok(None);
     }
     let function_flag = (form == 18)
@@ -2091,18 +2266,64 @@ fn flow_associativity(
         return Ok(None);
     }
     let mut cursor = if form == 18 { 10 } else { 9 };
-    let Some(associated) = read_flow_required_pointers(record, entries, &mut cursor, counts[0], ctx, "iges flow associated pointers")? else { return Ok(None); };
-    let Some(connections) = read_flow_required_pointers(record, entries, &mut cursor, counts[1], ctx, "iges flow connection pointers")? else { return Ok(None); };
-    let Some(joins) = read_flow_required_pointers(record, entries, &mut cursor, counts[2], ctx, "iges flow join pointers")? else { return Ok(None); };
+    let Some(associated) = read_flow_required_pointers(
+        record,
+        entries,
+        &mut cursor,
+        counts[0],
+        ctx,
+        "iges flow associated pointers",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(connections) = read_flow_required_pointers(
+        record,
+        entries,
+        &mut cursor,
+        counts[1],
+        ctx,
+        "iges flow connection pointers",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(joins) = read_flow_required_pointers(
+        record,
+        entries,
+        &mut cursor,
+        counts[2],
+        ctx,
+        "iges flow join pointers",
+    )?
+    else {
+        return Ok(None);
+    };
     for _ in 0..counts[3] {
-        if record.string(cursor).is_none_or(|name| name.is_empty()) {
+        if record.string(cursor).is_none_or(<[u8]>::is_empty) {
             return Ok(None);
         }
-        let Some(next) = cursor.checked_add(1) else { return Ok(None); };
+        let Some(next) = cursor.checked_add(1) else {
+            return Ok(None);
+        };
         cursor = next;
     }
-    let Some(displays) = read_flow_required_pointers(record, entries, &mut cursor, counts[4], ctx, "iges flow display pointers")? else { return Ok(None); };
-    let Some(continuations) = read_flow_optional_pointers(record, entries, &mut cursor, counts[5], ctx)? else { return Ok(None); };
+    let Some(displays) = read_flow_required_pointers(
+        record,
+        entries,
+        &mut cursor,
+        counts[4],
+        ctx,
+        "iges flow display pointers",
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(continuations) =
+        read_flow_optional_pointers(record, entries, &mut cursor, counts[5], ctx)?
+    else {
+        return Ok(None);
+    };
     let associated_valid = associated.iter().all(|sequence| {
         entries
             .get(sequence)
@@ -2285,14 +2506,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut records, record.directory_sequence, record,
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges structure parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut entries, entry.sequence, entry,
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges structure directory index",
         )?;
     }
@@ -2304,19 +2531,27 @@ pub(super) fn project(
     let mut legacy_face_candidates = Vec::<(&DirectoryEntry, ModelDraft)>::new();
     let mut legacy_plane_sequences = BTreeSet::new();
     let mut flows = BTreeMap::new();
-    for entry in directory.iter().filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20)) {
-        let Some(record) = records.get(&entry.sequence).copied() else { continue; };
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
+    {
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
         if let Some(flow) = flow_associativity(
-                entry,
-                record,
-                &entries,
-                &records,
-                trailing_pointer_analysis,
-                global.global_table(),
-                ctx,
-            )? {
+            entry,
+            record,
+            &entries,
+            &records,
+            trailing_pointer_analysis,
+            global.global_table(),
+            ctx,
+        )? {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut flows, entry.sequence, flow,
+                Some(ctx),
+                &mut flows,
+                entry.sequence,
+                flow,
                 "iges flow index nodes",
             )?;
         }
@@ -2327,7 +2562,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let mut owners = Vec::new();
@@ -2526,9 +2766,22 @@ pub(super) fn project(
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "property value layout, attachment, or owner kind is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "property value layout, attachment, or owner kind is invalid"
+                ),
+            )?;
         }
     }
 
@@ -2537,7 +2790,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let name_valid = matches!(
@@ -2551,13 +2809,21 @@ pub(super) fn project(
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
         let mut attribute_types = BTreeSet::new();
-        let mut shape = reserve_vec(ctx, attribute_count.unwrap_or_default(), "iges attribute shape descriptors")?;
+        let mut shape = reserve_vec(
+            ctx,
+            attribute_count.unwrap_or_default(),
+            "iges attribute shape descriptors",
+        )?;
         for _ in 0..attribute_count.unwrap_or_default() {
             let attribute_type_valid = match record.integer(cursor) {
-                Some(value) if (0..=9999).contains(&value) =>
+                Some(value) if (0..=9999).contains(&value) => {
                     crate::decode_resource::insert_optional_btree_set(
-                        Some(ctx), &mut attribute_types, value, "iges attribute type nodes",
-                    )?,
+                        Some(ctx),
+                        &mut attribute_types,
+                        value,
+                        "iges attribute type nodes",
+                    )?
+                }
                 _ => false,
             };
             let data_type = record
@@ -2601,10 +2867,18 @@ pub(super) fn project(
             }
         }
         if name_valid && list_type_valid && attributes_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
             if entry.form == 0 {
                 crate::decode_resource::insert_optional_btree_map(
-                    Some(ctx), &mut attribute_shapes, entry.sequence, shape,
+                    Some(ctx),
+                    &mut attribute_shapes,
+                    entry.sequence,
+                    shape,
                     "iges attribute shape index nodes",
                 )?;
             }
@@ -2618,7 +2892,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let definition = entry
@@ -2655,9 +2934,22 @@ pub(super) fn project(
             }
         }
         if values_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "attribute-table instance definition, row count, or typed value is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "attribute-table instance definition, row count, or typed value is invalid"
+                ),
+            )?;
         }
     }
 
@@ -2666,7 +2958,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
@@ -2675,12 +2972,19 @@ pub(super) fn project(
         if let Some(count) = count.filter(|_| units_valid) {
             for offset in 0..count {
                 let start = 2 + offset * 3;
-                let valid = if let Some((unit_type, value)) = record.string(start).zip(record.string(start + 1)) {
+                let valid = if let Some((unit_type, value)) =
+                    record.string(start).zip(record.string(start + 1))
+                {
                     unit_value_valid(unit_type, value)
                         && crate::decode_resource::insert_optional_btree_set(
-                            Some(ctx), &mut types, unit_type, "iges unit type nodes",
+                            Some(ctx),
+                            &mut types,
+                            unit_type,
+                            "iges unit type nodes",
                         )?
-                        && record.number(start + 2).is_some_and(|scale| scale.is_finite() && scale > 0.0)
+                        && record
+                            .number(start + 2)
+                            .is_some_and(|scale| scale.is_finite() && scale > 0.0)
                 } else {
                     false
                 };
@@ -2693,7 +2997,12 @@ pub(super) fn project(
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
         }
@@ -2701,7 +3010,12 @@ pub(super) fn project(
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let class_count = record.count(1).filter(|count| *count > 0);
@@ -2728,7 +3042,12 @@ pub(super) fn project(
             && entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
         }
@@ -2739,29 +3058,50 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
         let members_valid = count.is_some_and(|count| {
             (0..count).all(|index| {
-                record.integer(2 + index)
+                record
+                    .integer(2 + index)
                     .and_then(|value| u32::try_from(value).ok())
                     .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
                     .is_some_and(|sequence| {
                         !matches!(entry.form, 1 | 14)
                             || records.get(&sequence).is_some_and(|member_record| {
                                 has_association_back_pointer(
-                                    member_record, entry.sequence, trailing_pointer_analysis,
+                                    member_record,
+                                    entry.sequence,
+                                    trailing_pointer_analysis,
                                 )
                             })
                     })
             })
         });
         if members_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "group member list or required association back pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "group member list or required association back pointer is invalid"
+                ),
+            )?;
         }
     }
 
@@ -2770,7 +3110,12 @@ pub(super) fn project(
             && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let valid = type402_structure_valid(entry, global.global_table())
@@ -2793,7 +3138,12 @@ pub(super) fn project(
                 )
             };
         if valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
             if entry.form == 9 {
                 match legacy_single_parent_face(
                     ir,
@@ -2807,16 +3157,26 @@ pub(super) fn project(
                     Ok(Some((candidate, plane_sequences))) => {
                         for sequence in plane_sequences {
                             crate::decode_resource::insert_optional_btree_set(
-                                Some(ctx), &mut legacy_plane_sequences, sequence,
+                                Some(ctx),
+                                &mut legacy_plane_sequences,
+                                sequence,
                                 "iges legacy plane sequence nodes",
                             )?;
                         }
-                        reserve_vec_growth(ctx, &mut legacy_face_candidates, 1, "iges legacy face candidates")?;
+                        reserve_vec_growth(
+                            ctx,
+                            &mut legacy_face_candidates,
+                            1,
+                            "iges legacy face candidates",
+                        )?;
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
                     Err(reason) => super::push_optional_entity_loss(
-                        Some(ctx), &mut losses, entry, format_args!("{}", reason.non_resource()?),
+                        Some(ctx),
+                        &mut losses,
+                        entry,
+                        format_args!("{}", reason.non_resource()?),
                     )?,
                 }
             }
@@ -2852,16 +3212,24 @@ pub(super) fn project(
                 ctx,
             ) {
                 Ok(mut edge) => {
-                    edge.id = crate::ids::edge_admitted(&crate::ids::Stem::word_directory(
-                        crate::ids::Word::BoundedPlane,
-                        entry.sequence,
-                    ), ctx)?;
-                    edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
+                    edge.id = crate::ids::edge_admitted(
+                        &crate::ids::Stem::word_directory(
+                            crate::ids::Word::BoundedPlane,
+                            entry.sequence,
+                        ),
+                        ctx,
+                    )?;
+                    edge.end = crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &edge.start,
+                        "iges structure identity copy",
+                    )?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
-                    let mut boundary_edges = reserve_vec(ctx, 1, "iges bounded plane boundary edges")?;
+                    let mut boundary_edges =
+                        reserve_vec(ctx, 1, "iges bounded plane boundary edges")?;
                     boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
@@ -2874,16 +3242,27 @@ pub(super) fn project(
                     );
                     match candidate {
                         Ok(candidate) => {
-                            reserve_vec_growth(ctx, &mut legacy_face_candidates, 1, "iges legacy face candidates")?;
+                            reserve_vec_growth(
+                                ctx,
+                                &mut legacy_face_candidates,
+                                1,
+                                "iges legacy face candidates",
+                            )?;
                             legacy_face_candidates.push((entry, candidate));
                         }
                         Err(reason) => super::push_optional_entity_loss(
-                            Some(ctx), &mut losses, entry, format_args!("{}", reason.non_resource()?),
+                            Some(ctx),
+                            &mut losses,
+                            entry,
+                            format_args!("{}", reason.non_resource()?),
                         )?,
                     }
                 }
                 Err(reason) => super::push_optional_entity_loss(
-                    Some(ctx), &mut losses, entry, format_args!("{}", reason.message()?),
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{}", reason.message()?),
                 )?,
             },
             -1 => match plane_boundary_edge(
@@ -2895,11 +3274,18 @@ pub(super) fn project(
                 ctx,
             ) {
                 Ok(_) => super::push_optional_entity_loss(
-                    Some(ctx), &mut losses, entry,
-                    format_args!("negative bounded plane requires an enclosing positive plane face"),
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "negative bounded plane requires an enclosing positive plane face"
+                    ),
                 )?,
                 Err(reason) => super::push_optional_entity_loss(
-                    Some(ctx), &mut losses, entry, format_args!("{}", reason.message()?),
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{}", reason.message()?),
                 )?,
             },
             _ => {}
@@ -2908,8 +3294,19 @@ pub(super) fn project(
 
     let mut commit_session = CommitSession::new(ir);
     for (entry, candidate) in legacy_face_candidates {
-        if commit_session.commit_model_admitted(candidate, ctx)?.is_err() {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "legacy single-parent plane hole failed neutral topology validation"))?;
+        if commit_session
+            .commit_model_admitted(candidate, ctx)?
+            .is_err()
+        {
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "legacy single-parent plane hole failed neutral topology validation"
+                ),
+            )?;
         }
     }
 
@@ -2935,15 +3332,21 @@ pub(super) fn project(
                     })
                 })
         });
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, Some(ctx), |sequence| {
-            flows
-                .get(&sequence)
-                .into_iter()
-                .flat_map(|flow| flow.continuations.iter().flatten().copied())
-                .filter(|target| flows.contains_key(target))
-        })?;
+        let cyclic =
+            super::directed_cycle(entry.sequence, &mut visited_flows, Some(ctx), |sequence| {
+                flows
+                    .get(&sequence)
+                    .into_iter()
+                    .flat_map(|flow| flow.continuations.iter().flatten().copied())
+                    .filter(|target| flows.contains_key(target))
+            })?;
         if flow_targets_valid && !cyclic {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
         }
@@ -2954,7 +3357,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let nonempty_string = |index| record.string(index).is_some_and(|value| !value.is_empty());
@@ -2964,19 +3372,40 @@ pub(super) fn project(
             _ => false,
         };
         if fields_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "external-reference file, symbolic, or library identifier is empty or invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "external-reference file, symbolic, or library identifier is empty or invalid"
+                ),
+            )?;
         }
     }
 
     let mut array_targets = BTreeMap::new();
-    for entry in directory.iter().filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0) {
-        if let Some(target) = records.get(&entry.sequence)
+    for entry in directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
+    {
+        if let Some(target) = records
+            .get(&entry.sequence)
             .and_then(|record| record.integer(1))
-            .and_then(|value| u32::try_from(value).ok()) {
+            .and_then(|value| u32::try_from(value).ok())
+        {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut array_targets, entry.sequence, target,
+                Some(ctx),
+                &mut array_targets,
+                entry.sequence,
+                target,
                 "iges array target index nodes",
             )?;
         }
@@ -2987,7 +3416,12 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let target_valid = array_targets.get(&entry.sequence).is_some_and(|target| {
@@ -3038,9 +3472,22 @@ pub(super) fn project(
                 }
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "array base, dimensions, selection mask, transform, or acyclicity is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "array base, dimensions, selection mask, transform, or acyclicity is invalid"
+                ),
+            )?;
         }
     }
 
@@ -3049,7 +3496,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let position_valid = (1..=3).all(|index| record.number(index).is_some());
@@ -3107,9 +3559,22 @@ pub(super) fn project(
             && transform_valid
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "connect-point fields, references, placement, or use flag are invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "connect-point fields, references, placement, or use flag are invalid"
+                ),
+            )?;
         }
     }
 
@@ -3119,7 +3584,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let target = record.integer(1).and_then(|value| {
@@ -3128,11 +3598,19 @@ pub(super) fn project(
         });
         if let Some(target) = target {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut solid_instances, entry.sequence, target,
+                Some(ctx),
+                &mut solid_instances,
+                entry.sequence,
+                target,
                 "iges solid instance index nodes",
             )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-instance target pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid-instance target pointer is invalid"),
+            )?;
         }
     }
 
@@ -3153,9 +3631,22 @@ pub(super) fn project(
             subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
         if target_valid && transform_valid && !cyclic {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-instance form, target, transform, or acyclicity is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "solid-instance form, target, transform, or acyclicity is invalid"
+                ),
+            )?;
         }
     }
 
@@ -3164,11 +3655,21 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly item count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid-assembly item count is not positive"),
+            )?;
             continue;
         };
         let mut items = reserve_vec(ctx, count, "iges solid assembly items")?;
@@ -3190,11 +3691,18 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly item tuple is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid-assembly item tuple is invalid"),
+            )?;
             continue;
         }
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut assemblies, entry.sequence,
+            Some(ctx),
+            &mut assemblies,
+            entry.sequence,
             SolidAssembly {
                 form: entry.form,
                 items,
@@ -3263,10 +3771,23 @@ pub(super) fn project(
             || cyclic
             || !own_transform_valid
         {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
+                ),
+            )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            Some(ctx),
+            &mut decoded,
+            *sequence,
+            "iges structure decoded sequences",
+        )?;
     }
 
     let mut definitions = BTreeMap::new();
@@ -3276,7 +3797,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let depth = record
@@ -3285,15 +3811,31 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let count = record.count(3);
         let members = match count {
-            Some(count) => definition_members(record, count, &entries, ctx, "iges subfigure definition members")?,
+            Some(count) => definition_members(
+                record,
+                count,
+                &entries,
+                ctx,
+                "iges subfigure definition members",
+            )?,
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure depth, member count, or member pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "subfigure depth, member count, or member pointer is invalid"
+                ),
+            )?;
             continue;
         };
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut definitions, entry.sequence,
+            Some(ctx),
+            &mut definitions,
+            entry.sequence,
             SubfigureDefinition { depth, members },
             "iges subfigure definition index nodes",
         )?;
@@ -3303,7 +3845,9 @@ pub(super) fn project(
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
             crate::decode_resource::insert_optional_btree_set(
-                Some(ctx), &mut definition_fields_valid, entry.sequence,
+                Some(ctx),
+                &mut definition_fields_valid,
+                entry.sequence,
                 "iges subfigure valid-definition nodes",
             )?;
         }
@@ -3317,10 +3861,18 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut placement_rejections, entry.sequence,
-                PlacementRejection::MissingRecord, "iges placement rejection nodes",
+                Some(ctx),
+                &mut placement_rejections,
+                entry.sequence,
+                PlacementRejection::MissingRecord,
+                "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let definition = record.integer(1).and_then(|value| {
@@ -3344,27 +3896,43 @@ pub(super) fn project(
         };
         if !placement_valid {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut placement_rejections, entry.sequence,
-                PlacementRejection::InvalidPlacement, "iges placement rejection nodes",
+                Some(ctx),
+                &mut placement_rejections,
+                entry.sequence,
+                PlacementRejection::InvalidPlacement,
+                "iges placement rejection nodes",
             )?;
         }
         let Some(definition) = definition else {
             if !placement_rejections.contains_key(&entry.sequence) {
                 crate::decode_resource::insert_optional_btree_map(
-                    Some(ctx), &mut placement_rejections, entry.sequence,
-                    PlacementRejection::InvalidDefinition, "iges placement rejection nodes",
+                    Some(ctx),
+                    &mut placement_rejections,
+                    entry.sequence,
+                    PlacementRejection::InvalidDefinition,
+                    "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure-instance definition pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "subfigure-instance definition pointer is invalid"),
+            )?;
             continue;
         };
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut instances, entry.sequence, definition,
+            Some(ctx),
+            &mut instances,
+            entry.sequence,
+            definition,
             "iges subfigure instance nodes",
         )?;
         if placement_valid {
             crate::decode_resource::insert_optional_btree_set(
-                Some(ctx), &mut instance_fields_valid, entry.sequence,
+                Some(ctx),
+                &mut instance_fields_valid,
+                entry.sequence,
                 "iges valid subfigure instance nodes",
             )?;
         }
@@ -3377,7 +3945,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let depth = record
@@ -3386,7 +3959,13 @@ pub(super) fn project(
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
         let members = match member_count {
-            Some(count) => definition_members(record, count, &entries, ctx, "iges network definition members")?,
+            Some(count) => definition_members(
+                record,
+                count,
+                &entries,
+                ctx,
+                "iges network definition members",
+            )?,
             None => None,
         };
         let Some((depth, member_count, members)) = depth
@@ -3394,7 +3973,12 @@ pub(super) fn project(
             .zip(members)
             .map(|((depth, member_count), members)| (depth, member_count, members))
         else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition header or member list is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "network definition header or member list is invalid"),
+            )?;
             continue;
         };
         let type_flag_valid = record
@@ -3417,12 +4001,20 @@ pub(super) fn project(
             global.global_table(),
             ctx,
             "iges network definition connect points",
-        )? else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition connect-point count is invalid"))?;
+        )?
+        else {
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "network definition connect-point count is invalid"),
+            )?;
             continue;
         };
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut network_definitions, entry.sequence,
+            Some(ctx),
+            &mut network_definitions,
+            entry.sequence,
             NetworkDefinition {
                 depth,
                 members,
@@ -3439,7 +4031,9 @@ pub(super) fn project(
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
             crate::decode_resource::insert_optional_btree_set(
-                Some(ctx), &mut network_definition_fields_valid, entry.sequence,
+                Some(ctx),
+                &mut network_definition_fields_valid,
+                entry.sequence,
                 "iges network valid-definition nodes",
             )?;
         }
@@ -3453,10 +4047,18 @@ pub(super) fn project(
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut placement_rejections, entry.sequence,
-                PlacementRejection::MissingRecord, "iges placement rejection nodes",
+                Some(ctx),
+                &mut placement_rejections,
+                entry.sequence,
+                PlacementRejection::MissingRecord,
+                "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let definition = record.integer(1).and_then(|value| {
@@ -3478,7 +4080,12 @@ pub(super) fn project(
                 })
         });
         let connect_points = network_connect_points(
-            record, 11, 12, &entries, global.global_table(), ctx,
+            record,
+            11,
+            12,
+            &entries,
+            global.global_table(),
+            ctx,
             "iges network instance connect points",
         )?;
         let placement_valid = match placement_affine(
@@ -3498,8 +4105,11 @@ pub(super) fn project(
         };
         if !placement_valid {
             crate::decode_resource::insert_optional_btree_map(
-                Some(ctx), &mut placement_rejections, entry.sequence,
-                PlacementRejection::InvalidPlacement, "iges placement rejection nodes",
+                Some(ctx),
+                &mut placement_rejections,
+                entry.sequence,
+                PlacementRejection::InvalidPlacement,
+                "iges placement rejection nodes",
             )?;
         }
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
@@ -3509,15 +4119,25 @@ pub(super) fn project(
                     None => PlacementRejection::InvalidDefinition,
                 };
                 crate::decode_resource::insert_optional_btree_map(
-                    Some(ctx), &mut placement_rejections, entry.sequence,
-                    rejection, "iges placement rejection nodes",
+                    Some(ctx),
+                    &mut placement_rejections,
+                    entry.sequence,
+                    rejection,
+                    "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network instance definition or count is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "network instance definition or count is invalid"),
+            )?;
             continue;
         };
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut network_instances, entry.sequence,
+            Some(ctx),
+            &mut network_instances,
+            entry.sequence,
             NetworkInstance {
                 definition,
                 connect_points,
@@ -3526,7 +4146,9 @@ pub(super) fn project(
         )?;
         if placement_valid && type_flag_valid && designator_valid && display_valid {
             crate::decode_resource::insert_optional_btree_set(
-                Some(ctx), &mut network_instance_fields_valid, entry.sequence,
+                Some(ctx),
+                &mut network_instance_fields_valid,
+                entry.sequence,
                 "iges valid network instance nodes",
             )?;
         }
@@ -3560,9 +4182,22 @@ pub(super) fn project(
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure definition fields or nesting depth is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "subfigure definition fields or nesting depth is invalid"
+                ),
+            )?;
         }
     }
     for (sequence, definition_sequence) in &instances {
@@ -3571,12 +4206,25 @@ pub(super) fn project(
             && definition_fields_valid.contains(definition_sequence)
             && decoded.contains(definition_sequence)
         {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
             placement_rejections
                 .entry(*sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure-instance placement or decoded definition is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "subfigure-instance placement or decoded definition is invalid"
+                ),
+            )?;
         }
     }
     for (sequence, definition) in &network_definitions {
@@ -3604,9 +4252,22 @@ pub(super) fn project(
             }
         });
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition fields or nesting depth is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "network definition fields or nesting depth is invalid"
+                ),
+            )?;
         }
     }
     for (sequence, instance) in &network_instances {
@@ -3625,7 +4286,12 @@ pub(super) fn project(
             && definition_valid
             && decoded.contains(&instance.definition)
         {
-            crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, *sequence, "iges structure decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                *sequence,
+                "iges structure decoded sequences",
+            )?;
         } else {
             placement_rejections.entry(*sequence).or_insert(
                 if decoded.contains(&instance.definition) {
@@ -3636,7 +4302,15 @@ pub(super) fn project(
                     PlacementRejection::InvalidDefinition
                 },
             );
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network instance placement or connection list is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "network instance placement or connection list is invalid"
+                ),
+            )?;
         }
     }
 

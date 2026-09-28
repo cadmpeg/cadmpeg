@@ -41,7 +41,13 @@ pub(crate) fn copy_optional_identity<T: TryFrom<String>>(
         Some(ctx) => format_retained(ctx, format_args!("{value}"), operation)?,
         None => {
             let mut text = String::new();
-            text.try_reserve_exact(value.len()).map_err(|_| refuse_local_limit(operation, u64_from_index(value.len()), u64_from_index(value.len())))?;
+            text.try_reserve_exact(value.len()).map_err(|_| {
+                refuse_local_limit(
+                    operation,
+                    u64_from_index(value.len()),
+                    u64_from_index(value.len()),
+                )
+            })?;
             text.push_str(value);
             text
         }
@@ -287,7 +293,10 @@ pub(crate) fn collect_optional_vec<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{admit_optional_entities, clone_optional_identity, collect_optional_vec, copy_optional_identity, format_retained, lossy_retained};
+    use super::{
+        admit_optional_entities, clone_optional_identity, collect_optional_vec,
+        copy_optional_identity, format_retained, lossy_retained,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -350,35 +359,46 @@ mod tests {
         let source = "test:model:curve#1";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(source.len() - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refused = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(Some(&ctx), source, "iges identity copy test");
+        policy.limits.max_retained_bytes = u64::try_from(source.len() - 1).expect("test setup");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+        let refused = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(
+            Some(&ctx),
+            source,
+            "iges identity copy test",
+        );
         assert!(matches!(refused,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "iges identity copy test"
                     && limit.used == 0
-                    && limit.additional == u64::try_from(source.len()).unwrap()
+                    && limit.additional == u64::try_from(source.len()).expect("test setup")
         ));
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let copied = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(Some(&ctx), source, "iges identity copy test").unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test setup");
+        let copied = copy_optional_identity::<cadmpeg_ir::ids::CurveId>(
+            Some(&ctx),
+            source,
+            "iges identity copy test",
+        )
+        .expect("test setup");
         assert_eq!(copied.as_str(), source);
     }
 
     #[test]
     fn cloned_identity_refuses_retained_bytes_before_allocation() {
-        let source = cadmpeg_ir::ids::CurveId::mint("test:model:curve#1").unwrap();
+        let source = cadmpeg_ir::ids::CurveId::mint("test:model:curve#1").expect("test setup");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = u64::try_from(source.as_str().len() - 1).unwrap();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        policy.limits.max_retained_bytes =
+            u64::try_from(source.as_str().len() - 1).expect("test setup");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         let result = clone_optional_identity(Some(&ctx), &source, "iges cloned identity test");
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "iges cloned identity test"
-                    && limit.additional == u64::try_from(source.as_str().len()).unwrap()
+                    && limit.additional == u64::try_from(source.as_str().len()).expect("test setup")
         ));
     }
 
@@ -423,8 +443,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 2;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        admit_optional_entities(Some(&ctx), 2, "iges geometry test").unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+        admit_optional_entities(Some(&ctx), 2, "iges geometry test").expect("test setup");
         let result = admit_optional_entities(Some(&ctx), 1, "iges geometry test");
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))

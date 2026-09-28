@@ -2,8 +2,12 @@
 //! Offset curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::{clone_optional_identity, reserve_optional_vec, reserve_optional_vec_growth};
+use super::geometry::{
+    admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome,
+};
+use crate::decode_resource::{
+    clone_optional_identity, reserve_optional_vec, reserve_optional_vec_growth,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -21,8 +25,8 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
-use std::collections::{BTreeMap, BTreeSet};
 use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
@@ -268,14 +272,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut records, record.directory_sequence, record,
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges offsets parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut entries, entry.sequence, entry,
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges offsets directory index",
         )?;
     }
@@ -289,48 +299,89 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(source_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset source pointer is invalid"),
+            )?;
             continue;
         };
         let Some(flag) = record.integer(2).filter(|flag| matches!(flag, 1..=3)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset distance flag is not 1, 2, or 3"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset distance flag is not 1, 2, or 3"),
+            )?;
             continue;
         };
         let components = [record.number(10), record.number(11), record.number(12)];
         #[allow(clippy::many_single_char_names)]
         let [Some(x), Some(y), Some(z)] = components
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset plane normal is not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset plane normal is not numeric"),
+            )?;
             continue;
         };
         let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(x, y, z)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset plane normal is zero or non-finite"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset plane normal is zero or non-finite"),
+            )?;
             continue;
         };
         if declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision())
             .is_none()
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset plane normal is not a unit vector"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset plane normal is not a unit vector"),
+            )?;
             continue;
         }
         let native_bounds = [record.number(13), record.number(14)];
         let [Some(native_start), Some(native_end)] = native_bounds else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset parameter interval is not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset parameter interval is not numeric"),
+            )?;
             continue;
         };
         let Some(native_interval) = IncreasingParameterInterval::new([native_start, native_end])
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset parameter interval is not increasing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset parameter interval is not increasing"),
+            )?;
             continue;
         };
-        let source_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(source_sequence), ctx)?;
+        let source_id =
+            crate::ids::curve_admitted(&crate::ids::Stem::directory(source_sequence), ctx)?;
         let Some(source_geometry) = ir
             .model
             .curves
@@ -338,39 +389,79 @@ pub(super) fn project(
             .find(|curve| curve.id == source_id)
             .and_then(|curve| curve.geometry.solved())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source curve is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset source curve is missing"),
+            )?;
             continue;
         };
         let source_range = source_parameter_range(
             ir,
             &source_id,
-            &source_geometry,
+            source_geometry,
             global.minimum_resolution_mm(),
         )?;
         let Some(source_range) = source_range else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source has no bounded neutral parameter domain"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "offset source has no bounded neutral parameter domain"
+                ),
+            )?;
             continue;
         };
         let Some(source_entry) = entries.get(&source_sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source Directory Entry is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset source Directory Entry is missing"),
+            )?;
             continue;
         };
         let Some(source_record) = records.get(&source_sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset source Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(parameter_map) = source_parameter_map(source_entry, source_record, source_range)
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source has no supported native-to-neutral parameter mapping"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "offset source has no supported native-to-neutral parameter mapping"
+                ),
+            )?;
             continue;
         };
         if native_interval.lower() < parameter_map.native.lower()
             || native_interval.upper() > parameter_map.native.upper()
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset parameter interval lies outside the source curve domain"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "offset parameter interval lies outside the source curve domain"
+                ),
+            )?;
             continue;
         }
-        let mut offset_source_id = clone_optional_identity(ctx, &source_id, "iges offset source identity copy")?;
+        let mut offset_source_id =
+            clone_optional_identity(ctx, &source_id, "iges offset source identity copy")?;
         let mut offset_source_geometry = Cow::Borrowed(source_geometry);
         if entry.transform != 0 {
             let transform = match resolve_transform(
@@ -385,24 +476,42 @@ pub(super) fn project(
                 Ok(transform) => transform,
                 Err(error) => {
                     let message = error.non_resource()?;
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{message}"),
+                    )?;
                     continue;
                 }
             };
-            let Some(placed_source_geometry) =
-                placed_offset_source(source_geometry, transform)
+            let Some(placed_source_geometry) = placed_offset_source(source_geometry, transform)
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset source has no exact line or circle carrier"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "{}",
+                        "placed offset source has no exact line or circle carrier"
+                    ),
+                )?;
                 continue;
             };
             let Some(placed_normal) = placed_offset_normal(normal, transform) else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset normal cannot be represented"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "placed offset normal cannot be represented"),
+                )?;
                 continue;
             };
             normal = placed_normal;
             offset_source_id = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
-             ctx)?;
+                ctx,
+            )?;
             offset_source_geometry = Cow::Owned(placed_source_geometry);
         }
         let normal_direction = *normal.as_raw();
@@ -413,7 +522,12 @@ pub(super) fn project(
         let (distance, distance_law, geometry) = match flag {
             1 => {
                 if record.integer(3) != Some(0) {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "uniform offset DE2 is not explicit integer zero"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "uniform offset DE2 is not explicit integer zero"),
+                    )?;
                     continue;
                 }
                 if !omitted_or_integer_zero(record, 4)
@@ -424,7 +538,12 @@ pub(super) fn project(
                     continue;
                 }
                 let Some(distance) = record.number(6).and_then(FiniteReal::new) else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "uniform offset distance is not finite"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "uniform offset distance is not finite"),
+                    )?;
                     continue;
                 };
                 let distance = distance.get() * factor;
@@ -451,7 +570,8 @@ pub(super) fn project(
                             entry,
                             &mut losses,
                             ctx,
-                        )? else {
+                        )?
+                        else {
                             continue;
                         };
                         CurveGeometry::Solved(SolvedCurveGeometry::Line(payload))
@@ -467,7 +587,12 @@ pub(super) fn project(
                         let offset_radius =
                             radius - distance * normal_direction.dot(*axis).signum();
                         if offset_radius <= 0.0 {
-                            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset collapses or reverses the circle"))?;
+                            super::push_optional_entity_loss(
+                                ctx,
+                                &mut losses,
+                                entry,
+                                format_args!("{}", "offset collapses or reverses the circle"),
+                            )?;
                             continue;
                         }
                         let Some(payload) = admit(
@@ -483,13 +608,19 @@ pub(super) fn project(
                             entry,
                             &mut losses,
                             ctx,
-                        )? else {
+                        )?
+                        else {
                             continue;
                         };
                         CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload))
                     }
                     _ => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "source curve has no exact uniform offset carrier"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{}", "source curve has no exact uniform offset carrier"),
+                        )?;
                         continue;
                     }
                 };
@@ -497,18 +628,33 @@ pub(super) fn project(
             }
             2 => {
                 if record.integer(3) != Some(0) {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset DE2 is not explicit integer zero"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset DE2 is not explicit integer zero"),
+                    )?;
                     continue;
                 }
                 if !omitted_or_integer_zero(record, 4) {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset NDIM is neither zero nor omitted"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset NDIM is neither zero nor omitted"),
+                    )?;
                     continue;
                 }
                 let basis = match record.integer(5) {
                     Some(1) => CurveOffsetLawBasis::ArcLength,
                     Some(2) => CurveOffsetLawBasis::Parameter,
                     _ => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset basis is not 1 or 2"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{}", "linear offset basis is not 1 or 2"),
+                        )?;
                         continue;
                     }
                 };
@@ -519,18 +665,39 @@ pub(super) fn project(
                     record.number(9),
                 ];
                 let [Some(d1), Some(td1), Some(d2), Some(td2)] = values else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset controls are not numeric"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset controls are not numeric"),
+                    )?;
                     continue;
                 };
                 let [Some(d1), Some(td1), Some(d2), Some(td2)] =
                     [d1, td1, d2, td2].map(FiniteReal::new)
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset control range is not increasing and finite"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "{}",
+                            "linear offset control range is not increasing and finite"
+                        ),
+                    )?;
                     continue;
                 };
                 let Some(native_control_range) = IncreasingParameterInterval::between(td1, td2)
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset control range is not increasing and finite"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "{}",
+                            "linear offset control range is not increasing and finite"
+                        ),
+                    )?;
                     continue;
                 };
                 let distances = [d1.get() * factor, d2.get() * factor];
@@ -547,12 +714,22 @@ pub(super) fn project(
                     control_origin + native_control_range.upper() * control_factor,
                 ];
                 let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source has no exact neutral carrier"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset source has no exact neutral carrier"),
+                    )?;
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
                 if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset normal is not perpendicular to the line"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset normal is not perpendicular to the line"),
+                    )?;
                     continue;
                 }
                 let law_parameter = |parameter: f64| match basis {
@@ -589,7 +766,12 @@ pub(super) fn project(
                     start,
                 ))?
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source start cannot be evaluated"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset source start cannot be evaluated"),
+                    )?;
                     continue;
                 };
                 let Some(source_end) = finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(
@@ -597,7 +779,12 @@ pub(super) fn project(
                     end,
                 ))?
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source end cannot be evaluated"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "linear offset source end cannot be evaluated"),
+                    )?;
                     continue;
                 };
                 let mut controls = reserve_optional_vec(ctx, 2, "iges linear-offset controls")?;
@@ -608,16 +795,15 @@ pub(super) fn project(
                 let mut knots = reserve_optional_vec(ctx, 4, "iges linear-offset knots")?;
                 knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
-                let offset_nurbs = match NurbsCurve::from_lanes(
-                    1,
-                    knots,
-                    controls,
-                    None,
-                    false,
-                ) {
+                let offset_nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
                     Ok(nurbs) => nurbs,
                     Err(error) => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("linear offset carrier is inconsistent: {error}"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("linear offset carrier is inconsistent: {error}"),
+                        )?;
                         continue;
                     }
                 };
@@ -632,7 +818,12 @@ pub(super) fn project(
                     .integer(3)
                     .and_then(|value| u32::try_from(value).ok())
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function pointer is invalid"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function pointer is invalid"),
+                    )?;
                     continue;
                 };
                 let Some(coordinate_index) = record
@@ -642,14 +833,24 @@ pub(super) fn project(
                         cadmpeg_ir::geometry::CurveOffsetCoordinate::try_new(value).ok()
                     })
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function coordinate is not 1, 2, or 3"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function coordinate is not 1, 2, or 3"),
+                    )?;
                     continue;
                 };
                 let basis = match record.integer(5) {
                     Some(1) => CurveOffsetLawBasis::ArcLength,
                     Some(2) => CurveOffsetLawBasis::Parameter,
                     _ => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "function offset basis is not 1 or 2"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{}", "function offset basis is not 1 or 2"),
+                        )?;
                         continue;
                     }
                 };
@@ -657,30 +858,60 @@ pub(super) fn project(
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "function offset has an unused distance field that is neither zero nor omitted"))?;
                     continue;
                 }
-                let function_id =
-                    crate::ids::curve_admitted(&crate::ids::Stem::directory(function_sequence), ctx)?;
+                let function_id = crate::ids::curve_admitted(
+                    &crate::ids::Stem::directory(function_sequence),
+                    ctx,
+                )?;
                 let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function curve is missing"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function curve is missing"),
+                    )?;
                     continue;
                 };
                 let Some(SolvedCurveGeometry::Nurbs(function_nurbs)) = function.geometry.solved()
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function has no polynomial NURBS carrier"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function has no polynomial NURBS carrier"),
+                    )?;
                     continue;
                 };
-                if matches!(function_nurbs.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. })
-                    || function_nurbs.degree() == 0 {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function is rational or degree zero"))?;
+                if matches!(
+                    function_nurbs.pole_rows(),
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
+                ) || function_nurbs.degree() == 0
+                {
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function is rational or degree zero"),
+                    )?;
                     continue;
                 }
                 let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "function offset source has no exact neutral carrier"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "function offset source has no exact neutral carrier"),
+                    )?;
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
                 if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset normal is not perpendicular to the line"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset normal is not perpendicular to the line"),
+                    )?;
                     continue;
                 }
                 let (function_parameter_offset, function_parameter_scale) = match basis {
@@ -697,7 +928,12 @@ pub(super) fn project(
                     .map(|value| function_parameter_offset + function_parameter_scale * value);
                 let degree = function_nurbs.degree() as usize;
                 let Some(domain_start) = function_nurbs.knots().get(degree).copied() else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function knot domain is missing"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function knot domain is missing"),
+                    )?;
                     continue;
                 };
                 let Some(domain_end) = function_nurbs
@@ -705,11 +941,24 @@ pub(super) fn project(
                     .get(function_nurbs.knots().len().saturating_sub(degree + 1))
                     .copied()
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function knot domain is missing"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function knot domain is missing"),
+                    )?;
                     continue;
                 };
                 if function_range[0] < domain_start || function_range[1] > domain_end {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function domain does not cover the source interval"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "{}",
+                            "offset function domain does not cover the source interval"
+                        ),
+                    )?;
                     continue;
                 }
                 let inverse_parameter =
@@ -719,7 +968,11 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = reserve_optional_vec(ctx, function_nurbs.pole_count(), "iges function-offset controls")?;
+                let mut controls = reserve_optional_vec(
+                    ctx,
+                    function_nurbs.pole_count(),
+                    "iges function-offset controls",
+                )?;
                 for index in 0..function_nurbs.pole_count() {
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
                         controls.clear();
@@ -727,7 +980,12 @@ pub(super) fn project(
                     };
                     let Some(function_parameter) = greville(function_nurbs.knots(), degree, index)
                     else {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function Greville parameter is missing"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{}", "offset function Greville parameter is missing"),
+                        )?;
                         controls.clear();
                         break;
                     };
@@ -748,22 +1006,46 @@ pub(super) fn project(
                     controls.push(base.translated(offset_direction, distance));
                 }
                 if controls.len() != function_nurbs.pole_count() {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function controls cannot be composed"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function controls cannot be composed"),
+                    )?;
                     continue;
                 }
-                let mut knots = reserve_optional_vec(ctx, function_nurbs.knots().len(), "iges function-offset knots")?;
-                knots.extend(function_nurbs.knots().iter().map(|value| source_parameter(inverse_parameter(*value))));
+                let mut knots = reserve_optional_vec(
+                    ctx,
+                    function_nurbs.knots().len(),
+                    "iges function-offset knots",
+                )?;
+                knots.extend(
+                    function_nurbs
+                        .knots()
+                        .iter()
+                        .map(|value| source_parameter(inverse_parameter(*value))),
+                );
                 let Some(function_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
                     &function.geometry,
                     function_range[0],
                 ))?
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function start cannot be evaluated"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function start cannot be evaluated"),
+                    )?;
                     continue;
                 };
                 let Some(distance) = coordinate(function_start.get(), coordinate_index.get())
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function coordinate is invalid"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "offset function coordinate is invalid"),
+                    )?;
                     continue;
                 };
                 let law = CurveOffsetDistanceLaw::Coordinate {
@@ -782,7 +1064,12 @@ pub(super) fn project(
                 ) {
                     Ok(nurbs) => nurbs,
                     Err(error) => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("offset-function carrier is inconsistent: {error}"))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("offset-function carrier is inconsistent: {error}"),
+                        )?;
                         continue;
                     }
                 };
@@ -793,36 +1080,64 @@ pub(super) fn project(
                 )
             }
             _ => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset curve form is unsupported"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "offset curve form is unsupported"),
+                )?;
                 continue;
             }
         };
         let Some(start_position) =
             finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, start))?
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset start parameter cannot be evaluated"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset start parameter cannot be evaluated"),
+            )?;
             continue;
         };
         let Some(end_position) = finite_or_refusal(cadmpeg_ir::eval::curve_point(&geometry, end))?
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset end parameter cannot be evaluated"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset end parameter cannot be evaluated"),
+            )?;
             continue;
         };
-        let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let curve_id =
+            crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let start_point = crate::ids::point_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
-         ctx)?;
-        sequences.record_point(&start_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
+            ctx,
+        )?;
+        sequences.record_point(
+            &start_point,
+            &crate::ids::Stem::directory(entry.sequence),
+            ctx,
+        )?;
         let end_point = crate::ids::point_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
-         ctx)?;
-        sequences.record_point(&end_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
+            ctx,
+        )?;
+        sequences.record_point(
+            &end_point,
+            &crate::ids::Stem::directory(entry.sequence),
+            ctx,
+        )?;
         let start_vertex = crate::ids::vertex_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
-         ctx)?;
+            ctx,
+        )?;
         let end_vertex = crate::ids::vertex_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
-         ctx)?;
+            ctx,
+        )?;
         let edge_id = crate::ids::edge_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let range = distance_law
             .transpose()
@@ -834,7 +1149,11 @@ pub(super) fn project(
             });
         let payload = match range {
             Ok(range) => {
-                let source_id = clone_optional_identity(ctx, &offset_source_id, "iges offset procedural source identity")?;
+                let source_id = clone_optional_identity(
+                    ctx,
+                    &offset_source_id,
+                    "iges offset procedural source identity",
+                )?;
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
                     source_id, distance, normal, Some(range),
                 )
@@ -849,42 +1168,83 @@ pub(super) fn project(
             }
         };
         let procedural = ProceduralCurve::new(
-            crate::ids::procedural_curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            crate::ids::procedural_curve_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
             ProceduralCurveDefinition::Offset(admitted_payload),
         );
         if offset_source_id != source_id {
             let placed_geometry = match offset_source_geometry {
                 Cow::Owned(geometry) => geometry,
                 Cow::Borrowed(_) => {
-                    return Err(CodecError::Malformed("placed offset source is absent".into()));
+                    return Err(CodecError::Malformed(
+                        "placed offset source is absent".into(),
+                    ));
                 }
             };
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
-            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset source curve slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.curves,
+                1,
+                "iges offset source curve slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
-                id: clone_optional_identity(ctx, &offset_source_id, "iges offset placed source identity")?,
+                id: clone_optional_identity(
+                    ctx,
+                    &offset_source_id,
+                    "iges offset placed source identity",
+                )?,
                 geometry: CurveGeometry::Solved(placed_geometry),
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error, ctx)?))?;
+                        super::push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{}", super::non_resource_error(error, ctx)?),
+                        )?;
                         continue;
                     }
                 }),
             });
         }
-        reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges offset neutral point slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.points,
+            2,
+            "iges offset neutral point slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.points.extend([
-            Point::new(clone_optional_identity(ctx, &start_point, "iges offset start point identity")?, start_position, None),
-            Point::new(clone_optional_identity(ctx, &end_point, "iges offset end point identity")?, end_position, None),
+            Point::new(
+                clone_optional_identity(ctx, &start_point, "iges offset start point identity")?,
+                start_position,
+                None,
+            ),
+            Point::new(
+                clone_optional_identity(ctx, &end_point, "iges offset end point identity")?,
+                end_position,
+                None,
+            ),
         ]);
-        reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges offset neutral vertex slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.vertices,
+            2,
+            "iges offset neutral vertex slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
-                id: clone_optional_identity(ctx, &start_vertex, "iges offset start vertex identity")?,
+                id: clone_optional_identity(
+                    ctx,
+                    &start_vertex,
+                    "iges offset start vertex identity",
+                )?,
                 point: start_point,
                 tolerance: None,
             },
@@ -895,7 +1255,12 @@ pub(super) fn project(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset neutral curve slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.curves,
+            1,
+            "iges offset neutral curve slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
             id: clone_optional_identity(ctx, &curve_id, "iges offset curve identity")?,
@@ -903,22 +1268,36 @@ pub(super) fn project(
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
                 Err(error) => {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error, ctx)?))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", super::non_resource_error(error, ctx)?),
+                    )?;
                     continue;
                 }
             }),
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
-            Some(clone_optional_identity(ctx, &curve_id, "iges offset edge carrier identity")?),
+            Some(clone_optional_identity(
+                ctx,
+                &curve_id,
+                "iges offset edge carrier identity",
+            )?),
             Some([start, end]),
         ) {
             Ok(carrier) => carrier,
             Err(error) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", error))?;
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
                 continue;
             }
         };
-        reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges offset neutral edge slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.edges,
+            1,
+            "iges offset neutral edge slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
             id: clone_optional_identity(ctx, &edge_id, "iges offset edge identity")?,
@@ -927,12 +1306,22 @@ pub(super) fn project(
             end: end_vertex,
             tolerance: None,
         });
-        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_curves, 1, "iges offset procedural curve slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.procedural_curves,
+            1,
+            "iges offset procedural curve slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
         reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges offsets decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges offsets decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

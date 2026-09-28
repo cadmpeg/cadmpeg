@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::transform::Transform;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::transform::Transform;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::{OccurrenceDefinition, OccurrenceExpansion, RealPrecision};

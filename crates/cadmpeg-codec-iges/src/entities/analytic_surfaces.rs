@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pointer-defined analytic surface projection.
 
-use super::geometry::{resolve_transform, source_object, ProjectionOutcome, TransformResolutionError};
+use super::geometry::{
+    resolve_transform, source_object, ProjectionOutcome, TransformResolutionError,
+};
 use super::pointer;
 use super::push_optional_entity_loss;
 use crate::decode_resource::{
@@ -51,7 +53,11 @@ fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
 #[derive(Debug)]
 enum DirectionError {
     MissingEntry(u32),
-    WrongTypeForm { sequence: u32, entity_type: i64, form: i64 },
+    WrongTypeForm {
+        sequence: u32,
+        entity_type: i64,
+        form: i64,
+    },
     NotDependent(u32),
     Transformed(u32),
     MissingParameters(u32),
@@ -62,13 +68,37 @@ enum DirectionError {
 impl fmt::Display for DirectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingEntry(sequence) => write!(formatter, "points to missing Directory entry D{sequence}"),
-            Self::WrongTypeForm { sequence, entity_type, form } => write!(formatter, "points to type {entity_type} form {form} at D{sequence}, not type 123 form 0"),
-            Self::NotDependent(sequence) => write!(formatter, "points to D{sequence}, which is not physically dependent"),
-            Self::Transformed(sequence) => write!(formatter, "points to D{sequence}, which has a prohibited transformation"),
-            Self::MissingParameters(sequence) => write!(formatter, "points to D{sequence}, whose Parameter Data record is missing"),
-            Self::NonNumeric(sequence) => write!(formatter, "points to D{sequence}, whose direction components are not numeric"),
-            Self::ZeroOrNonFinite(sequence) => write!(formatter, "points to D{sequence}, whose direction is zero or non-finite"),
+            Self::MissingEntry(sequence) => {
+                write!(formatter, "points to missing Directory entry D{sequence}")
+            }
+            Self::WrongTypeForm {
+                sequence,
+                entity_type,
+                form,
+            } => write!(
+                formatter,
+                "points to type {entity_type} form {form} at D{sequence}, not type 123 form 0"
+            ),
+            Self::NotDependent(sequence) => write!(
+                formatter,
+                "points to D{sequence}, which is not physically dependent"
+            ),
+            Self::Transformed(sequence) => write!(
+                formatter,
+                "points to D{sequence}, which has a prohibited transformation"
+            ),
+            Self::MissingParameters(sequence) => write!(
+                formatter,
+                "points to D{sequence}, whose Parameter Data record is missing"
+            ),
+            Self::NonNumeric(sequence) => write!(
+                formatter,
+                "points to D{sequence}, whose direction components are not numeric"
+            ),
+            Self::ZeroOrNonFinite(sequence) => write!(
+                formatter,
+                "points to D{sequence}, whose direction is zero or non-finite"
+            ),
         }
     }
 }
@@ -76,7 +106,10 @@ impl fmt::Display for DirectionError {
 #[derive(Debug)]
 enum AnalyticDirectionError {
     MissingPointer(&'static str),
-    Pointed { role: &'static str, reason: DirectionError },
+    Pointed {
+        role: &'static str,
+        reason: DirectionError,
+    },
     Collapse(&'static str),
     SphereAxisCollapse,
 }
@@ -84,10 +117,17 @@ enum AnalyticDirectionError {
 impl fmt::Display for AnalyticDirectionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingPointer(role) => write!(formatter, "{role} pointer is missing, even, or non-integer"),
+            Self::MissingPointer(role) => {
+                write!(formatter, "{role} pointer is missing, even, or non-integer")
+            }
             Self::Pointed { role, reason } => write!(formatter, "{role} {reason}"),
-            Self::Collapse(role) => write!(formatter, "{role} collapses under the surface transformation"),
-            Self::SphereAxisCollapse => formatter.write_str("sphere axis collapses under its transformation"),
+            Self::Collapse(role) => write!(
+                formatter,
+                "{role} collapses under the surface transformation"
+            ),
+            Self::SphereAxisCollapse => {
+                formatter.write_str("sphere axis collapses under its transformation")
+            }
         }
     }
 }
@@ -103,7 +143,11 @@ fn direction(
         .copied()
         .ok_or(DirectionError::MissingEntry(sequence))?;
     if entry.entity_type != 123 || entry.form != 0 {
-        return Err(DirectionError::WrongTypeForm { sequence, entity_type: entry.entity_type, form: entry.form });
+        return Err(DirectionError::WrongTypeForm {
+            sequence,
+            entity_type: entry.entity_type,
+            form: entry.form,
+        });
     }
     if !entry.status.is_physically_dependent() {
         return Err(DirectionError::NotDependent(sequence));
@@ -131,9 +175,9 @@ fn required_direction(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
 ) -> Result<UnitVector3, AnalyticDirectionError> {
-    let sequence = pointer(record, index)
-        .ok_or(AnalyticDirectionError::MissingPointer(role))?;
-    direction(sequence, entries, records).map_err(|reason| AnalyticDirectionError::Pointed { role, reason })
+    let sequence = pointer(record, index).ok_or(AnalyticDirectionError::MissingPointer(role))?;
+    direction(sequence, entries, records)
+        .map_err(|reason| AnalyticDirectionError::Pointed { role, reason })
 }
 
 fn transformed_direction(
@@ -233,14 +277,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         insert_optional_btree_map(
-            ctx, &mut records, record.directory_sequence, record,
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges analytic-surface parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         insert_optional_btree_map(
-            ctx, &mut entries, entry.sequence, entry,
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges analytic-surface directory index",
         )?;
     }
@@ -252,7 +302,12 @@ pub(super) fn project(
     }) {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_optional_entity_loss(ctx, &mut losses, entry, format_args!("Parameter Data record is missing"))?;
+            push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            )?;
             continue;
         };
         let transform = match surface_transform(entry, &entries, &records, global, ctx) {
@@ -265,11 +320,21 @@ pub(super) fn project(
         };
         let location_index = pointer(record, 1);
         let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
-            push_optional_entity_loss(ctx, &mut losses, entry, format_args!("analytic surface location point is missing"))?;
+            push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("analytic surface location point is missing"),
+            )?;
             continue;
         };
         let Some(location) = transform.apply_point(location) else {
-            push_optional_entity_loss(ctx, &mut losses, entry, format_args!("placement produces a non-finite point"))?;
+            push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("placement produces a non-finite point"),
+            )?;
             continue;
         };
         let result = match entry.entity_type {
@@ -284,7 +349,12 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -299,7 +369,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -312,8 +387,9 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(location, frame);
@@ -330,12 +406,22 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("cylinder radius is not numeric"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("cylinder radius is not numeric"),
+                    )?;
                     continue;
                 };
                 let candidate = match form_reference_direction(
@@ -349,7 +435,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -362,8 +453,9 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let Some(radius) = admit_analytic(
@@ -371,8 +463,9 @@ pub(super) fn project(
                         .ok_or("CylinderSurface.radius must be positive and finite"),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let payload =
@@ -390,12 +483,22 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
                 let Some(radius) = record.number(3).map(|radius| radius * factor) else {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("cone radius is not numeric"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("cone radius is not numeric"),
+                    )?;
                     continue;
                 };
                 let Some(half_angle) = record
@@ -404,7 +507,12 @@ pub(super) fn project(
                     .and_then(Angle::new)
                     .filter(|angle| angle.get() > 0.0 && angle.get() < std::f64::consts::FRAC_PI_2)
                 else {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("cone semi-angle is outside (0, 90) degrees"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("cone semi-angle is outside (0, 90) degrees"),
+                    )?;
                     continue;
                 };
                 let candidate = match form_reference_direction(
@@ -418,7 +526,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -431,8 +544,9 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let Some(radius) = admit_analytic(
@@ -440,8 +554,9 @@ pub(super) fn project(
                         .ok_or("ConeSurface.radius must be nonnegative and finite"),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
@@ -459,7 +574,12 @@ pub(super) fn project(
                     .map(|radius| radius * factor)
                     .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                 else {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("sphere radius is not positive and finite"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("sphere radius is not positive and finite"),
+                    )?;
                     continue;
                 };
                 let axis = if entry.form == 1 {
@@ -473,7 +593,12 @@ pub(super) fn project(
                 let axis = match axis {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -488,7 +613,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -501,8 +631,9 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
@@ -523,18 +654,33 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
                 let radii = [record.number(3), record.number(4)];
                 let [Some(major_radius), Some(minor_radius)] = radii else {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("torus radii are not numeric"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("torus radii are not numeric"),
+                    )?;
                     continue;
                 };
                 let (major_radius, minor_radius) = (major_radius * factor, minor_radius * factor);
                 if minor_radius <= 0.0 || minor_radius >= major_radius {
-                    push_optional_entity_loss(ctx, &mut losses, entry, format_args!("torus radii do not satisfy 0 < minor < major"))?;
+                    push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("torus radii do not satisfy 0 < minor < major"),
+                    )?;
                     continue;
                 }
                 let candidate = match form_reference_direction(
@@ -548,7 +694,12 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
+                        push_optional_entity_loss(
+                            ctx,
+                            &mut losses,
+                            entry,
+                            format_args!("{message}"),
+                        )?;
                         continue;
                     }
                 };
@@ -561,8 +712,9 @@ pub(super) fn project(
                     ),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let Some(major_radius) = admit_analytic(
@@ -570,8 +722,9 @@ pub(super) fn project(
                         .ok_or("TorusSurface.major_radius must be positive and finite"),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let Some(minor_radius) = admit_analytic(
@@ -579,8 +732,9 @@ pub(super) fn project(
                         .ok_or("TorusSurface.minor_radius must be finite and nonzero"),
                     entry,
                     &mut losses,
-                ctx,
-                )? else {
+                    ctx,
+                )?
+                else {
                     continue;
                 };
                 let payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
@@ -592,14 +746,26 @@ pub(super) fn project(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(payload))
             }
             _ => {
-                push_optional_entity_loss(ctx, &mut losses, entry, format_args!("analytic surface type is unsupported"))?;
+                push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("analytic surface type is unsupported"),
+                )?;
                 continue;
             }
         };
         sequences.record_surface(
             &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
-            entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
+            entry.sequence,
+            ctx,
+        )?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges analytic-surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
@@ -613,7 +779,12 @@ pub(super) fn project(
                 }
             }),
         });
-        insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges analytic-surface decoded sequences")?;
+        insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges analytic-surface decoded sequences",
+        )?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

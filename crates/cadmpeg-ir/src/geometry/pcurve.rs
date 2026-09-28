@@ -118,7 +118,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -1886,7 +1888,9 @@ impl PcurveNurbs {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
         if degree == 0 {
-            return Err(NurbsError::Structure("pcurve NURBS degree must be positive".into()));
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
         }
         let knots = knots.admit()?;
         Ok(Self {

@@ -6,7 +6,8 @@ use crate::examples::unit_cube;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -67,14 +68,16 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
 #[test]
 fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     let curve_id = CurveId::mint("test:model:curve#move-cache").unwrap();
-    let procedural_id = ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
+    let procedural_id =
+        ProceduralCurveId::mint("test:model:curve-construction#move-cache").unwrap();
     let carrier = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).unwrap();
+    )
+    .unwrap();
     let original_knot_storage = carrier.knots().as_ptr();
     let mut model = Model::default();
     model.curves.push(Curve {
@@ -82,10 +85,19 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(carrier)),
         source_object: None,
     });
-    model.add_procedural_curve(
-        curve_id,
-        ProceduralCurve::new(procedural_id, ProceduralCurveDefinition::Unknown { native_kind: None, record: None, cache: None }),
-    ).unwrap();
+    model
+        .add_procedural_curve(
+            curve_id,
+            ProceduralCurve::new(
+                procedural_id,
+                ProceduralCurveDefinition::Unknown {
+                    native_kind: None,
+                    record: None,
+                    cache: None,
+                },
+            ),
+        )
+        .unwrap();
     let Some(SolvedCurveGeometry::Nurbs(cached)) = model.curves[0].geometry.solved_cache() else {
         panic!("expected the attached NURBS cache");
     };

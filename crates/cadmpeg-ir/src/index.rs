@@ -40,7 +40,9 @@ fn admitted_map<K: Eq + Hash, V>(
     let requested = u64_from_index(count);
     ctx.charge_collection_items(requested, operation)?;
     let mut values = HashMap::new();
-    values.try_reserve(count).map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    values
+        .try_reserve(count)
+        .map_err(|_| refuse_local_limit(operation, requested, requested))?;
     Ok(values)
 }
 
@@ -52,7 +54,9 @@ fn admitted_vec<T>(
     let requested = u64_from_index(count);
     ctx.charge_collection_items(requested, operation)?;
     let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| refuse_local_limit(operation, requested, requested))?;
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| refuse_local_limit(operation, requested, requested))?;
     Ok(values)
 }
 
@@ -62,7 +66,9 @@ fn grow_admitted_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values.try_reserve(1).map_err(|_| refuse_local_limit(operation, 1, 1))
+    values
+        .try_reserve(1)
+        .map_err(|_| refuse_local_limit(operation, 1, 1))
 }
 
 fn build_admitted_identity_index<T: EntitySchema>(
@@ -105,7 +111,9 @@ fn insert_admitted_identity(
     let count = u64_from_index(identity.len());
     ctx.charge_retained(count, "model identity universe text")?;
     let mut copied = String::new();
-    copied.try_reserve_exact(identity.len()).map_err(|_| refuse_local_limit("model identity universe text", count, count))?;
+    copied
+        .try_reserve_exact(identity.len())
+        .map_err(|_| refuse_local_limit("model identity universe text", count, count))?;
     copied.push_str(identity);
     identities.insert(copied);
     Ok(())
@@ -474,11 +482,11 @@ crate::document::arena_registry!(define_model_index);
 #[cfg(test)]
 mod tests {
     use super::ModelIndex;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use crate::document::CadIr;
     use crate::geometry::{ProceduralSurface, Surface};
     use crate::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
     use crate::{NativeNamespace, NativeRecord};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use serde_json::Map;
 
     #[test]
@@ -486,11 +494,23 @@ mod tests {
         let mut ir = CadIr::empty();
         let point_id = crate::ids::PointId::mint("test:model:point#0").expect("identity grammar");
         ir.model.points.push(crate::topology::Point::new(
-            point_id.clone(), crate::features::FinitePoint3::ZERO, None,
+            point_id.clone(),
+            crate::features::FinitePoint3::ZERO,
+            None,
         ));
         for (collection_cap, retained_cap, operation, dimension) in [
-            (0, u64::MAX, "model identity universe slots", ResourceDimension::CollectionItems),
-            (u64::MAX, 0, "model identity universe text", ResourceDimension::RetainedBytes),
+            (
+                0,
+                u64::MAX,
+                "model identity universe slots",
+                ResourceDimension::CollectionItems,
+            ),
+            (
+                u64::MAX,
+                0,
+                "model identity universe text",
+                ResourceDimension::RetainedBytes,
+            ),
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
@@ -498,13 +518,19 @@ mod tests {
             policy.limits.max_retained_bytes = retained_cap;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = ModelIndex::try_new_model_only_for_decode(&ir, &ctx);
-            assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == dimension && limit.operation == operation));
+            assert!(
+                matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation)
+            );
         }
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let index = ModelIndex::try_new_model_only_for_decode(&ir, &ctx).unwrap();
-        assert_eq!(index.points(point_id.as_str()).map(|point| &point.id), Some(&point_id));
+        assert_eq!(
+            index.points(point_id.as_str()).map(|point| &point.id),
+            Some(&point_id)
+        );
     }
 
     macro_rules! procedural_surface {

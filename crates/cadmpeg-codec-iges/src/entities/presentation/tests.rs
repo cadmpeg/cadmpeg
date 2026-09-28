@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
-use std::io::Cursor;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeMap;
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
@@ -38,13 +38,21 @@ fn presentation_names_refuse_retained_limit_before_copy() {
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        );
     }
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(), Some("COLOR".into()));
-    assert_eq!(retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(), None);
+    assert_eq!(
+        retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(),
+        Some("COLOR".into())
+    );
+    assert_eq!(
+        retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(),
+        None
+    );
 }
 
 fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
@@ -54,7 +62,10 @@ fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
         policy.limits.max_collection_items = cap;
         let result = IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         );
         match result {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
@@ -79,7 +90,10 @@ fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
         policy.limits.max_retained_bytes = cap;
         let result = IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         );
         match result {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
@@ -658,7 +672,8 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

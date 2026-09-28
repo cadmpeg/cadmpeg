@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::io::Cursor;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Cursor;
 
 #[test]
 fn diagnostic_error_text_refuses_before_retained_copy() {
@@ -16,12 +16,19 @@ fn diagnostic_error_text_refuses_before_retained_copy() {
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx));
-    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text"));
+    let result =
+        super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx));
+    assert!(
+        matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text")
+    );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx)).unwrap(), "malformed container: invalid source");
+    assert_eq!(
+        super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx))
+            .unwrap(),
+        "malformed container: invalid source"
+    );
 }
 
 fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
@@ -35,10 +42,20 @@ fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
         }
         match IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                assert_eq!(limit.dimension, if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems });
+                assert_eq!(
+                    limit.dimension,
+                    if retained {
+                        ResourceDimension::RetainedBytes
+                    } else {
+                        ResourceDimension::CollectionItems
+                    }
+                );
                 if limit.operation == operation {
                     return;
                 }
@@ -74,8 +91,19 @@ fn entity_projection_losses_refuse_slots_and_messages() {
             status: "00000000",
             parameters: parameters.into(),
         }]);
-        let service = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-        assert!(service.report().losses.iter().any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind() && loss.message.contains(reason)), "{entity_type}: {:#?}", service.report().losses);
+        let service = IgesCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            service
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()
+                    && loss.message.contains(reason)),
+            "{entity_type}: {:#?}",
+            service.report().losses
+        );
         assert_entity_loss_limit(&bytes, "iges entity loss slots", false);
         assert_entity_loss_limit(&bytes, "iges entity loss message", true);
     }
@@ -91,8 +119,15 @@ fn entity_projector_indexes_refuse_collection_limits() {
         parameters: "110,0;".into(),
     }]);
     for name in [
-        "csg", "brep", "structure", "offsets", "surfaces", "trimming", "splines",
-        "composite", "annotation",
+        "csg",
+        "brep",
+        "structure",
+        "offsets",
+        "surfaces",
+        "trimming",
+        "splines",
+        "composite",
+        "annotation",
     ] {
         for index in ["parameter index", "directory index"] {
             let operation = format!("iges {name} {index}");
@@ -125,12 +160,14 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
     graph.entry(50_000).or_default().push(100_001);
     let mut visited = std::collections::BTreeSet::new();
 
-    assert!(!crate::entities::directed_cycle(
-        1,
-        &mut visited,
-        None,
-        |sequence| graph.get(&sequence).into_iter().flatten().copied()
-    ).unwrap());
+    assert!(
+        !crate::entities::directed_cycle(1, &mut visited, None, |sequence| graph
+            .get(&sequence)
+            .into_iter()
+            .flatten()
+            .copied())
+        .unwrap()
+    );
     assert_eq!(visited.len(), 100_001);
 
     graph.insert(100_001, vec![50_000]);
@@ -139,7 +176,8 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
         &mut std::collections::BTreeSet::new(),
         None,
         |sequence| graph.get(&sequence).into_iter().flatten().copied()
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -159,23 +197,25 @@ fn directed_cycle_refuses_stack_and_tree_nodes_before_allocation() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = crate::entities::directed_cycle(
-            1,
-            &mut BTreeSet::new(),
-            Some(&ctx),
-            |sequence| graph.get(&sequence).into_iter().flatten().copied(),
-        )
-        .unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+        let error =
+            crate::entities::directed_cycle(1, &mut BTreeSet::new(), Some(&ctx), |sequence| {
+                graph.get(&sequence).into_iter().flatten().copied()
+            })
+            .unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut visited = BTreeSet::new();
-    assert!(!crate::entities::directed_cycle(
-        1,
-        &mut visited,
-        Some(&ctx),
-        |sequence| graph.get(&sequence).into_iter().flatten().copied(),
-    ).unwrap());
+    assert!(
+        !crate::entities::directed_cycle(1, &mut visited, Some(&ctx), |sequence| graph
+            .get(&sequence)
+            .into_iter()
+            .flatten()
+            .copied(),)
+        .unwrap()
+    );
     assert_eq!(visited, [1, 2].into());
 }

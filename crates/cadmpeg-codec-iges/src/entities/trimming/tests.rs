@@ -19,11 +19,9 @@ use cadmpeg_ir::CadIr;
 use super::{
     append_path, cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
     homogeneous_pcurve_spans, linear_boundary_relationship_is_valid, linear_boundary_rings,
-    pcurve_within_declared_bounds,
-    BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind, BoundaryVertexClusterError,
-    BoundaryVertexCreationError,
-    BoundaryVertexSourceEndpoint, DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry,
-    SimpleRing,
+    pcurve_within_declared_bounds, BoundaryEndpoint, BoundarySpace, BoundarySurfaceKind,
+    BoundaryVertexClusterError, BoundaryVertexCreationError, BoundaryVertexSourceEndpoint,
+    DeclaredInterval, FaceTolerancePolicy, LinearBoundaryGeometry, SimpleRing,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::test_cards::fixed_ascii_with_global;
@@ -35,9 +33,8 @@ use crate::test_support::test_drawing_and_trimming::{
     subrange_nurbs_surface_boundary_file_with_pcurve,
     subrange_nurbs_surface_boundary_file_with_source_precision,
     subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal,
-    trimmed_plane_with_boundaries,
-    trimmed_plane_with_boundaries_and_inner, trimmed_plane_with_inner_loop_and_outer_pcurve,
-    trimmed_plane_with_inner_loop_file,
+    trimmed_plane_with_boundaries, trimmed_plane_with_boundaries_and_inner,
+    trimmed_plane_with_inner_loop_and_outer_pcurve, trimmed_plane_with_inner_loop_file,
 };
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::test_support::test_procedural_surfaces::{
@@ -60,10 +57,20 @@ fn assert_trimming_collection_refusal(bytes: &[u8], operation: &str) {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation { return; }
+                if limit.operation == operation {
+                    return;
+                }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
             other => panic!("expected trimming collection refusal at {operation}: {other:?}"),
@@ -77,10 +84,20 @@ fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == operation { return; }
+                if limit.operation == operation {
+                    return;
+                }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
             other => panic!("expected trimming retained refusal at {operation}: {other:?}"),
@@ -93,13 +110,17 @@ fn assert_trimming_retained_refusal(bytes: &[u8], operation: &str) {
 fn trimmed_topology_identity_copies_refuse_before_retaining_text() {
     let bytes = bounded_plane_file();
     assert_trimming_retained_refusal(&bytes, "iges trimming identity copy");
-    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
 }
 
 #[test]
 fn trimmed_support_nurbs_copy_refuses_nested_storage() {
     let bytes = subrange_nurbs_surface_boundary_file(2);
-    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
     for operation in [
         "iges copied support u knots",
         "iges copied support v knots",
@@ -119,10 +140,16 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
         (bounded_plane_file(), "iges Type143 boundary sequences"),
         (bounded_plane_file(), "iges trimming linear candidates"),
         (bounded_plane_file(), "iges trimming boundary items"),
-        (multi_pcurve_boundary_file(), "iges trimming segment pcurves"),
+        (
+            multi_pcurve_boundary_file(),
+            "iges trimming segment pcurves",
+        ),
         (bounded_plane_file(), "iges trimming coedge ids"),
         (bounded_plane_file(), "iges trimming source endpoints"),
-        (bounded_plane_file(), "iges trimming candidate vertex derivations"),
+        (
+            bounded_plane_file(),
+            "iges trimming candidate vertex derivations",
+        ),
         (bounded_plane_file(), "loop ring validation members"),
     ] {
         assert_trimming_collection_refusal(&bytes, operation);
@@ -139,7 +166,9 @@ fn type142_boundary_creation_refuses_nested_slots_and_index_node() {
     ] {
         assert_trimming_collection_refusal(&bytes, operation);
     }
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -167,7 +196,9 @@ fn trimming_model_index_refuses_identity_storage_before_lookup() {
     assert_trimming_collection_refusal(&bytes, "model identity universe slots");
     assert_trimming_collection_refusal(&bytes, "model identity index slots");
     assert_trimming_retained_refusal(&bytes, "model identity universe text");
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -175,7 +206,9 @@ fn support_bound_walk_refuses_surface_identity_and_node() {
     let bytes = bounded_plane_file();
     assert_trimming_retained_refusal(&bytes, "iges support-bound visiting surface ID");
     assert_trimming_collection_refusal(&bytes, "iges support-bound visiting surface nodes");
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -193,20 +226,29 @@ fn trimming_projection_refuses_retained_boundary_source_text() {
 
 #[test]
 fn implicit_outer_surface_attachment_refuses_procedural_slot() {
-    let bytes = trimmed_plane_with_boundaries(
-        "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
-        "144,1,0,1,,13;",
-    );
-    let result = IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default()).unwrap();
+    let bytes = trimmed_plane_with_boundaries("106,1,5,0,0,0,1,0,1,1,0,1,0,0;", "144,1,0,1,,13;");
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
     assert!(!result.ir().model.procedural_surfaces.is_empty());
     let mut cap = 0_u64;
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(&mut Cursor::new(bytes.clone()), &DecodeOptions { policy, ..DecodeOptions::default() }) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes.clone()),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == "iges procedural surface slots" { return; }
+                if limit.operation == "iges procedural surface slots" {
+                    return;
+                }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
             other => panic!("expected implicit outer procedural slot refusal: {other:?}"),
@@ -217,25 +259,29 @@ fn implicit_outer_surface_attachment_refuses_procedural_slot() {
 
 #[test]
 fn implicit_outer_boundary_refuses_curve_id_storage() {
-    let bytes = trimmed_plane_with_boundaries(
-        "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
-        "144,1,0,1,,13;",
-    );
+    let bytes = trimmed_plane_with_boundaries("106,1,5,0,0,0,1,0,1,1,0,1,0,0;", "144,1,0,1,,13;");
     assert_trimming_collection_refusal(&bytes, "iges implicit boundary curve IDs");
     assert_trimming_retained_refusal(&bytes, "iges implicit boundary curve ID text");
     assert_trimming_collection_refusal(&bytes, "iges implicit boundary pcurve IDs");
     assert_trimming_retained_refusal(&bytes, "iges implicit boundary pcurve ID text");
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
 fn trimmed_pcurve_uses_refuse_nested_storage() {
     let bytes = trimmed_plane_with_inner_loop_file();
-    for operation in ["iges trimming coedge pcurve uses", "iges trimming pcurve slots"] {
+    for operation in [
+        "iges trimming coedge pcurve uses",
+        "iges trimming pcurve slots",
+    ] {
         assert_trimming_collection_refusal(&bytes, operation);
     }
     assert_trimming_retained_refusal(&bytes, "iges trimming pcurve ID copy");
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -252,9 +298,12 @@ fn trimmed_face_refuses_nested_topology_lanes_and_staging() {
         assert_trimming_collection_refusal(&bytes, operation);
     }
     assert_trimming_collection_refusal(
-        &trimmed_plane_with_inner_loop_file(), "iges trimming inner loop IDs",
+        &trimmed_plane_with_inner_loop_file(),
+        "iges trimming inner loop IDs",
     );
-    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -452,9 +501,14 @@ fn boundary_parameter_loss_refuses_unadmitted_note_storage() {
     for operation in ["iges entity loss message", "iges entity loss kind"] {
         assert_trimming_retained_refusal(&bytes, operation);
     }
-    let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-    assert!(result.report().losses.iter().any(|loss|
-        loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind()));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind()));
 }
 
 #[test]
@@ -515,8 +569,15 @@ fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
 #[test]
 fn source_control_interval_fallback_refuses_unadmitted_storage() {
     let bytes = subrange_nurbs_surface_boundary_file_with_source_precision_outside_nominal();
-    let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
-    assert!(result.ir().model.faces.iter().any(|face| face.id.as_str() == "iges:model:face#D9"));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.as_str() == "iges:model:face#D9"));
     for operation in [
         "iges source active curve nodes",
         "iges Type126 declared control intervals",
@@ -592,7 +653,9 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
             cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
             &ctx,
         ),
-        Err(BoundaryVertexCreationError::Cluster(BoundaryVertexClusterError::NonTransitive))
+        Err(BoundaryVertexCreationError::Cluster(
+            BoundaryVertexClusterError::NonTransitive
+        ))
     ));
 }
 
@@ -626,8 +689,11 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
 fn boundary_vertex_creation_retains_every_source_endpoint() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let mut candidate = ModelDraft::new();
     let source_endpoints = vec![
         BoundaryVertexSourceEndpoint {
@@ -645,8 +711,7 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
     let (vertex_ids, derivations) = create_boundary_vertices(
         &mut candidate,
         &crate::ids::Stem::directory(9_u32),
-        "iges:entity:directory#9",
-        0,
+        ("iges:entity:directory#9", 0),
         &source_endpoints,
         cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
         &mut crate::entities::geometry::SourceSequences::default(),
@@ -707,15 +772,16 @@ fn boundary_vertex_creation_refuses_each_collection_before_growth() {
             let result = create_boundary_vertices(
                 &mut ModelDraft::new(),
                 &crate::ids::Stem::directory(9_u32),
-                "iges:entity:directory#9",
-                0,
+                ("iges:entity:directory#9", 0),
                 &source_endpoints,
                 cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
                 &mut crate::entities::geometry::SourceSequences::default(),
                 &ctx,
             );
             match result {
-                Err(BoundaryVertexCreationError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                Err(BoundaryVertexCreationError::Resource(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
                     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                     if limit.operation == operation {
                         found = true;
@@ -726,7 +792,10 @@ fn boundary_vertex_creation_refuses_each_collection_before_growth() {
                 other => panic!("expected boundary collection refusal at {operation}: {other:?}"),
             }
         }
-        assert!(found, "boundary collection refusal was not reached: {operation}");
+        assert!(
+            found,
+            "boundary collection refusal was not reached: {operation}"
+        );
     }
 }
 
@@ -736,7 +805,8 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(0.25, 0.0, 0.0),
         Point3::new(0.5, 0.0, 0.0),
-    ].map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
+    ]
+    .map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap());
     for (cap, operation, used) in [
         (2, "iges boundary clustering comparisons", 0),
         (5, "iges boundary cluster transitivity comparisons", 3),
@@ -760,11 +830,16 @@ fn boundary_vertex_clustering_refuses_pairwise_work_before_comparisons() {
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(cluster_boundary_positions(
-        &points,
-        cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
-        &ctx,
-    ).unwrap().len(), 1);
+    assert_eq!(
+        cluster_boundary_positions(
+            &points,
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+            &ctx,
+        )
+        .unwrap()
+        .len(),
+        1
+    );
 }
 
 #[test]
@@ -947,7 +1022,11 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     });
     assert!(matches!(
         super::select_boundary_edge(
-            &[&ambiguous_candidates[0], &ambiguous_candidates[1], &ambiguous_candidates[2]],
+            &[
+                &ambiguous_candidates[0],
+                &ambiguous_candidates[1],
+                &ambiguous_candidates[2]
+            ],
             &index,
             super::BoundaryMatch {
                 surface_id: &surface_id,
@@ -1009,8 +1088,12 @@ fn pcurve_geometry_refuses_mapped_polynomial_and_rational_pole_storage() {
         "126,2,2,1,1,0,0,0,0,0,1,1,1,1,0.5,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
     );
     assert_trimming_collection_refusal(&rational, "iges pcurve mapped rational poles");
-    IgesCodec.decode(&mut Cursor::new(polynomial), &DecodeOptions::default()).unwrap();
-    IgesCodec.decode(&mut Cursor::new(rational), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(polynomial), &DecodeOptions::default())
+        .unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(rational), &DecodeOptions::default())
+        .unwrap();
 }
 
 #[test]
@@ -1256,7 +1339,9 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
     ]))];
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx).unwrap().unwrap();
+    let rings = linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx)
+        .unwrap()
+        .unwrap();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1282,7 +1367,10 @@ fn linear_boundary_relationship_rejects_a_self_intersecting_outer_boundary() {
 #[test]
 fn linear_boundary_rings_refuse_outer_and_nested_point_storage() {
     let candidates = [Some(LinearBoundaryGeometry::Parameter(vec![
-        [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0],
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 0.0],
     ]))];
     for (cap, operation) in [
         (0, "iges linear boundary ring slots"),
@@ -1293,13 +1381,19 @@ fn linear_boundary_rings_refuse_outer_and_nested_point_storage() {
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx);
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation));
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
+        );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx)
-        .unwrap().unwrap().is_ok());
+    assert!(
+        linear_boundary_rings(&candidates, BoundarySpace::Parameter, &ctx)
+            .unwrap()
+            .unwrap()
+            .is_ok()
+    );
 }
 
 #[test]

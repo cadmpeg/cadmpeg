@@ -46,7 +46,11 @@ fn retained_utf8(
     let Ok(value) = std::str::from_utf8(bytes) else {
         return Ok(None);
     };
-    Ok(Some(format_retained(ctx, format_args!("{value}"), operation)?))
+    Ok(Some(format_retained(
+        ctx,
+        format_args!("{value}"),
+        operation,
+    )?))
 }
 
 fn push_presentation_loss(
@@ -163,8 +167,17 @@ fn appearance(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
-        reserve_vec_growth(ctx, &mut ir.model.appearances, 1, "iges neutral appearance slots")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
+        reserve_vec_growth(
+            ctx,
+            &mut ir.model.appearances,
+            1,
+            "iges neutral appearance slots",
+        )?;
+        crate::decode_resource::admit_optional_entities(
+            Some(ctx),
+            1,
+            "iges_geometry_presentation",
+        )?;
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -172,7 +185,11 @@ fn appearance(
             library_id: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some(format_retained(ctx, format_args!("IGES color"), "iges appearance schema")?),
+            schema: Some(format_retained(
+                ctx,
+                format_args!("IGES color"),
+                "iges appearance schema",
+            )?),
             category: None,
             base_color: Some(color),
             properties: BTreeMap::new(),
@@ -255,14 +272,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         insert_optional_btree_map(
-            Some(ctx), &mut records, record.directory_sequence, record,
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges presentation parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         insert_optional_btree_map(
-            Some(ctx), &mut entries, entry.sequence, entry,
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges presentation directory index",
         )?;
     }
@@ -274,11 +297,16 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        if let Some(font) = records.get(&entry.sequence).copied().and_then(|record| {
-            text_font_definition(entry, record, &entries, global.global_table())
-        }) {
+        if let Some(font) = records
+            .get(&entry.sequence)
+            .copied()
+            .and_then(|record| text_font_definition(entry, record, &entries, global.global_table()))
+        {
             insert_optional_btree_map(
-                Some(ctx), &mut text_fonts, entry.sequence, font,
+                Some(ctx),
+                &mut text_fonts,
+                entry.sequence,
+                font,
                 "iges presentation font index",
             )?;
         }
@@ -289,18 +317,24 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, Some(ctx), |sequence| {
-            text_fonts
-                .get(&sequence)
-                .and_then(|font| font.supersedes)
-                .into_iter()
-        })?;
+        let cyclic =
+            super::directed_cycle(entry.sequence, &mut visited_fonts, Some(ctx), |sequence| {
+                text_fonts
+                    .get(&sequence)
+                    .and_then(|font| font.supersedes)
+                    .into_iter()
+            })?;
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))
         });
         if target_valid && !cyclic {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(ctx, &mut losses, entry, "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid")?;
         }
@@ -335,7 +369,12 @@ pub(super) fn project(
                 .is_some_and(vertical_text_flag_valid)
             && (8..=10).all(|index| record.number_or(index, 0.0).is_some());
         if directory_valid && fields_valid {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
             push_presentation_loss(ctx, &mut losses, entry, "text-template metrics, font, orientation, placement, or Directory fields are invalid")?;
         }
@@ -358,7 +397,10 @@ pub(super) fn project(
                     break;
                 };
                 if !insert_optional_btree_set(
-                    Some(ctx), &mut levels, level, "iges presentation definition levels",
+                    Some(ctx),
+                    &mut levels,
+                    level,
+                    "iges presentation definition levels",
                 )? {
                     valid = false;
                     break;
@@ -369,9 +411,19 @@ pub(super) fn project(
             false
         };
         if levels_valid {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "definition-level count, value, or uniqueness is invalid")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "definition-level count, value, or uniqueness is invalid",
+            )?;
         }
     }
 
@@ -384,7 +436,12 @@ pub(super) fn project(
             continue;
         };
         if !line_font_definition_directory_valid(entry, global.global_table()) {
-            push_presentation_loss(ctx, &mut losses, entry, "line-font definition use flag or fallback pattern is invalid")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "line-font definition use flag or fallback pattern is invalid",
+            )?;
             continue;
         }
         let valid = if entry.form == 1 {
@@ -424,9 +481,19 @@ pub(super) fn project(
             })
         };
         if valid {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges presentation decoded sequences",
+            )?;
         } else {
-            push_presentation_loss(ctx, &mut losses, entry, "line-font definition parameters are invalid")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "line-font definition parameters are invalid",
+            )?;
         }
     }
 
@@ -439,10 +506,17 @@ pub(super) fn project(
             continue;
         };
         let components = [1, 2, 3].map(|index| {
-            record.number(index).filter(|value| (0.0..=100.0).contains(value))
+            record
+                .number(index)
+                .filter(|value| (0.0..=100.0).contains(value))
         });
         let [Some(red), Some(green), Some(blue)] = components else {
-            push_presentation_loss(ctx, &mut losses, entry, "RGB percentage is outside 0 through 100")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "RGB percentage is outside 0 through 100",
+            )?;
             continue;
         };
         let name = match record.value(4) {
@@ -459,7 +533,12 @@ pub(super) fn project(
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
-                push_presentation_loss(ctx, &mut losses, entry, "optional color name is not a string")?;
+                push_presentation_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    "optional color name is not a string",
+                )?;
                 continue;
             }
         };
@@ -467,7 +546,12 @@ pub(super) fn project(
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition)
             && matches!(entry.color, 0..=8);
         if !directory_valid {
-            push_presentation_loss(ctx, &mut losses, entry, "color definition Directory fields are invalid")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "color definition Directory fields are invalid",
+            )?;
             continue;
         }
         let Some(color) = Color::new(
@@ -476,21 +560,37 @@ pub(super) fn project(
             (blue / 100.0) as f32,
             1.0,
         ) else {
-            push_presentation_loss(ctx, &mut losses, entry, "color definition components are outside [0, 100]")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "color definition components are outside [0, 100]",
+            )?;
             continue;
         };
         insert_optional_btree_map(
-            Some(ctx), &mut defined, entry.sequence, color,
+            Some(ctx),
+            &mut defined,
+            entry.sequence,
+            color,
             "iges presentation defined colors",
         )?;
         appearance(
             ir,
-            crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            crate::ids::appearance_color_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
             name,
             color,
             ctx,
         )?;
-        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges presentation decoded sequences")?;
+        insert_optional_btree_set(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges presentation decoded sequences",
+        )?;
     }
 
     let resolve_color = |value: i64| -> Option<Color> {
@@ -508,11 +608,18 @@ pub(super) fn project(
         }
     };
     let resolve = |value: i64| -> Result<Option<(AppearanceId, Color)>, CodecError> {
-        let Some(color) = resolve_color(value) else { return Ok(None); };
+        let Some(color) = resolve_color(value) else {
+            return Ok(None);
+        };
         let id = if value > 0 {
             crate::ids::appearance_standard_admitted(&crate::ids::Stem::number(value), ctx)?
         } else {
-            let Some(sequence) = value.checked_neg().and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
+            let Some(sequence) = value
+                .checked_neg()
+                .and_then(|value| u32::try_from(value).ok())
+            else {
+                return Ok(None);
+            };
             crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(sequence), ctx)?
         };
         Ok(Some((id, color)))
@@ -522,7 +629,12 @@ pub(super) fn project(
         entry.color != 0 && directory_color_is_semantic(entry, global.global_table())
     }) {
         if resolve_color(entry.color).is_none() {
-            push_presentation_loss(ctx, &mut losses, entry, "Directory color number or definition pointer is invalid")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "Directory color number or definition pointer is invalid",
+            )?;
         }
     }
     for entry in directory.iter().filter(|entry| entry.level < 0) {
@@ -533,14 +645,24 @@ pub(super) fn project(
                     .get(&sequence)
                     .is_none_or(|target| target.entity_type != 406 || target.form != 1)
         }) {
-            push_presentation_loss(ctx, &mut losses, entry, "negative Directory level does not reference a decoded Definition Levels property")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "negative Directory level does not reference a decoded Definition Levels property",
+            )?;
         }
     }
     for entry in directory.iter().filter(|entry| {
         entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.global_table())
     }) {
         if !global.line_weight_number_is_valid(entry.line_weight) {
-            push_presentation_loss(ctx, &mut losses, entry, "line-weight number is outside the Global gradation range")?;
+            push_presentation_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "line-weight number is outside the Global gradation range",
+            )?;
         }
     }
 
@@ -570,23 +692,52 @@ pub(super) fn project(
         })() else {
             continue;
         };
-        let Some((appearance_id, color)) = resolve(color_number)? else { continue; };
+        let Some((appearance_id, color)) = resolve(color_number)? else {
+            continue;
+        };
         let body = &mut ir.model.bodies[index];
-        let body_id = crate::decode_resource::clone_optional_identity(Some(ctx), &body.id, "iges appearance body ID copy")?;
+        let body_id = crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &body.id,
+            "iges appearance body ID copy",
+        )?;
         body.color = Some(color);
         body.visible = Some(visible);
-        appearance(ir, crate::decode_resource::clone_optional_identity(Some(ctx), &appearance_id, "iges appearance ID copy")?, None, color, ctx)?;
-        reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
+        appearance(
+            ir,
+            crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &appearance_id,
+                "iges appearance ID copy",
+            )?,
+            None,
+            color,
+            ctx,
+        )?;
+        reserve_vec_growth(
+            ctx,
+            &mut ir.model.appearance_bindings,
+            1,
+            "iges appearance binding slots",
+        )?;
+        crate::decode_resource::admit_optional_entities(
+            Some(ctx),
+            1,
+            "iges_geometry_presentation",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding_admitted(&crate::ids::Stem::word_directory(
-                crate::ids::Word::Body,
-                sequence,
-            ), ctx)?,
+            id: crate::ids::appearance_binding_admitted(
+                &crate::ids::Stem::word_directory(crate::ids::Word::Body, sequence),
+                ctx,
+            )?,
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(format_retained(ctx, format_args!("Body"), "iges appearance object type")?),
+            object_type: Some(format_retained(
+                ctx,
+                format_args!("Body"),
+                "iges appearance object type",
+            )?),
             visible: None,
             channels: BTreeMap::new(),
         });
@@ -606,25 +757,21 @@ pub(super) fn project(
         else {
             continue;
         };
-        let mut names = groups
-            .properties()
-            .iter()
-            .filter_map(|pointer| {
-                entries
-                    .get(pointer)
-                    .filter(|entry| entry.entity_type == 406 && entry.form == 15)?;
-                let record = records.get(pointer)?;
-                (record.integer(1) == Some(1))
-                    .then(|| record.string(2))
-                    .flatten()
-                    .filter(|name| !name.is_empty())
-                    .filter(|name| {
-                        name.iter()
-                            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-                    })
-                    .and_then(|name| std::str::from_utf8(name).ok())
-            })
-            ;
+        let mut names = groups.properties().iter().filter_map(|pointer| {
+            entries
+                .get(pointer)
+                .filter(|entry| entry.entity_type == 406 && entry.form == 15)?;
+            let record = records.get(pointer)?;
+            (record.integer(1) == Some(1))
+                .then(|| record.string(2))
+                .flatten()
+                .filter(|name| !name.is_empty())
+                .filter(|name| {
+                    name.iter()
+                        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+                })
+                .and_then(|name| std::str::from_utf8(name).ok())
+        });
         let first = names.next();
         if first.is_some_and(|first| names.any(|name| name != first)) {
             if let Some(entry) = entries.get(&sequence) {
@@ -633,7 +780,9 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     IgesLossCode::BodyNameAmbiguous,
-                    format_args!("IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"),
+                    format_args!(
+                        "IGES body owner D{sequence} has conflicting valid Type 406 Form 15 names"
+                    ),
                 )?;
             }
         } else {
@@ -653,22 +802,51 @@ pub(super) fn project(
         })() else {
             continue;
         };
-        let Some((appearance_id, color)) = resolve(color_number)? else { continue; };
+        let Some((appearance_id, color)) = resolve(color_number)? else {
+            continue;
+        };
         let face = &mut ir.model.faces[index];
-        let face_id = crate::decode_resource::clone_optional_identity(Some(ctx), &face.id, "iges appearance face ID copy")?;
+        let face_id = crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &face.id,
+            "iges appearance face ID copy",
+        )?;
         face.color = Some(color);
-        appearance(ir, crate::decode_resource::clone_optional_identity(Some(ctx), &appearance_id, "iges appearance ID copy")?, None, color, ctx)?;
-        reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
+        appearance(
+            ir,
+            crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &appearance_id,
+                "iges appearance ID copy",
+            )?,
+            None,
+            color,
+            ctx,
+        )?;
+        reserve_vec_growth(
+            ctx,
+            &mut ir.model.appearance_bindings,
+            1,
+            "iges appearance binding slots",
+        )?;
+        crate::decode_resource::admit_optional_entities(
+            Some(ctx),
+            1,
+            "iges_geometry_presentation",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding_admitted(&crate::ids::Stem::word_directory(
-                crate::ids::Word::Face,
-                sequence,
-            ), ctx)?,
+            id: crate::ids::appearance_binding_admitted(
+                &crate::ids::Stem::word_directory(crate::ids::Word::Face, sequence),
+                ctx,
+            )?,
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,
-            object_type: Some(format_retained(ctx, format_args!("Face"), "iges appearance object type")?),
+            object_type: Some(format_retained(
+                ctx,
+                format_args!("Face"),
+                "iges appearance object type",
+            )?),
             visible: None,
             channels: BTreeMap::new(),
         });

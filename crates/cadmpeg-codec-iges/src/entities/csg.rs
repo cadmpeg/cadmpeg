@@ -2,11 +2,12 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    declared_orthogonal_vectors, declared_unit_vector, resolve_transform,
-    ProjectionOutcome,
+    declared_orthogonal_vectors, declared_unit_vector, resolve_transform, ProjectionOutcome,
 };
 use super::pointer;
-use crate::decode_resource::{insert_optional_btree_map, insert_optional_btree_set, reserve_optional_vec};
+use crate::decode_resource::{
+    insert_optional_btree_map, insert_optional_btree_set, reserve_optional_vec,
+};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -47,8 +48,8 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
         .iter()
         .filter(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
     {
-        let Some(start) = point(&edge.start) else { return None; };
-        let Some(end) = point(&edge.end) else { return None; };
+        let start = point(&edge.start)?;
+        let end = point(&edge.end)?;
         let closed = cadmpeg_ir::math::Point3::distance(start, end) <= tolerance;
         if result.is_some_and(|previous| previous != closed) {
             return None;
@@ -72,7 +73,9 @@ fn boolean_tree_is_valid(
     memo: &mut BTreeMap<u32, bool>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
-    let _depth = ctx.map(|ctx| ctx.enter_nested("iges boolean tree validation")).transpose()?;
+    let _depth = ctx
+        .map(|ctx| ctx.enter_nested("iges boolean tree validation"))
+        .transpose()?;
     if let Some(valid) = memo.get(&sequence) {
         return Ok(*valid);
     }
@@ -104,9 +107,21 @@ fn boolean_tree_is_valid(
         let valid = match term {
             BooleanTerm::Operation => true,
             BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
-                Some(target) if matches!(target.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430) => true,
+                Some(target)
+                    if matches!(
+                        target.entity_type,
+                        150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
+                    ) =>
+                {
+                    true
+                }
                 Some(target) if target.entity_type == 180 => boolean_tree_is_valid(
-                    *target_sequence, entries, boolean_definitions, path, memo, ctx,
+                    *target_sequence,
+                    entries,
+                    boolean_definitions,
+                    path,
+                    memo,
+                    ctx,
                 )?,
                 Some(target) => entry.form == 1 && target.entity_type == 186,
                 None => false,
@@ -133,14 +148,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut records, record.directory_sequence, record,
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges csg parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut entries, entry.sequence, entry,
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges csg directory index",
         )?;
     }
@@ -151,7 +172,12 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let factor = global.length_factor_mm();
@@ -165,7 +191,12 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive placement is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive placement is invalid"),
+            )?;
             continue;
         }
         let dimension_count = match entry.entity_type {
@@ -191,7 +222,12 @@ pub(super) fn project(
             }
         }
         if !dimensions_present {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive dimensions are not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive dimensions are not numeric"),
+            )?;
             continue;
         }
         let dimensions = &dimensions[..dimension_count];
@@ -230,7 +266,12 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive dimension invariant is violated"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive dimension invariant is violated"),
+            )?;
             continue;
         }
         let (origin_start, x_axis_start, z_axis_start) = match entry.entity_type {
@@ -242,16 +283,31 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive solid type is unsupported"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "primitive solid type is unsupported"),
+                )?;
                 continue;
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive origin is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive origin is invalid"),
+            )?;
             continue;
         };
         if !origin.is_finite() {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive origin is non-finite"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive origin is non-finite"),
+            )?;
             continue;
         }
         let x_axis =
@@ -276,10 +332,20 @@ pub(super) fn project(
                     )
                 })
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "primitive axes are not orthonormal"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive axes are not orthonormal"),
+            )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+        )?;
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -287,29 +353,60 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile curve pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid profile curve pointer is invalid"),
+            )?;
             continue;
         };
         let mut profile_storage = [0_u8; 64];
-        let profile_id = crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
-        if !ir.model.curves.iter().any(|curve| Some(curve.id.as_str()) == profile_id) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile curve pointer is invalid"))?;
+        let profile_id =
+            crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
+        if !ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| Some(curve.id.as_str()) == profile_id)
+        {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid profile curve pointer is invalid"),
+            )?;
             continue;
         }
         let Some(amount) = record
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep amount is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep amount is invalid"),
+            )?;
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid revolution fraction is greater than one"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid revolution fraction is greater than one"),
+            )?;
             continue;
         }
         let (origin, direction_start) = if entry.entity_type == 162 {
@@ -324,17 +421,32 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep axis is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep axis is invalid"),
+            )?;
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile endpoints are unavailable"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid profile endpoints are unavailable"),
+            )?;
             continue;
         };
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep form disagrees with profile closure"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep form disagrees with profile closure"),
+            )?;
             continue;
         }
         if let Err(error) = resolve_transform(
@@ -347,10 +459,20 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep placement is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep placement is invalid"),
+            )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+        )?;
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -359,11 +481,21 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix length is not greater than two"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean postfix length is not greater than two"),
+            )?;
             continue;
         };
         let mut terms = reserve_optional_vec(ctx, count, "iges Boolean postfix terms")?;
@@ -388,9 +520,14 @@ pub(super) fn project(
             }
         }
         if !terms_valid {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix term is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean postfix term is invalid"),
+            )?;
             continue;
-        };
+        }
         let mut depth = 0_usize;
         let valid_stack = terms.iter().all(|term| match term {
             BooleanTerm::Operand(_) => {
@@ -404,10 +541,21 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean postfix stack is unbalanced"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean postfix stack is unbalanced"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(ctx, &mut boolean_definitions, entry.sequence, terms, "iges Boolean definition nodes")?;
+        insert_optional_btree_map(
+            ctx,
+            &mut boolean_definitions,
+            entry.sequence,
+            terms,
+            "iges Boolean definition nodes",
+        )?;
     }
     let mut visited = BTreeSet::new();
     let mut boolean_validity = BTreeMap::new();
@@ -434,7 +582,15 @@ pub(super) fn project(
                 })
         })?;
         if !operands_valid || cyclic {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean operands, form, or reference acyclicity is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "Boolean operands, form, or reference acyclicity is invalid"
+                ),
+            )?;
             continue;
         }
         let factor = global.length_factor_mm();
@@ -448,10 +604,20 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Boolean result placement is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean result placement is invalid"),
+            )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, *sequence, "iges csg decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            *sequence,
+            "iges csg decoded sequences",
+        )?;
     }
 
     for entry in directory
@@ -459,7 +625,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(_tree) = pointer(record, 1).filter(|sequence| {
@@ -468,12 +639,25 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component Boolean tree pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "selected-component Boolean tree pointer is invalid"),
+            )?;
             continue;
         };
         let point_valid = (2..=4).all(|index| record.number(index).is_some());
         if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component point or entity-use flag is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "selected-component point or entity-use flag is invalid"
+                ),
+            )?;
             continue;
         }
         let factor = global.length_factor_mm();
@@ -487,10 +671,20 @@ pub(super) fn project(
             ctx,
         ) {
             error.non_resource()?;
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "selected-component placement is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "selected-component placement is invalid"),
+            )?;
             continue;
         }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges csg decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges csg decoded sequences",
+        )?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

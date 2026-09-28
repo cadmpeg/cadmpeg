@@ -201,19 +201,35 @@ struct Subject<'a, 'ctx> {
 
 impl Subject<'_, '_> {
     fn id(&self) -> Result<String, CodecError> {
-        format_retained(self.ctx, format_args!("iges:presentation:annotation#D{}", self.sequence), "iges native annotation id")
+        format_retained(
+            self.ctx,
+            format_args!("iges:presentation:annotation#D{}", self.sequence),
+            "iges native annotation id",
+        )
     }
 
     fn source_entity(&self) -> Result<String, CodecError> {
-        format_retained(self.ctx, format_args!("iges:entity:directory#{}", self.sequence), "iges native annotation source")
+        format_retained(
+            self.ctx,
+            format_args!("iges:entity:directory#{}", self.sequence),
+            "iges native annotation source",
+        )
     }
 
     fn annotation_link_id(&self, sequence: u32) -> Result<String, CodecError> {
-        format_retained(self.ctx, format_args!("iges:presentation:annotation#D{sequence}"), "iges native annotation link")
+        format_retained(
+            self.ctx,
+            format_args!("iges:presentation:annotation#D{sequence}"),
+            "iges native annotation link",
+        )
     }
 
     fn entity_link_id(&self, sequence: u32) -> Result<String, CodecError> {
-        format_retained(self.ctx, format_args!("iges:entity:directory#{sequence}"), "iges native annotation entity link")
+        format_retained(
+            self.ctx,
+            format_args!("iges:entity:directory#{sequence}"),
+            "iges native annotation entity link",
+        )
     }
 
     fn counted_tail(
@@ -260,7 +276,13 @@ impl Subject<'_, '_> {
             Some(value) => self
                 .parameter_resolver
                 .resolve_negative_type(self.sequence, start + 3, value, 310, &[0])?
-                .map(|sequence| format_retained(self.ctx, format_args!("iges:presentation:text-font#D{sequence}"), "iges native text run font"))
+                .map(|sequence| {
+                    format_retained(
+                        self.ctx,
+                        format_args!("iges:presentation:text-font#D{sequence}"),
+                        "iges native text run font",
+                    )
+                })
                 .transpose()?,
             None => None,
         };
@@ -293,8 +315,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve_type(self.sequence, index, sequence, 212, &[0])?
             .map(|sequence| self.annotation_link_id(sequence))
             .transpose()
@@ -304,8 +325,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -324,15 +344,19 @@ impl Subject<'_, '_> {
         overdeclared: &mut OverdeclaredCounts,
     ) -> Result<Vec<Option<String>>, CodecError> {
         let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
-        collect_result_vec(self.ctx, count, "iges native annotation leader slots", |offset| self.leader_link(leader_start + offset))
+        collect_result_vec(
+            self.ctx,
+            count,
+            "iges native annotation leader slots",
+            |offset| self.leader_link(leader_start + offset),
+        )
     }
 
     fn witness_link(&self, index: usize) -> Result<Option<String>, CodecError> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve_type(self.sequence, index, sequence, 106, &[40])?
             .map(|sequence| self.entity_link_id(sequence))
             .transpose()
@@ -346,8 +370,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -367,8 +390,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -383,7 +405,10 @@ impl Subject<'_, '_> {
                 self.entries
                     .get(&sequence)
                     .filter(|target| target.entity_type == 214)
-                    .map_or_else(|| self.entity_link_id(sequence), |_| self.annotation_link_id(sequence))
+                    .map_or_else(
+                        || self.entity_link_id(sequence),
+                        |_| self.annotation_link_id(sequence),
+                    )
             })
             .transpose()
     }
@@ -396,8 +421,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -423,8 +447,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -443,8 +466,7 @@ impl Subject<'_, '_> {
         let Some(sequence) = self.record.and_then(|record| record.integer(index)) else {
             return Ok(None);
         };
-        self
-            .parameter_resolver
+        self.parameter_resolver
             .resolve(
                 self.sequence,
                 index,
@@ -469,7 +491,12 @@ fn general_note(
         source_entity: subject.source_entity()?,
         form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
-        strings: collect_result_vec(subject.ctx, count, "iges native general note text run slots", |index| subject.text_run(2 + index * 12))?,
+        strings: collect_result_vec(
+            subject.ctx,
+            count,
+            "iges native general note text run slots",
+            |index| subject.text_run(2 + index * 12),
+        )?,
         transformation,
     })
 }
@@ -502,7 +529,11 @@ fn new_general_note(
         ],
         normal_interline_spacing: record.and_then(|record| record.number(11)),
         declared_string_count: record.and_then(|record| record.integer(12)),
-        strings: collect_result_vec(subject.ctx, count, "iges native new note text run slots", |index| -> Result<NativeNewTextRun, CodecError> {
+        strings: collect_result_vec(
+            subject.ctx,
+            count,
+            "iges native new note text run slots",
+            |index| -> Result<NativeNewTextRun, CodecError> {
                 let start = 13 + index * 20;
                 Ok(NativeNewTextRun {
                     fixed_or_variable: record.and_then(|record| record.integer(start)),
@@ -516,13 +547,18 @@ fn new_general_note(
                     character_angle: record.and_then(|record| record.number(start + 6)),
                     control_codes: record
                         .and_then(|record| record.string(start + 7))
-                        .map(|bytes| subject.ctx.copy_retained(bytes, "iges native new note control codes"))
+                        .map(|bytes| {
+                            subject
+                                .ctx
+                                .copy_retained(bytes, "iges native new note control codes")
+                        })
                         .transpose()?,
                     // A 213 text block is the 212 layout shifted by its
                     // eight-token prefix.
                     text: subject.text_run(start + 8)?,
                 })
-            })?,
+            },
+        )?,
         transformation,
     })
 }
@@ -549,13 +585,18 @@ fn leader(
             record.and_then(|record| record.number(6)),
             z,
         ],
-        segment_tails: collect_result_vec(subject.ctx, count, "iges native leader segment tail slots", |index| {
+        segment_tails: collect_result_vec(
+            subject.ctx,
+            count,
+            "iges native leader segment tail slots",
+            |index| {
                 Ok([
                     record.and_then(|record| record.number(7 + index * 2)),
                     record.and_then(|record| record.number(8 + index * 2)),
                     z,
                 ])
-            })?,
+            },
+        )?,
         transformation,
     })
 }
@@ -636,9 +677,19 @@ fn general_symbol(
         form: subject.form,
         note: subject.note_link(1)?,
         declared_geometry_count,
-        geometry: collect_result_vec(subject.ctx, geometry_count, "iges native symbol geometry slots", |offset| subject.geometry_link(3 + offset, global_table))?,
+        geometry: collect_result_vec(
+            subject.ctx,
+            geometry_count,
+            "iges native symbol geometry slots",
+            |offset| subject.geometry_link(3 + offset, global_table),
+        )?,
         declared_leader_count,
-        leaders: collect_result_vec(subject.ctx, leader_count, "iges native symbol leader slots", |offset| subject.leader_link(leader_count_index + 1 + offset))?,
+        leaders: collect_result_vec(
+            subject.ctx,
+            leader_count,
+            "iges native symbol leader slots",
+            |offset| subject.leader_link(leader_count_index + 1 + offset),
+        )?,
         transformation,
     })
 }
@@ -664,24 +715,34 @@ fn sectioned_area(
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
         declared_island_count: record.and_then(|record| record.integer(8)),
-        islands: collect_result_vec(subject.ctx, island_count, "iges native section island slots", |offset| subject.section_boundary_link(9 + offset))?,
+        islands: collect_result_vec(
+            subject.ctx,
+            island_count,
+            "iges native section island slots",
+            |offset| subject.section_boundary_link(9 + offset),
+        )?,
         transformation,
     })
 }
 
 pub(super) fn build(
     directory: &[DirectoryEntry],
-    by_directory: &BTreeMap<u32, &ParameterRecord>,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
+    indexes: (
+        &BTreeMap<u32, &ParameterRecord>,
+        &BTreeMap<u32, &DirectoryEntry>,
+    ),
     parameter_resolver: &ParameterResolver<'_, '_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
     global_table: GlobalTable,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<NativeAnnotation>, CodecError> {
+    let (by_directory, entries) = indexes;
     collect_native_items(
         ctx,
-        directory.iter().filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
+        directory
+            .iter()
+            .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind))),
         "iges native annotation slots",
         |(entry, kind)| -> Result<NativeAnnotation, CodecError> {
             let record = by_directory.get(&entry.sequence).copied();
@@ -697,7 +758,13 @@ pub(super) fn build(
                     && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)
-                .then(|| format_retained(ctx, format_args!("iges:native:transformation#D{}", entry.transform), "iges native annotation transformation"))
+                .then(|| {
+                    format_retained(
+                        ctx,
+                        format_args!("iges:native:transformation#D{}", entry.transform),
+                        "iges native annotation transformation",
+                    )
+                })
                 .transpose()?;
             Ok(match kind {
                 AnnotationKind::GeneralNote => {

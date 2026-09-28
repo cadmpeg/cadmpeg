@@ -199,10 +199,7 @@ pub trait EntitySchema: Serialize {
     ) -> Result<(), ReferenceWalkError>;
 
     /// Visits typed reference IDs without copying their text.
-    fn visit_reference_ids(
-        &self,
-        visitor: &mut dyn FnMut(&str),
-    ) -> Result<(), ReferenceWalkError>
+    fn visit_reference_ids(&self, visitor: &mut dyn FnMut(&str)) -> Result<(), ReferenceWalkError>
     where
         Self: Sized,
     {

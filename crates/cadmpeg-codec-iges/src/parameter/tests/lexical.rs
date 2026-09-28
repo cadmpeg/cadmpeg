@@ -78,7 +78,12 @@ fn parameter_layout_card_refuses_retained_limit_before_allocation() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(super::super::layout_parameter_cards(bytes, Some(&ctx)).unwrap().len(), 1);
+    assert_eq!(
+        super::super::layout_parameter_cards(bytes, Some(&ctx))
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]

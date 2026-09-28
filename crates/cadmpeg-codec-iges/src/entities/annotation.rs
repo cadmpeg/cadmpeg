@@ -82,8 +82,17 @@ fn sectioned_area_curves_coplanar(
         if active.contains(&curve_id) {
             return Ok(false);
         }
-        let active_id = crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges section active curve id")?;
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut active, active_id, "iges section active curves")?;
+        let active_id = crate::decode_resource::clone_optional_identity(
+            ctx,
+            &curve_id,
+            "iges section active curve id",
+        )?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut active,
+            active_id,
+            "iges section active curves",
+        )?;
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };
@@ -822,14 +831,16 @@ fn dimension_valid(
     let child_indexes: &[usize] = match (entry.entity_type, entry.form) {
         (202, 0) => &[2, 3, 7, 8],
         (204, 0) => &[2, 3, 4, 5, 6, 7],
-        (206, 0) | (218, 1) | (220, 0) => &[2, 3],
+        (206 | 220, 0) | (218, 1) => &[2, 3],
         (216, 0..=2) => &[2, 3, 4, 5],
-        (218, 0) | (222, 0) => &[2],
+        (218 | 222, 0) => &[2],
         (222, 1) => &[2, 5],
         _ => &[],
     };
     let children = note.into_iter().chain(
-        child_indexes.iter().filter_map(|index| pointer(record, *index, entries)),
+        child_indexes
+            .iter()
+            .filter_map(|index| pointer(record, *index, entries)),
     );
     note_valid && fields_valid && dimension_children_valid(entry, children, entries)
 }
@@ -996,7 +1007,9 @@ fn sectioned_area_valid(
     }
     let islands_valid = (0..island_count).all(|offset| {
         pointer(record, 9 + offset, entries).is_some_and(|sequence| {
-            entries.get(&sequence).is_some_and(|entry| section_boundary_type(entry))
+            entries
+                .get(&sequence)
+                .is_some_and(|entry| section_boundary_type(entry))
         })
     });
     let definition_sequences = boundary_sequence
@@ -1005,7 +1018,9 @@ fn sectioned_area_valid(
         .chain((0..island_count).filter_map(|offset| pointer(record, 9 + offset, entries)));
     let coplanarity_valid = if matches!(global_table, GlobalTable::V4_0) {
         true
-    } else if let Some(pattern_plane) = sectioned_area_pattern_plane(record, transform, length_factor) {
+    } else if let Some(pattern_plane) =
+        sectioned_area_pattern_plane(record, transform, length_factor)
+    {
         sectioned_area_curves_coplanar(ir, definition_sequences, pattern_plane, resolution, ctx)?
     } else {
         false
@@ -1043,14 +1058,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut records, record.directory_sequence, record,
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges annotation parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut entries, entry.sequence, entry,
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges annotation directory index",
         )?;
     }
@@ -1148,7 +1169,12 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges annotation decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                ctx,
+                &mut decoded,
+                entry.sequence,
+                "iges annotation decoded sequences",
+            )?;
         } else {
             let message = match kind {
                 AnnotationKind::AngularDimension
@@ -1172,7 +1198,7 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
         }
     }
 

@@ -3,8 +3,8 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_unit_vector, resolve_transform, source_object, unit_vector,
-    DeclaredInterval, ProjectionOutcome,
+    declared_unit_vector, resolve_transform, source_object, unit_vector, DeclaredInterval,
+    ProjectionOutcome,
 };
 use crate::decode_resource::{reserve_optional_vec, reserve_optional_vec_growth};
 use crate::directory::DirectoryEntry;
@@ -22,8 +22,7 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 use cadmpeg_ir::geometry::{
     nurbs::{
         KnotVector, NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
-        WeightedPole3,
-        SurfaceParameterAxis,
+        SurfaceParameterAxis, WeightedPole3,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
     SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -43,24 +42,43 @@ const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1.0e-10;
 const MAX_SURFACE_POLES: usize = 1_000_000;
 
 trait SurfaceGridWeight {
-    fn admit(self, index: usize, ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError>;
+    fn admit(
+        self,
+        index: usize,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Result<NonZeroReal, NurbsError>, CodecError>;
 }
 
-fn surface_grid_error_field(ctx: Option<&DecodeContext<'_>>, field: &'static str) -> Result<String, CodecError> {
+fn surface_grid_error_field(
+    ctx: Option<&DecodeContext<'_>>,
+    field: &'static str,
+) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_resource::format_retained(ctx, format_args!("{field}"), "iges surface grid error field"),
+        Some(ctx) => crate::decode_resource::format_retained(
+            ctx,
+            format_args!("{field}"),
+            "iges surface grid error field",
+        ),
         None => Ok(field.to_owned()),
     }
 }
 
 impl SurfaceGridWeight for NonZeroReal {
-    fn admit(self, _index: usize, _ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+    fn admit(
+        self,
+        _index: usize,
+        _ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
         Ok(Ok(self))
     }
 }
 
 impl SurfaceGridWeight for f64 {
-    fn admit(self, index: usize, ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+    fn admit(
+        self,
+        index: usize,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
         match NonZeroReal::new(self) {
             Some(value) => Ok(Ok(value)),
             None => Ok(Err(NurbsError::UnusableWeight {
@@ -141,14 +159,19 @@ pub(super) fn type128_parameter_bound_intervals(
         .checked_add(pole_count)?
         .checked_add(pole_value_count)?;
     let interval_at = |offset| {
-            let index = range_start.checked_add(offset)?;
-            let value = record.number(index)?;
-            Some(DeclaredInterval::around(
-                value,
-                record.number_uncertainty(index, value, precision),
-            ))
-        };
-    Some([interval_at(0)?, interval_at(1)?, interval_at(2)?, interval_at(3)?])
+        let index = range_start.checked_add(offset)?;
+        let value = record.number(index)?;
+        Some(DeclaredInterval::around(
+            value,
+            record.number_uncertainty(index, value, precision),
+        ))
+    };
+    Some([
+        interval_at(0)?,
+        interval_at(1)?,
+        interval_at(2)?,
+        interval_at(3)?,
+    ])
 }
 
 fn tabulated_directrix_type_allowed(
@@ -225,10 +248,14 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
             curve.degree() == 1
                 && curve.pole_rows().weight_at(0).is_none()
                 && curve.pole_count() == 2
-                && curve.pole_rows().point_at(0).zip(curve.pole_rows().point_at(1)).is_some_and(|(first, second)| {
-                    let distance = first.distance(second.get());
-                    distance.is_finite() && distance > 0.0
-                })
+                && curve
+                    .pole_rows()
+                    .point_at(0)
+                    .zip(curve.pole_rows().point_at(1))
+                    .is_some_and(|(first, second)| {
+                        let distance = first.distance(second.get());
+                        distance.is_finite() && distance > 0.0
+                    })
                 && curve.knots()[0] == curve.knots()[1]
                 && curve.knots()[2] == curve.knots()[3]
                 && curve.knots()[1] < curve.knots()[2]
@@ -345,25 +372,39 @@ fn interval_certified_linear_bezier(
 
 fn equal_arc_length_parameterization(
     ir: &CadIr,
-    first_sequence: u32,
-    second_sequence: u32,
+    sequences: [u32; 2],
     first_interval: [f64; 2],
     second_interval: [f64; 2],
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
+    let [first_sequence, second_sequence] = sequences;
     // A normalized parameter is an arc-length parameter only for a constant-
     // speed carrier. The test is deliberately structural; numerical sampling
     // cannot prove the Form 0 correspondence.
     let mut first_storage = [0_u8; 64];
     let mut second_storage = [0_u8; 64];
-    let first_id = crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
-    let second_id = crate::ids::directory_lookup_key("iges:model:curve#D", second_sequence, &mut second_storage);
-    let first = ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == first_id).map(|curve| &curve.geometry);
-    let second = ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == second_id).map(|curve| &curve.geometry);
-    let Some((first, second)) = first.zip(second)
-    else {
+    let first_id =
+        crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
+    let second_id = crate::ids::directory_lookup_key(
+        "iges:model:curve#D",
+        second_sequence,
+        &mut second_storage,
+    );
+    let first = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| Some(curve.id.as_str()) == first_id)
+        .map(|curve| &curve.geometry);
+    let second = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| Some(curve.id.as_str()) == second_id)
+        .map(|curve| &curve.geometry);
+    let Some((first, second)) = first.zip(second) else {
         return Ok(false);
     };
     let valid_interval = |interval: [f64; 2]| {
@@ -379,7 +420,9 @@ fn equal_arc_length_parameterization(
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
             return Ok(false);
         };
-        let Some(record) = records.get(&sequence) else { return Ok(false); };
+        let Some(record) = records.get(&sequence) else {
+            return Ok(false);
+        };
         interval_certified_linear_bezier(curve, record, global, ctx)
     };
     Ok(constant_speed(first_sequence, first)? && constant_speed(second_sequence, second)?)
@@ -404,8 +447,13 @@ fn bounded_evaluable_curve<'a>(
     ) {
         return Ok(None);
     }
-    let Some(parameter_interval) =
-        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index), ctx)?
+    let Some(parameter_interval) = super::composite::bounded_parameter_range_for_curve(
+        ir,
+        curve_id,
+        tolerance,
+        Some(index),
+        ctx,
+    )?
     else {
         return Ok(None);
     };
@@ -468,7 +516,10 @@ fn homogeneous_bezier_spans(
         }
         let mut weights = reserve_optional_vec(ctx, count, "iges_surface_closure_weights")?;
         for index in 0..count {
-            let weight = curve.pole_rows().weight_at(index).ok_or_else(|| CodecError::malformed("surface closure weight is missing"))?;
+            let weight = curve
+                .pole_rows()
+                .weight_at(index)
+                .ok_or_else(|| CodecError::malformed("surface closure weight is missing"))?;
             weights.push(weight);
         }
         Some(weights)
@@ -477,7 +528,12 @@ fn homogeneous_bezier_spans(
     };
     let mut points = reserve_optional_vec(ctx, count, "iges_surface_closure_points")?;
     for index in 0..count {
-        points.push(curve.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?);
+        points.push(
+            curve
+                .pole_rows()
+                .point_at(index)
+                .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
+        );
     }
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
@@ -486,9 +542,11 @@ fn homogeneous_bezier_spans(
         return Ok(None);
     };
     match ctx {
-        Some(ctx) => homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-            ctx.charge_collection_items(u64_from_index(count), operation)
-        }),
+        Some(ctx) => {
+            homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+                ctx.charge_collection_items(u64_from_index(count), operation)
+            })
+        }
         None => Ok(homogeneous_spans(degree, curve.knots(), controls)?),
     }
 }
@@ -531,7 +589,10 @@ fn homogeneous_product_control(
             control[axis] += coefficient * vector_control[axis] * scalar;
         }
     }
-    control.iter().all(|value| value.is_finite()).then_some(control)
+    control
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(control)
 }
 
 fn span_fraction(value: f64, domain: [f64; 2]) -> Option<f64> {
@@ -566,17 +627,19 @@ fn split_homogeneous_bezier_span(
         return Ok(None);
     };
     let mut levels = reserve_optional_vec(ctx, degree + 1, "iges span split levels")?;
-    let mut first_level = reserve_optional_vec(ctx, span.controls.len(), "iges span split first controls")?;
+    let mut first_level =
+        reserve_optional_vec(ctx, span.controls.len(), "iges span split first controls")?;
     first_level.extend_from_slice(&span.controls);
     levels.push(first_level);
     for _ in 1..=degree {
         let Some(previous) = levels.last() else {
             return Ok(None);
         };
-        let mut current = reserve_optional_vec(ctx, previous.len() - 1, "iges span split level controls")?;
+        let mut current =
+            reserve_optional_vec(ctx, previous.len() - 1, "iges span split level controls")?;
         current.extend(previous.windows(2).map(|pair| {
             std::array::from_fn(|axis| {
-                    (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+                (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
             })
         }));
         if current.iter().flatten().any(|value| !value.is_finite()) {
@@ -647,15 +710,26 @@ fn partition_homogeneous_spans(
         if !start.is_finite() || !end.is_finite() || start >= end {
             return Ok(None);
         }
-        if boundaries.iter().copied().filter(|boundary| start < *boundary && *boundary < end).any(|boundary| {
-            cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary).is_none()
-        }) {
+        if boundaries
+            .iter()
+            .copied()
+            .filter(|boundary| start < *boundary && *boundary < end)
+            .any(|boundary| cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary).is_none())
+        {
             return Ok(None);
         }
-        let mut controls = reserve_optional_vec(ctx, span.controls.len(), "iges span partition controls")?;
+        let mut controls =
+            reserve_optional_vec(ctx, span.controls.len(), "iges span partition controls")?;
         controls.extend_from_slice(&span.controls);
-        let mut current = HomogeneousBezierSpan { domain: span.domain, controls };
-        for boundary in boundaries.iter().copied().filter(|boundary| start < *boundary && *boundary < end) {
+        let mut current = HomogeneousBezierSpan {
+            domain: span.domain,
+            controls,
+        };
+        for boundary in boundaries
+            .iter()
+            .copied()
+            .filter(|boundary| start < *boundary && *boundary < end)
+        {
             let Some(cut) = cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             else {
@@ -694,17 +768,27 @@ fn aligned_homogeneous_spans(
     let Some(mut boundaries) = normalized_span_boundaries(&first_spans, first_domain, ctx)? else {
         return Ok(None);
     };
-    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain, ctx)? else {
+    let Some(second_boundaries) = normalized_span_boundaries(&second_spans, second_domain, ctx)?
+    else {
         return Ok(None);
     };
-    reserve_optional_vec_growth(ctx, &mut boundaries, second_boundaries.len(), "iges span combined boundaries")?;
+    reserve_optional_vec_growth(
+        ctx,
+        &mut boundaries,
+        second_boundaries.len(),
+        "iges span combined boundaries",
+    )?;
     boundaries.extend(second_boundaries);
     boundaries.sort_by(f64::total_cmp);
     boundaries.dedup();
-    let Some(first_spans) = partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)? else {
+    let Some(first_spans) =
+        partition_homogeneous_spans(&first_spans, first_domain, &boundaries, ctx)?
+    else {
         return Ok(None);
     };
-    let Some(second_spans) = partition_homogeneous_spans(&second_spans, second_domain, &boundaries, ctx)? else {
+    let Some(second_spans) =
+        partition_homogeneous_spans(&second_spans, second_domain, &boundaries, ctx)?
+    else {
         return Ok(None);
     };
     if first_spans.len() != second_spans.len() {
@@ -731,9 +815,7 @@ fn projectively_shared_weights(
         || (0..count).any(|index| {
             let first_weight = weight_at(first, index);
             let second_weight = weight_at(second, index);
-            first_weight <= 0.0
-                || second_weight <= 0.0
-                || first_weight * scale != second_weight
+            first_weight <= 0.0 || second_weight <= 0.0 || first_weight * scale != second_weight
         })
     {
         return Ok(None);
@@ -753,10 +835,17 @@ fn same_basis_ruled_surface(
     weights: &[NonZeroReal],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<NurbsSurface, CodecError> {
-    let mut pole_rows = reserve_optional_vec(ctx, first.pole_count(), "iges ruled same-basis pole rows")?;
+    let mut pole_rows =
+        reserve_optional_vec(ctx, first.pole_count(), "iges ruled same-basis pole rows")?;
     for index in 0..first.pole_count() {
-        let first_point = first.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("ruled first rail pole is missing"))?;
-        let second_point = second.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("ruled second rail pole is missing"))?;
+        let first_point = first
+            .pole_rows()
+            .point_at(index)
+            .ok_or_else(|| CodecError::malformed("ruled first rail pole is missing"))?;
+        let second_point = second
+            .pole_rows()
+            .point_at(index)
+            .ok_or_else(|| CodecError::malformed("ruled second rail pole is missing"))?;
         let mut row = reserve_optional_vec(ctx, 2, "iges ruled same-basis pole row controls")?;
         row.extend([first_point, second_point]);
         pole_rows.push(row);
@@ -764,9 +853,11 @@ fn same_basis_ruled_surface(
     let weight_rows = if weights.iter().all(|weight| weight.get() == 1.0) {
         None
     } else {
-        let mut rows = reserve_optional_vec(ctx, weights.len(), "iges ruled same-basis weight rows")?;
+        let mut rows =
+            reserve_optional_vec(ctx, weights.len(), "iges ruled same-basis weight rows")?;
         for weight in weights {
-            let mut row = reserve_optional_vec(ctx, 2, "iges ruled same-basis weight row controls")?;
+            let mut row =
+                reserve_optional_vec(ctx, 2, "iges ruled same-basis weight row controls")?;
             row.extend([*weight, *weight]);
             rows.push(row);
         }
@@ -780,16 +871,22 @@ fn same_basis_ruled_surface(
         "iges ruled same-basis weighted row controls",
     )?
     .map_err(CodecError::malformed)?;
-    let mut u_knots = reserve_optional_vec(ctx, first.knots().len(), "iges ruled same-basis u knots")?;
+    let mut u_knots =
+        reserve_optional_vec(ctx, first.knots().len(), "iges ruled same-basis u knots")?;
     u_knots.extend_from_slice(first.knots());
     let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled same-basis v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     NurbsSurface::new(
-        NurbsSurfaceAxis::new(first.degree(), u_knots, first.periodic() && second.periodic()),
+        NurbsSurfaceAxis::new(
+            first.degree(),
+            u_knots,
+            first.periodic() && second.periodic(),
+        ),
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
-    ).map_err(CodecError::malformed)
+    )
+    .map_err(CodecError::malformed)
 }
 
 /// Refuses a pole count above the codec limit, naming the limit it exceeds.
@@ -839,21 +936,32 @@ fn ruled_surface_carrier(
     let Some((degree, u_knots, control_points, weights)) = lanes else {
         return Ok(None);
     };
-    let mut pole_rows = reserve_optional_vec(ctx, control_points.len().div_ceil(2), "iges ruled span pole rows")?;
+    let mut pole_rows = reserve_optional_vec(
+        ctx,
+        control_points.len().div_ceil(2),
+        "iges ruled span pole rows",
+    )?;
     for points in control_points.chunks(2) {
         let mut row = reserve_optional_vec(ctx, points.len(), "iges ruled span pole row controls")?;
         row.extend_from_slice(points);
         pole_rows.push(row);
     }
     let weight_rows = if let Some(weights) = weights {
-        let mut rows = reserve_optional_vec(ctx, weights.len().div_ceil(2), "iges ruled span weight rows")?;
+        let mut rows = reserve_optional_vec(
+            ctx,
+            weights.len().div_ceil(2),
+            "iges ruled span weight rows",
+        )?;
         for weights in weights.chunks(2) {
-            let mut row = reserve_optional_vec(ctx, weights.len(), "iges ruled span weight row controls")?;
+            let mut row =
+                reserve_optional_vec(ctx, weights.len(), "iges ruled span weight row controls")?;
             row.extend(weights.iter().copied().map(NonZeroReal::from));
             rows.push(row);
         }
         Some(rows)
-    } else { None };
+    } else {
+        None
+    };
     let mut v_knots = reserve_optional_vec(ctx, 4, "iges ruled span v knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     let poles = pair_admitted_surface_poles(
@@ -938,8 +1046,16 @@ fn ruled_surface_span_lanes(
         }
         let start = usize::from(span_index > 0);
         for index in 0..=degree {
-            let Some(first_times_second) = homogeneous_product_control(&first_span.controls, &second_span.controls, index) else { return Ok(None); };
-            let Some(second_times_first) = homogeneous_product_control(&second_span.controls, &first_span.controls, index) else { return Ok(None); };
+            let Some(first_times_second) =
+                homogeneous_product_control(&first_span.controls, &second_span.controls, index)
+            else {
+                return Ok(None);
+            };
+            let Some(second_times_first) =
+                homogeneous_product_control(&second_span.controls, &first_span.controls, index)
+            else {
+                return Ok(None);
+            };
             if index >= start {
                 homogeneous.extend([first_times_second, second_times_first]);
             }
@@ -1061,7 +1177,11 @@ struct AngularBasis {
     controls: Vec<(f64, f64)>,
 }
 
-fn angular_basis(start: f64, end: f64, ctx: Option<&DecodeContext<'_>>) -> Result<Option<AngularBasis>, CodecError> {
+fn angular_basis(
+    start: f64,
+    end: f64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<AngularBasis>, CodecError> {
     let sweep = end - start;
     if !sweep.is_finite()
         || sweep <= 0.0
@@ -1073,9 +1193,14 @@ fn angular_basis(start: f64, end: f64, ctx: Option<&DecodeContext<'_>>) -> Resul
     let end = start + sweep;
     let segment_count = super::curve_conversion::quarter_turn_spans(sweep);
     let segment_angle = sweep / segment_count as f64;
-    let mut knots = reserve_optional_vec(ctx, segment_count * 2 + 4, "iges revolution angular knots")?;
+    let mut knots =
+        reserve_optional_vec(ctx, segment_count * 2 + 4, "iges revolution angular knots")?;
     knots.extend([start; 3]);
-    let mut controls = reserve_optional_vec(ctx, segment_count * 2 + 1, "iges revolution angular controls")?;
+    let mut controls = reserve_optional_vec(
+        ctx,
+        segment_count * 2 + 1,
+        "iges revolution angular controls",
+    )?;
     controls.push((start, 1.0));
     for segment in 0..segment_count {
         let segment_start = start + segment as f64 * segment_angle;
@@ -1167,7 +1292,11 @@ fn offset_indicator_parameters(bounds: Option<cadmpeg_ir::geometry::RecordBounds
         .unwrap_or([0.0, 0.0])
 }
 
-fn indicator_normal(ir: &CadIr, surface: &SurfaceId, ctx: Option<&DecodeContext<'_>>) -> Result<Option<Vector3>, CodecError> {
+fn indicator_normal(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vector3>, CodecError> {
     let procedural = ir
         .model
         .procedural_surfaces
@@ -1257,14 +1386,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut records, record.directory_sequence, record,
+            ctx,
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges surfaces parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            ctx, &mut entries, entry.sequence, entry,
+            ctx,
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges surfaces directory index",
         )?;
     }
@@ -1278,7 +1413,12 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let coefficients = [
@@ -1288,17 +1428,32 @@ pub(super) fn project(
             record.number(4),
         ];
         let [Some(a), Some(b), Some(c), Some(d)] = coefficients else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane coefficients are not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane coefficients are not numeric"),
+            )?;
             continue;
         };
         let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d].map(FiniteReal::new) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane coefficients are not finite"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane coefficients are not finite"),
+            )?;
             continue;
         };
         let finite_coefficients = [a, b, c, d];
         let [a, b, c, d] = finite_coefficients.map(FiniteReal::get);
         let Some(boundary) = record.integer(5) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane boundary pointer is not an integer"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane boundary pointer is not an integer"),
+            )?;
             continue;
         };
         let boundary_sequence = u32::try_from(boundary)
@@ -1312,11 +1467,21 @@ pub(super) fn project(
         let local_normal = Vector3::new(a, b, c);
         let normal_squared = a * a + b * b + c * c;
         if !normal_squared.is_finite() || normal_squared <= 0.0 {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane normal is degenerate"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane normal is degenerate"),
+            )?;
             continue;
         }
         let Some(local_normal_unit) = UnitVector3::normalized_by_reciprocal(local_normal) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane normal cannot be normalized"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane normal cannot be normalized"),
+            )?;
             continue;
         };
         let local_u = local_normal_unit.derived_reference();
@@ -1338,7 +1503,12 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -1346,20 +1516,35 @@ pub(super) fn project(
             .apply_vector(*local_u.as_raw())
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its u direction"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane placement collapses its u direction"),
+            )?;
             continue;
         };
         let Some(v_axis) = transform
             .apply_vector(local_v)
             .and_then(|axis| UnitVector3::normalized_by_reciprocal(axis.get()))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its v direction"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane placement collapses its v direction"),
+            )?;
             continue;
         };
         let Some(normal) =
             UnitVector3::normalized_by_reciprocal(u_axis.as_raw().cross(*v_axis.as_raw()))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "plane placement collapses its normal"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "plane placement collapses its normal"),
+            )?;
             continue;
         };
         let origin = transform
@@ -1370,8 +1555,15 @@ pub(super) fn project(
         })?;
         sequences.record_surface(
             &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
-            entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges plane neutral surface slots")?;
+            entry.sequence,
+            ctx,
+        )?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges plane neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
@@ -1380,7 +1572,12 @@ pub(super) fn project(
             )),
             source_object: Some(source_object(entry, ctx)?),
         });
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     for entry in directory
@@ -1388,46 +1585,97 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(first_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "first rail pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "first rail pointer is invalid"),
+            )?;
             continue;
         };
         let Some(second_sequence) = record
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "second rail pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "second rail pointer is invalid"),
+            )?;
             continue;
         };
         let (Some(direction_flag), Some(developable_flag)) = (record.integer(3), record.integer(4))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled-surface flags are not integers"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "ruled-surface flags are not integers"),
+            )?;
             continue;
         };
         if !matches!(direction_flag, 0 | 1) || !matches!(developable_flag, 0 | 1) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled-surface flags are not 0 or 1"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "ruled-surface flags are not 0 or 1"),
+            )?;
             continue;
         }
         if entry.transform != 0 {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed ruled surfaces require transformed child-carrier projection"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "placed ruled surfaces require transformed child-carrier projection"
+                ),
+            )?;
             continue;
         }
         let mut first_storage = [0_u8; 64];
         let mut second_storage = [0_u8; 64];
-        let first_id = crate::ids::directory_lookup_key("iges:model:curve#D", first_sequence, &mut first_storage);
-        let second_id = crate::ids::directory_lookup_key("iges:model:curve#D", second_sequence, &mut second_storage);
+        let first_id = crate::ids::directory_lookup_key(
+            "iges:model:curve#D",
+            first_sequence,
+            &mut first_storage,
+        );
+        let second_id = crate::ids::directory_lookup_key(
+            "iges:model:curve#D",
+            second_sequence,
+            &mut second_storage,
+        );
         let rails = (
-            match ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == first_id) {
+            match ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| Some(curve.id.as_str()) == first_id)
+            {
                 Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
                 None => Ok(None),
             },
-            match ir.model.curves.iter().find(|curve| Some(curve.id.as_str()) == second_id) {
+            match ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| Some(curve.id.as_str()) == second_id)
+            {
                 Some(curve) => bounded_nurbs(ir, &curve.id, ctx, &composite_index),
                 None => Ok(None),
             },
@@ -1436,19 +1684,31 @@ pub(super) fn project(
             (Ok(first), Ok(second)) => (first, second),
             (Err(error), _) | (_, Err(error)) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("a rail curve states no NURBS carrier: {error}"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("a rail curve states no NURBS carrier: {error}"),
+                )?;
                 continue;
             }
         };
         let (Some((first, first_interval)), Some((mut second, second_interval))) = rails else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "rail curves do not have bounded polynomial or NURBS carriers"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "rail curves do not have bounded polynomial or NURBS carriers"
+                ),
+            )?;
             continue;
         };
         if entry.form == 0
             && !equal_arc_length_parameterization(
                 ir,
-                first_sequence,
-                second_sequence,
+                [first_sequence, second_sequence],
                 first_interval,
                 second_interval,
                 &records,
@@ -1456,7 +1716,15 @@ pub(super) fn project(
                 ctx,
             )?
         {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "equal-arc-length ruled projection has no exact normalized arc-length carrier"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "equal-arc-length ruled projection has no exact normalized arc-length carrier"
+                ),
+            )?;
             continue;
         }
         if direction_flag == 1 {
@@ -1470,39 +1738,79 @@ pub(super) fn project(
                 })
                 .is_err()
             {
-                super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES reversed second rail knots are non-finite"))?;
+                super::push_optional_attributed_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    IgesLossCode::NurbsTransformNonFinite,
+                    format_args!("{}", "IGES reversed second rail knots are non-finite"),
+                )?;
                 continue;
             }
         }
         let surface = match ruled_surface_carrier(&first, &second, ctx) {
             Ok(Some(surface)) => surface,
             Ok(None) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "ruled rails do not have a finite exact NURBS carrier"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "ruled rails do not have a finite exact NURBS carrier"),
+                )?;
                 continue;
             }
             Err(error) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("ruled rails state no NURBS carrier: {error}"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("ruled rails state no NURBS carrier: {error}"),
+                )?;
                 continue;
             }
         };
-        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges ruled neutral surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges ruled neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                ctx,
+                &surface_id,
+                "iges surface identity copy",
+            )?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
-        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.procedural_surfaces,
+            1,
+            "iges procedural surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+                crate::ids::procedural_surface_admitted(
+                    &crate::ids::Stem::directory(entry.sequence),
+                    ctx,
+                )?,
                 ProceduralSurfaceDefinition::Ruled {
-                    first: crate::ids::curve_admitted(&crate::ids::Stem::directory(first_sequence), ctx)?,
-                    second: crate::ids::curve_admitted(&crate::ids::Stem::directory(second_sequence), ctx)?,
+                    first: crate::ids::curve_admitted(
+                        &crate::ids::Stem::directory(first_sequence),
+                        ctx,
+                    )?,
+                    second: crate::ids::curve_admitted(
+                        &crate::ids::Stem::directory(second_sequence),
+                        ctx,
+                    )?,
                     cache: None,
                 },
                 Some(
@@ -1516,8 +1824,22 @@ pub(super) fn project(
                 ),
             ),
         );
-        super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::RuledDevelopabilityNotTransferred, format_args!("{}", "Type 118 developability is retained only in the native entity record"))?;
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        super::push_optional_attributed_loss(
+            ctx,
+            &mut losses,
+            entry,
+            IgesLossCode::RuledDevelopabilityNotTransferred,
+            format_args!(
+                "{}",
+                "Type 118 developability is retained only in the native entity record"
+            ),
+        )?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     for entry in directory
@@ -1526,18 +1848,33 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(directrix_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "directrix pointer is invalid"),
+            )?;
             continue;
         };
         let Some(directrix_entry) = entries.get(&directrix_sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix entity is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "directrix entity is missing"),
+            )?;
             continue;
         };
         if !tabulated_directrix_type_allowed(
@@ -1545,12 +1882,25 @@ pub(super) fn project(
             directrix_entry.form,
             global.global_table(),
         ) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix entity is outside the effective specification family"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "directrix entity is outside the effective specification family"
+                ),
+            )?;
             continue;
         }
         let coordinates = [record.number(2), record.number(3), record.number(4)];
         let [Some(x), Some(y), Some(z)] = coordinates else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix endpoint is not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "generatrix endpoint is not numeric"),
+            )?;
             continue;
         };
         let transform = match resolve_transform(
@@ -1565,19 +1915,35 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
-        let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records, ctx)? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix model-space carrier pointer is invalid"))?;
+        let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records, ctx)?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "directrix model-space carrier pointer is invalid"),
+            )?;
             continue;
         };
         let directrix_carrier = match bounded_nurbs(ir, &directrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("the directrix states no NURBS carrier: {error}"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("the directrix states no NURBS carrier: {error}"),
+                )?;
                 continue;
             }
         };
@@ -1590,29 +1956,52 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix has no bounded polynomial, NURBS, or exact evaluable carrier"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "{}",
+                        "directrix has no bounded polynomial, NURBS, or exact evaluable carrier"
+                    ),
+                )?;
                 continue;
             };
             let Some(directrix_solved) = directrix_geometry.solved() else {
                 continue;
             };
-            let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
+            let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
             let Some(start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                &directrix_geometry,
+                directrix_geometry,
                 carrier_interval[0],
             ))?
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix start cannot be evaluated"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "directrix start cannot be evaluated"),
+                )?;
                 continue;
             };
             let Some(start) = transform.apply_point(start.get()) else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "placement produces a non-finite point"),
+                )?;
                 continue;
             };
             let Some(target) =
                 transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "placement produces a non-finite point"),
+                )?;
                 continue;
             };
             let Some(direction) =
@@ -1621,23 +2010,40 @@ pub(super) fn project(
                     length.is_finite() && length > 0.0
                 })
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "tabulated direction is zero or non-finite"),
+                )?;
                 continue;
             };
             let placed_solved = (entry.transform != 0)
                 .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
                 .transpose()?;
             let procedural_directrix = if let Some(placed_solved) = placed_solved {
-                if let Some(ctx) = ctx { ctx.charge_collection_items(1, "iges exact placed curve box")?; }
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "iges exact placed curve box")?;
+                }
                 let placed_id = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
-                 ctx)?;
+                    ctx,
+                )?;
                 sequences.record_curve(&placed_id, entry.sequence, ctx)?;
-                reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated exact placed directrix slots")?;
+                reserve_optional_vec_growth(
+                    ctx,
+                    &mut ir.model.curves,
+                    1,
+                    "iges tabulated exact placed directrix slots",
+                )?;
                 crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
-                    id: crate::decode_resource::clone_optional_identity(ctx, &placed_id, "iges surface identity copy")?,
+                    id: crate::decode_resource::clone_optional_identity(
+                        ctx,
+                        &placed_id,
+                        "iges surface identity copy",
+                    )?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
                             Box::new(placed_solved),
@@ -1651,16 +2057,32 @@ pub(super) fn project(
             } else {
                 directrix_id
             };
-            let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            let procedural_id =
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let surface_id =
+                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let procedural_id = crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?;
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-            reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated exact neutral surface slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.surfaces,
+                1,
+                "iges tabulated exact neutral surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
-                id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+                id: crate::decode_resource::clone_optional_identity(
+                    ctx,
+                    &surface_id,
+                    "iges surface identity copy",
+                )?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: crate::decode_resource::clone_optional_identity(ctx, &procedural_id, "iges surface identity copy")?,
+                    construction: crate::decode_resource::clone_optional_identity(
+                        ctx,
+                        &procedural_id,
+                        "iges surface identity copy",
+                    )?,
                     cache: None,
                 },
                 source_object: Some(source_object(entry, ctx)?),
@@ -1681,7 +2103,12 @@ pub(super) fn project(
                     "record bounds must be finite",
                 ))
             })?;
-            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.procedural_surfaces,
+                1,
+                "iges procedural surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -1699,7 +2126,12 @@ pub(super) fn project(
                     Some(bounds),
                 ),
             );
-            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                ctx,
+                &mut decoded,
+                entry.sequence,
+                "iges surfaces decoded sequences",
+            )?;
             continue;
         };
         let carrier_interval = bounded_parameter_range_for_curve(
@@ -1717,12 +2149,16 @@ pub(super) fn project(
         let mut placed_directrix = directrix;
         if entry.transform != 0
             && placed_directrix
-                .map_control_points_in_place(|point| {
-                    transform.apply_point(point.get()).ok_or(())
-                })
+                .map_control_points_in_place(|point| transform.apply_point(point.get()).ok_or(()))
                 .is_err()
         {
-            super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES placement produces non-finite directrix poles"))?;
+            super::push_optional_attributed_loss(
+                ctx,
+                &mut losses,
+                entry,
+                IgesLossCode::NurbsTransformNonFinite,
+                format_args!("{}", "IGES placement produces non-finite directrix poles"),
+            )?;
             continue;
         }
         let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
@@ -1730,12 +2166,22 @@ pub(super) fn project(
             cached_interval[0],
         ))?
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix start cannot be evaluated"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "directrix start cannot be evaluated"),
+            )?;
             continue;
         };
         let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "placement produces a non-finite point"),
+            )?;
             continue;
         };
         let Some(direction) =
@@ -1744,20 +2190,34 @@ pub(super) fn project(
                 length.is_finite() && length > 0.0
             })
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "tabulated direction is zero or non-finite"),
+            )?;
             continue;
         };
         let pole_count = placed_directrix.pole_count();
         let Ok(_) = u32::try_from(pole_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "directrix pole count exceeds u32"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "directrix pole count exceeds u32"),
+            )?;
             continue;
         };
         let mut pole_rows = reserve_optional_vec(ctx, pole_count, "iges tabulated pole rows")?;
         let mut finite_poles = true;
         for index in 0..pole_count {
-            let point = placed_directrix.pole_rows().point_at(index).ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?;
+            let point = placed_directrix
+                .pole_rows()
+                .point_at(index)
+                .ok_or_else(|| CodecError::malformed("tabulated directrix pole is missing"))?;
             let mut row = reserve_optional_vec(ctx, 2, "iges tabulated pole row controls")?;
-            let Some(translated) = FinitePoint3::new(point.get().translated(direction.get(), 1.0)) else {
+            let Some(translated) = FinitePoint3::new(point.get().translated(direction.get(), 1.0))
+            else {
                 finite_poles = false;
                 break;
             };
@@ -1765,31 +2225,53 @@ pub(super) fn project(
             pole_rows.push(row);
         }
         if !finite_poles {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("tabulated-cylinder carrier cardinalities are inconsistent: {}", NurbsError::Structure("control_points contains a non-finite point".into())))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "tabulated-cylinder carrier cardinalities are inconsistent: {}",
+                    NurbsError::Structure("control_points contains a non-finite point".into())
+                ),
+            )?;
             continue;
         }
         let weights = if placed_directrix.pole_rows().weight_at(0).is_some() {
             let mut rows = reserve_optional_vec(ctx, pole_count, "iges tabulated weight rows")?;
             for index in 0..pole_count {
-                let weight = placed_directrix.pole_rows().weight_at(index).and_then(NonZeroReal::new).ok_or_else(|| CodecError::malformed("tabulated directrix weight is missing"))?;
+                let weight = placed_directrix
+                    .pole_rows()
+                    .weight_at(index)
+                    .and_then(NonZeroReal::new)
+                    .ok_or_else(|| {
+                        CodecError::malformed("tabulated directrix weight is missing")
+                    })?;
                 let mut row = reserve_optional_vec(ctx, 2, "iges tabulated weight row controls")?;
                 row.extend([weight, weight]);
                 rows.push(row);
             }
             Some(rows)
-        } else { None };
+        } else {
+            None
+        };
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
             let placed_id = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedDirectrix),
-             ctx)?;
+                ctx,
+            )?;
             sequences.record_curve(&placed_id, entry.sequence, ctx)?;
             placed_id
         };
-        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-        let mut u_knots = reserve_optional_vec(ctx, placed_directrix.knots().len(), "iges tabulated u knots")?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let mut u_knots = reserve_optional_vec(
+            ctx,
+            placed_directrix.knots().len(),
+            "iges tabulated u knots",
+        )?;
         u_knots.extend_from_slice(placed_directrix.knots());
         let mut v_knots = reserve_optional_vec(ctx, 4, "iges tabulated v knots")?;
         v_knots.extend([0.0, 0.0, 1.0, 1.0]);
@@ -1814,24 +2296,49 @@ pub(super) fn project(
         }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("tabulated-cylinder carrier cardinalities are inconsistent: {error}"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "tabulated-cylinder carrier cardinalities are inconsistent: {error}"
+                    ),
+                )?;
                 continue;
             }
         };
         if entry.transform != 0 {
-            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated placed directrix slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.curves,
+                1,
+                "iges tabulated placed directrix slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
-                id: crate::decode_resource::clone_optional_identity(ctx, &procedural_directrix, "iges surface identity copy")?,
+                id: crate::decode_resource::clone_optional_identity(
+                    ctx,
+                    &procedural_directrix,
+                    "iges surface identity copy",
+                )?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
                 source_object: Some(source_object(entry, ctx)?),
             });
         }
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated neutral surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges tabulated neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                ctx,
+                &surface_id,
+                "iges surface identity copy",
+            )?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
@@ -1851,12 +2358,20 @@ pub(super) fn project(
                 "record bounds must be finite",
             ))
         })?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.procedural_surfaces,
+            1,
+            "iges procedural surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+                crate::ids::procedural_surface_admitted(
+                    &crate::ids::Stem::directory(entry.sequence),
+                    ctx,
+                )?,
                 ProceduralSurfaceDefinition::Extrusion(
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
                         procedural_directrix,
@@ -1869,7 +2384,12 @@ pub(super) fn project(
                 Some(bounds),
             ),
         );
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     for entry in directory
@@ -1878,25 +2398,45 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(axis_sequence) = record
             .integer(1)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution axis pointer is invalid"),
+            )?;
             continue;
         };
         let Some(generatrix_sequence) = record
             .integer(2)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution generatrix pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution generatrix pointer is invalid"),
+            )?;
             continue;
         };
         let (Some(start_angle), Some(end_angle)) = (record.number(3), record.number(4)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution angles are not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution angles are not numeric"),
+            )?;
             continue;
         };
         let Some(AngularBasis {
@@ -1904,7 +2444,12 @@ pub(super) fn project(
             controls: angular_controls,
         }) = angular_basis(start_angle, end_angle, ctx)?
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution angular interval is not in (0, 2*pi]"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution angular interval is not in (0, 2*pi]"),
+            )?;
             continue;
         };
         let transform = match resolve_transform(
@@ -1919,31 +2464,57 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
         let axis_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(axis_sequence), ctx)?;
         let Some(axis_curve) = ir.model.curves.iter().find(|curve| curve.id == axis_id) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis carrier is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution axis carrier is missing"),
+            )?;
             continue;
         };
         let Some(SolvedCurveGeometry::Line(line_curve)) = axis_curve.geometry.solved() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution axis is not a Line Entity carrier"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution axis is not a Line Entity carrier"),
+            )?;
             continue;
         };
         let admitted_axis = (line_curve.origin(), line_curve.direction());
         let axis_origin = admitted_axis.0.get();
         let axis_direction = *admitted_axis.1.as_raw();
-        let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records, ctx)? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "revolution model-space carrier pointer is invalid"))?;
+        let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records, ctx)?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "revolution model-space carrier pointer is invalid"),
+            )?;
             continue;
         };
         let generatrix_carrier = match bounded_nurbs(ir, &generatrix_id, ctx, &composite_index) {
             Ok(carrier) => carrier,
             Err(error) => {
                 let error = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("the generatrix states no NURBS carrier: {error}"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("the generatrix states no NURBS carrier: {error}"),
+                )?;
                 continue;
             }
         };
@@ -1956,33 +2527,65 @@ pub(super) fn project(
                 ctx,
             )?
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
+                        "{}",
+                        "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier"
+                    ),
+                )?;
                 continue;
             };
             let Some(directrix_solved) = directrix_geometry.solved() else {
                 continue;
             };
-            let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
-            let mut procedural_directrix = crate::decode_resource::clone_optional_identity(ctx, &generatrix_id, "iges surface identity copy")?;
+            let source_interval = source_parameter_interval(directrix_geometry, carrier_interval);
+            let mut procedural_directrix = crate::decode_resource::clone_optional_identity(
+                ctx,
+                &generatrix_id,
+                "iges surface identity copy",
+            )?;
             let mut procedural_axis = admitted_axis;
             let placed_solved = (entry.transform != 0)
                 .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
                 .transpose()?;
             if let Some(placed_solved) = placed_solved {
-                if let Some(ctx) = ctx { ctx.charge_collection_items(1, "iges exact placed curve box")?; }
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "iges exact placed curve box")?;
+                }
                 let Some(orientation) = similarity_orientation(transform) else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement cannot preserve the exact revolution parameterization"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "{}",
+                            "placement cannot preserve the exact revolution parameterization"
+                        ),
+                    )?;
                     continue;
                 };
                 procedural_directrix = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedGeneratrix),
-                 ctx)?;
+                    ctx,
+                )?;
                 sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
-                reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution exact placed generatrix slots")?;
+                reserve_optional_vec_growth(
+                    ctx,
+                    &mut ir.model.curves,
+                    1,
+                    "iges revolution exact placed generatrix slots",
+                )?;
                 crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
-                    id: crate::decode_resource::clone_optional_identity(ctx, &procedural_directrix, "iges surface identity copy")?,
+                    id: crate::decode_resource::clone_optional_identity(
+                        ctx,
+                        &procedural_directrix,
+                        "iges surface identity copy",
+                    )?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
                         cadmpeg_ir::geometry::PlacedCurve::try_new(
                             Box::new(placed_solved),
@@ -2005,26 +2608,52 @@ pub(super) fn project(
                     .and_then(|direction| unit_vector(direction.get()))
                     .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement collapses the revolution axis"))?;
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "placement collapses the revolution axis"),
+                    )?;
                     continue;
                 };
                 procedural_axis = (placed_origin, placed_direction);
             }
-            let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            let procedural_id =
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let surface_id =
+                crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+            let procedural_id = crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?;
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-            reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution exact neutral surface slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.surfaces,
+                1,
+                "iges revolution exact neutral surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
-                id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+                id: crate::decode_resource::clone_optional_identity(
+                    ctx,
+                    &surface_id,
+                    "iges surface identity copy",
+                )?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: crate::decode_resource::clone_optional_identity(ctx, &procedural_id, "iges surface identity copy")?,
+                    construction: crate::decode_resource::clone_optional_identity(
+                        ctx,
+                        &procedural_id,
+                        "iges surface identity copy",
+                    )?,
                     cache: None,
                 },
                 source_object: Some(source_object(entry, ctx)?),
             });
-            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.procedural_surfaces,
+                1,
+                "iges procedural surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
@@ -2058,7 +2687,12 @@ pub(super) fn project(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             );
-            crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+            crate::decode_resource::insert_optional_btree_set(
+                ctx,
+                &mut decoded,
+                entry.sequence,
+                "iges surfaces decoded sequences",
+            )?;
             continue;
         };
         let carrier_interval = bounded_parameter_range_for_curve(
@@ -2075,15 +2709,24 @@ pub(super) fn project(
             });
         let generatrix_count = generatrix.pole_count();
         let Ok(_) = u32::try_from(generatrix_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "generatrix pole count exceeds u32"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "generatrix pole count exceeds u32"),
+            )?;
             continue;
         };
         let Ok(_) = u32::try_from(angular_controls.len()) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "angular pole count exceeds u32"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "angular pole count exceeds u32"),
+            )?;
             continue;
         };
-        let Some(surface_pole_count) = generatrix_count.checked_mul(angular_controls.len())
-        else {
+        let Some(surface_pole_count) = generatrix_count.checked_mul(angular_controls.len()) else {
             return Err(refuse_local_limit(
                 "iges_revolution_poles",
                 MAX_SURFACE_POLES as u64,
@@ -2097,10 +2740,15 @@ pub(super) fn project(
                 surface_pole_count as u64,
             ));
         }
-        let mut control_points = reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface controls")?;
-        let mut weights = reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface weights")?;
+        let mut control_points =
+            reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface controls")?;
+        let mut weights =
+            reserve_optional_vec(ctx, surface_pole_count, "iges revolution surface weights")?;
         for u_index in 0..generatrix_count {
-            let point = generatrix.pole_rows().point_at(u_index).ok_or_else(|| CodecError::malformed("generatrix pole is missing"))?;
+            let point = generatrix
+                .pole_rows()
+                .point_at(u_index)
+                .ok_or_else(|| CodecError::malformed("generatrix pole is missing"))?;
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));
             let radial = point.vector_from(axis_point);
@@ -2118,21 +2766,30 @@ pub(super) fn project(
                 weights.push(u_weight * angular_weight);
             }
         }
-        let mut u_knots = reserve_optional_vec(ctx, generatrix.knots().len(), "iges revolution surface u knots")?;
+        let mut u_knots = reserve_optional_vec(
+            ctx,
+            generatrix.knots().len(),
+            "iges revolution surface u knots",
+        )?;
         u_knots.extend_from_slice(generatrix.knots());
-        let mut pole_rows = reserve_optional_vec(ctx, generatrix_count, "iges revolution pole rows")?;
+        let mut pole_rows =
+            reserve_optional_vec(ctx, generatrix_count, "iges revolution pole rows")?;
         for points in control_points.chunks(angular_controls.len()) {
-            let mut row = reserve_optional_vec(ctx, points.len(), "iges revolution pole row controls")?;
+            let mut row =
+                reserve_optional_vec(ctx, points.len(), "iges revolution pole row controls")?;
             row.extend_from_slice(points);
             pole_rows.push(row);
         }
-        let mut weight_rows = reserve_optional_vec(ctx, generatrix_count, "iges revolution weight rows")?;
+        let mut weight_rows =
+            reserve_optional_vec(ctx, generatrix_count, "iges revolution weight rows")?;
         for weights in weights.chunks(angular_controls.len()) {
-            let mut row = reserve_optional_vec(ctx, weights.len(), "iges revolution weight row controls")?;
+            let mut row =
+                reserve_optional_vec(ctx, weights.len(), "iges revolution weight row controls")?;
             row.extend_from_slice(weights);
             weight_rows.push(row);
         }
-        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let paired = pair_admitted_surface_poles(
             ctx,
             pole_rows,
@@ -2140,36 +2797,48 @@ pub(super) fn project(
             "iges revolution weighted rows",
             "iges revolution weighted row controls",
         )?;
-        let surface = match paired.and_then(|poles| NurbsSurface::new(
-            NurbsSurfaceAxis::new(
-                generatrix.degree(),
-                u_knots,
-                generatrix.periodic(),
-            ),
-            NurbsSurfaceAxis::new(
-                2,
-                v_knots,
-                super::curve_conversion::angularly_equal(
-                    end_angle - start_angle,
-                    std::f64::consts::TAU,
+        let surface = match paired.and_then(|poles| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(generatrix.degree(), u_knots, generatrix.periodic()),
+                NurbsSurfaceAxis::new(
+                    2,
+                    v_knots,
+                    super::curve_conversion::angularly_equal(
+                        end_angle - start_angle,
+                        std::f64::consts::TAU,
+                    ),
                 ),
-            ),
-            poles,
-            false,
-        )) {
+                poles,
+                false,
+            )
+        }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!(
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!(
                         "surface-of-revolution carrier cardinalities are inconsistent: {error}"
-                    ))?;
+                    ),
+                )?;
                 continue;
             }
         };
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution neutral surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges revolution neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                ctx,
+                &surface_id,
+                "iges surface identity copy",
+            )?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
@@ -2183,23 +2852,37 @@ pub(super) fn project(
             // here rather than carried past the untransformed one.
             let mut placed_generatrix = generatrix;
             if placed_generatrix
-                .map_control_points_in_place(|point| {
-                    transform.apply_point(point.get()).ok_or(())
-                })
+                .map_control_points_in_place(|point| transform.apply_point(point.get()).ok_or(()))
                 .is_err()
             {
-                super::push_optional_attributed_loss(ctx, &mut losses, entry, IgesLossCode::NurbsTransformNonFinite, format_args!("{}", "IGES placement produces non-finite generatrix poles"))?;
+                super::push_optional_attributed_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    IgesLossCode::NurbsTransformNonFinite,
+                    format_args!("{}", "IGES placement produces non-finite generatrix poles"),
+                )?;
                 continue;
             }
             procedural_directrix = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence)
                     .tail(crate::ids::Word::PlacedGeneratrix),
-             ctx)?;
+                ctx,
+            )?;
             sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
-            reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution placed generatrix slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.curves,
+                1,
+                "iges revolution placed generatrix slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
-                id: crate::decode_resource::clone_optional_identity(ctx, &procedural_directrix, "iges surface identity copy")?,
+                id: crate::decode_resource::clone_optional_identity(
+                    ctx,
+                    &procedural_directrix,
+                    "iges surface identity copy",
+                )?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry, ctx)?),
             });
@@ -2213,7 +2896,12 @@ pub(super) fn project(
                 .and_then(|direction| unit_vector(direction.get()))
                 .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement collapses the revolution axis"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "placement collapses the revolution axis"),
+                )?;
                 continue;
             };
             procedural_axis = (placed_origin, placed_direction);
@@ -2222,9 +2910,15 @@ pub(super) fn project(
             false
         };
         if procedural_is_exact {
-            reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            reserve_optional_vec_growth(
+                ctx,
+                &mut ir.model.procedural_surfaces,
+                1,
+                "iges procedural surface slots",
+            )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
-            let (admitted_payload, bounds) = cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            let (admitted_payload, bounds) =
+                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
                     procedural_axis,
                     [start_angle, end_angle],
@@ -2235,27 +2929,35 @@ pub(super) fn project(
                 )
                 .and_then(|admitted_payload| {
                     RecordBounds::try_new([
-                                Some(carrier_interval[0]),
-                                Some(carrier_interval[1]),
-                                None,
-                                None,
-                            ])
-                            .map_err(|_| {
-                                cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                                    "record bounds must be finite",
-                                )
-                            })
-                            .map(|bounds| (admitted_payload, bounds))
+                        Some(carrier_interval[0]),
+                        Some(carrier_interval[1]),
+                        None,
+                        None,
+                    ])
+                    .map_err(|_| {
+                        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                            "record bounds must be finite",
+                        )
+                    })
+                    .map(|bounds| (admitted_payload, bounds))
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = ProceduralSurface::new(
-                crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+                crate::ids::procedural_surface_admitted(
+                    &crate::ids::Stem::directory(entry.sequence),
+                    ctx,
+                )?,
                 ProceduralSurfaceDefinition::Revolution(admitted_payload),
                 Some(bounds),
             );
             let _attached = ir.model.add_procedural_surface(surface_id, procedural);
         }
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     'surface: for entry in directory
@@ -2264,28 +2966,56 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let indices = [record.integer(1), record.integer(2)];
         let degrees = [record.integer(3), record.integer(4)];
         let [Some(raw_k1), Some(raw_k2)] = indices else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface upper indices K1 or K2 are invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface upper indices K1 or K2 are invalid"),
+            )?;
             continue;
         };
         let [Some(k1), Some(k2)] = [raw_k1, raw_k2].map(|value| usize::try_from(value).ok()) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface upper indices K1 or K2 are invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface upper indices K1 or K2 are invalid"),
+            )?;
             continue;
         };
         let [Some(u_degree), Some(v_degree)] =
             degrees.map(|value| value.and_then(|v| u32::try_from(v).ok()))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface degrees M1 or M2 are invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface degrees M1 or M2 are invalid"),
+            )?;
             continue;
         };
         let [u_degree_usize, v_degree_usize] = [u_degree, v_degree].map(|degree| degree as usize);
         if k1 < u_degree_usize || k2 < v_degree_usize {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole counts are smaller than their degrees plus one"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "surface pole counts are smaller than their degrees plus one"
+                ),
+            )?;
             continue;
         }
         let requested = u64::try_from(raw_k1)
@@ -2316,19 +3046,39 @@ pub(super) fn project(
         }
         let flags: [Option<i64>; 5] = std::array::from_fn(|offset| record.integer(5 + offset));
         if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "one or more surface flags are not 0 or 1"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "one or more surface flags are not 0 or 1"),
+            )?;
             continue;
         }
         let (Some(u_count), Some(v_count)) = (k1.checked_add(1), k2.checked_add(1)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole count overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface pole count overflows"),
+            )?;
             continue;
         };
         let (Ok(_), Ok(_)) = (u32::try_from(u_count), u32::try_from(v_count)) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole dimensions exceed u32"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface pole dimensions exceed u32"),
+            )?;
             continue;
         };
         let Some(pole_count) = u_count.checked_mul(v_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole grid size overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface pole grid size overflows"),
+            )?;
             continue;
         };
         if pole_count > MAX_SURFACE_POLES {
@@ -2342,79 +3092,175 @@ pub(super) fn project(
             .checked_add(u_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u-knot count overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "u-knot count overflows"),
+            )?;
             continue;
         };
         let Some(v_knot_count) = v_count
             .checked_add(v_degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot count overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "v-knot count overflows"),
+            )?;
             continue;
         };
         let u_knot_start = 10_usize;
         let Some(v_knot_start) = u_knot_start.checked_add(u_knot_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot offset overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "v-knot offset overflows"),
+            )?;
             continue;
         };
         let Some(weight_start) = v_knot_start.checked_add(v_knot_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weight offset overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface weight offset overflows"),
+            )?;
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(pole_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole offset overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface pole offset overflows"),
+            )?;
             continue;
         };
         let Some(pole_value_count) = pole_count.checked_mul(3) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface pole value count overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface pole value count overflows"),
+            )?;
             continue;
         };
         let Some(range_start) = pole_start.checked_add(pole_value_count) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter-range offset overflows"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface parameter-range offset overflows"),
+            )?;
             continue;
         };
-        let collect_numbers = |start: usize, count: usize, operation: &'static str| -> Result<Option<Vec<FiniteReal>>, CodecError> {
-            let Some(end) = start.checked_add(count) else { return Ok(None); };
+        let collect_numbers = |start: usize,
+                               count: usize,
+                               operation: &'static str|
+         -> Result<Option<Vec<FiniteReal>>, CodecError> {
+            let Some(end) = start.checked_add(count) else {
+                return Ok(None);
+            };
             let mut values = reserve_optional_vec(ctx, count, operation)?;
             for index in start..end {
-                let Some(value) = record.number(index).and_then(FiniteReal::new) else { return Ok(None); };
+                let Some(value) = record.number(index).and_then(FiniteReal::new) else {
+                    return Ok(None);
+                };
                 values.push(value);
             }
             Ok(Some(values))
         };
-        let Some(finite_u_knots) = collect_numbers(u_knot_start, u_knot_count, "iges NURBS surface source u knots")? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u-knot vector is truncated or non-finite"))?;
+        let Some(finite_u_knots) = collect_numbers(
+            u_knot_start,
+            u_knot_count,
+            "iges NURBS surface source u knots",
+        )?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "u-knot vector is truncated or non-finite"),
+            )?;
             continue;
         };
-        let Some(finite_v_knots) = collect_numbers(v_knot_start, v_knot_count, "iges NURBS surface source v knots")? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v-knot vector is truncated or non-finite"))?;
+        let Some(finite_v_knots) = collect_numbers(
+            v_knot_start,
+            v_knot_count,
+            "iges NURBS surface source v knots",
+        )?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "v-knot vector is truncated or non-finite"),
+            )?;
             continue;
         };
         let u_domain = [finite_u_knots[u_degree_usize], finite_u_knots[u_count]];
         let v_domain = [finite_v_knots[v_degree_usize], finite_v_knots[v_count]];
-        let mut raw_u_knots = reserve_optional_vec(ctx, finite_u_knots.len(), "iges NURBS surface admitted u knots")?;
+        let mut raw_u_knots = reserve_optional_vec(
+            ctx,
+            finite_u_knots.len(),
+            "iges NURBS surface admitted u knots",
+        )?;
         raw_u_knots.extend(finite_u_knots.into_iter().map(FiniteReal::get));
-        let mut raw_v_knots = reserve_optional_vec(ctx, finite_v_knots.len(), "iges NURBS surface admitted v knots")?;
+        let mut raw_v_knots = reserve_optional_vec(
+            ctx,
+            finite_v_knots.len(),
+            "iges NURBS surface admitted v knots",
+        )?;
         raw_v_knots.extend(finite_v_knots.into_iter().map(FiniteReal::get));
-        let (Ok(u_knots), Ok(v_knots)) = (
-            KnotVector::new(raw_u_knots),
-            KnotVector::new(raw_v_knots),
-        ) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface knot vector is decreasing"))?;
+        let (Ok(u_knots), Ok(v_knots)) =
+            (KnotVector::new(raw_u_knots), KnotVector::new(raw_v_knots))
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface knot vector is decreasing"),
+            )?;
             continue;
         };
-        let Some(native_weights) = collect_numbers(weight_start, pole_count, "iges NURBS surface source weights")? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weight vector is truncated or non-finite"))?;
+        let Some(native_weights) = collect_numbers(
+            weight_start,
+            pole_count,
+            "iges NURBS surface source weights",
+        )?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface weight vector is truncated or non-finite"),
+            )?;
             continue;
         };
-        let mut positive_weights = reserve_optional_vec(ctx, native_weights.len(), "iges NURBS surface positive weights")?;
+        let mut positive_weights = reserve_optional_vec(
+            ctx,
+            native_weights.len(),
+            "iges NURBS surface positive weights",
+        )?;
         let mut valid_weights = true;
         for weight in native_weights {
-            let Some(weight) = PositiveReal::try_from(weight).ok() else { valid_weights = false; break; };
+            let Some(weight) = PositiveReal::try_from(weight).ok() else {
+                valid_weights = false;
+                break;
+            };
             positive_weights.push(weight);
         }
         if !valid_weights {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface weights are not strictly positive"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface weights are not strictly positive"),
+            )?;
             continue;
         }
         let native_weights = positive_weights;
@@ -2438,19 +3284,48 @@ pub(super) fn project(
         });
         let polynomial = flags[2] == Some(1);
         if polynomial && !equal_weights {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "polynomial surface has unequal weights"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "polynomial surface has unequal weights"),
+            )?;
             continue;
         }
         if !polynomial && equal_weights {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "rational surface has equal weights but PROP3 declares rational"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "rational surface has equal weights but PROP3 declares rational"
+                ),
+            )?;
             continue;
         }
-        let Some(native_poles) = collect_numbers(pole_start, pole_value_count, "iges NURBS surface source poles")? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface poles are truncated or non-finite"))?;
+        let Some(native_poles) = collect_numbers(
+            pole_start,
+            pole_value_count,
+            "iges NURBS surface source poles",
+        )?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface poles are truncated or non-finite"),
+            )?;
             continue;
         };
-        let Some(ranges) = collect_numbers(range_start, 4, "iges NURBS surface source ranges")? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "surface parameter ranges are missing"))?;
+        let Some(ranges) = collect_numbers(range_start, 4, "iges NURBS surface source ranges")?
+        else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "surface parameter ranges are missing"),
+            )?;
             continue;
         };
         let clamp_range = |start_index: usize,
@@ -2477,20 +3352,28 @@ pub(super) fn project(
                 clamped[0].get() >= domain[0].get() && clamped[1].get() <= domain[1].get()
             })
         };
-        let Some(u_range) = clamp_range(
-            range_start,
-            [ranges[0], ranges[1]],
-            u_domain,
-        ) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "u parameter range is empty or lies outside its knot domain"))?;
+        let Some(u_range) = clamp_range(range_start, [ranges[0], ranges[1]], u_domain) else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "u parameter range is empty or lies outside its knot domain"
+                ),
+            )?;
             continue;
         };
-        let Some(v_range) = clamp_range(
-            range_start + 2,
-            [ranges[2], ranges[3]],
-            v_domain,
-        ) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "v parameter range is empty or lies outside its knot domain"))?;
+        let Some(v_range) = clamp_range(range_start + 2, [ranges[2], ranges[3]], v_domain) else {
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "v parameter range is empty or lies outside its knot domain"
+                ),
+            )?;
             continue;
         };
         let transform = match resolve_transform(
@@ -2505,13 +3388,25 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", message))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
-        let mut control_points = reserve_optional_vec(ctx, pole_count, "iges NURBS surface placed controls")?;
-        let mut weights = if polynomial { None } else {
-            Some(reserve_optional_vec(ctx, pole_count, "iges NURBS surface neutral weights")?)
+        let mut control_points =
+            reserve_optional_vec(ctx, pole_count, "iges NURBS surface placed controls")?;
+        let mut weights = if polynomial {
+            None
+        } else {
+            Some(reserve_optional_vec(
+                ctx,
+                pole_count,
+                "iges NURBS surface neutral weights",
+            )?)
         };
         for u in 0..u_count {
             for v in 0..v_count {
@@ -2535,19 +3430,26 @@ pub(super) fn project(
         }
         let mut pole_rows = reserve_optional_vec(ctx, u_count, "iges NURBS surface pole rows")?;
         for points in control_points.chunks(v_count) {
-            let mut row = reserve_optional_vec(ctx, points.len(), "iges NURBS surface pole row controls")?;
+            let mut row =
+                reserve_optional_vec(ctx, points.len(), "iges NURBS surface pole row controls")?;
             row.extend_from_slice(points);
             pole_rows.push(row);
         }
         let weight_rows = if let Some(values) = weights {
             let mut rows = reserve_optional_vec(ctx, u_count, "iges NURBS surface weight rows")?;
             for values in values.chunks(v_count) {
-                let mut row = reserve_optional_vec(ctx, values.len(), "iges NURBS surface weight row controls")?;
+                let mut row = reserve_optional_vec(
+                    ctx,
+                    values.len(),
+                    "iges NURBS surface weight row controls",
+                )?;
                 row.extend_from_slice(values);
                 rows.push(row);
             }
             Some(rows)
-        } else { None };
+        } else {
+            None
+        };
         let paired = pair_admitted_surface_poles(
             ctx,
             pole_rows,
@@ -2555,21 +3457,25 @@ pub(super) fn project(
             "iges NURBS surface weighted rows",
             "iges NURBS surface weighted row controls",
         )?;
-        let surface =
-            match paired.and_then(|poles| {
-                NurbsSurface::new(
-                    NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
-                    NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
-                    poles,
-                    false,
-                )
-            }) {
-                Ok(nurbs) => nurbs,
-                Err(error) => {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("spline surface cardinalities are inconsistent: {error}"))?;
-                    continue;
-                }
-            };
+        let surface = match paired.and_then(|poles| {
+            NurbsSurface::new(
+                NurbsSurfaceAxis::new(u_degree, u_knots, flags[3] == Some(1)),
+                NurbsSurfaceAxis::new(v_degree, v_knots, flags[4] == Some(1)),
+                poles,
+                false,
+            )
+        }) {
+            Ok(nurbs) => nurbs,
+            Err(error) => {
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("spline surface cardinalities are inconsistent: {error}"),
+                )?;
+                continue;
+            }
+        };
         for (declared, fixed_axis, fixed_range, varying_range, direction) in [
             (
                 flags[0] == Some(1),
@@ -2595,26 +3501,51 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
             )?
             else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{direction}-closed surface boundary cannot be evaluated"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{direction}-closed surface boundary cannot be evaluated"),
+                )?;
                 continue 'surface;
             };
             if actual != declared {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{direction}-closed surface flag disagrees with boundary curves"))?;
+                super::push_optional_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{direction}-closed surface flag disagrees with boundary curves"),
+                )?;
                 continue 'surface;
             }
         }
-        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges NURBS surface neutral slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges NURBS surface neutral slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                ctx,
+                &surface_id,
+                "iges surface identity copy",
+            )?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
-        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.procedural_surfaces,
+            1,
+            "iges procedural surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -2630,7 +3561,12 @@ pub(super) fn project(
                 ])),
             ),
         );
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     // No `ModelIndex` can be hoisted out of this loop: every accepted offset
@@ -2643,60 +3579,120 @@ pub(super) fn project(
     {
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let components = [record.number(1), record.number(2), record.number(3)];
         let [Some(x), Some(y), Some(z)] = components else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not numeric"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset indicator is not numeric"),
+            )?;
             continue;
         };
         let indicator = Vector3::new(x, y, z);
         let Some(indicator) = declared_unit_vector(record, 1, indicator, global.real_precision())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not a unit vector"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset indicator is not a unit vector"),
+            )?;
             continue;
         };
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset distance is zero or non-finite"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset distance is zero or non-finite"),
+            )?;
             continue;
         };
         let Some(support_sequence) = record
             .integer(5)
             .and_then(|value| u32::try_from(value).ok())
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset support pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset support pointer is invalid"),
+            )?;
             continue;
         };
         if entry.transform != 0 {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset surfaces require transformed support projection"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "placed offset surfaces require transformed support projection"
+                ),
+            )?;
             continue;
         }
-        let support_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(support_sequence), ctx)?;
+        let support_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(support_sequence), ctx)?;
         let Some(support) = ir
             .model
             .surfaces
             .iter()
             .find(|surface| surface.id == support_id)
         else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset support surface is missing"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset support surface is missing"),
+            )?;
             continue;
         };
         let distance = distance * factor;
         let Some(normal) = indicator_normal(ir, &support_id, ctx)? else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "support normal cannot be evaluated at the offset-indicator parameters"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "support normal cannot be evaluated at the offset-indicator parameters"
+                ),
+            )?;
             continue;
         };
         let Some(orientation) = indicator_orientation(record, indicator, normal, global) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset indicator is not the support normal at the designated parameters"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "offset indicator is not the support normal at the designated parameters"
+                ),
+            )?;
             continue;
         };
         let signed_distance = distance * orientation;
         let Some(geometry) = offset_analytic(&support.geometry, signed_distance) else {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "support surface has no exact analytic offset carrier"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "support surface has no exact analytic offset carrier"),
+            )?;
             continue;
         };
         let regular = match &geometry {
@@ -2722,21 +3718,42 @@ pub(super) fn project(
             | SurfaceGeometry::Procedural { .. } => false,
         };
         if !regular {
-            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset collapses or reverses the analytic carrier"))?;
+            super::push_optional_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "offset collapses or reverses the analytic carrier"),
+            )?;
             continue;
         }
-        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let surface_id =
+            crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
-        reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges offset neutral surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.surfaces,
+            1,
+            "iges offset neutral surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::decode_resource::clone_optional_identity(ctx, &surface_id, "iges surface identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                ctx,
+                &surface_id,
+                "iges surface identity copy",
+            )?,
             geometry,
             source_object: Some(source_object(entry, ctx)?),
         });
-        reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        reserve_optional_vec_growth(
+            ctx,
+            &mut ir.model.procedural_surfaces,
+            1,
+            "iges procedural surface slots",
+        )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
-        let admitted_payload = cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+        let admitted_payload =
+            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                 support_id,
                 signed_distance,
                 Some(0),
@@ -2746,14 +3763,23 @@ pub(super) fn project(
                     flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
                     cache: None,
                 },
-            ).map_err(cadmpeg_core::CodecError::malformed)?;
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         let procedural = ProceduralSurface::new(
-            crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            crate::ids::procedural_surface_admitted(
+                &crate::ids::Stem::directory(entry.sequence),
+                ctx,
+            )?,
             ProceduralSurfaceDefinition::Offset(admitted_payload),
             None,
         );
         let _attached = ir.model.add_procedural_surface(surface_id, procedural);
-        crate::decode_resource::insert_optional_btree_set(ctx, &mut decoded, entry.sequence, "iges surfaces decoded sequences")?;
+        crate::decode_resource::insert_optional_btree_set(
+            ctx,
+            &mut decoded,
+            entry.sequence,
+            "iges surfaces decoded sequences",
+        )?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

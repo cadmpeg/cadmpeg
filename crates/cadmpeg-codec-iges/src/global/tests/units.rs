@@ -70,11 +70,7 @@ fn delegated_length_symbols_use_exact_case_sensitive_factors() {
         fields[14] = format!("{}H{name}", name.len());
         let (parsed, losses) = resolve_global_fields(&fields);
         assert!(parsed.length_context().is_none(), "{name}");
-        assert_eq!(
-            parsed.units_name(),
-            Some(name.as_str()),
-            "{name}"
-        );
+        assert_eq!(parsed.units_name(), Some(name.as_str()), "{name}");
         assert_eq!(losses.len(), 1, "{name}: {losses:#?}");
         assert_eq!(
             code_count(&losses, IgesLossCode::GlobalLengthUnitUnresolved),
