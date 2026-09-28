@@ -33,7 +33,8 @@ pub(super) fn multi_component_intersection_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
 ) -> Vec<(CurveGeometry, &'static str)> {
-    let mut candidates = parallel_plane_cylinder_generator_candidates(first, second);
+    let mut candidates = Vec::new();
+    candidates.extend(parallel_plane_cylinder_generator_candidates(first, second));
     candidates.extend(parallel_cylinder_generator_candidates(first, second));
     candidates.extend(coaxial_cylinder_sphere_circle_candidates(first, second));
     candidates.extend(coaxial_cone_cylinder_circle_candidates(first, second));
@@ -134,7 +135,7 @@ pub(in super::super) fn curve_contains_points(
 }
 
 pub(in super::super) fn select_unique_curve_candidate(
-    candidates: Vec<(CurveGeometry, &'static str)>,
+    candidates: impl IntoIterator<Item = (CurveGeometry, &'static str)>,
     points: [[f64; 3]; 2],
 ) -> Option<(CurveGeometry, &'static str)> {
     let mut candidates = candidates
