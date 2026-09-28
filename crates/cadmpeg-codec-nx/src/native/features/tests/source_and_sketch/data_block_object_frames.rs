@@ -63,3 +63,25 @@ fn data_block_object_frame_route_refuses_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
+#[test]
+fn data_block_object_frame_owned_route_refuses_scoped_limit() {
+    let store_records = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], "EXTRUDE", Vec::new())],
+        &store_records,
+    );
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    }).expect("owned offset-store source");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let error = data_block_object_frames(&ctx, &container).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
