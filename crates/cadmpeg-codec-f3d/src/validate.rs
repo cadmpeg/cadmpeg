@@ -1097,7 +1097,7 @@ fn validate_loaded(
         &edge_operand_records,
         &edge_identity_records,
         &edge_treatment_vertex_records,
-    );
+    )?;
     let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
     validate_face_group_member_resolution(
         &ctx,
@@ -6607,7 +6607,7 @@ fn validate_edge_treatment_groups<'a>(
     edge_operand_records: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
     edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
-) {
+) -> Result<(), CodecError> {
     let native = ctx.native;
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
         matches!(
@@ -6617,16 +6617,16 @@ fn validate_edge_treatment_groups<'a>(
         )
     }) {
         let native_stream = design_stream(&scope.id);
-        let groups = native
+        let mut groups = native
             .design_construction_operand_groups
             .iter()
             .filter(|group| {
                 design_stream(&group.id) == native_stream
                     && group.scope_record_index == scope.record_index
             })
-            .collect::<Vec<_>>();
-        let complete = !groups.is_empty()
-            && groups.iter().all(|group| {
+            .peekable();
+        let complete = groups.peek().is_some()
+            && groups.all(|group| {
                 let recipe_backed =
                     group
                         .members()
@@ -6644,15 +6644,12 @@ fn validate_edge_treatment_groups<'a>(
                 recipe_backed || identity_backed
             });
         if !complete {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design edge-treatment group has incomplete selection operands"
-                    .into(),
-                entity: Some(scope.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design edge-treatment group has incomplete selection operands",
+                Some(ctx.copy_entity(&scope.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate face operands and their recipe frames; returns their record set.
