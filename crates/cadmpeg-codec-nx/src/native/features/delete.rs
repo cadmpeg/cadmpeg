@@ -217,18 +217,22 @@ pub(in crate::native) fn feature_delete_construction_payloads(
             }) {
                 return None;
             }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let operation_key = field
                 .operation_label
                 .strip_prefix("nx:feature-history:operation-label#")?;
-            Some(FeatureDeleteConstructionPayload {
+            Some(Ok(FeatureDeleteConstructionPayload {
                 id: format!("nx:feature-history:delete-construction-payload#{operation_key}"),
                 operation_label: field.operation_label.clone(),
                 reference_field: field.id.clone(),
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 #[cfg(test)]
