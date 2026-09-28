@@ -397,6 +397,22 @@ fn charged_map<K: Ord, V>(
     Ok(map)
 }
 
+fn charged_btree_set<T: Ord>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<BTreeSet<T>, CodecError> {
+    let mut set = BTreeSet::new();
+    for value in values {
+        ctx.charge_work(1, operation)?;
+        if !set.contains(&value) {
+            ctx.charge_collection_items(1, operation)?;
+            set.insert(value);
+        }
+    }
+    Ok(set)
+}
+
 fn charged_vec<T>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = T>,
@@ -3091,10 +3107,13 @@ fn build_geometry_ir(
             properties: BTreeMap::new(),
         });
     }
-    let feature_appearance_sources = crate::appearance::feature_assignments(ctx, scan)?
-        .into_iter()
-        .map(|assignment| assignment.feature_source_id)
-        .collect::<BTreeSet<_>>();
+    let feature_appearance_sources = charged_btree_set(
+        ctx,
+        crate::appearance::feature_assignments(ctx, scan)?
+            .into_iter()
+            .map(|assignment| assignment.feature_source_id),
+        "index SLDPRT feature appearance sources",
+    )?;
     let mut matched_feature_sources = BTreeSet::new();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
@@ -3104,11 +3123,12 @@ fn build_geometry_ir(
         }
         let display_stream = display.source_stream();
         for (table_index, face) in display_faces.iter().enumerate() {
-            let candidates = face
-                .surface_references
-                .iter()
-                .map(crate::tessellation::PersistentSurfaceReference::feature_source_id)
-                .collect::<BTreeSet<_>>();
+            let candidates = charged_btree_set(
+                ctx,
+                face.surface_references.iter()
+                    .map(crate::tessellation::PersistentSurfaceReference::feature_source_id),
+                "index SLDPRT display surface sources",
+            )?;
             if candidates.len() > 1 {
                 conflicting_display_references.push(format!(
                     "{}::DisplayFace[{}] ({})",
@@ -3124,7 +3144,13 @@ fn build_geometry_ir(
         }
         let resolved =
             crate::appearance::resolve_display_appearances(ctx, scan, display, &display_faces)?;
-        matched_feature_sources.extend(resolved.matched_feature_sources);
+        for source in resolved.matched_feature_sources {
+            ctx.charge_work(1, "index SLDPRT matched appearance sources")?;
+            if !matched_feature_sources.contains(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT matched appearance sources")?;
+                matched_feature_sources.insert(source);
+            }
+        }
         let mut display_links = Vec::new();
         ctx.reserve_collection_vec(
             &mut display_links,
