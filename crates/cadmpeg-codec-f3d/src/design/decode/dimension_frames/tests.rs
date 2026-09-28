@@ -1026,13 +1026,15 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&250u32.to_le_bytes());
 
     let group = parse_dimension_locus_group(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         240,
         &HashSet::from([175, 217]),
         &HashSet::from([172]),
     )
-    .expect("counted dimension locus frame");
+    .expect("counted dimension locus frame")
+    .expect("admitted dimension locus frame");
     assert_eq!(group.companion_record_index, 240);
     assert_eq!(group.record_index, 249);
     assert_eq!(group.frame_length, 101);
@@ -1053,6 +1055,26 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     );
     assert_eq!(group.next_class_tag.as_str(), "314");
     assert_eq!(group.next_record_index, 250);
+
+    for (limit, operation) in [
+        (1, "f3d dimension locus geometry"),
+        (2, "f3d dimension locus return members"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_dimension_locus_group(
+                &ctx, &bytes, 0, 240, &HashSet::from([175, 217]),
+                &HashSet::from([172]),
+            ),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.operation == operation
+        ));
+    }
 
     let relation_at = |stream: &str, byte_offset| {
         SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -1115,7 +1137,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&251u32.to_le_bytes());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
+    policy.limits.max_collection_items = 4;
     let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &arena, &policy,
     ).unwrap();
