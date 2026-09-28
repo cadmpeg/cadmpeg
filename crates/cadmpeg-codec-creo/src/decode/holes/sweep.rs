@@ -459,7 +459,10 @@ pub(in crate::decode) fn extrusion_span(
         return None;
     }
     let direction = direction.map(|value| value / direction_length);
-    let mut offsets = Vec::<f64>::new();
+    let mut smallest_positive: Option<f64> = None;
+    let mut largest_positive: Option<f64> = None;
+    let mut smallest_negative: Option<f64> = None;
+    let mut largest_negative: Option<f64> = None;
     for (origin, normal) in planes {
         let normal_length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
         if normal_length <= f64::EPSILON {
@@ -484,23 +487,28 @@ pub(in crate::decode) fn extrusion_span(
             continue;
         }
         let scale = offset.abs().max(1.0);
-        if !offsets
-            .iter()
-            .any(|known| (known - offset).abs() <= EPS_EXTENT_AGREEMENT * scale)
-        {
-            offsets.push(offset);
+        let duplicate = [
+            smallest_positive,
+            largest_positive,
+            smallest_negative,
+            largest_negative,
+        ]
+        .into_iter()
+        .flatten()
+        .any(|known| (known - offset).abs() <= EPS_EXTENT_AGREEMENT * scale);
+        if duplicate {
+            continue;
+        }
+        if offset > 0.0 {
+            smallest_positive = Some(smallest_positive.map_or(offset, |known| known.min(offset)));
+            largest_positive = Some(largest_positive.map_or(offset, |known| known.max(offset)));
+        } else if offset < 0.0 {
+            smallest_negative = Some(smallest_negative.map_or(offset, |known| known.min(offset)));
+            largest_negative = Some(largest_negative.map_or(offset, |known| known.max(offset)));
         }
     }
-    let lower = offsets
-        .iter()
-        .copied()
-        .filter(|offset| *offset < 0.0)
-        .min_by(f64::total_cmp);
-    let upper = offsets
-        .iter()
-        .copied()
-        .filter(|offset| *offset > 0.0)
-        .max_by(f64::total_cmp);
+    let lower = smallest_negative;
+    let upper = largest_positive;
     match (lower, upper) {
         (Some(lower), Some(upper)) => ExtrusionSpan::new(lower, upper),
         (Some(lower), None) => ExtrusionSpan::new(lower, 0.0),
