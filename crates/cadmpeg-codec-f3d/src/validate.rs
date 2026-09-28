@@ -1067,7 +1067,7 @@ fn validate_loaded(
     validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings)?;
-    validate_construction_operand_groups(&ctx, &mut findings);
+    validate_construction_operand_groups(&ctx, &mut findings)?;
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
@@ -4213,7 +4213,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
 }
 
 /// Validate construction operand groups and their role discriminators.
-fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -4623,32 +4623,37 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
         }) && frame_valid
             && !group.members().is_empty()
-            && group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .collect::<HashSet<_>>()
-                .len()
-                == group.members().len()
+            && {
+                let mut seen = HashSet::new();
+                for member in group.members() {
+                    ctx.insert_unique(
+                        &mut seen,
+                        member.value,
+                        "index F3D construction operand group members",
+                    )?;
+                }
+                seen.len() == group.members().len()
+            }
             && group
                 .members()
                 .iter()
                 .map(|member| &member.value)
                 .all(|member| records_by_index.contains_key(&(native_stream, *member)))
-            && operand_group_slots.insert((
-                native_stream,
-                group.scope_record_index,
-                group.scope_reference_ordinal,
-            ));
+            && ctx.insert_unique(
+                &mut operand_group_slots,
+                (native_stream, group.scope_record_index, group.scope_reference_ordinal),
+                "index F3D construction operand group slots",
+            )?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design construction operand group has an invalid frame".into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design construction operand group has an invalid frame",
+                Some(ctx.copy_entity(&group.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate path-feature operand roles against the scope construction.
