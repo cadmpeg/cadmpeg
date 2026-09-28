@@ -1530,6 +1530,7 @@ fn bounded_edge_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<CompositeEdge>, CodecError> {
     let curve = match index {
         Some(index) => index
@@ -1543,18 +1544,18 @@ fn bounded_edge_for_curve(
     };
     let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
         Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
-        None => Cow::Owned(
-            ir.model
-                .edges
-                .iter()
-                .filter(|edge| edge.curve() == Some(curve_id))
-                .map(|edge| CompositeEdge {
-                    start: edge.start.clone(),
-                    end: edge.end.clone(),
+        None => {
+            let edges = ir.model.edges.iter().filter(|edge| edge.curve() == Some(curve_id));
+            let mut candidates = reserve_optional_vec(ctx, edges.clone().count(), "iges composite scanned edge candidates")?;
+            for edge in edges {
+                candidates.push(CompositeEdge {
+                    start: crate::decode_resource::clone_optional_identity(ctx, &edge.start, "iges composite scanned edge start ID")?,
+                    end: crate::decode_resource::clone_optional_identity(ctx, &edge.end, "iges composite scanned edge end ID")?,
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
-                })
-                .collect(),
-        ),
+                });
+            }
+            Cow::Owned(candidates)
+        }
     };
     let Some(geometry) = curve.geometry.solved() else {
         return Ok(None);
@@ -1624,7 +1625,7 @@ fn bounded_nurbs_for_id(
         let range = [0.0, concatenated.segments.end()];
         return Ok(Some((concatenated.nurbs, range)));
     }
-    let Some(edge) = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?
+    let Some(edge) = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index, ctx)?
     else {
         return Ok(None);
     };
@@ -1762,8 +1763,9 @@ pub(super) fn bounded_parameter_range_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
-    Ok(bounded_edge_for_curve(ir, curve_id, tolerance, index)?.and_then(|edge| edge.param_range))
+    Ok(bounded_edge_for_curve(ir, curve_id, tolerance, index, ctx)?.and_then(|edge| edge.param_range))
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(
