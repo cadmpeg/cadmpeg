@@ -32,7 +32,7 @@ use cadmpeg_ir::ids::{
     ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchEntityId};
+use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
@@ -47,47 +47,52 @@ const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
 ];
 
 fn sketch_profiles_cover_generated_extrusion_sides(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
     feature_id: u32,
     sketch: &Sketch,
-) -> bool {
-    let profile_entities = sketch
-        .profiles
-        .iter()
-        .flatten()
-        .map(|entity_use| entity_use.entity.clone())
-        .collect::<Vec<_>>();
-    let profile_entity_set = profile_entities.iter().cloned().collect::<BTreeSet<_>>();
-    let expected_entities = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .flat_map(|table| {
-            table.entries.iter().filter_map(|entry| {
-                let external_id = entry.source_entity_id()?;
-                let entity = SketchEntityId::compose(
-                    &crate::identity::FEATDEFS_SKETCH_ENTITY,
-                    IdentityKey::from(definition.identity.id()).colon(external_id),
-                );
-                (profile_entity_set.contains(&entity)
-                    && generated_profile_entry_is_admissible(
-                        feature_id,
-                        table,
-                        entry,
-                        GENERATED_EXTRUSION_SIDE_KINDS,
-                        &scan.surfaces.rows,
-                    ))
-                .then_some(entity)
-            })
-        })
-        .collect::<Vec<_>>();
-    let expected_entity_set = expected_entities.iter().cloned().collect::<BTreeSet<_>>();
-    !expected_entities.is_empty()
-        && expected_entities.len() == expected_entity_set.len()
-        && profile_entities.len() == expected_entity_set.len()
-        && profile_entity_set == expected_entity_set
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let mut profile_entity_set = BTreeSet::<&str>::new();
+    let mut profile_count = 0;
+    for entity_use in sketch.profiles.iter().flatten() {
+        profile_count += 1;
+        let id = entity_use.entity.as_str();
+        if !profile_entity_set.contains(id) {
+            ctx.charge_collection_items(1, "creo extrusion profile entity ID nodes")?;
+            profile_entity_set.insert(id);
+        }
+    }
+    let mut expected_entity_set = BTreeSet::<&str>::new();
+    let mut expected_count = 0;
+    for table in scan.features.entity_tables.iter().filter(|table| table.feature_id == feature_id) {
+        for entry in &table.entries {
+            let Some(external_id) = entry.source_entity_id() else { continue };
+            let (entity, _reservation) = ctx.format_scoped(
+                format_args!("creo:featdefs:sketch_entity#{}:{external_id}", definition.identity.id()),
+                "creo extrusion expected sketch entity ID",
+            )?;
+            let Some(matched) = profile_entity_set.get(entity.as_str()) else { continue };
+            if !generated_profile_entry_is_admissible(
+                feature_id,
+                table,
+                entry,
+                GENERATED_EXTRUSION_SIDE_KINDS,
+                &scan.surfaces.rows,
+            ) {
+                continue;
+            }
+            expected_count += 1;
+            if !expected_entity_set.contains(*matched) {
+                ctx.charge_collection_items(1, "creo extrusion expected entity ID nodes")?;
+                expected_entity_set.insert(*matched);
+            }
+        }
+    }
+    Ok(expected_count > 0
+        && expected_count == expected_entity_set.len()
+        && profile_count == expected_entity_set.len()
+        && profile_entity_set == expected_entity_set)
 }
 
 pub(in super::super) fn transfer_resolved_extrusion_breps(
@@ -148,7 +153,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         ) else {
             continue;
         };
-        if !sketch_profiles_cover_generated_extrusion_sides(scan, definition, feature_id, sketch) {
+        if !sketch_profiles_cover_generated_extrusion_sides(ctx, scan, definition, feature_id, sketch)? {
             continue;
         }
         let Some(profiles) = resolved_sketch_profiles(ctx, ir, source_carriers, &sketch_id, 1)? else {
