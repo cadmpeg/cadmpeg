@@ -19,6 +19,51 @@ fn pole_count_refuses_unrepresentable_degree_successor() {
 }
 
 #[test]
+fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).expect("linear model curve");
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles"));
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles"));
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        ).expect("linear pcurve"),
+    };
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        reverse_pcurve_geometry(ctx, &pcurve, [0.0, 1.0], &mut LaneRefusals::new(), "test pcurve")
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots"));
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        reverse_pcurve_geometry(ctx, &pcurve, [0.0, 1.0], &mut LaneRefusals::new(), "test pcurve")
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots"));
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
+    }).expect("service profile admits reverse copy").expect("valid reversed curve");
+    assert_eq!(reversed.control_points().first().copied().map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(1.0, 0.0, 0.0)));
+}
+
+#[test]
 fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
     for range in [[1e16, 1e16 + 2.0], [1e308, 1.1e308], [-1.1e308, -1e308]] {
         let [lower, upper] = range;
@@ -31,10 +76,14 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
             false,
         )
         .expect("linear model curve");
-        let reversed = reverse_nurbs_curve(&source, range).expect("finite reflected knots");
+        let reversed = crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(ctx, &source, range))
+            .expect("service profile admits reverse copy")
+            .expect("finite reflected knots");
         assert_eq!(reversed.knots().as_slice(), knots);
         assert_eq!(
-            reverse_nurbs_curve(&reversed, range).expect("double reversal"),
+            crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(ctx, &reversed, range))
+                .expect("service profile admits reverse copy")
+                .expect("double reversal"),
             source
         );
         let model = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source));
@@ -144,14 +193,15 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
 #[test]
 fn reflected_knots_include_exterior_knots_and_canonical_zero() {
     assert_eq!(
-        reverse_knots(
+        crate::test_support::with_service_context(|ctx| reverse_knots(ctx,
             &[1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0],
             [1e16, 1e16 + 2.0]
-        ),
+        )).expect("service profile admits reverse knots"),
         vec![1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0]
     );
     assert_eq!(
-        reverse_knots(&[-0.0, 1.0], [0.0, 1.0])[0].to_bits(),
+        crate::test_support::with_service_context(|ctx| reverse_knots(ctx, &[-0.0, 1.0], [0.0, 1.0]))
+            .expect("service profile admits reverse knots")[0].to_bits(),
         0.0_f64.to_bits()
     );
 }

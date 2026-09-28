@@ -1403,6 +1403,20 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Assemble admitted lanes without copying their allocations.
+    ///
+    /// # Errors
+    /// Refuses a degree or lane count that does not define a NURBS curve.
+    pub fn from_admitted_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: NurbsPoles3<FinitePoint3>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        Ok(Self { degree, knots, poles, periodic })
+    }
+
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
