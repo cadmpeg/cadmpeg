@@ -6478,32 +6478,28 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         else {
             return Ok(None);
         };
-        let Some(pattern) = (|| {
-            Some(if let Some(step) = uniform_step(&angles) {
-                PatternKind::new(PatternTransform::Circular {
-                    axis_origin,
-                    axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(
-                        (step.get() * f64::from(count - 1)).to_radians(),
-                    )?,
-                    count,
-                })
-                .ok()?
-            } else {
-                PatternKind::new(PatternTransform::CircularAngles {
-                    axis_origin,
-                    axis_dir,
-                    angles: angles
-                        .into_iter()
-                        .map(|angle| cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()))
-                        .collect::<Option<Vec<_>>>()?,
-                })
-                .ok()?
-            })
-        })() else {
-            return Ok(None);
-        };
-        pattern
+        if let Some(step) = uniform_step(&angles) {
+            let Some(angle) = cadmpeg_ir::scalar::PositiveAngle::new(
+                (step.get() * f64::from(count - 1)).to_radians(),
+            ) else { return Ok(None); };
+            let Some(pattern) = PatternKind::new(PatternTransform::Circular {
+                axis_origin,
+                axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
+                angle,
+                count,
+            }).ok() else { return Ok(None); };
+            pattern
+        } else {
+            let mut converted = collection_vec(ctx, angles.len(), "fcstd circular pattern angles")?;
+            for angle in angles {
+                let Some(angle) = cadmpeg_ir::scalar::Angle::new(angle.get().to_radians()) else { return Ok(None); };
+                converted.push(angle);
+            }
+            let Some(pattern) = PatternKind::new(PatternTransform::CircularAngles {
+                axis_origin, axis_dir, angles: converted,
+            }).ok() else { return Ok(None); };
+            pattern
+        }
     } else {
         return Ok(None);
     };
@@ -6546,30 +6542,18 @@ fn linear_pattern_axis(
     else {
         return Ok(None);
     };
-    Ok((|| {
-        if let Some(spacing) = uniform_step(&offsets) {
-            Some(
-                PatternKind::new(PatternTransform::Linear {
-                    direction,
-                    spacing: cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing)?,
-                    count,
-                    second: None,
-                })
-                .ok()?,
-            )
-        } else {
-            Some(
-                PatternKind::new(PatternTransform::LinearOffsets {
-                    direction,
-                    offsets: offsets
-                        .into_iter()
-                        .map(Length::from_assigned_real)
-                        .collect(),
-                })
-                .ok()?,
-            )
-        }
-    })())
+    if let Some(spacing) = uniform_step(&offsets) {
+        let Some(spacing) = cadmpeg_ir::scalar::PositiveLength::from_assigned_real(spacing) else { return Ok(None); };
+        Ok(PatternKind::new(PatternTransform::Linear {
+            direction, spacing, count, second: None,
+        }).ok())
+    } else {
+        let mut converted = collection_vec(ctx, offsets.len(), "fcstd linear pattern offsets")?;
+        converted.extend(offsets.into_iter().map(Length::from_assigned_real));
+        Ok(PatternKind::new(PatternTransform::LinearOffsets {
+            direction, offsets: converted,
+        }).ok())
+    }
 }
 
 fn pattern_locations(
@@ -6624,22 +6608,21 @@ fn pattern_locations(
             if !spacings.is_empty() && spacings.len() != count as usize - 1 {
                 return Ok(None);
             }
-            ctx.charge_collection_items(u64::from(count - 1), "freecad pattern intervals")?;
-            (0..count as usize - 1)
-                .map(|index| {
-                    let explicit = spacings
-                        .get(index)
-                        .copied()
-                        .filter(|value| value.get() != -1.0);
-                    if let Some(explicit) = explicit {
-                        explicit
-                    } else if pattern.len() > 1 {
-                        pattern[index % pattern.len()]
-                    } else {
-                        fallback
-                    }
-                })
-                .collect()
+            let mut intervals = collection_vec(ctx, count as usize - 1, "freecad pattern intervals")?;
+            for index in 0..count as usize - 1 {
+                let explicit = spacings
+                    .get(index)
+                    .copied()
+                    .filter(|value| value.get() != -1.0);
+                intervals.push(if let Some(explicit) = explicit {
+                    explicit
+                } else if pattern.len() > 1 {
+                    pattern[index % pattern.len()]
+                } else {
+                    fallback
+                });
+            }
+            intervals
         }
         _ => return Ok(None),
     };
