@@ -3,7 +3,6 @@
 
 use super::draft::contains_consecutive_guid_pair;
 use super::parameter_scope::parameter_scope_payload_length;
-use crate::bytes::lp_ascii_filtered;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -401,13 +400,10 @@ fn combine_operation_identity_role(
     {
         return None;
     }
-    let (property, after_property) = lp_ascii_filtered(frame, 25, 0..=2000, u8::is_ascii_graphic)?;
-    let (property_type, after_property_type) =
-        lp_ascii_filtered(frame, after_property, 0..=2000, u8::is_ascii_graphic)?;
+    let after_property = lp_ascii_literal(frame, 25, b"DcFeatureOperationIdFlag")?;
+    let after_property_type = lp_ascii_literal(frame, after_property, b"IntrinsicMetaTypeuint64")?;
     let count_at = after_property_type.checked_add(8)?;
-    if property != "DcFeatureOperationIdFlag"
-        || property_type != "IntrinsicMetaTypeuint64"
-        || View::u32_le_at(frame, count_at)? != 1
+    if View::u32_le_at(frame, count_at)? != 1
         || frame.get(count_at + 4) != Some(&1)
         || frame.get(count_at + 5..count_at + 9)? != selection_reference
         || frame.get(count_at + 9..count_at + 15)? != [0; 6]
@@ -415,4 +411,13 @@ fn combine_operation_identity_role(
         return None;
     }
     Some(CombineOperandRole::Tool)
+}
+
+fn lp_ascii_literal(bytes: &[u8], at: usize, literal: &[u8]) -> Option<usize> {
+    if View::u32_le_at(bytes, at)? != u32::try_from(literal.len()).ok()? {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(literal.len())?;
+    (bytes.get(start..end)? == literal).then_some(end)
 }
