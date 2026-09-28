@@ -1143,6 +1143,8 @@ fn projection_loss_refuses_collection_limit() {
         &mut report,
         crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
         format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
     )
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1164,6 +1166,8 @@ fn projection_loss_refuses_retained_limit() {
         &mut report,
         crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
         format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
     )
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
