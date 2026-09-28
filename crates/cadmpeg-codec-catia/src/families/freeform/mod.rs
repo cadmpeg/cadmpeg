@@ -1805,8 +1805,8 @@ fn append_resolved_consolidated_surface_curves(
         .collect::<HashMap<_, _>>();
     let complete_runs =
         crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
-            data, records,
-        )
+            admission.context(), data, records,
+        )?
         .into_iter()
         .map(|run| (run.edge.pcurves[0].pos, run))
         .collect::<HashMap<_, _>>();

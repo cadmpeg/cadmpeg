@@ -473,7 +473,10 @@ impl A8Pcurve {
 #[cfg(test)]
 fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::A)
+    crate::test_support::with_service_context(|ctx| {
+        crate::wire::records::family_pcurves_from_records(ctx, data, &records, ConsolidatedFamily::A)
+            .expect("service decode")
+    })
 }
 
 /// One knot-site value in an `a5 03 32` rolling-ball program.

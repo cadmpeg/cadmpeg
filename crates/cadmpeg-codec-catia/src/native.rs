@@ -7634,45 +7634,68 @@ fn consolidated_reference_lists(
 }
 
 fn consolidated_pcurves(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedPcurve> {
-    let mut pcurves = crate::wire::records::family_pcurves_from_records(
-        bytes,
+) -> Result<Vec<CatiaConsolidatedPcurve>, CodecError> {
+    let a = crate::wire::records::family_pcurves_from_records(
+        ctx, bytes,
         records,
         crate::wire::records::ConsolidatedFamily::A,
-    )
-    .into_iter()
-    .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
-    .chain(
-        crate::wire::records::family_pcurves_from_records(
-            bytes,
-            records,
-            crate::wire::records::ConsolidatedFamily::B,
-        )
-        .into_iter()
-        .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
-    )
-    .collect::<Vec<_>>();
+    )?;
+    let b = crate::wire::records::family_pcurves_from_records(
+        ctx, bytes, records, crate::wire::records::ConsolidatedFamily::B,
+    )?;
+    let mut pcurves = crate::resource::collect_vec(ctx,
+        a.into_iter().map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
+            .chain(b.into_iter().map(|pcurve| (pcurve, CatiaConsolidatedFamily::B))),
+        "catia_native_pcurve_ordering")?;
     pcurves.sort_by_key(|(pcurve, _)| pcurve.pos);
-    pcurves
-        .into_iter()
-        .enumerate()
-        .map(|(index, (pcurve, family))| CatiaConsolidatedPcurve {
-            id: format!("catia:consolidated:pcurve#{index}"),
+    let mut native = Vec::new();
+    for (index, (pcurve, family)) in pcurves.into_iter().enumerate() {
+        let (knots, points, first_derivatives, second_derivatives) = pcurve.native_lanes(ctx)?;
+        let value = CatiaConsolidatedPcurve {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:pcurve#", index, 0,
+                "catia_native_pcurve_id")?,
             byte_offset: pcurve.pos as u64,
             family,
             support_id: pcurve.support_id,
             degree: crate::wire::records::ConsolidatedPcurve::DEGREE,
             extrapolation_sites: pcurve.extrapolation_sites,
-            knots: pcurve.knots(),
-            points: pcurve.points(),
-            first_derivatives: pcurve.first_derivatives(),
-            second_derivatives: pcurve.second_derivatives(),
+            knots,
+            points,
+            first_derivatives,
+            second_derivatives,
             range: pcurve.range,
             tail: pcurve.tail,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut native, value, "catia_native_pcurves")?;
+    }
+    Ok(native)
+}
+
+#[cfg(test)]
+mod consolidated_pcurve_limit_tests {
+    #[test]
+    fn native_pcurve_id_and_output_refuse_limits() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_retained_limit(1, |ctx| {
+            super::consolidated_pcurves(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_pcurve_id"));
+        let limited = crate::test_support::with_collection_limit(13, |ctx| {
+            super::consolidated_pcurves(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_pcurves"));
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_pcurves(ctx, &bytes, &records)
+        }).expect("service decode");
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].points.len(), 2);
+    }
 }
 
 fn consolidated_revolutions(
@@ -8393,8 +8416,8 @@ fn consolidated_edge_runs(
         .map(|node| (node.byte_offset, node))
         .collect::<HashMap<_, _>>();
     Ok(crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
-        bytes, records,
-    )
+        ctx, bytes, records,
+    )?
     .into_iter()
     .map(|run| {
         let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
@@ -9193,7 +9216,7 @@ impl CatiaNative {
         let mut consolidated_owner_packets =
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
-        let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
+        let consolidated_pcurves = consolidated_pcurves(ctx, bytes, consolidated_records)?;
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =
             consolidated_reference_lists(bytes, consolidated_records);

@@ -522,56 +522,61 @@ struct ConsolidatedCarriers<'a> {
 #[cfg(test)]
 fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
-    consolidated_edge_blocks_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_edge_blocks_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 fn consolidated_edge_blocks_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedEdgeBlock> {
-    let pcurves = family_pcurves_from_records(data, records, ConsolidatedFamily::A)
-        .into_iter()
-        .chain(family_pcurves_from_records(
-            data,
-            records,
-            ConsolidatedFamily::B,
-        ))
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let parameters = b2_edge_parameters_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(3)
-        .filter_map(|window| {
-            let [first_record, second_record, parameter_record] = window else {
-                return None;
-            };
-            if !records_are_contiguous(window) {
-                return None;
-            }
-            if first_record.class == 0x20
+) -> Result<Vec<ConsolidatedEdgeBlock>, CodecError> {
+    let mut pcurves = BTreeMap::new();
+    for family in [ConsolidatedFamily::A, ConsolidatedFamily::B] {
+        for value in family_pcurves_from_records(ctx, data, records, family)? {
+            crate::resource::insert_btree_map(ctx, &mut pcurves, value.pos, value,
+                "catia_consolidated_edge_pcurves")?;
+        }
+    }
+    let mut parameters = BTreeMap::new();
+    for value in b2_edge_parameters_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut parameters, value.pos, value,
+            "catia_consolidated_edge_parameters")?;
+    }
+    let mut blocks = Vec::new();
+    for window in records.windows(3) {
+        let [first_record, second_record, parameter_record] = window else { continue };
+        if records_are_contiguous(window)
+            && first_record.class == 0x20
                 && second_record.class == 0x20
                 && first_record.family == second_record.family
                 && parameter_record.family == ConsolidatedFamily::B
                 && parameter_record.class == 0x23
-            {
-                let first = pcurves.get(&first_record.byte_offset())?;
-                let second = pcurves.get(&second_record.byte_offset())?;
-                let parameters = parameters.get(&parameter_record.byte_offset())?;
+        {
+            if let (Some(first), Some(second), Some(parameter)) = (
+                pcurves.get(&first_record.byte_offset()),
+                pcurves.get(&second_record.byte_offset()),
+                parameters.get(&parameter_record.byte_offset()),
+            ) {
                 let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
-                    && first.range == parameters.range;
-                co_parametric.then(|| ConsolidatedEdgeBlock {
-                    pcurves: [first.clone(), second.clone()],
-                    parameters: parameters.clone(),
-                })
-            } else {
-                None
+                    && first.range == parameter.range;
+                if co_parametric {
+                    if let (Some(first), Some(second), Some(parameter)) = (
+                        pcurves.remove(&first_record.byte_offset()),
+                        pcurves.remove(&second_record.byte_offset()),
+                        parameters.remove(&parameter_record.byte_offset()),
+                    ) {
+                        crate::resource::push(ctx, &mut blocks,
+                            ConsolidatedEdgeBlock { pcurves: [first, second], parameters: parameter },
+                            "catia_consolidated_edge_blocks")?;
+                    }
+                }
             }
-        })
-        .collect()
+        }
+    }
+    Ok(blocks)
 }
 
 /// Decode complete six-record consolidated edge runs. Records separated by any
@@ -580,31 +585,31 @@ fn consolidated_edge_blocks_from_records(
 #[cfg(test)]
 fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
-    consolidated_topology_edge_runs_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_topology_edge_runs_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn consolidated_topology_edge_runs_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedTopologyEdgeRun> {
-    let edges = consolidated_edge_blocks_from_records(data, records)
-        .into_iter()
-        .map(|edge| (edge.pcurves[0].pos, edge))
-        .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.uses[0].pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(6)
-        .filter_map(|window| {
-            let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
-                return None;
-            };
-            if !records_are_contiguous(window) {
-                return None;
-            }
-            if pcurve0.class == 0x20
+) -> Result<Vec<ConsolidatedTopologyEdgeRun>, CodecError> {
+    let mut edges = BTreeMap::new();
+    for edge in consolidated_edge_blocks_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut edges, edge.pcurves[0].pos, edge,
+            "catia_consolidated_topology_edges")?;
+    }
+    let mut use_runs = BTreeMap::new();
+    for value in consolidated_edge_use_runs_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut use_runs, value.uses[0].pos, value,
+            "catia_consolidated_topology_uses")?;
+    }
+    let mut runs = Vec::new();
+    for window in records.windows(6) {
+        let [pcurve0, pcurve1, parameters, use0, use1, node] = window else { continue };
+        if records_are_contiguous(window)
+            && pcurve0.class == 0x20
                 && pcurve1.class == 0x20
                 && pcurve0.family == pcurve1.family
                 && parameters.family == ConsolidatedFamily::B
@@ -615,17 +620,19 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
                 && use1.class == 0x06
                 && node.family == ConsolidatedFamily::B
                 && node.class == 0x5e
-            {
-                let use_run = use_runs.get(&use0.byte_offset())?;
-                Some(ConsolidatedTopologyEdgeRun {
-                    edge: edges.get(&pcurve0.byte_offset())?.clone(),
+        {
+            if let (Some(edge), Some(use_run)) = (
+                edges.remove(&pcurve0.byte_offset()),
+                use_runs.remove(&use0.byte_offset()),
+            ) {
+                crate::resource::push(ctx, &mut runs, ConsolidatedTopologyEdgeRun {
+                    edge,
                     node: use_run.node,
-                })
-            } else {
-                None
+                }, "catia_consolidated_topology_runs")?;
             }
-        })
-        .collect()
+        }
+    }
+    Ok(runs)
 }
 
 /// Decode adjacent `18,19,23,06,06,5e` analytic-circle edge runs. The
@@ -1260,7 +1267,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         planes: &planes,
         nurbs_surfaces: &surfaces,
     };
-    Ok(consolidated_edge_blocks_from_records(data, records)
+    Ok(consolidated_edge_blocks_from_records(ctx, data, records)?
         .into_iter()
         .map(|block| {
             let mut supports = std::array::from_fn(|side| {

@@ -3281,7 +3281,10 @@ pub(in crate::families) fn offset_support_carriers(
 #[cfg(test)]
 fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
-    crate::wire::records::family_pcurves_from_records(data, &records, ConsolidatedFamily::B)
+    crate::test_support::with_service_context(|ctx| {
+        crate::wire::records::family_pcurves_from_records(ctx, data, &records, ConsolidatedFamily::B)
+            .expect("service decode")
+    })
 }
 
 #[cfg(test)]
