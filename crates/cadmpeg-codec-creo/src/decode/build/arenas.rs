@@ -585,7 +585,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_definition_record",
         Exactness::ByteExact,
     )?;
-    let feature_entities = feature_entity_records(scan);
+    let feature_entities = feature_entity_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -598,7 +598,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_entity",
         Exactness::ByteExact,
     )?;
-    let feature_entity_references = feature_entity_reference_records(scan);
+    let feature_entity_references = feature_entity_reference_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -637,7 +637,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_surface_replay_association",
         Exactness::Derived,
     )?;
-    let feature_geometry_tables = feature_geometry_table_records(scan);
+    let feature_geometry_tables = feature_geometry_table_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -650,7 +650,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_geometry_table",
         Exactness::ByteExact,
     )?;
-    let feature_loop_history_entries = feature_loop_history_entry_records(scan);
+    let feature_loop_history_entries = feature_loop_history_entry_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -663,7 +663,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_loop_history_entry",
         Exactness::ByteExact,
     )?;
-    let feature_affected_ids = feature_affected_id_records(scan);
+    let feature_affected_ids = feature_affected_id_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -676,7 +676,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_affected_ids",
         Exactness::ByteExact,
     )?;
-    let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
+    let feature_replay_affected_ids = feature_replay_affected_id_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -689,7 +689,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_replay_affected_ids",
         Exactness::ByteExact,
     )?;
-    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
+    let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -702,7 +702,7 @@ pub(super) fn emit_geometry_arenas(
         "surface_merge_replay_affected_ids",
         Exactness::ByteExact,
     )?;
-    let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
+    let feature_loop_restore_directions = feature_loop_restore_direction_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -715,7 +715,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_loop_restore_direction",
         Exactness::ByteExact,
     )?;
-    let feature_revolution_extents = feature_revolution_extent_records(scan);
+    let feature_revolution_extents = feature_revolution_extent_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -728,7 +728,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_revolution_extent",
         Exactness::Derived,
     )?;
-    let feature_rows = feature_row_records(scan);
+    let feature_rows = feature_row_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -741,7 +741,7 @@ pub(super) fn emit_geometry_arenas(
         "feature_row",
         Exactness::ByteExact,
     )?;
-    let depdb_recipe_rows = depdb_recipe_row_records(scan);
+    let depdb_recipe_rows = depdb_recipe_row_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -754,7 +754,7 @@ pub(super) fn emit_geometry_arenas(
         "depdb_recipe_row",
         Exactness::ByteExact,
     )?;
-    let feature_choices = feature_choice_records(scan);
+    let feature_choices = feature_choice_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,

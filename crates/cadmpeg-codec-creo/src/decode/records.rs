@@ -22,8 +22,8 @@ use crate::feature::definitions::{FeatureRelationTable, VariableType};
 use crate::feature::schema::SchemaClass;
 
 use super::coverage::{
-    source_section, surface_family, surface_named_parameter_record, surface_prototype_family_name,
-    surface_variant,
+    source_section, source_section_ref, surface_family, surface_named_parameter_record,
+    surface_prototype_family_name, surface_variant,
 };
 use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
@@ -147,11 +147,11 @@ impl Serialize for CreoFamilyTableRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureEntityRecord {
+pub(super) struct CreoFeatureEntityRecord<'a> {
     pub(super) id: String,
     entity_id: u32,
     type_byte: u8,
-    name: String,
+    name: &'a str,
     pub(super) offset: usize,
 }
 
@@ -189,15 +189,15 @@ struct CreoFeatureEntityTableEntryRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureGeometryTableRecord {
+pub(super) struct CreoFeatureGeometryTableRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     #[serde(flatten, serialize_with = "serialize_geometry_table_kind")]
-    kind: crate::feature::rows::FeatureGeometryTableKind,
+    kind: &'a crate::feature::rows::FeatureGeometryTableKind,
     declared_count: u32,
     entity_class_id: u32,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 fn serialize_geometry_table_kind<S: serde::Serializer>(
@@ -221,17 +221,25 @@ fn serialize_geometry_table_kind<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureLoopHistoryEntryRecord {
+pub(super) struct CreoFeatureLoopHistoryEntryRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     ordinal: u32,
     loop_id: u32,
-    field_bytes: Vec<Vec<u8>>,
+    #[serde(serialize_with = "serialize_loop_history_fields")]
+    field_bytes: &'a crate::feature::rows::FeatureLoopHistoryEntry,
     #[serde(flatten, serialize_with = "serialize_loop_history_boundary")]
-    boundary: crate::feature::rows::FeatureLoopHistoryBoundary,
+    boundary: &'a crate::feature::rows::FeatureLoopHistoryBoundary,
     pub(super) offset: usize,
     end_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
+}
+
+fn serialize_loop_history_fields<S: serde::Serializer>(
+    entry: &crate::feature::rows::FeatureLoopHistoryEntry,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(entry.fields())
 }
 
 fn serialize_loop_history_boundary<S: serde::Serializer>(
@@ -257,84 +265,84 @@ fn serialize_loop_history_boundary<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureAffectedIdsRecord {
+pub(super) struct CreoFeatureAffectedIdsRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     kind: &'static str,
-    ids: Vec<u32>,
+    ids: &'a [u32],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureReplayAffectedIdsRecord {
+pub(super) struct CreoFeatureReplayAffectedIdsRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
-    geometry_ids: Vec<u32>,
-    edge_ids: Vec<u32>,
+    geometry_ids: &'a [u32],
+    edge_ids: &'a [u32],
     geometry_extent: &'static str,
     edge_extent: &'static str,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord {
+pub(super) struct CreoSurfaceMergeReplayAffectedIdsRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
-    geometry_ids: Vec<u32>,
-    edge_ids: Vec<u32>,
-    quilt_ids: Vec<u32>,
+    geometry_ids: &'a [u32],
+    edge_ids: &'a [u32],
+    quilt_ids: &'a [u32],
     geometry_extent: &'static str,
     edge_extent: &'static str,
     quilt_extent: &'static str,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureLoopRestoreDirectionRecord {
+pub(super) struct CreoFeatureLoopRestoreDirectionRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     lane: &'static str,
     value: u32,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureRevolutionExtentRecord {
+pub(super) struct CreoFeatureRevolutionExtentRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     kind: &'static str,
     angle_radians: f64,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureChoiceRecord {
+pub(super) struct CreoFeatureChoiceRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
-    label: String,
+    label: &'a str,
     type_byte: Option<u8>,
-    payload: Vec<u8>,
+    payload: &'a [u8],
     payload_offset: usize,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureRowRecord {
+pub(super) struct CreoFeatureRowRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
     header: [u8; 2],
     root_schema_class: Option<u32>,
     stream_offset: usize,
-    body: Vec<u8>,
+    body: &'a [u8],
     body_offset: usize,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
@@ -838,34 +846,48 @@ pub(super) struct CreoFeaturePlacementInstructionRecord {
     source_section: String,
 }
 
-pub(super) fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
-    scan.features
-        .entities
-        .iter()
-        .map(|entity| CreoFeatureEntityRecord {
-            id: format!("creo:allfeatur:entity#{}", entity.entity_id),
+pub(super) fn feature_entity_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureEntityRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for entity in &scan.features.entities {
+        let id = ctx.format_retained(
+            format_args!("creo:allfeatur:entity#{}", entity.entity_id),
+            "creo feature entity record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature entity records")?;
+        records.push(CreoFeatureEntityRecord {
+            id,
             entity_id: entity.entity_id,
             type_byte: entity.type_byte,
-            name: entity.name.clone(),
+            name: &entity.name,
             offset: entity.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn feature_entity_reference_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<CreoFeatureEntityReferenceRecord> {
-    scan.features
-        .entity_references
-        .iter()
-        .map(|reference| CreoFeatureEntityReferenceRecord {
-            id: format!("creo:allfeatur:entity_reference#{}", reference.offset),
+) -> Result<Vec<CreoFeatureEntityReferenceRecord>, CodecError> {
+    let mut records = Vec::new();
+    for reference in &scan.features.entity_references {
+        let id = ctx.format_retained(
+            format_args!("creo:allfeatur:entity_reference#{}", reference.offset),
+            "creo feature entity reference record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature entity reference records")?;
+        records.push(CreoFeatureEntityReferenceRecord {
+            id,
             source_entity_id: reference.source_entity_id,
             target_entity_id: reference.target_entity_id,
             target_resolved: (reference.target_entity_id as usize) < scan.features.entities.len(),
             offset: reference.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn feature_entity_table_records(
@@ -1010,112 +1032,144 @@ mod feature_entity_table_record_tests {
     }
 }
 
-pub(super) fn feature_geometry_table_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureGeometryTableRecord> {
-    scan.features
-        .geometry_tables
-        .iter()
-        .map(|table| CreoFeatureGeometryTableRecord {
-            id: format!("creo:feature:geometry_table#{}", table.offset),
+pub(super) fn feature_geometry_table_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureGeometryTableRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for table in &scan.features.geometry_tables {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:geometry_table#{}", table.offset),
+            "creo feature geometry table record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature geometry table records")?;
+        records.push(CreoFeatureGeometryTableRecord {
+            id,
             owner_feature_id: table.feature_id,
-            kind: table.kind.clone(),
+            kind: &table.kind,
             declared_count: table.count,
             entity_class_id: table.entity_class,
             offset: table.offset,
-            source_section: source_section(scan, table.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, table.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_loop_history_entry_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureLoopHistoryEntryRecord> {
-    scan.features
-        .loop_history_entries
-        .iter()
-        .map(|entry| CreoFeatureLoopHistoryEntryRecord {
-            id: format!("creo:feature:loop_history_entry#{}", entry.offset),
+pub(super) fn feature_loop_history_entry_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureLoopHistoryEntryRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for entry in &scan.features.loop_history_entries {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:loop_history_entry#{}", entry.offset),
+            "creo feature loop history record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature loop history records")?;
+        records.push(CreoFeatureLoopHistoryEntryRecord {
+            id,
             owner_feature_id: entry.feature_id,
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
-            field_bytes: entry.fields().map(<[u8]>::to_vec).collect(),
-            boundary: entry.boundary.clone(),
+            field_bytes: entry,
+            boundary: &entry.boundary,
             offset: entry.offset,
             end_offset: entry.end_offset,
-            source_section: source_section(scan, entry.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, entry.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_affected_id_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureAffectedIdsRecord> {
-    scan.features
-        .affected_ids
-        .iter()
-        .map(|record| CreoFeatureAffectedIdsRecord {
-            id: format!("creo:feature:affected_ids#{}", record.offset),
+pub(super) fn feature_affected_id_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureAffectedIdsRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.affected_ids {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:affected_ids#{}", record.offset),
+            "creo feature affected ids record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature affected ids records")?;
+        records.push(CreoFeatureAffectedIdsRecord {
+            id,
             owner_feature_id: record.feature_id,
             kind: affected_kind(record.kind),
-            ids: record.ids.clone(),
+            ids: &record.ids,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_replay_affected_id_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureReplayAffectedIdsRecord> {
-    scan.features
-        .replay_affected_ids
-        .iter()
-        .map(|record| CreoFeatureReplayAffectedIdsRecord {
-            id: format!("creo:feature:replay_affected_ids#{}", record.offset),
+pub(super) fn feature_replay_affected_id_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureReplayAffectedIdsRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.replay_affected_ids {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:replay_affected_ids#{}", record.offset),
+            "creo feature replay affected ids record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature replay affected ids records")?;
+        records.push(CreoFeatureReplayAffectedIdsRecord {
+            id,
             owner_feature_id: record.feature_id,
-            geometry_ids: record.geometry_ids.clone(),
-            edge_ids: record.edge_ids.clone(),
+            geometry_ids: &record.geometry_ids,
+            edge_ids: &record.edge_ids,
             geometry_extent: extent_source(record.geometry_extent),
             edge_extent: extent_source(record.edge_extent),
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn surface_merge_replay_affected_id_records(
-    scan: &ContainerScan,
-) -> Vec<CreoSurfaceMergeReplayAffectedIdsRecord> {
-    scan.features
-        .surface_merge_replay_affected_ids
-        .iter()
-        .map(|record| CreoSurfaceMergeReplayAffectedIdsRecord {
-            id: format!(
-                "creo:feature:surface_merge_replay_affected_ids#{}",
-                record.offset
-            ),
+pub(super) fn surface_merge_replay_affected_id_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoSurfaceMergeReplayAffectedIdsRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.surface_merge_replay_affected_ids {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:surface_merge_replay_affected_ids#{}", record.offset),
+            "creo surface merge replay affected ids record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo surface merge replay affected ids records")?;
+        records.push(CreoSurfaceMergeReplayAffectedIdsRecord {
+            id,
             owner_feature_id: record.feature_id,
-            geometry_ids: record.geometry_ids.clone(),
-            edge_ids: record.edge_ids.clone(),
-            quilt_ids: record.quilt_ids.clone(),
+            geometry_ids: &record.geometry_ids,
+            edge_ids: &record.edge_ids,
+            quilt_ids: &record.quilt_ids,
             geometry_extent: extent_source(record.geometry_extent),
             edge_extent: extent_source(record.edge_extent),
             quilt_extent: extent_source(record.quilt_extent),
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_loop_restore_direction_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureLoopRestoreDirectionRecord> {
-    scan.features
-        .loop_restore_directions
-        .iter()
-        .map(|record| CreoFeatureLoopRestoreDirectionRecord {
-            id: format!("creo:feature:loop_restore_direction#{}", record.offset),
+pub(super) fn feature_loop_restore_direction_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureLoopRestoreDirectionRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.loop_restore_directions {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:loop_restore_direction#{}", record.offset),
+            "creo feature loop restore direction record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature loop restore direction records")?;
+        records.push(CreoFeatureLoopRestoreDirectionRecord {
+            id,
             owner_feature_id: record.feature_id,
             lane: match record.lane {
                 crate::feature::rows::LoopRestoreDirectionLane::Primary => "primary",
@@ -1123,79 +1177,254 @@ pub(super) fn feature_loop_restore_direction_records(
             },
             value: record.value,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_revolution_extent_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureRevolutionExtentRecord> {
-    scan.features
-        .revolution_extents
-        .iter()
-        .map(|record| CreoFeatureRevolutionExtentRecord {
-            id: format!("creo:feature:revolution_extent#{}", record.offset),
+pub(super) fn feature_revolution_extent_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureRevolutionExtentRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.revolution_extents {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:revolution_extent#{}", record.offset),
+            "creo feature revolution extent record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature revolution extent records")?;
+        records.push(CreoFeatureRevolutionExtentRecord {
+            id,
             owner_feature_id: record.feature_id,
             kind: "full_turn",
             angle_radians: std::f64::consts::TAU,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_choice_records(scan: &ContainerScan) -> Vec<CreoFeatureChoiceRecord> {
-    scan.features
-        .choices
-        .iter()
-        .map(|choice| CreoFeatureChoiceRecord {
-            id: format!("creo:feature:choice#{}", choice.offset),
+pub(super) fn feature_choice_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureChoiceRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for choice in &scan.features.choices {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:choice#{}", choice.offset),
+            "creo feature choice record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature choice records")?;
+        records.push(CreoFeatureChoiceRecord {
+            id,
             owner_feature_id: choice.feature_id,
-            label: choice.label.clone(),
+            label: &choice.label,
             type_byte: choice.type_byte,
-            payload: choice.payload.clone(),
+            payload: &choice.payload,
             payload_offset: choice.payload_offset,
             offset: choice.offset,
-            source_section: source_section(scan, choice.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, choice.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRecord> {
-    scan.features
-        .rows
-        .iter()
-        .map(|row| CreoFeatureRowRecord {
-            id: format!("creo:allfeatur:feature_row#{}", row.offset),
+pub(super) fn feature_row_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureRowRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for row in &scan.features.rows {
+        let id = ctx.format_retained(
+            format_args!("creo:allfeatur:feature_row#{}", row.offset),
+            "creo feature row record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo feature row records")?;
+        records.push(CreoFeatureRowRecord {
+            id,
             owner_feature_id: row.feature_id,
             header: row.body.header(),
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.to_vec(),
+            body: &row.body,
             body_offset: row.body_offset,
             offset: row.offset,
-            source_section: source_section(scan, row.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRecord> {
-    scan.features
-        .depdb_recipe_rows
-        .iter()
-        .map(|row| CreoFeatureRowRecord {
-            id: format!("creo:depdb:recipe_row#{}", row.offset),
+pub(super) fn depdb_recipe_row_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureRowRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for row in &scan.features.depdb_recipe_rows {
+        let id = ctx.format_retained(
+            format_args!("creo:depdb:recipe_row#{}", row.offset),
+            "creo depdb recipe row record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo depdb recipe row records")?;
+        records.push(CreoFeatureRowRecord {
+            id,
             owner_feature_id: row.feature_id,
             header: [0; 2],
             root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
-            body: row.body.to_vec(),
+            body: &row.body,
             body_offset: row.body_offset,
             offset: row.offset,
-            source_section: source_section(scan, row.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod feature_projection_limit_tests {
+    use super::{
+        depdb_recipe_row_records, feature_affected_id_records, feature_choice_records,
+        feature_entity_records, feature_entity_reference_records, feature_geometry_table_records,
+        feature_loop_history_entry_records, feature_loop_restore_direction_records,
+        feature_replay_affected_id_records, feature_revolution_extent_records, feature_row_records,
+        surface_merge_replay_affected_id_records,
+    };
+    use crate::feature::entity::{FeatureEntity, FeatureEntityReference};
+    use crate::feature::rows::{
+        dummy_loop_history_entry, AffectedIdKind, FeatureAffectedIds, FeatureChoice,
+        FeatureGeometryTable, FeatureGeometryTableKind, FeatureLoopRestoreDirection,
+        FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow, FeatureRowBody,
+        FeatureSurfaceMergeAffectedIds, LoopRestoreDirectionLane, ReplayExtentSource,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.features.entities.push(FeatureEntity {
+            entity_id: 4,
+            type_byte: 1,
+            name: "datum".into(),
+            offset: 3,
+        });
+        scan.features.entity_references.push(FeatureEntityReference {
+            source_entity_id: Some(4),
+            target_entity_id: 4,
+            offset: 5,
+        });
+        scan.features.geometry_tables.push(FeatureGeometryTable {
+            feature_id: 7,
+            kind: FeatureGeometryTableKind::DatumIds(Some(vec![4, 5])),
+            count: 2,
+            entity_class: 200,
+            offset: 13,
+        });
+        scan.features.loop_history_entries.push(dummy_loop_history_entry());
+        scan.features.affected_ids.push(FeatureAffectedIds {
+            feature_id: 7,
+            kind: AffectedIdKind::Geometry,
+            ids: vec![4, 5],
+            offset: 29,
+        });
+        scan.features.replay_affected_ids.push(FeatureReplayAffectedIds {
+            feature_id: 7,
+            geometry_ids: vec![4],
+            edge_ids: vec![5],
+            geometry_extent: ReplayExtentSource::Explicit,
+            edge_extent: ReplayExtentSource::Inherited,
+            offset: 31,
+        });
+        scan.features.surface_merge_replay_affected_ids.push(FeatureSurfaceMergeAffectedIds {
+            feature_id: 7,
+            geometry_ids: vec![4],
+            edge_ids: vec![5],
+            quilt_ids: vec![6],
+            geometry_extent: ReplayExtentSource::Explicit,
+            edge_extent: ReplayExtentSource::Inherited,
+            quilt_extent: ReplayExtentSource::Explicit,
+            offset: 33,
+        });
+        scan.features.loop_restore_directions.push(FeatureLoopRestoreDirection {
+            feature_id: 7,
+            lane: LoopRestoreDirectionLane::Primary,
+            value: 1,
+            offset: 35,
+        });
+        scan.features.revolution_extents.push(FeatureRevolutionExtent {
+            feature_id: 7,
+            offset: 37,
+        });
+        scan.features.choices.push(FeatureChoice {
+            feature_id: 7,
+            label: "depth_choice".into(),
+            type_byte: Some(1),
+            payload: vec![0xe3],
+            payload_offset: 41,
+            offset: 39,
+        });
+        let row = FeatureRow {
+            feature_id: 7,
+            root_schema_class: None,
+            stream_offset: 0,
+            body: FeatureRowBody::try_from(vec![0, 1, 2]).expect("complete test header"),
+            body_offset: 44,
+            offset: 42,
+        };
+        scan.features.rows.push(row.clone());
+        scan.features.depdb_recipe_rows.push(row);
+        scan
+    }
+
+    macro_rules! collection_limit_test {
+        ($name:ident, $projection:ident, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let scan = scan();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = 0;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                let error = match $projection(&ctx, &scan) {
+                    Err(error) => error,
+                    Ok(_) => panic!("one native record exceeds the collection limit"),
+                };
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                    if resource.dimension == ResourceDimension::CollectionItems
+                        && resource.operation == $operation), "{error:?}");
+            }
+        };
+    }
+
+    collection_limit_test!(feature_entity_record_refuses_limit, feature_entity_records, "creo feature entity records");
+    collection_limit_test!(feature_entity_reference_record_refuses_limit, feature_entity_reference_records, "creo feature entity reference records");
+    collection_limit_test!(feature_geometry_table_record_refuses_limit, feature_geometry_table_records, "creo feature geometry table records");
+    collection_limit_test!(feature_loop_history_record_refuses_limit, feature_loop_history_entry_records, "creo feature loop history records");
+    collection_limit_test!(feature_affected_ids_record_refuses_limit, feature_affected_id_records, "creo feature affected ids records");
+    collection_limit_test!(feature_replay_affected_ids_record_refuses_limit, feature_replay_affected_id_records, "creo feature replay affected ids records");
+    collection_limit_test!(surface_merge_replay_affected_ids_record_refuses_limit, surface_merge_replay_affected_id_records, "creo surface merge replay affected ids records");
+    collection_limit_test!(feature_loop_restore_direction_record_refuses_limit, feature_loop_restore_direction_records, "creo feature loop restore direction records");
+    collection_limit_test!(feature_revolution_extent_record_refuses_limit, feature_revolution_extent_records, "creo feature revolution extent records");
+    collection_limit_test!(feature_choice_record_refuses_limit, feature_choice_records, "creo feature choice records");
+    collection_limit_test!(feature_row_record_refuses_limit, feature_row_records, "creo feature row records");
+    collection_limit_test!(depdb_recipe_row_record_refuses_limit, depdb_recipe_row_records, "creo depdb recipe row records");
+
+    #[test]
+    fn borrowed_feature_projection_preserves_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let geometry = feature_geometry_table_records(&ctx, &scan).expect("record is admitted");
+        let history = feature_loop_history_entry_records(&ctx, &scan).expect("record is admitted");
+        let geometry = serde_json::to_value(&geometry[0]).expect("record serializes");
+        let history = serde_json::to_value(&history[0]).expect("record serializes");
+        assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
+        assert_eq!(history["field_bytes"], serde_json::json!([[1], [2], [3], [4]]));
+    }
 }
 
 pub(super) fn feature_choice_field_records(
@@ -3455,10 +3684,10 @@ mod tests {
                 .expect("root input is admitted");
         scan.features.rows = crate::feature::rows::rows(&ctx, &payload, &BTreeSet::from([1, 2]), 0)
             .expect("feature rows are admitted");
-        let records = feature_row_records(&scan);
+        let records = feature_row_records(&ctx, &scan).expect("feature row records are admitted");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].owner_feature_id, 2);
         assert_eq!(records[0].header, [0, 0]);
-        assert_eq!(records[0].body, payload[3..]);
+        assert_eq!(records[0].body, &payload[3..]);
     }
 }
