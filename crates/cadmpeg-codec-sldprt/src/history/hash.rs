@@ -74,7 +74,7 @@ pub(crate) fn history_hash(histories: &[FeatureHistory]) -> Result<String, Codec
 pub(crate) fn configuration_hash(
     configurations: &[DesignConfiguration],
 ) -> Result<String, CodecError> {
-    let mut configurations = configurations.to_vec();
+    let mut configurations = configurations.iter().collect::<Vec<_>>();
     configurations.sort_by(|left, right| left.id.cmp(&right.id));
     hash_records(&configurations)
 }
@@ -109,7 +109,7 @@ pub(crate) fn native_configuration_hash(
 ) -> Result<String, CodecError> {
     let mut configurations = histories
         .iter()
-        .flat_map(|history| history.configurations.clone())
+        .flat_map(|history| &history.configurations)
         .collect::<Vec<_>>();
     configurations.sort_by(|left, right| left.id.cmp(&right.id));
     hash_records(&configurations)
@@ -117,7 +117,7 @@ pub(crate) fn native_configuration_hash(
 
 /// Stable hash of neutral feature parameters.
 pub(crate) fn parameter_hash(parameters: &[DesignParameter]) -> Result<String, CodecError> {
-    let mut parameters = parameters.to_vec();
+    let mut parameters = parameters.iter().collect::<Vec<_>>();
     parameters.sort_by(|left, right| left.id.cmp(&right.id));
     hash_records(&parameters)
 }
@@ -129,14 +129,14 @@ pub(crate) fn native_parameter_hash(histories: &[FeatureHistory]) -> Result<Stri
         .flat_map(|history| &history.features)
         .map(|feature| {
             (
-                feature.id.clone(),
-                feature.parameters.clone(),
-                feature.dimension_properties.clone(),
+                &feature.id,
+                &feature.parameters,
+                &feature.dimension_properties,
                 feature
                     .content
                     .iter()
                     .filter_map(|item| match item {
-                        FeatureContent::Dimension(name) => Some(name.clone()),
+                        FeatureContent::Dimension(name) => Some(name),
                         _ => None,
                     })
                     .collect::<Vec<_>>(),
