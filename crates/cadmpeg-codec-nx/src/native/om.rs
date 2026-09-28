@@ -5160,29 +5160,49 @@ fn rmfastload_target_object_id(
 
 /// Resolve complete composite column-index tables atomically by section.
 pub(super) fn data_block_column_index_tables(
+    ctx: &DecodeContext<'_>,
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
-) -> Vec<DataBlockColumnIndexTable> {
+) -> Result<Vec<DataBlockColumnIndexTable>, CodecError> {
+    let index_count = linked_rows.len().checked_add(target_rows.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX column index table lookup size", 0, 1))?;
+    let node_bytes = std::mem::size_of::<(u32, Vec<&DataBlockLinkedIndexRow>)>()
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<&DataBlockLinkedIndexRow>() * 4))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX column index table lookup size", 0, 1))?;
+    let lookup_bytes = index_count.checked_mul(node_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX column index table lookup size", 0, 1))?;
+    let _lookup_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(lookup_bytes),
+        "NX column index table lookup",
+    )?;
     let mut linked_by_section = BTreeMap::<u32, Vec<&DataBlockLinkedIndexRow>>::new();
     for row in linked_rows {
-        linked_by_section
-            .entry(row.section_ordinal)
-            .or_default()
-            .push(row);
+        if !linked_by_section.contains_key(&row.section_ordinal) {
+            ctx.charge_collection_items(1, "NX linked row section index")?;
+        }
+        let rows = linked_by_section.entry(row.section_ordinal).or_default();
+        ctx.charge_collection_items(1, "NX linked row section members")?;
+        rows.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX linked row section members", 0, 1))?;
+        rows.push(row);
     }
     let mut targets_by_section = BTreeMap::<u32, Vec<&DataBlockTargetIndexRow>>::new();
     for row in target_rows {
-        targets_by_section
-            .entry(row.section_ordinal)
-            .or_default()
-            .push(row);
+        if !targets_by_section.contains_key(&row.section_ordinal) {
+            ctx.charge_collection_items(1, "NX target row section index")?;
+        }
+        let rows = targets_by_section.entry(row.section_ordinal).or_default();
+        ctx.charge_collection_items(1, "NX target row section members")?;
+        rows.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX target row section members", 0, 1))?;
+        rows.push(row);
     }
-    linked_by_section
-        .into_iter()
-        .filter_map(|(section_ordinal, linked)| {
-            let targets = targets_by_section.remove(&section_ordinal)?;
-            let (opening, suffix) = linked.split_first()?;
-            let (last_target, target_prefix) = targets.split_last()?;
+    let mut output = Vec::new();
+    for (section_ordinal, linked) in linked_by_section {
+            let Some(targets) = targets_by_section.remove(&section_ordinal) else { continue; };
+            let Some((opening, suffix)) = linked.split_first() else { continue; };
+            let Some((last_target, target_prefix)) = targets.split_last() else { continue; };
             if opening.frame.mode() != crate::om::discriminators::IndexRowMode::Form07
                 || suffix.is_empty()
                 || suffix
@@ -5193,8 +5213,11 @@ pub(super) fn data_block_column_index_tables(
                     .iter()
                     .any(|row| row.frame.mode() != crate::om::discriminators::IndexRowMode::Form07)
             {
-                return None;
+                continue;
             }
+            let order_count = targets.len().checked_add(suffix.len()).and_then(|count| count.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX column index table order", 0, 1))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(order_count), "check NX column index table order")?;
             let ordered = std::iter::once((
                 opening.frame.target_index().atom.value(),
                 opening.frame.offset(),
@@ -5209,10 +5232,16 @@ pub(super) fn data_block_column_index_tables(
                     .iter()
                     .map(|row| (row.frame.target_index().atom.value(), row.frame.offset())),
             )
-            .collect::<Vec<_>>();
-            if ordered
-                .windows(2)
-                .any(|pair| pair[0].0.checked_sub(1) != Some(pair[1].0) || pair[0].1 >= pair[1].1)
+            ;
+            let mut previous: Option<(u32, u64)> = None;
+            let valid_order = ordered.into_iter().all(|current| {
+                let valid = previous.is_none_or(|previous| {
+                    previous.0.checked_sub(1) == Some(current.0) && previous.1 < current.1
+                });
+                previous = Some(current);
+                valid
+            });
+            if !valid_order
                 || linked
                     .iter()
                     .any(|row| row.source_entry != opening.source_entry)
@@ -5220,23 +5249,41 @@ pub(super) fn data_block_column_index_tables(
                     .iter()
                     .any(|row| row.source_entry != opening.source_entry)
             {
-                return None;
+                continue;
             }
-            Some(DataBlockColumnIndexTable {
-                id: format!("nx:om-data-block-column-index-tables:table#{section_ordinal}"),
+            let mut target_ids = Vec::new();
+            for row in &targets {
+                ctx.charge_collection_items(1, "NX column index target rows")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()), "retain NX column index target rows")?;
+                target_ids.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX column index target rows", 0, 1))?;
+                target_ids.push(copy_om_retained_text(ctx, &row.id, "NX column index target row id")?);
+            }
+            let mut suffix_ids = Vec::new();
+            for row in suffix {
+                ctx.charge_collection_items(1, "NX column index linked rows")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()), "retain NX column index linked rows")?;
+                suffix_ids.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX column index linked rows", 0, 1))?;
+                suffix_ids.push(copy_om_retained_text(ctx, &row.id, "NX column index linked row id")?);
+            }
+            let Ok(rows) = ColumnIndexRows::new(
+                opening.frame.target_index().atom.value(), target_ids, suffix_ids,
+            ) else { continue; };
+            ctx.charge_collection_items(1, "NX data block column index tables")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockColumnIndexTable>()), "retain NX data block column index table")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX data block column index table", 0, 1))?;
+            output.push(DataBlockColumnIndexTable {
+                id: retained_om_number_id(ctx, "nx:om-data-block-column-index-tables:table#", u64::from(section_ordinal), "NX column index table id")?,
                 section_ordinal,
-                opening_linked_row: opening.id.clone(),
-                rows: ColumnIndexRows::new(
-                    opening.frame.target_index().atom.value(),
-                    targets.iter().map(|row| row.id.clone()).collect(),
-                    suffix.iter().map(|row| row.id.clone()).collect(),
-                )
-                .ok()?,
-                source_entry: opening.source_entry.clone(),
+                opening_linked_row: copy_om_retained_text(ctx, &opening.id, "NX column index opening row id")?,
+                rows,
+                source_entry: copy_om_retained_text(ctx, &opening.source_entry, "NX column index source entry")?,
                 source_offset: opening.frame.offset(),
-            })
-        })
-        .collect()
+            });
+    }
+    Ok(output)
 }
 
 /// Decode one product/version header from each indexed NX OM store.

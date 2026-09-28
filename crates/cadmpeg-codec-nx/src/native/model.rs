@@ -1346,9 +1346,10 @@ impl NativeModel {
             &rmfastload_object_ids,
         )?;
         let data_block_column_index_tables = data_block_column_index_tables(
+            ctx,
             &data_block_linked_index_rows,
             &data_block_target_index_rows,
-        );
+        )?;
         let feature_datum_csys_column_row_uses = feature_datum_csys_column_row_uses(
             &feature_datum_csys_constructions,
             &data_block_index_rows,

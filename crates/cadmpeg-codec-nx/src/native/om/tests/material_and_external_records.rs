@@ -1358,7 +1358,10 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         ),
     ];
 
-    let tables = data_block_column_index_tables(&linked_rows, &target_rows);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let tables = data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
@@ -1381,7 +1384,7 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         150,
     );
-    assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
+    assert!(data_block_column_index_tables(&ctx, &linked_rows, &gap).unwrap().is_empty());
     let mut incomplete_mode = target_rows.clone();
     incomplete_mode[2] = target(
         "target-60",
@@ -1389,7 +1392,86 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         crate::om::discriminators::IndexRowMode::Form07,
         175,
     );
-    assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
+    assert!(data_block_column_index_tables(&ctx, &linked_rows, &incomplete_mode).unwrap().is_empty());
+}
+
+fn column_index_table_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    use crate::native::om::column_row::{DataBlockLinkedIndexRow, DataBlockTargetIndexRow};
+    use crate::om::column_row::{LinkedRow, TargetRow};
+    use crate::om::compact::{CompactIndexAtom, CompactIndexTarget};
+    use crate::om::discriminators::{IndexRowMode, LinkedIndexDiscriminator, LinkedIndexFlag};
+
+    let atom = |value: u32| CompactIndexAtom::from_wire(value, &[value as u8]).unwrap();
+    let target = |value| CompactIndexTarget {
+        atom: atom(value),
+        target: format!("block#{value}"),
+    };
+    let linked = |id: &str, value, mode, offset| DataBlockLinkedIndexRow {
+        id: id.into(),
+        section_ordinal: 0,
+        ordinal: 0,
+        frame: LinkedRow::<String, u64>::new(
+            atom(20),
+            LinkedIndexDiscriminator::Form16,
+            target(value),
+            [5, 6, 7].map(target),
+            LinkedIndexFlag::Form03,
+            mode,
+            offset,
+        )
+        .unwrap(),
+        source_entry: "entry".into(),
+        opening_data_block: "opening".into(),
+        opening_block_offset: 0,
+    };
+    let target_row = |value, mode, offset| DataBlockTargetIndexRow {
+        id: "target".into(),
+        section_ordinal: 0,
+        ordinal: 0,
+        frame: TargetRow::<String, u64>::new(target(value), [5, 6, 7].map(target), mode, offset)
+            .unwrap(),
+        source_entry: "entry".into(),
+        opening_data_block: "opening".into(),
+        opening_block_offset: 0,
+    };
+    let linked_rows = [
+        linked("opening", 63, IndexRowMode::Form07, 100),
+        linked("linked", 61, IndexRowMode::Form04, 150),
+    ];
+    let target_rows = [target_row(62, IndexRowMode::Form04, 125)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::data_block_column_index_tables(&ctx, &linked_rows, &target_rows).unwrap_err()
+}
+
+#[test]
+fn column_index_table_route_refuses_collection_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn column_index_table_route_refuses_scoped_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn column_index_table_route_refuses_retained_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn column_index_table_route_refuses_work_limit() {
+    let error = column_index_table_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]
