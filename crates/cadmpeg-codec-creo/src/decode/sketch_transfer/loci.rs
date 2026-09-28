@@ -38,7 +38,7 @@ pub(super) fn section_point_locus(
 ) -> Option<SketchLocus> {
     let segments = definition.segments.as_ref()?;
     let unique_entities = |external_id| segments.rows.get(external_id).is_some();
-    let mut candidates = segments
+    let candidates = segments
         .rows
         .ordinary()
         .filter(|segment| unique_entities(segment.external_id))
@@ -72,8 +72,7 @@ pub(super) fn section_point_locus(
             };
             Some((segment.offset, locus))
         })
-        .collect::<Vec<_>>();
-    candidates.extend(
+        .chain(
         segments
             .rows
             .ordinary()
@@ -93,8 +92,8 @@ pub(super) fn section_point_locus(
                     )
                 })
             }),
-    );
-    candidates.extend(
+        )
+        .chain(
         segments
             .rows
             .circles()
@@ -109,8 +108,8 @@ pub(super) fn section_point_locus(
                     )
                 })
             }),
-    );
-    candidates.extend(
+        )
+        .chain(
         segments
             .rows
             .points()
@@ -125,8 +124,8 @@ pub(super) fn section_point_locus(
                     )
                 })
             }),
-    );
-    candidates.extend(
+        )
+        .chain(
         segments
             .rows
             .centered_lines()
@@ -145,8 +144,8 @@ pub(super) fn section_point_locus(
                 })
             })
             .flatten(),
-    );
-    candidates.extend(
+        )
+        .chain(
         segments
             .rows
             .reference_lines()
@@ -165,8 +164,8 @@ pub(super) fn section_point_locus(
                 })
             })
             .flatten(),
-    );
-    candidates.extend(
+        )
+        .chain(
         segments
             .rows
             .bounded_curves()
@@ -185,11 +184,8 @@ pub(super) fn section_point_locus(
                 })
             })
             .flatten(),
-    );
-    let [(_, locus)] = candidates.as_slice() else {
-        return None;
-    };
-    Some(locus.clone())
+        );
+    crate::decode::uniqueness::exactly_one(candidates).map(|(_, locus)| locus)
 }
 
 pub(in super::super) fn unique_circle_segment(
