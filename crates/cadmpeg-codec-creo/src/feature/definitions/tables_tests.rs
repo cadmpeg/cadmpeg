@@ -5,15 +5,15 @@ use crate::feature::definitions::decode_variable_scalar;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
-use crate::feature::definitions::dimension_table;
+use crate::feature::definitions::dimension_table as parse_dimension_table;
 use crate::feature::definitions::entity_intersection;
 use crate::feature::definitions::equation_table;
 use crate::feature::definitions::feature_relation_triples;
 use crate::feature::definitions::feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
 use crate::feature::definitions::order_table as parse_order_table;
-use crate::feature::definitions::positional_dimension;
-use crate::feature::definitions::positional_dimension_table;
+use crate::feature::definitions::positional_dimension as parse_positional_dimension;
+use crate::feature::definitions::positional_dimension_table as parse_positional_dimension_table;
 use crate::feature::definitions::positional_feature_skamps;
 use crate::feature::definitions::positional_order_table as parse_positional_order_table;
 use crate::feature::definitions::positional_relation_table;
@@ -23,7 +23,7 @@ use crate::feature::definitions::positional_trim_entity_table as parse_positiona
 use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
 use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
 use crate::feature::definitions::relation_table;
-use crate::feature::definitions::self_described_positional_dimension_table;
+use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
 use crate::feature::definitions::test_support::with_points;
 use crate::feature::definitions::trim_buckets as parse_trim_buckets;
 use crate::feature::definitions::trim_table_header;
@@ -50,6 +50,212 @@ use crate::feature::definitions::VariableType;
 use crate::psb;
 use crate::scalar;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
+    \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
+    \xe0\x02aux_value\0\x18\xe0\x01ext_id\0\x02\
+    dim_ref\0\xf1\xf8\x02\xf7\x60\xfb\xe2\
+    \xe0\x01item_id\0\x0d\xe0\x01sense\0\x00\
+    \xe0\x01point\0\xf8\x02\x03\xe4\
+    \xf1\xf7\x60\xe2\x02\x02\x14\xe4\xf3\xf7\x58\xe2";
+
+fn with_dimension_limits<T>(
+    payload: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("dimension input fits root policy");
+    run(&ctx)
+}
+
+fn named_dimension_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
+    with_dimension_limits(
+        NAMED_DIMENSION_LIMIT_INPUT,
+        collection_limit,
+        retained_limit,
+        |ctx| {
+            parse_dimension_table(
+                ctx,
+                NAMED_DIMENSION_LIMIT_INPUT,
+                0,
+                NAMED_DIMENSION_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+            )
+        },
+    )
+}
+
+macro_rules! named_dimension_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(named_dimension_with_limits($limit, u64::MAX),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == $operation));
+            let table = named_dimension_with_limits(3, 2)
+                .expect("dimension admitted").expect("dimension present");
+            assert_eq!(table.rows[0].references.as_ref().expect("references").rows.len(), 2);
+        }
+    };
+}
+
+named_dimension_collection_limit_test!(dimension_reference_prototype_refuses_before_row_append, 0, "creo dimension reference rows");
+named_dimension_collection_limit_test!(dimension_reference_replay_refuses_before_row_append, 1, "creo dimension reference rows");
+named_dimension_collection_limit_test!(named_dimension_row_refuses_before_append, 2, "creo dimension rows");
+
+#[test]
+fn named_dimension_value_body_refuses_before_copy() {
+    assert!(matches!(named_dimension_with_limits(3, 0), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension value body"));
+    assert_eq!(named_dimension_with_limits(3, 2)
+        .expect("dimension admitted").expect("dimension present").rows.len(), 1);
+}
+
+#[test]
+fn named_dimension_auxiliary_body_refuses_before_copy() {
+    assert!(matches!(named_dimension_with_limits(3, 1), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension auxiliary body"));
+    assert_eq!(named_dimension_with_limits(3, 2)
+        .expect("dimension admitted").expect("dimension present").rows.len(), 1);
+}
+
+const POSITIONAL_DIMENSION_LIMIT_INPUT: &[u8] = &[1, 0x00, 0x04, 0xa6, 0, 0x18, 44];
+
+#[test]
+fn positional_dimension_unresolved_token_refuses_before_copy() {
+    let run = |limit| with_dimension_limits(
+        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, limit, |ctx| {
+            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
+        });
+    assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension unresolved token"));
+    assert_eq!(run(7).expect("dimension admitted").expect("row present")
+        .value.unresolved_token(), Some(&[0x00, 0x04, 0xa6][..]));
+}
+
+const POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT: &[u8] = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+    \x02\xe4\x00\x18\x2b\xf3\xf7\x58\xe2\x02\xe4\x00\x18\x2c";
+
+fn positional_dimension_table_with_limit(
+    collection_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
+    with_dimension_limits(
+        POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
+        collection_limit,
+        u64::MAX,
+        |ctx| {
+            parse_positional_dimension_table(
+                ctx,
+                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
+                0,
+                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT.len(),
+                88,
+                &scalar::ScalarCache::default(),
+            )
+        },
+    )
+}
+
+#[test]
+fn positional_dimension_rows_refuse_before_each_append() {
+    for limit in [0, 1] {
+        assert!(matches!(positional_dimension_table_with_limit(limit),
+            Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo dimension rows"));
+    }
+    let table = positional_dimension_table_with_limit(2)
+        .expect("dimension table admitted").expect("table present");
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0].external_id, 43);
+    assert_eq!(table.rows[1].external_id, 44);
+}
+
+#[test]
+fn positional_dimension_value_body_refuses_before_copy() {
+    assert!(matches!(with_dimension_limits(
+        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 2, |ctx| {
+            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
+        }), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension value body"));
+}
+
+#[test]
+fn positional_dimension_auxiliary_body_refuses_before_copy() {
+    assert!(matches!(with_dimension_limits(
+        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 6, |ctx| {
+            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
+        }), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension auxiliary body"));
+}
+
+fn dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_dimension_table(ctx, payload, start, end, cache)
+    })
+    .expect("dimension table admitted")
+}
+
+fn positional_dimension(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimension> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_dimension(ctx, payload, start, end, cache)
+    })
+    .expect("positional dimension admitted")
+}
+
+fn positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_dimension_table(ctx, payload, start, end, table_class, cache)
+    })
+    .expect("positional dimension table admitted")
+}
+
+fn self_described_positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_self_described_positional_dimension_table(ctx, payload, start, end, cache)
+    })
+    .expect("self-described dimension table admitted")
+}
 
 fn with_trim_limits<T>(
     collection_limit: u64,

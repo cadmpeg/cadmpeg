@@ -923,14 +923,20 @@ pub(crate) enum DimensionValue {
 }
 
 impl DimensionValue {
-    fn decoded(value: Option<f64>, body: &[u8]) -> Self {
-        match value {
+    fn decoded(
+        ctx: &DecodeContext<'_>,
+        value: Option<f64>,
+        body: &[u8],
+    ) -> Result<Self, CodecError> {
+        Ok(match value {
             Some(value) => Self::Resolved(value),
             None => match body {
-                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(body.to_vec()),
+                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(
+                    ctx.copy_retained(body, "creo dimension unresolved token")?,
+                ),
                 _ => Self::Undefined,
             },
-        }
+        })
     }
 
     pub(crate) fn resolved(&self) -> Option<f64> {
@@ -4341,11 +4347,14 @@ fn named_dimension_reference(
 }
 
 fn dimension_reference_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureDimensionReferenceTable> {
-    let table = find_bytes(payload, b"dim_ref\0", start, end)?;
+) -> Result<Option<FeatureDimensionReferenceTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"dim_ref\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"dim_ref\0".len();
     while payload
         .get(cursor)
@@ -4353,13 +4362,17 @@ fn dimension_reference_table(
     {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let mut reference_bytes = None;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
-        let (value, next) = psb::reference_id(payload, reference_start).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, reference_start) else {
+            return Ok(None);
+        };
         reference_bytes = payload.get(reference_start..next);
         cursor = next;
         Some(value)
@@ -4369,39 +4382,40 @@ fn dimension_reference_table(
     if payload.get(cursor..cursor + 2) == Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
         cursor += 2;
     } else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows: Vec::new(),
             offset: table,
-        });
+        }));
     }
     if declared_count == 0 {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows: Vec::new(),
             offset: table,
-        });
+        }));
     }
 
     let mut rows = Vec::new();
     let Some((prototype, prototype_end)) = named_dimension_reference(payload, cursor, end) else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     };
+    ctx.try_reserve_items(&mut rows, 1, "creo dimension reference rows")?;
     rows.push(prototype);
     let Some(reference_bytes) = reference_bytes else {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     };
     let separator_len = reference_bytes.len() + 3;
     let separator_matches = |offset, prefix| {
@@ -4411,12 +4425,12 @@ fn dimension_reference_table(
             && payload.get(offset + separator_len - 1) == Some(&0xe2)
     };
     if !separator_matches(prototype_end, 0xf1) {
-        return Some(FeatureDimensionReferenceTable {
+        return Ok(Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
             rows,
             offset: table,
-        });
+        }));
     }
     cursor = prototype_end + separator_len;
 
@@ -4433,6 +4447,7 @@ fn dimension_reference_table(
             break;
         };
         let [first, second] = [point[0], point[1]];
+        ctx.try_reserve_items(&mut rows, 1, "creo dimension reference rows")?;
         rows.push(FeatureDimensionReference {
             item_id,
             sense,
@@ -4447,59 +4462,87 @@ fn dimension_reference_table(
         }
         cursor += separator_len;
     }
-    Some(FeatureDimensionReferenceTable {
+    Ok(Some(FeatureDimensionReferenceTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn labeled_dimension(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimension> {
-    let type_label = find_bytes(payload, b"type\0", start, end)?;
+) -> Result<Option<FeatureDimension>, CodecError> {
+    let Some(type_label) = find_bytes(payload, b"type\0", start, end) else {
+        return Ok(None);
+    };
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
-    let dimension_type = dimension_type?;
-    let value_label = find_bytes(payload, b"value\0", after_type, end)?;
+    let Some(dimension_type) = dimension_type else {
+        return Ok(None);
+    };
+    let Some(value_label) = find_bytes(payload, b"value\0", after_type, end) else {
+        return Ok(None);
+    };
     let value_start = value_label + b"value\0".len();
     let (value, after_value) = decode_variable_scalar(payload, value_start, end, cache);
-    let value_body = payload.get(value_start..after_value)?.to_vec();
-    let value = DimensionValue::decoded(value.value(), &value_body);
-    let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
-    let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
-    let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
+    let Some(value_bytes) = payload.get(value_start..after_value) else {
+        return Ok(None);
+    };
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let Some(direction_label) = find_bytes(payload, b"direct\0", after_value, end) else {
+        return Ok(None);
+    };
+    let Some(&direction_byte) = payload.get(direction_label + b"direct\0".len()) else {
+        return Ok(None);
+    };
+    let Some(auxiliary_label) = find_bytes(payload, b"aux_value\0", direction_label, end)
+    else {
+        return Ok(None);
+    };
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
     let (auxiliary_value, after_auxiliary) =
         decode_variable_scalar(payload, auxiliary_start, end, cache);
-    let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
-    let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
+    let Some(auxiliary_bytes) = payload.get(auxiliary_start..after_auxiliary) else {
+        return Ok(None);
+    };
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
+    let Some(external_label) = find_bytes(payload, b"ext_id\0", after_auxiliary, end) else {
+        return Ok(None);
+    };
     let (external_id, after_external) = segment_int(payload, external_label + b"ext_id\0".len());
-    let references = dimension_reference_table(payload, after_external, end);
-    Some(FeatureDimension {
+    let Some(external_id) = external_id else {
+        return Ok(None);
+    };
+    let references = dimension_reference_table(ctx, payload, after_external, end)?;
+    Ok(Some(FeatureDimension {
         dimension_type,
         value,
         value_body,
         direction_byte,
         auxiliary_value: auxiliary_value.value(),
         auxiliary_body,
-        external_id: external_id?,
+        external_id,
         references,
         offset: type_label,
-    })
+    }))
 }
 
 fn positional_dimension(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimension> {
+) -> Result<Option<FeatureDimension>, CodecError> {
     let (dimension_type, cursor) = segment_int(payload, start);
-    let dimension_type = dimension_type?;
+    let Some(dimension_type) = dimension_type else {
+        return Ok(None);
+    };
     let value_start = cursor;
     let (value, cursor) = match payload.get(cursor) {
         Some(0x00) if cursor + 3 <= end => (ScalarLane::Undefined, cursor + 3),
@@ -4508,9 +4551,14 @@ fn positional_dimension(
         Some(0x18) => (ScalarLane::Value(0.0), cursor + 1),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
-    let value_body = payload.get(value_start..cursor)?.to_vec();
-    let value = DimensionValue::decoded(value.value(), &value_body);
-    let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
+    let Some(value_bytes) = payload.get(value_start..cursor) else {
+        return Ok(None);
+    };
+    let value_body = ctx.copy_retained(value_bytes, "creo dimension value body")?;
+    let value = DimensionValue::decoded(ctx, value.value(), &value_body)?;
+    let Some(&direction_byte) = payload.get(cursor).filter(|_| cursor < end) else {
+        return Ok(None);
+    };
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
         (Some(0.0), auxiliary_start + 1)
@@ -4518,28 +4566,37 @@ fn positional_dimension(
         let (value, next) = decode_variable_scalar(payload, auxiliary_start, end, cache);
         (value.value(), next)
     };
-    let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
+    let Some(auxiliary_bytes) = payload.get(auxiliary_start..cursor) else {
+        return Ok(None);
+    };
+    let auxiliary_body = ctx.copy_retained(auxiliary_bytes, "creo dimension auxiliary body")?;
     let (external_id, _) = segment_int(payload, cursor);
-    Some(FeatureDimension {
+    let Some(external_id) = external_id else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDimension {
         dimension_type,
         value,
         value_body,
         direction_byte,
         auxiliary_value,
         auxiliary_body,
-        external_id: external_id?,
+        external_id,
         references: None,
         offset: start,
-    })
+    }))
 }
 
 fn dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
-    let table = find_bytes(payload, b"dimtab_ptr\0", start, end)?;
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"dimtab_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"dimtab_ptr\0".len();
     while payload
         .get(cursor)
@@ -4547,13 +4604,17 @@ fn dimension_table(
     {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let mut reference_bytes = None;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
-        let (value, next) = psb::reference_id(payload, reference_start).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, reference_start) else {
+            return Ok(None);
+        };
         reference_bytes = payload.get(cursor..next);
         cursor = next;
         Some(value)
@@ -4567,7 +4628,8 @@ fn dimension_table(
         region_end
     };
     let mut rows = Vec::new();
-    if let Some(row) = labeled_dimension(payload, cursor, first_end, cache) {
+    if let Some(row) = labeled_dimension(ctx, payload, cursor, first_end, cache)? {
+        ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
     }
     if let Some(class) = reference_bytes {
@@ -4580,29 +4642,31 @@ fn dimension_table(
             replay += separator_len;
             let next_separator =
                 find_class_close(payload, replay, region_end, 0xf3, class).unwrap_or(region_end);
-            let Some(row) = positional_dimension(payload, replay, next_separator, cache) else {
+            let Some(row) = positional_dimension(ctx, payload, replay, next_separator, cache)? else {
                 break;
             };
+            ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
             rows.push(row);
             replay = next_separator;
         }
     }
-    Some(FeatureDimensionTable {
+    Ok(Some(FeatureDimensionTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
-    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
+    let Some((table, declared_count, mut cursor, reference_bytes)) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -4618,9 +4682,15 @@ fn positional_dimension_table(
                 &payload[reference_start - 1..after_reference],
             )
         })
-    })?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    }) else {
+        return Ok(None);
+    };
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_row_class;
 
     let separator_len = reference_bytes.len() + 2;
@@ -4628,9 +4698,10 @@ fn positional_dimension_table(
     let row_limit = index_from_u32(declared_count);
     while cursor < end && rows.len() < row_limit {
         let row_end = find_class_close(payload, cursor, end, 0xf3, reference_bytes).unwrap_or(end);
-        let Some(row) = positional_dimension(payload, cursor, row_end, cache) else {
+        let Some(row) = positional_dimension(ctx, payload, cursor, row_end, cache)? else {
             break;
         };
+        ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
         if rows.len() == row_limit {
             break;
@@ -4640,20 +4711,21 @@ fn positional_dimension_table(
         }
         cursor = row_end + separator_len;
     }
-    Some(FeatureDimensionTable {
+    Ok(Some(FeatureDimensionTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn self_described_positional_dimension_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureDimensionTable> {
+) -> Result<Option<FeatureDimensionTable>, CodecError> {
     let mut candidate = None;
     for table in start..end {
         if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
@@ -4669,7 +4741,7 @@ fn self_described_positional_dimension_table(
         if payload.get(after_reference..after_reference + 2) != Some(&[0xfb, 0xe2]) {
             continue;
         }
-        let Some(found) = positional_dimension_table(payload, table, end, table_class, cache)
+        let Some(found) = positional_dimension_table(ctx, payload, table, end, table_class, cache)?
         else {
             continue;
         };
@@ -4683,12 +4755,12 @@ fn self_described_positional_dimension_table(
                 .all(|row| matches!(row.dimension_type, 0x01..=0x05 | 0x0a))
         {
             if candidate.is_some() {
-                return None;
+                return Ok(None);
             }
             candidate = Some(found);
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
@@ -6927,17 +6999,25 @@ fn definitions_in_ranges(
                 .then(|| positional_section_3d(payload, start, end))
                 .flatten()
         });
-        let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
-            positional.then_some(()).and_then(|()| {
-                replay_dimension_class
-                    .and_then(|table_class| {
-                        positional_dimension_table(payload, start, end, table_class, &cache)
-                    })
-                    .or_else(|| {
-                        self_described_positional_dimension_table(payload, start, end, &cache)
-                    })
-            })
-        });
+        let dimensions = if let Some(table) = dimension_table(ctx, payload, start, end, &cache)? {
+            Some(table)
+        } else if positional {
+            match replay_dimension_class {
+                Some(table_class) => {
+                    match positional_dimension_table(ctx, payload, start, end, table_class, &cache)? {
+                        Some(table) => Some(table),
+                        None => self_described_positional_dimension_table(
+                            ctx, payload, start, end, &cache,
+                        )?,
+                    }
+                }
+                None => self_described_positional_dimension_table(
+                    ctx, payload, start, end, &cache,
+                )?,
+            }
+        } else {
+            None
+        };
         if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
