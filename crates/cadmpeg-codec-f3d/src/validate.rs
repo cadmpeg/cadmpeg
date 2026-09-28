@@ -1089,7 +1089,7 @@ fn validate_loaded(
         &edge_treatment_vertex_records,
     );
     validate_extrude_selection_members(&ctx, &mut findings);
-    validate_entity_selection_operands(&ctx, &mut findings);
+    validate_entity_selection_operands(&ctx, &mut findings)?;
     validate_extrude_selection_group_members(&ctx, &mut findings)?;
     validate_edge_treatment_groups(
         &ctx,
@@ -6266,7 +6266,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate entity-selection operand nested frames.
-fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
@@ -6283,21 +6283,16 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(&operand.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
-        }) && entity_selection_slots.insert((
-            native_stream,
-            operand.group_record_index,
-            operand.group_member_ordinal,
-        ));
+        }) && ctx.insert_unique(&mut entity_selection_slots,
+            (native_stream, operand.group_record_index, operand.group_member_ordinal),
+            "index F3D entity selection slots")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design entity-selection operand has an invalid nested frame"
-                    .into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design entity-selection operand has an invalid nested frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Report Extrude selection groups with missing or inconsistent members.
