@@ -9498,22 +9498,30 @@ impl CatiaNative {
                 row.design_object.clone_from(&record.design_object);
             }
         }
-        let value_blocks = parsed_value_blocks
-            .into_iter()
-            .filter_map(|block| {
-                let catalog_pos = block.pos + block.total_len();
-                let catalog = catalogs
-                    .iter()
-                    .find(|catalog| catalog.byte_offset == catalog_pos as u64)?;
-                let object_graph = object_graphs.iter().find(|graph| {
-                    graph
-                        .byte_offset
-                        .checked_add(graph.byte_len)
-                        .is_some_and(|end| end == block.pos as u64)
-                });
-                Some(CatiaValueBlock::from_parts(block, catalog, object_graph))
-            })
-            .collect();
+        let mut value_blocks = Vec::new();
+        for block in parsed_value_blocks {
+            let Some(catalog_pos) = block.pos.checked_add(block.total_len())
+                .and_then(|pos| u64::try_from(pos).ok()) else {
+                continue;
+            };
+            let Some(catalog) = catalogs
+                .iter()
+                .find(|catalog| catalog.byte_offset == catalog_pos) else {
+                continue;
+            };
+            let Some(block_pos) = u64::try_from(block.pos).ok() else {
+                continue;
+            };
+            let object_graph = object_graphs.iter().find(|graph| {
+                graph
+                    .byte_offset
+                    .checked_add(graph.byte_len)
+                    .is_some_and(|end| end == block_pos)
+            });
+            let value = CatiaValueBlock::from_parts(ctx, block, catalog, object_graph)?;
+            crate::resource::push(ctx, &mut value_blocks, value,
+                "catia_native_value_blocks")?;
+        }
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let mut legacy_entity_runs = legacy_entity_runs(bytes);
@@ -9667,83 +9675,109 @@ impl CatiaNative {
 }
 
 fn value_schema_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block_id: &str,
     block_byte_offset: u64,
     fields: &[value_block::ValueField],
     catalog: &CatiaCatalog,
-) -> Vec<CatiaValueSchemaSelection> {
-    let selector_indices = fields
-        .iter()
-        .enumerate()
-        .filter_map(|(index, field)| {
-            let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
-                return None;
-            };
-            usize::try_from(*ordinal)
-                .ok()
-                .filter(|ordinal| *ordinal <= catalog.entries.len())
-                .map(|_| index)
-        })
-        .collect::<Vec<_>>();
-    selector_indices
-        .iter()
-        .enumerate()
-        .filter_map(|(selector_rank, index)| match &fields[*index] {
-            value_block::ValueField::SchemaSelector { ordinal, offset } => {
-                let ordinal_index = usize::try_from(*ordinal).ok()?;
-                if ordinal_index > catalog.entries.len() {
-                    return None;
-                }
-                let catalog_entry = catalog.entries.get(ordinal_index);
-                let value_end = selector_indices
-                    .get(selector_rank + 1)
-                    .copied()
-                    .unwrap_or(fields.len());
-                let kind = match catalog_entry {
-                    Some(entry) => {
-                        CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
-                            class: CatiaDesignClass {
-                                entry: entry.id.clone(),
-                                name: entry.value.clone(),
-                            },
-                            encoded_value: fields[index + 1..value_end].to_vec(),
-                        })
-                    }
-                    None => CatiaValueSchemaSelectionKind::Terminal,
-                };
-                let byte_offset = block_byte_offset
-                    .checked_add(6)?
-                    .checked_add(*offset as u64)?;
-                Some(CatiaValueSchemaSelection {
-                    id: format!("catia:outer:value-selection#{byte_offset:010}"),
-                    parent: block_id.to_string(),
-                    offset: *offset as u64,
-                    ordinal: *ordinal,
-                    kind,
-                })
+) -> Result<Vec<CatiaValueSchemaSelection>, cadmpeg_core::CodecError> {
+    let mut selector_indices = Vec::new();
+    for (index, field) in fields.iter().enumerate() {
+        let value_block::ValueField::SchemaSelector { ordinal, .. } = field else {
+            continue;
+        };
+        if usize::try_from(*ordinal)
+            .ok()
+            .is_some_and(|ordinal| ordinal <= catalog.entries.len())
+        {
+            crate::resource::push(ctx, &mut selector_indices, index,
+                "catia_value_selector_indices")?;
+        }
+    }
+    let mut selections = Vec::new();
+    for (selector_rank, &index) in selector_indices.iter().enumerate() {
+        let value_block::ValueField::SchemaSelector { ordinal, offset } = &fields[index] else {
+            continue;
+        };
+        let Some(ordinal_index) = usize::try_from(*ordinal).ok() else {
+            continue;
+        };
+        if ordinal_index > catalog.entries.len() {
+            continue;
+        }
+        let Some(offset) = u64::try_from(*offset).ok() else {
+            continue;
+        };
+        let Some(byte_offset) = block_byte_offset
+            .checked_add(6)
+            .and_then(|base| base.checked_add(offset)) else {
+            continue;
+        };
+        let value_end = selector_indices
+            .get(selector_rank + 1)
+            .copied()
+            .unwrap_or(fields.len());
+        let kind = if let Some(entry) = catalog.entries.get(ordinal_index) {
+            let mut encoded_value = Vec::new();
+            for field in &fields[index + 1..value_end] {
+                let copy = value_block::copy_field_charged(ctx, field)?;
+                crate::resource::push(ctx, &mut encoded_value, copy,
+                    "catia_value_selection_fields")?;
             }
-            _ => None,
-        })
-        .collect()
+            CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
+                class: CatiaDesignClass {
+                    entry: crate::resource::copy_retained_str(ctx, &entry.id,
+                        "catia_value_selection_class_id")?,
+                    name: crate::resource::copy_retained_str(ctx, &entry.value,
+                        "catia_value_selection_class_name")?,
+                },
+                encoded_value,
+            })
+        } else {
+            CatiaValueSchemaSelectionKind::Terminal
+        };
+        let id = crate::resource::format_retained(ctx,
+            format_args!("catia:outer:value-selection#{byte_offset:010}"),
+            "catia_value_selection_id")?;
+        let parent = crate::resource::copy_retained_str(ctx, block_id,
+            "catia_value_selection_parent")?;
+        crate::resource::push(ctx, &mut selections, CatiaValueSchemaSelection {
+            id,
+            parent,
+            offset,
+            ordinal: *ordinal,
+            kind,
+        }, "catia_value_selections")?;
+    }
+    Ok(selections)
 }
 
 impl CatiaValueBlock {
     fn from_parts(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         block: value_block::ValueBlock,
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
-    ) -> Self {
-        let id = format!("catia:outer:value-block#{:010}", block.pos);
-        let fields = block.fields();
-        let schema_selections = value_schema_selections(&id, block.pos as u64, &fields, catalog);
-        Self {
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let id = crate::resource::format_retained(ctx,
+            format_args!("catia:outer:value-block#{:010}", block.pos),
+            "catia_value_block_id")?;
+        let fields = value_block::tokenize_charged(ctx, &block.payload)?;
+        let byte_offset = u64::try_from(block.pos)
+            .map_err(|_| ctx.refuse_codec_limit("catia_value_block_offset", u64::MAX, u64::MAX))?;
+        let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields, catalog)?;
+        Ok(Self {
             id,
-            byte_offset: block.pos as u64,
-            object_graph: object_graph.map(|graph| graph.id.clone()),
-            catalog: catalog.id.clone(),
+            byte_offset,
+            object_graph: object_graph.map(|graph| {
+                crate::resource::copy_retained_str(ctx, &graph.id,
+                    "catia_value_block_graph_id")
+            }).transpose()?,
+            catalog: crate::resource::copy_retained_str(ctx, &catalog.id,
+                "catia_value_block_catalog_id")?,
             payload: block.payload,
             schema_selections,
-        }
+        })
     }
 }
 

@@ -386,9 +386,10 @@ pub(super) fn validate_native_links(
                 block.id, block.catalog
             )));
         }
-        if value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
-            != block.schema_selections
-        {
+        let selections = crate::test_support::with_service_context(|ctx| {
+            value_schema_selections(ctx, &block.id, block.byte_offset, &block.fields(), catalog)
+        }).map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
+        if selections != block.schema_selections {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",
                 block.id

@@ -192,6 +192,50 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
 }
 
 #[test]
+fn native_value_selector_views_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x81]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut operations = std::collections::BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("value selector fixture fits the input limit");
+        match crate::native::CatiaNative::decode_with_records(
+            &ctx, &bytes, &[], &mut crate::nurbs::LaneRefusals::new(),
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(native) => {
+                assert_eq!(native.value_blocks.len(), 1);
+                assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
+                completed = true;
+                break;
+            }
+            Err(error) => panic!("unexpected native decode refusal: {error}"),
+        }
+    }
+    assert!(completed, "the service fixture fits 512 collection items");
+    assert!(operations.contains("catia_value_fields"));
+    assert!(operations.contains("catia_value_selector_indices"));
+    assert!(operations.contains("catia_value_selection_fields"));
+    assert!(operations.contains("catia_value_selections"));
+}
+
+#[test]
 fn native_design_inventory_excludes_object_graphs_inside_value_payloads() {
     let nested =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
