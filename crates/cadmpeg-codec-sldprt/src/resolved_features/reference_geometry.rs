@@ -2117,14 +2117,21 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
         0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x2d, 0x80, 0x2b, 0x80,
     ];
-    let matches = payload.windows(4 + TRAILER.len()).filter_map(|bytes| {
-        let source = View::u32_le_at(bytes, 0)?;
-        (source != 0 && bytes.get(4..) == Some(TRAILER)).then_some(source)
-    });
-    let matches = matches.collect::<HashSet<_>>();
-    let mut matches = matches.into_iter();
-    let source = matches.next()?;
-    matches.next().is_none().then_some(source)
+    let mut unique = None;
+    for bytes in payload.windows(4 + TRAILER.len()) {
+        let Some(source) = View::u32_le_at(bytes, 0) else {
+            continue;
+        };
+        if source == 0 || bytes.get(4..) != Some(TRAILER) {
+            continue;
+        }
+        match unique {
+            Some(existing) if existing != source => return None,
+            None => unique = Some(source),
+            Some(_) => {}
+        }
+    }
+    unique
 }
 
 fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
@@ -2224,10 +2231,9 @@ fn offset_plane_reference_source(
 
 fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
     const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
-    let mut aliases = payload
-        .windows(115)
-        .enumerate()
-        .filter_map(|(offset, body)| {
+    let mut unique = None;
+    for (offset, body) in payload.windows(115).enumerate() {
+        let alias = (|| {
             let token = View::u16_le_at(body, 0)?;
             if !is_class_token(token)
                 || body[2..6] != 2u32.to_le_bytes()
@@ -2248,14 +2254,17 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
             }
             let owner = View::u32_le_at(body, 91)?;
             (owner != 0 && owner != u32::MAX).then_some((offset, owner))
-        })
-        .collect::<Vec<_>>();
-    aliases.sort_unstable();
-    aliases.dedup();
-    let [alias] = aliases.as_slice() else {
-        return None;
-    };
-    Some(*alias)
+        })();
+        let Some(alias) = alias else {
+            continue;
+        };
+        match unique {
+            Some(existing) if existing != alias => return None,
+            None => unique = Some(alias),
+            Some(_) => {}
+        }
+    }
+    unique
 }
 
 const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
