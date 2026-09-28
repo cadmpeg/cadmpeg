@@ -8,7 +8,7 @@ use crate::records::topology::{
 use cadmpeg_core::container::ContainerRole;
 use std::fmt::Write;
 
-use crate::bytes::{is_guid_relaxed, lp_utf16_bounded, take_reference};
+use crate::bytes::{is_guid_relaxed, take_reference};
 use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end};
 use crate::design::decode::text::design_record_id_charged;
 use crate::bytes::lp_ascii_filtered;
@@ -762,7 +762,7 @@ pub(crate) fn decode_edge_identity_operands(
             let Ok(start) = usize::try_from(header.byte_offset) else {
                 continue;
             };
-            let Some(parsed) = parse_edge_identity_member(bytes, start) else {
+            let Some(parsed) = parse_edge_identity_member(ctx, bytes, start).transpose()? else {
                 continue;
             };
             let Ok(group_member_ordinal) = u32::try_from(ordinal) else {
@@ -4753,7 +4753,11 @@ struct ParsedEdgeIdentityMember {
     context_id_offset: u64,
 }
 
-fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeIdentityMember> {
+fn parse_edge_identity_member(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Option<Result<ParsedEdgeIdentityMember, CodecError>> {
     use crate::records::topology::edge_identity::DesignEdgeIdentityLayout;
     let layout = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
         DesignEdgeIdentityLayout::Full
@@ -4774,19 +4778,27 @@ fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeId
         return None;
     }
     let local_id = u64::from(View::u32_le_at(bytes, start + local_id_offset)?);
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + asset_offset, 1..=256)?;
-    let (context_id, _after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, start + asset_offset, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, _after_context_id) = match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id) || !is_guid_relaxed(&context_id) {
         return None;
     }
-    Some(ParsedEdgeIdentityMember {
+    Some(Ok(ParsedEdgeIdentityMember {
         layout,
         local_id,
         asset_id,
         asset_id_offset: u64::try_from(start + asset_offset + 4).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-    })
+    }))
 }
 
 fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
