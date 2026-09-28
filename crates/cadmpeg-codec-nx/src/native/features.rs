@@ -8589,13 +8589,28 @@ pub(super) fn data_block_object_frames(
             .into_iter()
             .enumerate()
         {
+            let id = data_block_object_frame_id(ctx, data_block, ordinal)?;
+            let data_block = copy_operation_text(ctx, data_block, "retain NX data block object frame source")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX data block object frame ordinal", 0, 1))?;
+            let offset = source_offset.checked_add(cadmpeg_core::decode::u64_from_index(frame.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX data block object frame offset", 0, 1))?;
+            ctx.charge_entities(1, "NX data block object frame")?;
+            ctx.charge_collection_items(1, "NX data block object frames")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockObjectFrame>()),
+                "retain NX data block object frame",
+            )?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX data block object frames", 0, 1)
+            })?;
             out.push(DataBlockObjectFrame {
-                id: data_block_object_frame_id(data_block, ordinal),
-                data_block: data_block.clone(),
-                ordinal: ordinal as u32,
+                id,
+                data_block,
+                ordinal,
                 object: LocatedCompactIndex {
                     atom: frame.atom,
-                    offset: source_offset + frame.offset as u64,
+                    offset,
                 },
             });
         }
@@ -8603,13 +8618,39 @@ pub(super) fn data_block_object_frames(
     Ok(out)
 }
 
-fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> String {
-    format!(
-        "{}-{ordinal}",
-        data_block
-            .replacen("nx:om-data-blocks-", "nx:om-data-block-object-frames-", 1)
-            .replacen(":block#", ":block-frame#", 1)
-    )
+fn data_block_object_frame_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data_block: &str,
+    ordinal: usize,
+) -> Result<String, cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+
+    let Some((section, block)) = data_block
+        .strip_prefix("nx:om-data-blocks-")
+        .and_then(|rest| rest.split_once(":block#"))
+    else {
+        return Err(cadmpeg_core::CodecError::Malformed("invalid NX data block object frame source".into()));
+    };
+    let prefix = "nx:om-data-block-object-frames-";
+    let infix = ":block-frame#";
+    let length = prefix.len()
+        .checked_add(section.len())
+        .and_then(|length| length.checked_add(infix.len()))
+        .and_then(|length| length.checked_add(block.len()))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block object frame id", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain NX data block object frame id",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(length).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX data block object frame id", 0, 1)
+    })?;
+    write!(&mut id, "{prefix}{section}{infix}{block}-{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit("format NX data block object frame id", 0, 1))?;
+    Ok(id)
 }
 
 fn unique_offset_data_block(
