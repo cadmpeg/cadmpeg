@@ -14,8 +14,8 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
-    match curve {
+fn point_at(curve: &CurveGeometry, parameter: f64) -> Result<Option<Point3>, CodecError> {
+    Ok(match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -60,17 +60,20 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-            let degree = usize::try_from(curve.degree()).ok()?;
+            let Ok(degree) = usize::try_from(curve.degree()) else {
+                return Ok(None);
+            };
             let domain = [curve.knots()[degree], curve.knots()[curve.pole_count()]];
             if !(domain[0]..=domain[1]).contains(&parameter) {
-                return None;
+                return Ok(None);
             }
-            cadmpeg_ir::eval::nurbs_curve_point_at(curve, parameter)
-                .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(
+                curve, parameter,
+            ))?
+            .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,
-    }
+    })
 }
 
 fn close(left: Point3, right: Point3) -> bool {
@@ -86,6 +89,10 @@ pub(super) fn scan(
     carriers: &CarrierIndex,
 ) -> Result<Vec<CurveCarrier>, CodecError> {
     let mut out = Vec::new();
+    let scan_len = u64::try_from(bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("scan Parasolid subset curves", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(scan_len, "scan Parasolid subset curves")?;
     for off in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
@@ -131,29 +138,35 @@ pub(super) fn scan(
             values[4].get() * LEN_TO_MM,
             values[5].get() * LEN_TO_MM,
         );
-        let Some(evaluated_start) = point_at(geometry, values[6].get()) else {
+        let Some(evaluated_start) = point_at(geometry, values[6].get())? else {
             continue;
         };
-        let Some(evaluated_end) = point_at(geometry, values[7].get()) else {
+        let Some(evaluated_end) = point_at(geometry, values[7].get())? else {
             continue;
         };
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-                    if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry {
-                let lane_count = curve.knots().len() + curve.pole_count();
-                ctx.charge_collection_items(
-                    lane_count as u64,
-                    "copy Parasolid subset curve lanes",
-                )?;
-            }
-            ctx.charge_collection_items(1, "collect Parasolid subset curves")?;
-
+        let copied_geometry = if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry {
+            let lane_count = curve.knots().len().checked_add(curve.pole_count()).ok_or_else(|| {
+                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
+            })?;
+            let lane_count = u64::try_from(lane_count).map_err(|_| {
+                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_collection_items(lane_count, "copy Parasolid subset curve lanes")?;
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.try_clone().map_err(|_| {
+                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
+            })?))
+        } else {
+            geometry.clone()
+        };
+        ctx.reserve_collection_vec(&mut out, 1, "collect Parasolid subset curves")?;
         out.push(CurveCarrier {
             attr,
             offset: off,
             end: marker_at + 1 + PAYLOAD_LEN,
-            geometry: geometry.clone(),
+            geometry: copied_geometry,
             parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
                 values[6], values[7],
             ])),
@@ -275,6 +288,23 @@ mod tests {
     }
 
     #[test]
+    fn parasolid_subset_scan_refuses_work_limit() {
+        let bytes = wrapper(0.005, false);
+        let carriers = carriers();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        let error = scan(&ctx, &bytes, &carriers).expect_err("scan work exceeds its limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan Parasolid subset curves"
+        ));
+    }
+
+    #[test]
     fn decodes_bounds_that_evaluate_on_the_source_curve() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -336,6 +366,7 @@ mod tests {
             &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             0.5,
         )
+        .expect("evaluation fits resource limits")
         .expect("valid NURBS parameter");
         assert!((point.x - 20.0 / 3.0).abs() < 1.0e-12);
     }
@@ -353,8 +384,13 @@ mod tests {
                 )
                 .unwrap(),
             ));
-            assert_eq!(point_at(&curve, 0.75 * d), Some(Point3::new(0.75, 0., 0.)));
-            assert!(point_at(&curve, 2. * d).is_none());
+            assert_eq!(
+                point_at(&curve, 0.75 * d).expect("evaluation fits resource limits"),
+                Some(Point3::new(0.75, 0., 0.))
+            );
+            assert!(point_at(&curve, 2. * d)
+                .expect("evaluation fits resource limits")
+                .is_none());
         }
     }
 }

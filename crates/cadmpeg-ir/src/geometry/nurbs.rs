@@ -1335,6 +1335,35 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Copy the admitted curve with fallible storage allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when a knot or pole lane cannot reserve storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let knots = self.knots.try_clone()?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                NurbsPoles3::Polynomial { points: copied }
+            }
+            NurbsPoles3::Rational { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                NurbsPoles3::Rational { points: copied }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
