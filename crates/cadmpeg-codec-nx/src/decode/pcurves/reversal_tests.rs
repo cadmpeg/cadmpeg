@@ -13,6 +13,54 @@ use cadmpeg_ir::math::Vector3;
 
 use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve_over_range};
 
+fn reversal_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("test pcurve"),
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    reverse_pcurve_over_range(&ctx, &pcurve, [0.0, 1.0])
+        .expect_err("pcurve reversal limit refusal")
+}
+
+#[test]
+fn pcurve_reversal_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        reversal_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn pcurve_reversal_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(
+        reversal_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn pcurve_reversal_route_refuses_nesting_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    assert!(matches!(
+        reversal_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
 #[test]
 fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
     let pcurve = PcurveGeometry::Nurbs {
@@ -30,7 +78,7 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
         .unwrap(),
     };
     let range = [0.25, 1.75];
-    let reversed = reverse_pcurve_over_range(&pcurve, range)
+    let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &pcurve, range))
         .expect("reversed lanes pair")
         .expect("reversible NURBS pcurve");
     for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
@@ -77,7 +125,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
     ];
     let range = [-1.5, 1.5];
     for carrier in carriers {
-        let reversed = reverse_pcurve_over_range(&carrier, range)
+        let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &carrier, range))
             .expect("reversed lanes pair")
             .expect("symmetric analytic pcurve is exactly reversible");
         for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
@@ -115,7 +163,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     ];
     let range = [0.25, 1.75];
     for carrier in carriers {
-        let reversed = reverse_pcurve_over_range(&carrier, range)
+        let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &carrier, range))
             .expect("reversed lanes pair")
             .expect("a finite conic interval has an exact coefficient reflection");
         assert!(matches!(
@@ -131,7 +179,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
 
-        let reflected_twice = reverse_pcurve_over_range(&reversed, range)
+        let reflected_twice = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &reversed, range))
             .expect("reversed lanes pair")
             .expect("general conic coefficients remain exactly reversible");
         for parameter in [0.25, 0.75, 1.25, 1.75] {
@@ -155,7 +203,7 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         .unwrap(),
     );
     let range = [0.25, 2.75];
-    let reversed = reverse_pcurve_over_range(&pcurve, range)
+    let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &pcurve, range))
         .expect("reversed lanes pair")
         .expect("a finite parabola interval has an exact quadratic reflection");
     assert!(matches!(
@@ -175,7 +223,7 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(1.25, Box::new(pcurve.clone()))
             .unwrap(),
     );
-    let PcurveGeometry::Offset(offset_pcurve) = reverse_pcurve_over_range(&offset, range)
+    let PcurveGeometry::Offset(offset_pcurve) = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &offset, range))
         .expect("reversed lanes pair")
         .expect("offset parabola reflection closes recursively")
     else {
@@ -208,7 +256,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         )
         .unwrap(),
     );
-    let reversed = reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
+    let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &pcurve, [2.0, 6.0]))
         .expect("reversed lanes pair")
         .expect("offset construction is exactly reversible");
     let PcurveGeometry::Offset(offset_pcurve) = &reversed else {
@@ -290,7 +338,7 @@ fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
         )
         .unwrap(),
     };
-    let reversed = reverse_pcurve_over_range(&pcurve, range).unwrap().unwrap();
+    let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &pcurve, range)).unwrap().unwrap();
     assert_eq!(
         cadmpeg_ir::eval::pcurve_uv(&reversed, range[0]).map(cadmpeg_ir::units::FinitePoint2::get),
         Ok(Point2::new(1., 1.))
@@ -300,7 +348,7 @@ fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
         Ok(Point2::new(0., 0.))
     );
     assert_eq!(
-        reverse_pcurve_over_range(&reversed, range).unwrap(),
+        crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &reversed, range)).unwrap(),
         Some(pcurve)
     );
 }
@@ -316,7 +364,7 @@ fn numerical_ranges_parabola_reversal_reuses_scaled_evaluation() {
         .unwrap(),
     );
     let range = [1e200, 2e200];
-    let reversed = reverse_pcurve_over_range(&pcurve, range).unwrap().unwrap();
+    let reversed = crate::test_support::with_decode_context(|ctx| reverse_pcurve_over_range(ctx, &pcurve, range)).unwrap().unwrap();
     for t in [0., 0.5, 1.] {
         // The reversed quadratic retains the original parameter domain.
         let point = cadmpeg_ir::eval::pcurve_uv(&reversed, (1. + t) * 1e200).unwrap();
