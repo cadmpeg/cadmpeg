@@ -5941,10 +5941,13 @@ fn saved_named_scalars<const N: usize>(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<[Option<f64>; N]> {
-    let mut label = vec![0xe0, 0x02];
-    label.extend_from_slice(field);
-    label.push(0);
-    let mut cursor = find_bytes(payload, &label, start, end)? + label.len();
+    let window = payload.get(start..end)?;
+    let label_start = (0..window.len()).find(|&offset| {
+        window.get(offset..offset + 2) == Some(&[0xe0, 0x02])
+            && window.get(offset + 2..offset + 2 + field.len()) == Some(field)
+            && window.get(offset + 2 + field.len()) == Some(&0)
+    })?;
+    let mut cursor = start + label_start + field.len() + 3;
     while payload
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
@@ -6231,13 +6234,14 @@ fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
 }
 
 fn saved_circular_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let mut entities = Vec::new();
     for (kind, label) in [
         ("arc", b"\xe0\x00entity(arc)\0".as_slice()),
@@ -6282,37 +6286,53 @@ fn saved_circular_entities(
                 let end_parameter =
                     saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
                         .unwrap_or([None])[0];
+                let body = ctx.copy_retained(
+                    &payload[body_start..named_body_end],
+                    "creo saved arc body",
+                )?;
+                ctx.try_reserve_items(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center,
                     radius,
                     endpoints: [first, second],
                     parameters: [start_parameter, end_parameter],
-                    body: payload[body_start..named_body_end].to_vec(),
+                    body,
                     offset: entity_offset,
                 }));
+                ctx.try_reserve_items(
+                    &mut entities,
+                    positional.len(),
+                    "creo saved circular entities",
+                )?;
                 entities.extend(positional);
             } else {
+                let body = ctx.copy_retained(
+                    &payload[body_start..body_end],
+                    "creo saved circle body",
+                )?;
+                ctx.try_reserve_items(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
                     radius,
-                    body: payload[body_start..body_end].to_vec(),
+                    body,
                     offset: entity_offset,
                 }));
             }
             search = body_end;
         }
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_conic_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(conic)\0";
     let local_system_label = b"\xe0\x02local_sys\0";
     let mut entities = Vec::new();
@@ -6351,35 +6371,44 @@ fn saved_conic_entities(
                 )
                 .map(|(frame, _)| frame)
             });
+        let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved conic body")?;
+        ctx.try_reserve_items(&mut entities, 1, "creo saved conic entities")?;
         entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
             entity_id,
             endpoints: [first, second],
             parameters: [start_parameter, end_parameter],
             coefficients: [first_coefficient, second_coefficient],
             local_system,
-            body: payload[body_start..body_end].to_vec(),
+            body,
             offset: entity_offset,
         }));
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
-fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSavedEntity> {
+fn saved_dummy_entities(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(dummy_ent)\0";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, label, search, end) {
         let body_start = entity_offset + label.len();
         let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
+        let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved dummy body")?;
+        ctx.try_reserve_items(&mut entities, 1, "creo saved dummy entities")?;
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: saved_entity_id(payload, body_start, body_end),
-            body: payload[body_start..body_end].to_vec(),
+            body,
             offset: entity_offset,
         }));
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
 /// Interpolation points a saved-spline body of `remaining` bytes can state.
@@ -6613,19 +6642,20 @@ fn saved_section(
         .unwrap_or(end);
     let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
     let circular = saved_circular_entities(
+        ctx,
         payload,
         table,
         table_end,
         cache,
         order_table,
         segments,
-    );
+    )?;
     ctx.try_reserve_items(&mut entities, circular.len(), "creo saved section entities")?;
     entities.extend(circular);
-    let conic = saved_conic_entities(payload, table, end, cache);
+    let conic = saved_conic_entities(ctx, payload, table, end, cache)?;
     ctx.try_reserve_items(&mut entities, conic.len(), "creo saved section entities")?;
     entities.extend(conic);
-    let dummy = saved_dummy_entities(payload, table, table_end);
+    let dummy = saved_dummy_entities(ctx, payload, table, table_end)?;
     ctx.try_reserve_items(&mut entities, dummy.len(), "creo saved section entities")?;
     entities.extend(dummy);
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
@@ -6639,19 +6669,24 @@ fn saved_section(
 }
 
 fn positional_saved_section(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Option<FeatureSavedSection> {
+) -> Result<Option<FeatureSavedSection>, CodecError> {
     let mut entities =
         saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
-    entities.extend(saved_conic_entities(payload, start, end, cache));
+    let conic = saved_conic_entities(ctx, payload, start, end, cache)?;
+    ctx.try_reserve_items(&mut entities, conic.len(), "creo positional saved section entities")?;
+    entities.extend(conic);
     entities.sort_by_key(saved_entity_offset);
-    let offset = entities.first().map(saved_entity_offset)?;
-    Some(FeatureSavedSection { entities, offset })
+    let Some(offset) = entities.first().map(saved_entity_offset) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureSavedSection { entities, offset }))
 }
 
 /// Decode full-turn termination stored inside an owned DEPDB section
@@ -6948,7 +6983,7 @@ fn definitions_in_ranges(
                 }
             }
         }
-        let saved_section = saved_section(
+        let named_saved_section = saved_section(
             ctx,
             payload,
             start,
@@ -6956,21 +6991,20 @@ fn definitions_in_ranges(
             &cache,
             order_table.as_ref(),
             segments.as_ref(),
-        )?
-        .or_else(|| {
-            if positional {
-                positional_saved_section(
+        )?;
+        let saved_section = match named_saved_section {
+            Some(section) => Some(section),
+            None if positional => positional_saved_section(
+                    ctx,
                     payload,
                     start,
                     end,
                     &cache,
                     order_table.as_ref(),
                     segments.as_ref(),
-                )
-            } else {
-                None
-            }
-        });
+                )?,
+            None => None,
+        };
         let owner_feature_id = owner_override.or_else(|| {
             let mut ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
                 .map(|(_, id)| id);
