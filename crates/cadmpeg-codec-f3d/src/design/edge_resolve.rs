@@ -779,37 +779,36 @@ fn resolved_edge_group_with_transition_chain(
             });
         is_uniform_compact_transition_chain.then_some(edges)
     });
-    let recipe_supports_transition_chain = |chain: &[i64]| {
-        let member_operands = members
-            .iter()
-            .map(|member| &member.value)
-            .map(|member| {
+    let recipe_supports_transition_chain = |chain: &[i64]| -> Result<bool, CodecError> {
+        let mut member_operands = Vec::new();
+        for member in members.iter().map(|member| &member.value) {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
                         && operand.record_index() == *member
                 });
-                let operand = matches.next()?;
-                matches.next().is_none().then_some(operand)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(member_operands) = member_operands else {
-            return false;
-        };
-        transition_chain_is_supported_by_recipe(chain, members.len(), member_operands)
+                let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                    return Ok(false);
+                };
+                push_edge_item(ctx, &mut member_operands, operand,
+                    "f3d transition recipe member")?;
+        }
+        transition_chain_is_supported_by_recipe(chain, members.len(), &member_operands, ctx)
     };
-    let identity_transition_is_supported = identity_transition_slots
+    let identity_transition_is_supported = match identity_transition_slots
         .as_deref()
         .or(identity_group_transition_slots.as_deref())
-        .is_some_and(recipe_supports_transition_chain);
+    {
+        Some(chain) => recipe_supports_transition_chain(chain)?,
+        None => false,
+    };
     // A cardinality mismatch is a group-level transition proof, not a
     // member-to-edge assignment. Recipe evidence must therefore cover the
     // complete chain before it can replace the unresolved member identities.
-    let identity_group_transition_is_admitted = identity_group_transition_slots
-        .as_deref()
-        .is_some_and(|edges| {
-            edges.len() == members.len() || recipe_supports_transition_chain(edges)
-        });
+    let identity_group_transition_is_admitted = match identity_group_transition_slots.as_deref() {
+        Some(edges) => edges.len() == members.len() || recipe_supports_transition_chain(edges)?,
+        None => false,
+    };
     let identity_radius_slots = match (treatment_radius, identity_matches.as_ref()) {
         (Some(radius), Some(matches)) => radius_edge_identity_group_candidates(matches, radius, ctx)?,
         _ => None,
@@ -1209,18 +1208,18 @@ pub(super) fn resolved_hem_edge_slot(
 fn transition_chain_is_supported_by_recipe<'a>(
     chain: &[i64],
     member_count: usize,
-    operands: impl IntoIterator<Item = &'a DesignEdgeOperand>,
-) -> bool {
-    let operands = operands.into_iter().collect::<Vec<_>>();
+    operands: &[&'a DesignEdgeOperand],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     if operands.len() != member_count {
-        return false;
+        return Ok(false);
     }
     let mut all_recipe_edges = Vec::new();
-    for operand in &operands {
+    for operand in operands {
         let resolved = resolved_edge_operand(operand);
         if let Some(edge) = resolved {
             if operand.deleted_boundary_edge_slots.contains(&edge) && !chain.contains(&edge) {
-                return false;
+                return Ok(false);
             }
         }
         if !operand.deleted_boundary_edge_slots.is_empty()
@@ -1229,25 +1228,18 @@ fn transition_chain_is_supported_by_recipe<'a>(
                 .iter()
                 .any(|edge| chain.contains(edge))
         {
-            return false;
+            return Ok(false);
         }
-        all_recipe_edges.extend(
-            operand
-                .changed_boundary_edge_slots
-                .iter()
-                .chain(&operand.deleted_boundary_edge_slots)
-                .copied(),
-        );
-        all_recipe_edges.extend(
-            edge_operand_reference_edge_sets(operand)
-                .into_iter()
-                .flatten()
-                .copied(),
-        );
+        for edge in operand.changed_boundary_edge_slots.iter()
+            .chain(&operand.deleted_boundary_edge_slots).copied()
+            .chain(edge_operand_reference_edge_sets(operand).flatten().copied()) {
+            push_edge_item(ctx, &mut all_recipe_edges, edge,
+                "f3d transition recipe edge")?;
+        }
     }
     all_recipe_edges.sort_unstable();
     all_recipe_edges.dedup();
-    all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge))
+    Ok(all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge)))
 }
 
 fn hem_transition_edge_slot(

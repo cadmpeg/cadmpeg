@@ -25,6 +25,7 @@ mod fixed_fillet_allocation;
 mod hem_allocation;
 mod reference_assignment_allocation;
 mod radius_allocation;
+mod transition_recipe_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -869,8 +870,8 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
     assert!(!transition_chain_is_supported_by_recipe(
         &[17, 18],
         2,
-        [&first, &second],
-    ));
+        &[&first, &second], None,
+    ).unwrap());
 
     let context = |changed_reference_edge_slots| {
         serde_json::from_value(serde_json::json!({
@@ -897,15 +898,15 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
     assert!(transition_chain_is_supported_by_recipe(
         &[17, 18],
         2,
-        [&first, &second],
-    ));
+        &[&first, &second], None,
+    ).unwrap());
 
     let first = recipe_edge_operand(10, &[17, 18], &[17]);
     assert!(transition_chain_is_supported_by_recipe(
         &[17, 18],
         2,
-        [&first, &second],
-    ));
+        &[&first, &second], None,
+    ).unwrap());
 }
 
 #[test]
