@@ -2953,25 +2953,13 @@ pub(super) fn external_reference_records(
         ctx.refuse_codec_limit("nx native external reference records", 0, count_u64)
     })?;
     for (entry, record) in parsed {
-        let prefix = "nx:external-reference-record:";
-        let digits = record.record_id.checked_ilog10().map_or(1, |n| n + 1);
-        let id_len = prefix
-            .len()
-            .checked_add(entry.name.len())
-            .and_then(|len| len.checked_add(1))
-            .and_then(|len| len.checked_add(usize::try_from(digits).ok()?))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference record id", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
+        let id = external_reference_record_id(
+            ctx,
+            "nx:external-reference-record:",
+            &entry.name,
+            record.record_id,
             "nx native external reference record id",
         )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("nx native external reference record id", 0, 1)
-        })?;
-        write!(&mut id, "{prefix}{}#{}", entry.name, record.record_id).map_err(|_| {
-            ctx.refuse_codec_limit("nx native external reference record id", 0, 1)
-        })?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let source_offset = entry_offset
             .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
@@ -2994,6 +2982,29 @@ pub(super) fn external_reference_records(
     Ok(output)
 }
 
+fn external_reference_record_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    entry_name: &str,
+    record_id: u32,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let digits = record_id.checked_ilog10().map_or(1, |n| n + 1);
+    let id_len = prefix
+        .len()
+        .checked_add(entry_name.len())
+        .and_then(|len| len.checked_add(1))
+        .and_then(|len| len.checked_add(usize::try_from(digits).ok()?))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(id_len)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "{prefix}{entry_name}#{record_id}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
 /// Retain all indexed records and link uniquely decoded handle-set records.
 pub(super) fn external_reference_indexed_records(
     ctx: &DecodeContext<'_>,
@@ -3001,37 +3012,75 @@ pub(super) fn external_reference_indexed_records(
     decoded: &[ExternalReferenceRecord],
 ) -> Result<Vec<ExternalReferenceIndexedRecord>, cadmpeg_core::CodecError> {
     let mut decoded_by_key = BTreeMap::<(&str, u32), Option<&ExternalReferenceRecord>>::new();
+    let index_bytes = decoded
+        .len()
+        .checked_mul(std::mem::size_of::<((&str, u32), Option<&ExternalReferenceRecord>)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference decoded index", 0, 1))?;
+    let _index_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "nx external reference decoded index",
+    )?;
     for record in decoded {
-        decoded_by_key
-            .entry((record.source_entry.as_str(), record.record_id))
-            .and_modify(|value| *value = None)
-            .or_insert(Some(record));
+        let key = (record.source_entry.as_str(), record.record_id);
+        if let Some(value) = decoded_by_key.get_mut(&key) {
+            *value = None;
+        } else {
+            ctx.charge_collection_items(1, "nx external reference decoded index")?;
+            decoded_by_key.insert(key, Some(record));
+        }
     }
-    Ok(container
-        .external_reference_indexed_records(ctx)?
-        .into_iter()
-        .filter_map(|(entry, record)| {
-            let entry_offset = entry.file_span()?.0;
-            let source_offset = entry_offset.checked_add(record.offset as u64)?;
-            let bytes = container
-                .bounded_entry_bytes(source_offset, u64::try_from(record.byte_len).ok()?)?;
-            Some(ExternalReferenceIndexedRecord {
-                id: format!(
-                    "nx:external-reference-indexed-record:{}#{}",
-                    entry.name, record.record_id
-                ),
-                record_id: record.record_id,
-                byte_len: record.byte_len as u64,
-                sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                handle_set_record: decoded_by_key
-                    .get(&(entry.name.as_str(), record.record_id))
-                    .and_then(|record| *record)
-                    .map(|record| record.id.clone()),
-                source_entry: entry.name.clone(),
-                source_offset,
-            })
-        })
-        .collect())
+    let parsed = container.external_reference_indexed_records(ctx)?;
+    let mut output = Vec::new();
+    for (entry, record) in parsed {
+        let Some((entry_offset, _)) = entry.file_span() else {
+            continue;
+        };
+        let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.offset)) else {
+            continue;
+        };
+        let byte_len = cadmpeg_core::decode::u64_from_index(record.byte_len);
+        let Some(bytes) = container.bounded_entry_bytes(source_offset, byte_len) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx native external reference indexed records")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExternalReferenceIndexedRecord>()),
+            "nx native external reference indexed records",
+        )?;
+        output.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference indexed records", 0, 1)
+        })?;
+        let id = external_reference_record_id(
+            ctx,
+            "nx:external-reference-indexed-record:",
+            &entry.name,
+            record.record_id,
+            "nx native external reference indexed record id",
+        )?;
+        let handle_set_record = decoded_by_key
+            .get(&(entry.name.as_str(), record.record_id))
+            .and_then(|record| *record)
+            .map(|record| copy_om_retained_text(ctx, &record.id, "nx external reference handle-set link"))
+            .transpose()?;
+        output.push(ExternalReferenceIndexedRecord {
+            id,
+            record_id: record.record_id,
+            byte_len,
+            sha256: crate::native::hex::Sha256Hex::digest_charged(
+                ctx,
+                bytes,
+                "nx external reference indexed digest",
+            )?,
+            handle_set_record,
+            source_entry: copy_om_retained_text(
+                ctx,
+                &entry.name,
+                "nx native external reference indexed source entry",
+            )?,
+            source_offset,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode every exact six- or seven-byte empty indexed record.
