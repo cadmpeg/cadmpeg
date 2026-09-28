@@ -1158,9 +1158,12 @@ fn reverse_analytic_pcurve_over_range(
 pub(super) fn complete_intersection_pcurves_from_opposite_charts(
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let transfer_budget = new_transfer_budget();
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
         ir,
         0,
         &transfer_budget,
@@ -1180,69 +1183,60 @@ type OppositeChartReplacement = (
 );
 
 pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     // Lower bound of the procedural curves emitted by the current stream.
     procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let edge_tolerances = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| {
-            Some((
-                edge.curve().cloned()?,
-                edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)?,
-            ))
-        })
-        .fold(
-            BTreeMap::<CurveId, f64>::new(),
-            |mut values, (curve, tolerance)| {
-                values
-                    .entry(curve)
-                    .and_modify(|current| *current = current.min(tolerance))
-                    .or_insert(tolerance);
-                values
-            },
-        );
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let mut edge_tolerances = BTreeMap::<CurveId, f64>::new();
+    for edge in &ir.model.edges {
+        let (Some(curve), Some(tolerance)) = (
+            edge.curve(),
+            edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
+        ) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx opposite chart edge tolerances")?;
+        edge_tolerances
+            .entry(copy_typed_id(ctx, curve.as_str(), "nx opposite chart curve identity")?)
+            .and_modify(|current| *current = current.min(tolerance))
+            .or_insert(tolerance);
+    }
+    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let mut blend_contacts = BTreeMap::new();
     let mut blend_parameter_grids = BlendParameterGridCache::new();
-    let mut candidates = ir
-        .model
-        .procedural_curves
-        .iter()
-        .enumerate()
-        .skip(procedural_start)
-        .filter_map(|(procedural_index, procedural)| {
+    let mut candidates = Vec::new();
+    for (procedural_index, procedural) in ir.model.procedural_curves.iter().enumerate().skip(procedural_start) {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
-                return None;
+                continue;
             };
             let missing = context.sides().each_ref().map(|side| {
                 pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
             });
             if transfer_budget_exhausted(transfer_budget) {
-                return None;
+                continue;
             }
             let target = match missing {
                 [true, false] => 0,
                 [false, true] => 1,
-                _ => return None,
+                _ => continue,
             };
             let source = 1 - target;
-            let source_surface = context.sides()[source].surface.as_ref()?;
-            let target_surface = context.sides()[target].surface.as_ref()?;
+            let (Some(source_surface), Some(target_surface)) = (
+                context.sides()[source].surface.as_ref(),
+                context.sides()[target].surface.as_ref(),
+            ) else {
+                continue;
+            };
             let priority =
                 opposite_chart_transfer_priority(&model_index, source_surface, target_surface);
-            Some((
-                priority,
-                procedural.id.as_str().to_owned(),
-                procedural_index,
-            ))
-        })
-        .collect::<Vec<_>>();
+            ctx.charge_collection_items(1, "nx opposite chart candidates")?;
+            candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx opposite chart candidates", 0, 1))?;
+            candidates.push((priority, procedural.id.as_str(), procedural_index));
+    }
     candidates.sort_by(|first, second| {
         first
             .0
@@ -1304,8 +1298,9 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     target_surface,
                     tolerance,
                 );
+                ctx.charge_collection_items(1, "nx opposite chart blend contacts")?;
                 let blend_contact = blend_contacts
-                    .entry((source_surface.clone(), target_surface.clone()))
+                    .entry((source_surface, target_surface))
                     .or_insert_with(|| {
                         blend_transfer_contact(&model_index, source_surface, target_surface)
                     })
@@ -1349,6 +1344,8 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             Ok(()) | Err(cadmpeg_core::decode::BudgetExhausted) => {}
         }
         if let Some(replacement) = replacement? {
+            ctx.charge_collection_items(1, "nx opposite chart replacements")?;
+            replacements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx opposite chart replacements", 0, 1))?;
             replacements.push(replacement);
         }
     }

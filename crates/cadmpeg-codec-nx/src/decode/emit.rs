@@ -1256,6 +1256,7 @@ pub(super) fn emit_topology(
         completion_geometry_budget,
     )?;
     complete_intersection_pcurves_from_opposite_charts_with_budget(
+        ctx,
         ir,
         procedural_start,
         completion_transfer_budget,
