@@ -44,10 +44,14 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
     }
 
     assert_eq!(
-        crate::families::consolidated::records::object_stream_vertices(&bytes),
+        crate::test_support::with_service_context(|ctx|
+            crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+        ).expect("service decode"),
         [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
     );
-    assert!(crate::families::consolidated::records::object_stream_vertices(&bytes[5..]).is_empty());
+    assert!(crate::test_support::with_service_context(|ctx|
+        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes[5..])
+    ).expect("service decode").is_empty());
 
     let mut b5 = Vec::new();
     let mut payload = vec![0x05, 0x08, 0x01];
@@ -61,9 +65,35 @@ fn object_stream_vertices_exclude_framed_payload_markers() {
         b5.extend_from_slice(&le_f32(value));
     }
     assert_eq!(
-        crate::families::consolidated::records::object_stream_vertices(&b5),
+        crate::test_support::with_service_context(|ctx|
+            crate::families::consolidated::records::object_stream_vertices(ctx, &b5)
+        ).expect("service decode"),
         [cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)]
     );
+}
+
+#[test]
+fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
+    let mut bytes = vec![0xb2, 0x03, 0x06, 0x00, 0x05, 0x05, 0x08, 0x01];
+    for value in [1.0_f32, 2.0, 3.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for (limit, operation) in [
+        (0, "catia_object_stream_frame_ranges"),
+        (1, "catia_object_stream_vertex_rows"),
+        (2, "catia_object_stream_vertices"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation), "limit {limit}");
+    }
+    let vertices = crate::test_support::with_service_context(|ctx| {
+        crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+    }).expect("service decode");
+    assert_eq!(vertices.len(), 1);
+    assert_eq!(vertices[0].get(), cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
 }
 
 #[test]

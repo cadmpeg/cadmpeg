@@ -1373,7 +1373,7 @@ fn parse_from_records_with_class21(
     if require_topology && (faces.is_empty() || loops.is_empty()) {
         return Ok(None);
     }
-    let vertex_points = crate::families::consolidated::records::object_stream_vertices(bytes);
+    let vertex_points = crate::families::consolidated::records::object_stream_vertices(ctx, bytes)?;
     let geometric_edge_vertices = bind_edge_vertices(&loops, &geometry, &vertex_points);
     let vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink> = records
         .iter()

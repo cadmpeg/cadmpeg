@@ -1249,7 +1249,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
-    let points = object_stream_vertices_from_records(data, records);
+    let points = object_stream_vertices_from_records(ctx, data, records)?;
     let embedded = crate::resource::collect_vec(ctx, b2_embedded_cylinders_from_records(data, records), "catia_resolved_embedded_cylinders")?;
     let standalone = crate::resource::collect_vec(ctx, b2_cylinders_from_records(data, records), "catia_resolved_standalone_cylinders")?;
     let circles = b2_circles_from_records(data, records);
@@ -1635,32 +1635,37 @@ fn pcurve_endpoints_match(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 #[must_use]
-pub(in crate::families) fn object_stream_vertices(data: &[u8]) -> Vec<FinitePoint3> {
+pub(in crate::families) fn object_stream_vertices(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<FinitePoint3>, CodecError> {
     let records = consolidated_records(data);
-    object_stream_vertices_from_records(data, &records)
+    object_stream_vertices_from_records(ctx, data, &records)
 }
 
 fn object_stream_vertices_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<FinitePoint3> {
-    object_stream_vertex_row_ranges_from_records(data, records)
+) -> Result<Vec<FinitePoint3>, CodecError> {
+    crate::resource::collect_vec(ctx,
+        object_stream_vertex_row_ranges_from_records(ctx, data, records)?
         .into_iter()
-        .flat_map(|range| crate::wire::records::scan_vertex_records(&data[range]))
-        .collect()
+        .flat_map(|range| crate::wire::records::scan_vertex_records(&data[range])),
+        "catia_object_stream_vertices")
 }
 
 fn object_stream_vertex_row_ranges_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<Range<usize>> {
-    let mut ranges = records
+) -> Result<Vec<Range<usize>>, CodecError> {
+    let mut ranges = crate::resource::collect_vec(ctx, records
         .iter()
         .filter_map(crate::wire::records::ConsolidatedRecord::range)
-        .chain(crate::families::b5::graph::framed_ranges(data))
-        .collect::<Vec<_>>();
+        .chain(crate::families::b5::graph::framed_ranges(data)),
+        "catia_object_stream_frame_ranges")?;
     if ranges.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     ranges.sort_unstable_by_key(|range| (range.start, range.end));
     let mut rows = Vec::new();
@@ -1670,20 +1675,20 @@ fn object_stream_vertex_row_ranges_from_records(
             continue;
         }
         if range.start > region_start {
-            rows.extend(
-                scan_vertex_record_ranges(&data[region_start..range.start])
-                    .into_iter()
-                    .map(|row| row.start + region_start..row.end + region_start),
-            );
+            for row in scan_vertex_record_ranges(&data[region_start..range.start]) {
+                crate::resource::push(ctx, &mut rows,
+                    row.start + region_start..row.end + region_start,
+                    "catia_object_stream_vertex_rows")?;
+            }
         }
         region_start = region_start.max(range.end);
     }
-    rows.extend(
-        scan_vertex_record_ranges(&data[region_start..])
-            .into_iter()
-            .map(|row| row.start + region_start..row.end + region_start),
-    );
-    rows
+    for row in scan_vertex_record_ranges(&data[region_start..]) {
+        crate::resource::push(ctx, &mut rows,
+            row.start + region_start..row.end + region_start,
+            "catia_object_stream_vertex_rows")?;
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]
