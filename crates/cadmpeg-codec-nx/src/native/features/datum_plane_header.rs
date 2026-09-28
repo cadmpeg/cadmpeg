@@ -2,7 +2,8 @@
 //! Datum-plane common headers and atomic construction references.
 
 use super::{
-    feature_input_blocks, unique_offset_data_block, visit_feature_history_operation_records,
+    feature_input_blocks, format_feature_history_id, unique_offset_data_block,
+    visit_feature_history_operation_records,
     DatumPlaneBlockLane,
 };
 use crate::container::Container;
@@ -68,18 +69,23 @@ pub(in crate::native) fn feature_datum_plane_headers(
     let indexed = container.indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, container)?;
     let mut headers = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
+            let projected = (|| -> Result<(), cadmpeg_core::CodecError> {
             let Some(header) =
                 datum_plane_header::datum_plane_payload_header(record.payload_view())
             else {
-                return;
+                return Ok(());
             };
             let Some(source_offset) = entry_offset.checked_add(record.payload_offset() as u64)
             else {
-                return;
+                return Ok(());
             };
             let parsed =
                 datum_plane_header::datum_plane_descriptor_reference_branch(record.payload_view())
@@ -91,24 +97,31 @@ pub(in crate::native) fn feature_datum_plane_headers(
             let branch = match parsed {
                 Some(frame) => {
                     let Some(frame) = frame.relocate(entry_offset) else {
-                        return;
+                        return Ok(());
                     };
                     Some(frame)
                 }
                 None => None,
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let input_prefixes = inputs
-                .iter()
-                .filter(|input| input.operation_label == operation_label)
-                .filter_map(|input| {
-                    input
-                        .data_block
-                        .rsplit_once(":block#")
-                        .map(|(prefix, _)| prefix)
-                })
-                .collect::<BTreeSet<_>>();
+            let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+            let scratch_bytes = inputs.len().checked_mul(128).ok_or_else(|| {
+                ctx.refuse_codec_limit("index NX datum-plane input prefixes", 0, 1)
+            })?;
+            let _prefixes = ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(scratch_bytes),
+                "index NX datum-plane input prefixes",
+            )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(inputs.len()), "scan NX datum-plane input prefixes")?;
+            let mut input_prefixes = BTreeSet::new();
+            for input in inputs.iter().filter(|input| input.operation_label == operation_label) {
+                let Some((prefix, _)) = input.data_block.rsplit_once(":block#") else {
+                    continue;
+                };
+                if !input_prefixes.contains(prefix) {
+                    ctx.charge_collection_items(1, "NX datum-plane input prefixes")?;
+                    input_prefixes.insert(prefix);
+                }
+            }
             let branch = branch.map(|branch| {
                 let resolved = (input_prefixes.len() == 1).then_some(()).and_then(|()| {
                     let input_prefix = *input_prefixes.iter().next()?;
@@ -122,10 +135,18 @@ pub(in crate::native) fn feature_datum_plane_headers(
                 });
                 resolved.map_or_else(|| Construction::Unresolved(branch), Construction::Resolved)
             });
+            let id = format_feature_history_id(ctx, "datum-plane-header", section_key, operation_ordinal, None)?;
+            ctx.charge_entities(1, "NX datum-plane header")?;
+            ctx.charge_collection_items(1, "NX datum-plane headers")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDatumPlaneHeader>()),
+                "retain NX datum-plane header",
+            )?;
+            headers.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX datum-plane headers", 0, 1)
+            })?;
             headers.push(FeatureDatumPlaneHeader {
-                id: format!(
-                    "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
                 operation_label,
                 control: header.control,
                 construction: branch.unwrap_or(Construction::HeaderOnly {
@@ -134,8 +155,16 @@ pub(in crate::native) fn feature_datum_plane_headers(
                     source_offset,
                 }),
             });
+            Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(headers)
 }
 
@@ -501,6 +530,58 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
 #[cfg(test)]
 mod tests {
     use super::FeatureDatumPlaneHeader;
+
+    fn datum_plane_container() -> crate::container::Container<'static> {
+        let payload = crate::test_support::test_om::composed_feature_history_payload(
+            &[(&[0xff; 4], "DATUM_PLANE", vec![0, 0, 0, 1, 0, 1, 2, 0, 1, 2])],
+            &[],
+        );
+        crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(
+                ctx,
+                crate::test_support::test_prt::prt_with_named_payloads(&[(
+                    "/Root/UG_PART/UG_PART",
+                    payload,
+                )]),
+            )
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn datum_plane_header_route_preserves_header_only_record() {
+        let container = datum_plane_container();
+        let headers = crate::test_support::with_decode_context(|ctx| {
+            super::feature_datum_plane_headers(ctx, &container)
+        })
+        .unwrap();
+        assert_eq!(headers.len(), 1);
+        assert!(headers[0].id.starts_with("nx:feature-history:datum-plane-header#"));
+    }
+
+    #[test]
+    fn datum_plane_header_route_refuses_collection_limit() {
+        let container = datum_plane_container();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::feature_datum_plane_headers(&ctx, &container).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn datum_plane_header_route_refuses_retained_limit() {
+        let container = datum_plane_container();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::feature_datum_plane_headers(&ctx, &container).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
 
     #[test]
     fn datum_plane_columns_stream_once_with_native_retained_limit() {
