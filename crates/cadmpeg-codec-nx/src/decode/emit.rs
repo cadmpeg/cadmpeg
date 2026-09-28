@@ -730,6 +730,7 @@ pub(super) fn emit_topology(
             topology_losses.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx topology losses", 0, 1)
             })?;
+            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                 render_retained_text(
                     ctx,
@@ -1142,6 +1143,7 @@ pub(super) fn emit_topology(
                 topology_losses.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("nx topology losses", 0, 1)
                 })?;
+                super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     render_retained_text(
                         ctx,
@@ -1183,6 +1185,7 @@ pub(super) fn emit_topology(
             topology_losses.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx topology losses", 0, 1)
             })?;
+            super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyFaceLoopUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 render_retained_text(
                     ctx,
