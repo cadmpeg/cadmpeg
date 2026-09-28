@@ -7500,21 +7500,30 @@ pub(super) fn feature_extrude_payload_32_branches(ctx: &cadmpeg_core::decode::De
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(frame) = crate::om::extrude_32::extrude_payload_32_branch(record.body_view())
-                .and_then(|frame| frame.relocate(entry_offset))
-            else {
+            if failure.is_some() { return; }
+            let frame = match crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view()) {
+                Ok(frame) => frame,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
+            };
+            let frame = match frame.map_bindings(ctx, |index, ()| unique_offset_data_block(&indexed, index)) {
+                Ok(frame) => frame,
+                Err(error) => { failure = Some(error); return; }
             };
             branches.push(FeatureExtrudePayload32Branch {
                 id: format!("nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"),
                 operation_label: format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"),
-                frame: frame.map_bindings(|index, ()| unique_offset_data_block(&indexed, index)),
+                frame,
             });
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(branches)
 }
 
