@@ -2202,9 +2202,9 @@ fn parse_constraints(
                 .transpose()?.flatten();
         }
         if definition.is_none() {
-            definition = type_code.and_then(|type_code| {
-                neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
-            });
+            if let Some(type_code) = type_code {
+                definition = neutral_constraint(ctx, type_code, &resolved, parameter.as_ref(), all_resolved)?;
+            }
         }
         let definition = definition.unwrap_or_else(|| SketchConstraintDefinitionInput::Native {
                 native_kind,
@@ -2585,112 +2585,152 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
 }
 
 fn neutral_constraint(
+    ctx: &DecodeContext<'_>,
     kind: i64,
     loci: &[SketchLocus],
-    parameter: Option<ParameterId>,
+    parameter: Option<&ParameterId>,
     complete: bool,
-) -> Option<SketchConstraintDefinitionInput> {
+) -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
     if !complete {
-        return None;
+        return Ok(None);
     }
-    let entity = |index| loci.get(index).map(locus_entity).cloned();
-    let pair = || Some((entity(0)?, entity(1)?));
-    Some(match kind {
+    let entity = |index| loci.get(index)
+        .map(|locus| copy_constraint_entity(ctx, locus_entity(locus))).transpose();
+    let locus = |index| loci.get(index)
+        .map(|locus| copy_constraint_locus(ctx, locus)).transpose();
+    let pair = || -> Result<Option<(SketchEntityId, SketchEntityId)>, CodecError> {
+        let Some(first) = entity(0)? else { return Ok(None); };
+        let Some(second) = entity(1)? else { return Ok(None); };
+        Ok(Some((first, second)))
+    };
+    let parameter = || parameter.map(|id| ParameterId::mint(retained_string(
+        ctx, id.as_str(), "fcstd constraint parameter identity copy",
+    )?).map_err(CodecError::malformed)).transpose();
+    Ok(Some(match kind {
         0 => SketchConstraintDefinitionInput::Disabled {},
         1 => SketchConstraintDefinitionInput::CoincidentLoci {
-            loci: loci.to_vec(),
+            loci: copy_constraint_loci(ctx, loci)?,
         },
-        2 => SketchConstraintDefinitionInput::Horizontal { entity: entity(0)? },
-        3 => SketchConstraintDefinitionInput::Vertical { entity: entity(0)? },
+        2 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Horizontal { entity }
+        }
+        3 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Vertical { entity }
+        }
         4 => {
-            let (first, second) = pair()?;
+            let Some((first, second)) = pair()? else { return Ok(None); };
             SketchConstraintDefinitionInput::Parallel { first, second }
         }
         5 => {
-            let (first, second) = pair()?;
+            let Some((first, second)) = pair()? else { return Ok(None); };
             SketchConstraintDefinitionInput::Tangent { first, second }
         }
         10 => {
-            let (first, second) = pair()?;
+            let Some((first, second)) = pair()? else { return Ok(None); };
             SketchConstraintDefinitionInput::Perpendicular { first, second }
         }
         12 => {
-            let (first, second) = pair()?;
+            let Some((first, second)) = pair()? else { return Ok(None); };
             SketchConstraintDefinitionInput::Equal { first, second }
         }
-        13 => SketchConstraintDefinitionInput::PointOnObject {
-            point: loci.first()?.clone(),
-            entity: entity(1)?,
-        },
-        17 => SketchConstraintDefinitionInput::Fixed { entity: entity(0)? },
-        6 if loci.len() == 2 => SketchConstraintDefinitionInput::DistanceLoci {
-            first: loci[0].clone(),
-            second: loci[1].clone(),
-            parameter: parameter?,
-        },
-        6 => SketchConstraintDefinitionInput::Distance {
-            entities: loci.iter().map(locus_entity).cloned().collect(),
-            parameter: parameter?,
-        },
-        7 => SketchConstraintDefinitionInput::HorizontalDistance {
-            first: loci.first()?.clone(),
-            second: loci.get(1)?.clone(),
-            parameter: parameter?,
-        },
-        8 => SketchConstraintDefinitionInput::VerticalDistance {
-            first: loci.first()?.clone(),
-            second: loci.get(1)?.clone(),
-            parameter: parameter?,
-        },
+        13 => {
+            let Some(point) = locus(0)? else { return Ok(None); };
+            let Some(entity) = entity(1)? else { return Ok(None); };
+            SketchConstraintDefinitionInput::PointOnObject { point, entity }
+        }
+        17 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Fixed { entity }
+        }
+        6 if loci.len() == 2 => {
+            let Some(first) = locus(0)? else { return Ok(None); };
+            let Some(second) = locus(1)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::DistanceLoci { first, second, parameter }
+        }
+        6 => {
+            let mut entities = collection_vec(ctx, loci.len(), "fcstd constraint entity copies")?;
+            for locus in loci {
+                entities.push(copy_constraint_entity(ctx, locus_entity(locus))?);
+            }
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Distance { entities, parameter }
+        }
+        7 => {
+            let Some(first) = locus(0)? else { return Ok(None); };
+            let Some(second) = locus(1)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::HorizontalDistance { first, second, parameter }
+        }
+        8 => {
+            let Some(first) = locus(0)? else { return Ok(None); };
+            let Some(second) = locus(1)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter }
+        }
         9 if loci.len() == 2 && sketch_axis(&loci[0]).is_some() => {
+            let Some(entity) = entity(1)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            let Some(axis) = sketch_axis(&loci[0]) else { return Ok(None); };
             SketchConstraintDefinitionInput::AngleToAxis {
-                entity: entity(1)?,
-                axis: sketch_axis(&loci[0])?,
-                parameter: parameter?,
+                entity, axis, parameter,
             }
         }
         9 if loci.len() == 2 && sketch_axis(&loci[1]).is_some() => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            let Some(axis) = sketch_axis(&loci[1]) else { return Ok(None); };
             SketchConstraintDefinitionInput::AngleToAxis {
-                entity: entity(0)?,
-                axis: sketch_axis(&loci[1])?,
-                parameter: parameter?,
+                entity, axis, parameter,
             }
         }
-        9 if loci.len() == 1 => SketchConstraintDefinitionInput::AngleToAxis {
-            entity: entity(0)?,
-            axis: SketchAxis::Horizontal,
-            parameter: parameter?,
-        },
-        9 => SketchConstraintDefinitionInput::Angle {
-            first: entity(0)?,
-            second: entity(1)?,
-            parameter: parameter?,
-        },
-        11 => SketchConstraintDefinitionInput::Radius {
-            entity: entity(0)?,
-            parameter: parameter?,
-        },
-        18 => SketchConstraintDefinitionInput::Diameter {
-            entity: entity(0)?,
-            parameter: parameter?,
-        },
-        16 => SketchConstraintDefinitionInput::SnellsLaw {
-            incident: loci.first()?.clone(),
-            refracted: loci.get(1)?.clone(),
-            interface: entity(2)?,
-            parameter: parameter?,
-        },
-        19 => SketchConstraintDefinitionInput::Weight {
-            entity: entity(0)?,
-            parameter: parameter?,
-        },
-        14 => SketchConstraintDefinitionInput::Symmetric {
-            first: loci.first()?.clone(),
-            second: loci.get(1)?.clone(),
-            axis: entity(2)?,
-        },
-        _ => return None,
-    })
+        9 if loci.len() == 1 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::AngleToAxis {
+                entity, axis: SketchAxis::Horizontal, parameter,
+            }
+        }
+        9 => {
+            let Some(first) = entity(0)? else { return Ok(None); };
+            let Some(second) = entity(1)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Angle { first, second, parameter }
+        }
+        11 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Radius { entity, parameter }
+        }
+        18 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Diameter { entity, parameter }
+        }
+        16 => {
+            let Some(incident) = locus(0)? else { return Ok(None); };
+            let Some(refracted) = locus(1)? else { return Ok(None); };
+            let Some(interface) = entity(2)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::SnellsLaw {
+                incident, refracted, interface, parameter,
+            }
+        }
+        19 => {
+            let Some(entity) = entity(0)? else { return Ok(None); };
+            let Some(parameter) = parameter()? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Weight { entity, parameter }
+        }
+        14 => {
+            let Some(first) = locus(0)? else { return Ok(None); };
+            let Some(second) = locus(1)? else { return Ok(None); };
+            let Some(axis) = entity(2)? else { return Ok(None); };
+            SketchConstraintDefinitionInput::Symmetric { first, second, axis }
+        }
+        _ => return Ok(None),
+    }))
 }
 
 fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
@@ -2908,6 +2948,39 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
         | SketchLocus::End(entity)
         | SketchLocus::Center(entity) => entity,
     }
+}
+
+fn copy_constraint_entity(
+    ctx: &DecodeContext<'_>,
+    entity: &SketchEntityId,
+) -> Result<SketchEntityId, CodecError> {
+    SketchEntityId::mint(retained_string(
+        ctx, entity.as_str(), "fcstd constraint entity identity",
+    )?).map_err(CodecError::malformed)
+}
+
+fn copy_constraint_locus(
+    ctx: &DecodeContext<'_>,
+    locus: &SketchLocus,
+) -> Result<SketchLocus, CodecError> {
+    let entity = copy_constraint_entity(ctx, locus_entity(locus))?;
+    Ok(match locus {
+        SketchLocus::Entity(_) => SketchLocus::Entity(entity),
+        SketchLocus::Start(_) => SketchLocus::Start(entity),
+        SketchLocus::End(_) => SketchLocus::End(entity),
+        SketchLocus::Center(_) => SketchLocus::Center(entity),
+    })
+}
+
+fn copy_constraint_loci(
+    ctx: &DecodeContext<'_>,
+    loci: &[SketchLocus],
+) -> Result<Vec<SketchLocus>, CodecError> {
+    let mut copies = collection_vec(ctx, loci.len(), "fcstd constraint locus copies")?;
+    for locus in loci {
+        copies.push(copy_constraint_locus(ctx, locus)?);
+    }
+    Ok(copies)
 }
 
 fn constraint_kind(kind: i64) -> &'static str {
