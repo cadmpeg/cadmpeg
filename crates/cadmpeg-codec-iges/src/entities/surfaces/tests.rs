@@ -74,6 +74,32 @@ fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn surface_identity_copies_refuse_at_retained_byte_limit() {
+    for bytes in [placed_tabulated_line_file()] {
+        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+        let mut cap = 0_u64;
+        let mut refused = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == "iges surface identity copy" {
+                        refused = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("expected surface identity refusal at cap {cap}, but decode succeeded"),
+                Err(error) => panic!("expected surface identity refusal at cap {cap}: {error:?}"),
+            }
+        }
+        assert!(refused, "surface identity refusal was not reached");
+    }
+}
+
+#[test]
 fn type122_projection_refuses_tabulated_carrier_rows_knots_and_slots() {
     let bytes = placed_tabulated_line_file();
     for operation in [
