@@ -1090,7 +1090,7 @@ fn validate_loaded(
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
-    validate_extrude_selection_group_members(&ctx, &mut findings);
+    validate_extrude_selection_group_members(&ctx, &mut findings)?;
     validate_edge_treatment_groups(
         &ctx,
         &mut findings,
@@ -6295,7 +6295,7 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Report Extrude selection groups with missing or inconsistent members.
-fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_extrude_selection_group_members(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let members_by_slot = &ctx.members_by_slot;
     for group in &native.design_extrude_selection_groups {
@@ -6337,14 +6337,12 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
             })
         });
         if !(complete && context_consistent) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Extrude selection group has missing members".into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Extrude selection group has missing members",
+                Some(ctx.copy_entity(&group.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Bytes from a face recipe header to the recipe program, by recipe kind.

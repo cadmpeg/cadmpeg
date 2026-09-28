@@ -123,3 +123,31 @@ fn extrude_group_valid_slot_has_no_finding() {
     super::super::validate_extrude_selection_groups(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
 }
+
+fn group_members_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = native(false, false);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_extrude_selection_group_members(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn extrude_group_missing_member_finding_refuses_collection_limit() {
+    let error = group_members_error(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn extrude_group_missing_member_entity_refuses_retained_limit() {
+    let error = group_members_error(u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
