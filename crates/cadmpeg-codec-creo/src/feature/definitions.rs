@@ -6043,28 +6043,33 @@ fn saved_arc_scalar(
 }
 
 fn saved_positional_generated_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     const HEADER_WINDOW: usize = 24;
     let (Some(order_table), Some(segments)) = (order_table, segments) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let generated_segments = order_table
-        .rows
-        .iter()
-        .filter_map(|row| {
-            (order_table.internal_id(row.external_id) == Some(row.internal_id)
-                && order_table.external_id(row.internal_id) == Some(row.external_id))
-            .then_some(())?;
-            let segment = segments.unique_segment(row.external_id)?;
-            Some((row.internal_id, segment))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut generated_segments = BTreeMap::new();
+    for row in &order_table.rows {
+        if order_table.internal_id(row.external_id) != Some(row.internal_id)
+            || order_table.external_id(row.internal_id) != Some(row.external_id)
+        {
+            continue;
+        }
+        let Some(segment) = segments.unique_segment(row.external_id) else {
+            continue;
+        };
+        if !generated_segments.contains_key(&row.internal_id) {
+            ctx.charge_collection_items(1, "creo saved generated segment nodes")?;
+        }
+        generated_segments.insert(row.internal_id, segment);
+    }
     let mut starts = Vec::new();
     for separator in start..end {
         if payload.get(separator) != Some(&0xe3) {
@@ -6087,6 +6092,7 @@ fn saved_positional_generated_entities(
             continue;
         }
         if payload[after_id..header_end].contains(&0xe2) {
+            ctx.try_reserve_items(&mut starts, 1, "creo saved generated row starts")?;
             starts.push(row_start);
         }
     }
@@ -6119,13 +6125,15 @@ fn saved_positional_generated_entities(
             continue;
         };
         let mut cursor = after_id + header_size + 1;
-        let mut values = Vec::with_capacity(value_count);
-        while cursor < row_end && values.len() < value_count {
+        let mut values = [None; 14];
+        let mut filled = 0;
+        while cursor < row_end && filled < value_count {
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
             if payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-                values.extend([Some(0.0), Some(1.0), Some(0.0)]);
+                values[filled..filled + 3].copy_from_slice(&[Some(0.0), Some(1.0), Some(0.0)]);
+                filled += 3;
                 cursor += 2;
                 continue;
             }
@@ -6158,17 +6166,17 @@ fn saved_positional_generated_entities(
             if next <= cursor {
                 break;
             }
-            values.push(value);
+            values[filled] = value;
+            filled += 1;
             cursor = next;
         }
-        if values.len() != value_count {
+        if filled != value_count {
             if !matches!(segment.kind, FeatureSegmentKind::Arc(_))
-                || values.len() > value_count
+                || filled > value_count
                 || (cursor != row_end && payload.get(cursor) != Some(&0xe3))
             {
                 continue;
             }
-            values.resize(value_count, None);
         }
         match segment.kind {
             FeatureSegmentKind::Line(_) => {
@@ -6195,18 +6203,28 @@ fn saved_positional_generated_entities(
                 };
                 if orientation_matches {
                     let body_end = saved_positional_body_end(payload, row_end);
+                    let body = ctx.copy_retained(
+                        &payload[row_start..body_end],
+                        "creo saved generated line body",
+                    )?;
+                    ctx.try_reserve_items(&mut entities, 1, "creo saved generated entities")?;
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
                         attributes: Vec::new(),
                         endpoints,
-                        body: payload[row_start..body_end].to_vec(),
+                        body,
                         offset: row_start,
                     }));
                 }
             }
             FeatureSegmentKind::Arc(_) => {
                 let body_end = saved_positional_body_end(payload, row_end);
+                let body = ctx.copy_retained(
+                    &payload[row_start..body_end],
+                    "creo saved generated arc body",
+                )?;
+                ctx.try_reserve_items(&mut entities, 1, "creo saved generated entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -6216,14 +6234,14 @@ fn saved_positional_generated_entities(
                         [values[7], values[8], values[9]],
                     ],
                     parameters: [values[10], values[11]],
-                    body: payload[row_start..body_end].to_vec(),
+                    body,
                     offset: row_start,
                 }));
             }
             FeatureSegmentKind::Point(_) => {}
         }
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_positional_body_end(payload: &[u8], row_end: usize) -> usize {
@@ -6261,13 +6279,14 @@ fn saved_circular_entities(
                 .unwrap_or([None])[0];
             if kind == "arc" {
                 let positional = saved_positional_generated_entities(
+                    ctx,
                     payload,
                     body_start,
                     body_end,
                     cache,
                     order_table,
                     segments,
-                );
+                )?;
                 let named_body_end = positional
                     .iter()
                     .map(saved_entity_offset)
@@ -6678,7 +6697,7 @@ fn positional_saved_section(
     segments: Option<&FeatureSegmentTable>,
 ) -> Result<Option<FeatureSavedSection>, CodecError> {
     let mut entities =
-        saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
+        saved_positional_generated_entities(ctx, payload, start, end, cache, order_table, segments)?;
     let conic = saved_conic_entities(ctx, payload, start, end, cache)?;
     ctx.try_reserve_items(&mut entities, conic.len(), "creo positional saved section entities")?;
     entities.extend(conic);
