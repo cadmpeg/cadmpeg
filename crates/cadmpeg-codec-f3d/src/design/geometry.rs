@@ -2191,16 +2191,18 @@ fn certified_nurbs_tubes(
     let degree = curve.degree() as usize;
     let knots = curve.knots();
     if let Some(ctx) = ctx {
-        ctx.charge_collection_items(curve.control_points().len() as u64, "f3d nurbs tube points")?;
-        if curve.weights().is_some() {
+        let count = u64::try_from(curve.pole_rows().count())
+            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs tube points", 0, 1))?;
+        ctx.charge_collection_items(count, "f3d nurbs tube points")?;
+        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
             ctx.charge_collection_items(
-                curve.control_points().len() as u64,
+                count,
                 "f3d nurbs tube weights",
             )?;
         }
     }
-    let control_points = curve.pole_rows().raw_points();
-    let weights = curve.pole_rows().weights();
+    let control_points = curve.pole_rows().try_raw_points()?;
+    let weights = curve.pole_rows().try_weights()?;
     let count = control_points.len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
