@@ -14,7 +14,7 @@ use crate::ids::{
 use crate::math::Point3;
 use crate::scalar::UnitBinary32;
 use crate::transform::Transform;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -312,14 +312,15 @@ impl Shell {
         if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
             return Err(BodySelectionError::Empty);
         }
+        let members = ShellMembers {
+            faces,
+            wire_edges,
+            free_vertices,
+        };
         Ok(Self {
             id,
             region,
-            members: ShellMembers {
-                faces,
-                wire_edges,
-                free_vertices,
-            },
+            members,
         })
     }
 
@@ -653,17 +654,6 @@ pub enum LoopBoundary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopRingError(String);
 
-/// A ring construction failure that keeps decode resource refusal distinct.
-#[derive(Debug, thiserror::Error)]
-pub enum LoopRingAdmissionError {
-    /// The coedges or vertex anchors do not form a valid ring.
-    #[error(transparent)]
-    Invalid(#[from] LoopRingError),
-    /// The caller's decode budget refuses the validation index.
-    #[error(transparent)]
-    Resource(#[from] CodecError),
-}
-
 impl std::fmt::Display for LoopRingError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(&self.0)
@@ -775,42 +765,39 @@ impl LoopRing {
         })
     }
 
-    /// Build a ring while charging and fallibly reserving its validation index.
-    pub fn new_admitted(
+    /// Build a ring with duplicate-check storage charged to a decode caller.
+    pub fn try_new_for_decode(
+        ctx: &DecodeContext<'_>,
         coedges: Vec<CoedgeId>,
         vertex_uses: Vec<AnchoredVertexUse>,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Self, LoopRingAdmissionError> {
+    ) -> Result<Result<Self, LoopRingError>, CodecError> {
         if coedges.is_empty() {
-            return Err(LoopRingError("loop ring must contain a coedge".into()).into());
+            return Ok(Err(LoopRingError("loop ring must contain a coedge".into())));
         }
-        let operation = "loop ring validation members";
-        ctx.charge_collection_items(u64_from_index(coedges.len()), operation)?;
+        let count = u64_from_index(coedges.len());
+        ctx.charge_collection_items(count, "loop ring members")?;
         let mut members = HashSet::new();
-        members.try_reserve(coedges.len()).map_err(|_| {
-            refuse_local_limit(
-                operation,
-                u64_from_index(coedges.len()),
-                u64_from_index(coedges.len()),
-            )
-        })?;
+        members
+            .try_reserve(coedges.len())
+            .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
-            return Err(LoopRingError("loop ring coedges must be distinct".into()).into());
+            return Ok(Err(LoopRingError(
+                "loop ring coedges must be distinct".into(),
+            )));
         }
         if vertex_uses
             .iter()
             .any(|vertex_use| !members.contains(&vertex_use.after))
         {
-            return Err(LoopRingError(
+            return Ok(Err(LoopRingError(
                 "loop ring vertex-use after must name a coedge in the ring".into(),
-            )
-            .into());
+            )));
         }
-        Ok(Self {
+        Ok(Ok(Self {
             coedges,
             vertex_uses,
-        })
+        }))
     }
 
     /// Coedges in source traversal order.
@@ -1892,17 +1879,19 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let refused = LoopRing::new_admitted(vec![coedge.clone()], Vec::new(), &ctx);
+        let refused = LoopRing::try_new_for_decode(&ctx, vec![coedge.clone()], Vec::new());
         assert!(matches!(refused,
-            Err(super::LoopRingAdmissionError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "loop ring validation members"
+                    && limit.operation == "loop ring members"
                     && limit.additional == 1
         ));
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-        let ring = LoopRing::new_admitted(vec![coedge.clone()], Vec::new(), &ctx).unwrap();
+        let ring = LoopRing::try_new_for_decode(&ctx, vec![coedge.clone()], Vec::new())
+            .unwrap()
+            .unwrap();
         assert_eq!(ring.coedges(), &[coedge]);
     }
 

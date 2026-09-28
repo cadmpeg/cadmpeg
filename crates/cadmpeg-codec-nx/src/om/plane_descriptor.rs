@@ -77,12 +77,17 @@ impl PlaneDescriptor {
     pub(crate) fn label(&self) -> &str {
         &self.label
     }
+    #[cfg(test)]
     pub(crate) fn suffix(&self) -> Vec<u8> {
-        let mut bytes = b"?A".to_vec();
-        bytes.extend_from_slice(self.schema.raw());
-        bytes.extend_from_slice(&[0xff, 0x02, 0x01]);
-        bytes.extend_from_slice(self.label.as_bytes());
-        bytes
+        self.suffix_bytes().collect()
+    }
+    pub(crate) fn suffix_bytes(&self) -> impl Iterator<Item = u8> + Clone + '_ {
+        b"?A"
+            .iter()
+            .chain(self.schema.raw())
+            .chain(&[0xff, 0x02, 0x01])
+            .chain(self.label.as_bytes())
+            .copied()
     }
 }
 

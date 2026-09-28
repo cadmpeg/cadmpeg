@@ -6,11 +6,8 @@ use crate::om::scalar::{PayloadScalarAtom, PayloadScalarEncoding};
 use serde::{Deserialize, Serialize};
 
 /// Three typed scalars anchored to an ordered operation body reference.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyScalarTripleWire",
-    into = "FeatureOperationBodyScalarTripleWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyScalarTripleWire")]
 pub(in crate::native) struct FeatureOperationBodyScalarTriple {
     /// Globally unique scalar-clause identity.
     pub(in crate::native) id: String,
@@ -24,6 +21,36 @@ pub(in crate::native) struct FeatureOperationBodyScalarTriple {
     pub(super) branch: u8,
     /// Three checked scalar atoms and their absolute source offsets.
     pub(super) scalars: ScalarTriple,
+}
+
+#[derive(Serialize)]
+struct FeatureOperationBodyScalarTripleRef<'a> {
+    id: &'a str,
+    operation_label: &'a str,
+    body_reference_ordinal: u32,
+    body_object_index: u32,
+    branch: u8,
+    values: [f64; 3],
+    encodings: [PayloadScalarEncoding; 3],
+    raw_values: [&'a [u8]; 3],
+    source_offsets: [u64; 3],
+}
+
+impl Serialize for FeatureOperationBodyScalarTriple {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FeatureOperationBodyScalarTripleRef {
+            id: &self.id,
+            operation_label: &self.operation_label,
+            body_reference_ordinal: self.body_reference_ordinal,
+            body_object_index: self.body_object_index,
+            branch: self.branch,
+            values: self.scalars.atoms().map(|atom| atom.value().get()),
+            encodings: self.scalars.atoms().map(PayloadScalarAtom::encoding),
+            raw_values: self.scalars.atoms().each_ref().map(PayloadScalarAtom::raw),
+            source_offsets: self.scalars.source_offsets(),
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -48,6 +75,7 @@ struct FeatureOperationBodyScalarTripleWire {
     source_offsets: [u64; 3],
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyScalarTriple> for FeatureOperationBodyScalarTripleWire {
     fn from(value: FeatureOperationBodyScalarTriple) -> Self {
         Self {
@@ -90,7 +118,29 @@ impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScala
 
 #[cfg(test)]
 mod tests {
-    use super::FeatureOperationBodyScalarTriple;
+    use super::{FeatureOperationBodyScalarTriple, FeatureOperationBodyScalarTripleWire};
+
+    const WIRE: &str = r#"{"id":"nx:feature:body-scalar#0","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":[[0],[80,64,0,0],[47,240,0,0,0,0,0,0]],"source_offsets":[100,101,105]}"#;
+
+    #[test]
+    fn body_scalar_triple_borrowed_wire_preserves_bytes() {
+        let record: FeatureOperationBodyScalarTriple = serde_json::from_str(WIRE).unwrap();
+        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&FeatureOperationBodyScalarTripleWire::from(record.clone()))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn body_scalar_triple_native_limit_refuses_before_clone() {
+        let record: FeatureOperationBodyScalarTriple = serde_json::from_str(WIRE).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(WIRE).unwrap(),
+        );
+    }
 
     #[test]
     fn scalar_triple_wire_requires_contiguous_positions_and_complete_span() {

@@ -1430,7 +1430,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             entry: DesignTopologyRecipeEntry {
                 selector: 0,
                 boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet.clone(), triplet.clone()],
+                topology_triplets: [triplet, triplet],
             },
             triplet_edge_slots: [vec![17, 18], vec![17]],
         },
@@ -1449,7 +1449,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
             entry: DesignTopologyRecipeEntry {
                 selector: 0,
                 boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-                topology_triplets: [triplet.clone(), triplet.clone()],
+                topology_triplets: [triplet, triplet],
             },
             triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
         },
@@ -1469,7 +1469,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
                     selector: 0,
                     boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
                     topology_triplets: [
-                        triplet.clone(),
+                        triplet,
                         DesignTopologyRecipeTriplet {
                             outer: std::num::NonZeroU32::new(4).unwrap(),
                             incident: Some(
@@ -1478,7 +1478,7 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
                                     side: DesignTopologyIncidentSide::Preceding,
                                 },
                             ),
-                            ..triplet.clone()
+                            ..triplet
                         },
                     ],
                 },

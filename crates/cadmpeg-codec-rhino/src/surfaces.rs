@@ -1002,6 +1002,7 @@ fn admit_nurbs_pole_conversion(
 
 /// Constructs the exact degree-one tensor interpolation between two profile curves.
 pub(crate) fn extrusion_nurbs(
+    ctx: &DecodeContext<'_>,
     start: &NurbsCurve,
     end: &NurbsCurve,
     path_domain: FiniteVector<2>,
@@ -1010,52 +1011,107 @@ pub(crate) fn extrusion_nurbs(
 ) -> Result<NurbsSurface, GeometryError> {
     if start.degree() != end.degree()
         || start.knots() != end.knots()
-        || start.control_points().len() != end.control_points().len()
-        || start.weights() != end.weights()
+        || start.pole_count() != end.pole_count()
+        || !matching_pole_weights(start.pole_rows(), end.pole_rows())
         || start.periodic() != end.periodic()
         || path_domain[0] >= path_domain[1]
     {
         return Err(error(offset, "extrusion tensor inputs are incompatible"));
     }
-    let profile_count = start.control_points().len();
+    let profile_count = start.pole_count();
     profile_count
         .checked_mul(2)
         .ok_or_else(|| error(offset, "extrusion surface control count overflow"))?;
-    let start_points = start.control_points();
-    let end_points = end.control_points();
-    let start_weights = start.weights();
-    let mut control_points = Vec::with_capacity(profile_count * 2);
-    let mut weights = start_weights
-        .as_ref()
-        .map(|_| Vec::with_capacity(profile_count * 2));
-    for index in 0..profile_count {
-        control_points.push(start_points[index]);
-        control_points.push(end_points[index]);
-        if let (Some(source), Some(target)) = (&start_weights, &mut weights) {
-            target.push(source[index]);
-            target.push(source[index]);
-        }
-    }
-    let mut surface = NurbsPoleGrid::from_checked_lanes(
-        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+    let poles = match (start.pole_rows(), end.pole_rows()) {
+        (
+            NurbsPoles3::Polynomial {
+                points: start_points,
+            },
+            NurbsPoles3::Polynomial { points: end_points },
+        ) => NurbsPoleGrid::Polynomial {
+            rows: extrusion_rows(ctx, start_points, end_points)?,
+        },
+        (
+            NurbsPoles3::Rational {
+                points: start_points,
+            },
+            NurbsPoles3::Rational { points: end_points },
+        ) => NurbsPoleGrid::Rational {
+            rows: extrusion_rows(ctx, start_points, end_points)?,
+        },
+        _ => return Err(error(offset, "extrusion tensor inputs are incompatible")),
+    };
+    let knot_bytes = charge_axis_knots(ctx, start.knots().len(), "Rhino extrusion surface knots")?;
+    let u_knots = start.knots().try_clone().map_err(|_| {
+        crate::curves::allocation_failed("Rhino extrusion surface knots", knot_bytes)
+    })?;
+    let [path_start, path_end] = path_domain.finite_components();
+    let path_knots =
+        KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])
+            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
+    let mut surface = NurbsSurface::from_admitted_grid(
+        NurbsSurfaceAxis::new(start.degree(), u_knots, start.periodic()),
+        NurbsSurfaceAxis::new(1, path_knots, false),
+        poles,
+        false,
     )
-    .and_then(|poles| {
-        let [path_start, path_end] = path_domain.finite_components();
-        let path_knots =
-            KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])?;
-        NurbsSurface::new(
-            NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
-            NurbsSurfaceAxis::new(1, path_knots, false),
-            poles,
-            false,
-        )
-    })
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))?;
     if transposed {
         surface.transpose_parameter_axes();
     }
     Ok(surface)
+}
+
+fn matching_pole_weights(
+    start: &NurbsPoles3<FinitePoint3>,
+    end: &NurbsPoles3<FinitePoint3>,
+) -> bool {
+    match (start, end) {
+        (NurbsPoles3::Polynomial { .. }, NurbsPoles3::Polynomial { .. }) => true,
+        (NurbsPoles3::Rational { points: start }, NurbsPoles3::Rational { points: end }) => start
+            .iter()
+            .zip(end)
+            .all(|(first, second)| first.weight == second.weight),
+        _ => false,
+    }
+}
+
+fn extrusion_rows<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    start: &[T],
+    end: &[T],
+) -> Result<Vec<Vec<T>>, GeometryError> {
+    let operation = "Rhino extrusion surface rows";
+    let row_count = start.len();
+    let items = row_count.checked_mul(3).ok_or_else(|| {
+        GeometryError::not_implemented("Rhino extrusion surface row count exceeds address space")
+    })?;
+    let row_bytes = row_count
+        .checked_mul(std::mem::size_of::<Vec<T>>())
+        .and_then(|size| {
+            row_count
+                .checked_mul(2)?
+                .checked_mul(std::mem::size_of::<T>())?
+                .checked_add(size)
+        })
+        .ok_or_else(|| {
+            GeometryError::not_implemented("Rhino extrusion surface row bytes exceed address space")
+        })?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(items), operation)?;
+    let row_bytes = cadmpeg_core::decode::u64_from_index(row_bytes);
+    ctx.charge_retained(row_bytes, operation)?;
+    let mut rows = Vec::new();
+    rows.try_reserve_exact(row_count)
+        .map_err(|_| crate::curves::allocation_failed(operation, row_bytes))?;
+    for (first, second) in start.iter().copied().zip(end.iter().copied()) {
+        let mut row = Vec::new();
+        row.try_reserve_exact(2)
+            .map_err(|_| crate::curves::allocation_failed(operation, row_bytes))?;
+        row.push(first);
+        row.push(second);
+        rows.push(row);
+    }
+    Ok(rows)
 }
 
 fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {

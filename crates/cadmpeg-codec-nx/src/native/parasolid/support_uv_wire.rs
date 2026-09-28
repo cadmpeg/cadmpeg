@@ -6,7 +6,8 @@ use crate::intersection::support_uv_values::{SupportUvPacking, SupportUvValues};
 use crate::intersection::SupportUvFraming;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct SupportUvWire {
     id: String,
     stream_ordinal: u32,
@@ -17,6 +18,36 @@ pub(super) struct SupportUvWire {
     framing: SupportUvFraming,
     inflated_offset: u64,
 }
+
+#[derive(Serialize)]
+struct SupportUvRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    count: u32,
+    marker: u8,
+    values: &'a [cadmpeg_ir::scalar::FiniteReal],
+    framing: SupportUvFraming,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidSupportUvRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        SupportUvRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            count: self.values.count(),
+            marker: self.values.marker(),
+            values: self.values.values(),
+            framing: self.framing,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidSupportUvRecord> for SupportUvWire {
     fn from(value: ParasolidSupportUvRecord) -> Self {
         Self {
@@ -66,6 +97,10 @@ mod tests {
             );
             let record: ParasolidSupportUvRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&super::SupportUvWire::from(record.clone())).unwrap()
+            );
             for (field, value) in [
                 ("count", serde_json::json!(1)),
                 ("marker", serde_json::json!(0)),
@@ -79,5 +114,15 @@ mod tests {
                     .contains(field));
             }
         }
+    }
+
+    #[test]
+    fn support_uv_native_limit_refuses_before_values_copy() {
+        let json = r#"{"id":"nx:parasolid:support-uv#0","stream_ordinal":0,"xmt":1,"count":4,"marker":2,"values":[0.0,1.0,2.0,3.0],"framing":"direct","inflated_offset":10}"#;
+        let record: ParasolidSupportUvRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }

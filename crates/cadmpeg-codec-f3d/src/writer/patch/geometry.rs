@@ -228,7 +228,7 @@ fn patch_asm_geometry(
         let Some(color) = entity_colors.get(&id) else {
             continue;
         };
-        let carrier = attribute_chain_color_carrier(entity, |index| {
+        let carrier = attribute_chain_color_carrier(entity, records_by_index.len(), |index| {
             usize::try_from(index)
                 .ok()
                 .and_then(|index| records_by_index.get(&index).copied())

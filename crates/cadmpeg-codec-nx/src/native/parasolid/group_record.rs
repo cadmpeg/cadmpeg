@@ -41,7 +41,8 @@ impl GroupOrigin {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct GroupWire {
     id: String,
     stream_ordinal: u32,
@@ -60,6 +61,42 @@ pub(super) struct GroupWire {
     byte_len: u64,
     inflated_offset: u64,
 }
+#[derive(Serialize)]
+struct GroupRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    stream_kind: StreamKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partition_stream_ordinal: Option<u32>,
+    xmt: u32,
+    node_id: u32,
+    references: &'a [u32],
+    selector: GroupSelector,
+    linked_reference_status: GroupReferenceStatus,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidGroupRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        GroupRef {
+            id: &self.id,
+            stream_ordinal: self.origin.stream_ordinal(),
+            stream_kind: self.origin.stream_kind(),
+            partition_stream_ordinal: self.origin.partition_stream_ordinal(),
+            xmt: self.xmt,
+            node_id: self.node_id,
+            references: &self.references,
+            selector: self.selector,
+            linked_reference_status: self.linked_reference_status,
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidGroupRecord> for GroupWire {
     fn from(value: ParasolidGroupRecord) -> Self {
         Self {
@@ -117,7 +154,8 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
 
 #[cfg(test)]
 mod tests {
-    use super::super::ParasolidGroupRecord;
+    use super::super::{ParasolidGroupRecord, GROUP_RECORD_CLONE_COUNT};
+    use super::GroupWire;
 
     #[test]
     fn group_wire_preserves_scopes_and_rejects_invalid_controls() {
@@ -131,6 +169,10 @@ mod tests {
             );
             let group: ParasolidGroupRecord = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&group).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&group).unwrap(),
+                serde_json::to_vec(&GroupWire::from(group.clone())).unwrap()
+            );
             for (field, invalid) in [
                 ("selector", serde_json::json!(3)),
                 ("linked_reference_status", serde_json::json!(2)),
@@ -151,6 +193,16 @@ mod tests {
                     .contains("partition_stream_ordinal"));
             }
         }
+    }
+
+    #[test]
+    fn group_record_retained_limit_refuses_before_clone() {
+        let json = r#"{"id":"nx:s4:group#10","stream_ordinal":4,"stream_kind":"partition","partition_stream_ordinal":4,"xmt":10,"node_id":7,"references":[3,4,5,6,7],"selector":4,"linked_reference_status":0,"byte_len":20,"inflated_offset":0}"#;
+        let record: ParasolidGroupRecord = serde_json::from_str(json).unwrap();
+        let expected: serde_json::Value = serde_json::from_str(json).unwrap();
+        GROUP_RECORD_CLONE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+        GROUP_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }
 

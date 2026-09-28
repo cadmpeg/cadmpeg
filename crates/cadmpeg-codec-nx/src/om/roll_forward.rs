@@ -76,6 +76,7 @@ impl<O: Copy + From<u16> + std::ops::Add<Output = O>> OperationStateGroup<O> {
     pub(crate) fn end_offset(&self) -> O {
         self.offset + O::from(self.byte_len())
     }
+    #[cfg(test)]
     pub(crate) fn map_rows<R>(
         self,
         mut map: impl FnMut(u8, O, OperationStateGroupRow) -> R,

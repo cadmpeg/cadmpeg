@@ -34,7 +34,7 @@ impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
     pub(crate) fn offset(&self) -> O {
         self.offset
     }
-    pub(crate) fn indices(&self) -> impl Iterator<Item = LocatedCompactIndex<O>> + '_ {
+    pub(crate) fn indices(&self) -> impl Iterator<Item = LocatedCompactIndex<O>> + Clone + '_ {
         let mut offset = self.offset + O::from(2);
         self.indices.as_slice().iter().map(move |atom| {
             let token = LocatedCompactIndex {

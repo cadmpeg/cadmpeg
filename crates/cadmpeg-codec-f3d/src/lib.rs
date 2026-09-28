@@ -204,7 +204,7 @@ impl CodecBackend for F3dCodec {
         match &scan.kind {
             container::F3dContainerKind::MultiDocument { .. } => f3z::inspect(ctx, &scan),
             container::F3dContainerKind::Document { .. } => {
-                Ok(report::build_inspection_summary(&scan))
+                report::build_inspection_summary(ctx, &scan)
             }
         }
     }

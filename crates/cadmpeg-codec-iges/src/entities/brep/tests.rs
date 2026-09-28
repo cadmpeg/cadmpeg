@@ -286,10 +286,7 @@ fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
             explicit_tetrahedron_solid_file(),
             "iges B-rep topology coedges",
         ),
-        (
-            explicit_tetrahedron_solid_file(),
-            "loop ring validation members",
-        ),
+        (explicit_tetrahedron_solid_file(), "loop ring members"),
         (
             explicit_tetrahedron_solid_file(),
             "iges B-rep decoded topology sequences",

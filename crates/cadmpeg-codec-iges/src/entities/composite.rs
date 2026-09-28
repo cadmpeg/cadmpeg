@@ -1885,23 +1885,22 @@ fn bounded_nurbs_for_id(
             let axis = circle_curve.frame().axis().as_raw();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
-            let Some(mut nurbs) =
+            let Some(nurbs) =
                 circular_arc_nurbs(center, *axis, *ref_direction, radius, interval, ctx)?
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
             )?
-            .is_none()
-            {
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
@@ -1910,7 +1909,7 @@ fn bounded_nurbs_for_id(
             let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
-            let Some(mut nurbs) = elliptical_arc_nurbs(
+            let Some(nurbs) = elliptical_arc_nurbs(
                 center,
                 *axis,
                 *major_direction,
@@ -1922,18 +1921,17 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
             )?
-            .is_none()
-            {
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -1941,7 +1939,7 @@ fn bounded_nurbs_for_id(
             let axis = parabola_curve.frame().axis().as_raw();
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
-            let Some(mut nurbs) = parabolic_arc_nurbs(
+            let Some(nurbs) = parabolic_arc_nurbs(
                 vertex,
                 *axis,
                 *major_direction,
@@ -1952,18 +1950,17 @@ fn bounded_nurbs_for_id(
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
             )?
-            .is_none()
-            {
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         _ => None,
@@ -2078,15 +2075,15 @@ fn curve_endpoints(
 }
 
 fn anchor_analytic_nurbs_endpoint_poles(
-    nurbs: &mut NurbsCurve,
+    nurbs: NurbsCurve,
     interval: [f64; 2],
     ir: &CadIr,
     index: Option<&CompositeIndex>,
     edge: &CompositeEdge,
     tolerance: Option<f64>,
-) -> Result<Option<()>, CodecError> {
+) -> Result<Option<NurbsCurve>, CodecError> {
     let Some(tolerance) = tolerance else {
-        return Ok(Some(()));
+        return Ok(Some(nurbs));
     };
     let (Some(start), Some(end)) = (
         point_for_vertex(ir, &edge.start, index),
@@ -2095,12 +2092,12 @@ fn anchor_analytic_nurbs_endpoint_poles(
         return Ok(None);
     };
     let Some(evaluated_start) =
-        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0]))?
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, interval[0]))?
     else {
         return Ok(None);
     };
     let Some(evaluated_end) =
-        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1]))?
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, interval[1]))?
     else {
         return Ok(None);
     };
@@ -2114,7 +2111,7 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let mut visited = 0usize;
     Ok(nurbs
-        .map_control_points_in_place(|point| {
+        .try_map_owned_control_points(|point| {
             let mapped = if visited == last {
                 end
             } else if visited == 0 {

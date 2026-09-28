@@ -701,11 +701,8 @@ pub(crate) enum DesignAssemblyAxialOperandTarget {
 }
 
 /// Persistent connector identity carried by one axial assembly selector.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyAxialSelectorIdentityWire",
-    into = "DesignAssemblyAxialSelectorIdentityWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignAssemblyAxialSelectorIdentityWire")]
 pub(crate) struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
     pub(crate) axis_record_index: u32,
@@ -867,6 +864,157 @@ struct DesignAssemblyAxialSelectorIdentityWire {
     occurrence_role_offset: u64,
 }
 
+#[cfg(test)]
+thread_local! {
+    static ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignAssemblyAxialSelectorIdentity {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            axis_record_index: self.axis_record_index,
+            axis_class_tag: self.axis_class_tag.clone(),
+            axis_byte_offset: self.axis_byte_offset,
+            axis_paired_class_tag: self.axis_paired_class_tag.clone(),
+            axis_paired_byte_offset: self.axis_paired_byte_offset,
+            selector_record_index: self.selector_record_index,
+            selector_class_tag: self.selector_class_tag.clone(),
+            selector_byte_offset: self.selector_byte_offset,
+            selector_paired_class_tag: self.selector_paired_class_tag.clone(),
+            selector_paired_byte_offset: self.selector_paired_byte_offset,
+            nested_record_index: self.nested_record_index,
+            nested_record_index_offset: self.nested_record_index_offset,
+            selector_asset_id: self.selector_asset_id.clone(),
+            selector_asset_id_offset: self.selector_asset_id_offset,
+            selector_context_id: self.selector_context_id.clone(),
+            selector_context_id_offset: self.selector_context_id_offset,
+            occurrence_reference: self.occurrence_reference,
+            occurrence_reference_offset: self.occurrence_reference_offset,
+            external_object_reference: self.external_object_reference,
+            external_object_reference_offset: self.external_object_reference_offset,
+            external_segment: self.external_segment,
+            external_segment_offset: self.external_segment_offset,
+            external_asset_id: self.external_asset_id.clone(),
+            external_asset_id_offset: self.external_asset_id_offset,
+            external_link_name: self.external_link_name.clone(),
+            external_link_name_offset: self.external_link_name_offset,
+            external_version: self.external_version.clone(),
+            role_record_index: self.role_record_index,
+            role_class_tag: self.role_class_tag.clone(),
+            role_byte_offset: self.role_byte_offset,
+            occurrence_role: self.occurrence_role.clone(),
+            occurrence_role_offset: self.occurrence_role_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignAssemblyAxialSelectorIdentityWireRef<'a> {
+    axis_record_index: u32,
+    axis_class_tag: &'a str,
+    axis_byte_offset: u64,
+    axis_paired_class_tag: &'a str,
+    axis_paired_byte_offset: u64,
+    selector_record_index: u32,
+    selector_class_tag: &'a str,
+    selector_byte_offset: u64,
+    selector_paired_class_tag: &'a str,
+    selector_paired_byte_offset: u64,
+    nested_record_index: u32,
+    nested_record_index_offset: u64,
+    selector_asset_id: &'a DesignRelaxedGuidText,
+    selector_asset_id_offset: u64,
+    selector_context_id: &'a DesignRelaxedGuidText,
+    selector_context_id_offset: u64,
+    occurrence_reference: u64,
+    occurrence_reference_offset: u64,
+    external_object_reference: u64,
+    external_object_reference_offset: u64,
+    external_segment: u32,
+    external_segment_offset: u64,
+    external_asset_id: &'a DesignRelaxedGuidText,
+    external_asset_id_offset: u64,
+    external_link_name: &'a str,
+    external_link_name_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_property_key: Option<&'a DesignRelaxedGuidText>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_property_key_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_version_urn: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_version_urn_offset: Option<u64>,
+    role_record_index: u32,
+    role_class_tag: &'a str,
+    role_byte_offset: u64,
+    occurrence_role: &'a DesignRelaxedGuidText,
+    occurrence_role_offset: u64,
+}
+
+impl<'a> From<&'a DesignAssemblyAxialSelectorIdentity>
+    for DesignAssemblyAxialSelectorIdentityWireRef<'a>
+{
+    fn from(record: &'a DesignAssemblyAxialSelectorIdentity) -> Self {
+        Self {
+            axis_record_index: record.axis_record_index,
+            axis_class_tag: record.axis_class_tag.as_str(),
+            axis_byte_offset: record.axis_byte_offset,
+            axis_paired_class_tag: record.axis_paired_class_tag.as_str(),
+            axis_paired_byte_offset: record.axis_paired_byte_offset,
+            selector_record_index: record.selector_record_index,
+            selector_class_tag: record.selector_class_tag.as_str(),
+            selector_byte_offset: record.selector_byte_offset,
+            selector_paired_class_tag: record.selector_paired_class_tag.as_str(),
+            selector_paired_byte_offset: record.selector_paired_byte_offset,
+            nested_record_index: record.nested_record_index,
+            nested_record_index_offset: record.nested_record_index_offset,
+            selector_asset_id: &record.selector_asset_id,
+            selector_asset_id_offset: record.selector_asset_id_offset,
+            selector_context_id: &record.selector_context_id,
+            selector_context_id_offset: record.selector_context_id_offset,
+            occurrence_reference: record.occurrence_reference,
+            occurrence_reference_offset: record.occurrence_reference_offset,
+            external_object_reference: record.external_object_reference,
+            external_object_reference_offset: record.external_object_reference_offset,
+            external_segment: record.external_segment,
+            external_segment_offset: record.external_segment_offset,
+            external_asset_id: &record.external_asset_id,
+            external_asset_id_offset: record.external_asset_id_offset,
+            external_link_name: record.external_link_name.as_str(),
+            external_link_name_offset: record.external_link_name_offset,
+            external_property_key: record
+                .external_version
+                .as_ref()
+                .map(|v| &v.property_key.value),
+            external_property_key_offset: record
+                .external_version
+                .as_ref()
+                .map(|v| v.property_key.offset),
+            external_version_urn: record
+                .external_version
+                .as_ref()
+                .map(|v| v.version_urn.value.as_str()),
+            external_version_urn_offset: record
+                .external_version
+                .as_ref()
+                .map(|v| v.version_urn.offset),
+            role_record_index: record.role_record_index,
+            role_class_tag: record.role_class_tag.as_str(),
+            role_byte_offset: record.role_byte_offset,
+            occurrence_role: &record.occurrence_role,
+            occurrence_role_offset: record.occurrence_role_offset,
+        }
+    }
+}
+
+impl Serialize for DesignAssemblyAxialSelectorIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignAssemblyAxialSelectorIdentityWireRef::from(self).serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSelectorIdentity {
     type Error = String;
     fn try_from(wire: DesignAssemblyAxialSelectorIdentityWire) -> Result<Self, Self::Error> {
@@ -911,6 +1059,7 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
     }
 }
 
+#[cfg(test)]
 impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorIdentityWire {
     fn from(record: DesignAssemblyAxialSelectorIdentity) -> Self {
         Self {
@@ -1023,11 +1172,8 @@ pub(crate) struct DesignAssemblyOperandPathLink {
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyOperandPathWire",
-    into = "DesignAssemblyOperandPathWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignAssemblyOperandPathWire")]
 pub(crate) struct DesignAssemblyOperandPath {
     link: DesignAssemblyOperandPathLink,
     pub(crate) record_index: u32,
@@ -1037,6 +1183,83 @@ pub(crate) struct DesignAssemblyOperandPath {
     occurrence_guids: Vec<Located<DesignRelaxedGuidText>>,
     /// Ordered identity GUIDs and their UTF-16 code-unit locations.
     identity_guids: Vec<Located<DesignRelaxedGuidText>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static ASSEMBLY_OPERAND_PATH_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignAssemblyOperandPath {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        ASSEMBLY_OPERAND_PATH_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            link: self.link.clone(),
+            record_index: self.record_index,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            occurrence_guids: self.occurrence_guids.clone(),
+            identity_guids: self.identity_guids.clone(),
+        }
+    }
+}
+
+struct PathGuidValues<'a>(&'a [Located<DesignRelaxedGuidText>]);
+struct PathGuidOffsets<'a>(&'a [Located<DesignRelaxedGuidText>]);
+
+impl PathGuidValues<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl PathGuidOffsets<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Serialize for PathGuidValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|guid| &guid.value))
+    }
+}
+
+impl Serialize for PathGuidOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|guid| guid.offset))
+    }
+}
+
+#[derive(Serialize)]
+struct DesignAssemblyOperandPathRef<'a> {
+    link: &'a DesignAssemblyOperandPathLink,
+    record_index: u32,
+    class_tag: &'a str,
+    byte_offset: u64,
+    occurrence_guids: PathGuidValues<'a>,
+    occurrence_guid_offsets: PathGuidOffsets<'a>,
+    #[serde(skip_serializing_if = "PathGuidValues::is_empty")]
+    identity_guids: PathGuidValues<'a>,
+    #[serde(skip_serializing_if = "PathGuidOffsets::is_empty")]
+    identity_guid_offsets: PathGuidOffsets<'a>,
+}
+
+impl Serialize for DesignAssemblyOperandPath {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignAssemblyOperandPathRef {
+            link: &self.link,
+            record_index: self.record_index,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            occurrence_guids: PathGuidValues(&self.occurrence_guids),
+            occurrence_guid_offsets: PathGuidOffsets(&self.occurrence_guids),
+            identity_guids: PathGuidValues(&self.identity_guids),
+            identity_guid_offsets: PathGuidOffsets(&self.identity_guids),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.
@@ -1177,6 +1400,7 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
     }
 }
 
+#[cfg(test)]
 impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
     fn from(path: DesignAssemblyOperandPath) -> Self {
         let (occurrence_guids, occurrence_guid_offsets) = path

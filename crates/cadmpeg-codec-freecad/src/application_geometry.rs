@@ -168,7 +168,8 @@ fn parse_mesh(property: &PropertyRecord, bytes: &[u8]) -> Result<Tessellation, C
     }
     reader.finish("mesh payload")?;
     Ok(Tessellation::from_parts(
-        format!("{}:mesh", property.id),
+        cadmpeg_ir::tessellation::TessellationId::mint(format!("{}:mesh", property.id))
+            .map_err(|error| CodecError::Malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,

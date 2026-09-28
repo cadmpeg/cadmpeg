@@ -1,6 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn mesh_record_identity_borrowed_wire_matches_owned_wire_bytes() {
+    let record: super::DesignMeshRecordIdentity = serde_json::from_str(
+        r#"{"class_tag":"256","record_index":1,"byte_offset":100,"frame_length":11}"#,
+    )
+    .unwrap();
+    let owned = super::DesignMeshRecordIdentityWire::from(record.clone());
+    assert_eq!(
+        serde_json::to_vec(&record).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn mesh_record_identity_native_retained_limit_refuses_before_record_clone() {
+    #[derive(serde::Serialize)]
+    struct NativeRecord<'a> {
+        id: &'static str,
+        identity: &'a super::DesignMeshRecordIdentity,
+    }
+
+    let identity: super::DesignMeshRecordIdentity = serde_json::from_str(
+        r#"{"class_tag":"256","record_index":1,"byte_offset":100,"frame_length":11}"#,
+    )
+    .unwrap();
+    let record = NativeRecord {
+        id: "f3d:native:mesh-record#0",
+        identity: &identity,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_mesh_features",
+        || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
+        || super::MESH_RECORD_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
     let identity = serde_json::json!({
         "class_tag": "256", "record_index": 104, "byte_offset": 100, "frame_length": 200
@@ -102,6 +139,96 @@ fn mesh_feature_body_rows_preserve_wire_and_reject_duplicate_arrays() {
         .expect_err("conflicting body identity")
         .to_string();
     assert!(error.contains("body_record_indices"));
+}
+
+fn mesh_feature_wire_for_borrowed(count: usize, textures: bool) -> serde_json::Value {
+    let identity = serde_json::json!({
+        "class_tag":"256", "record_index":104, "byte_offset":100, "frame_length":200
+    });
+    let body = serde_json::json!({
+        "body_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":575},
+        "entry_name_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":62},
+        "guid_record":identity,"wrapper_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":40},
+        "scene_state_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":95},
+        "scene_node_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":133},
+        "scene_auxiliary_record":identity,"owner_record":identity,
+        "entry_name":"mesh.paramesh","entry_name_offset":136,
+        "fusion_uuid":"AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE","fusion_uuid_offset":136,
+        "transform":[[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+        "transform_offsets":[142,271],"scope_reference_offset":608,
+        "wrapper_reference_offset":619,"owner_reference_offset":630,
+        "guid_reference_offset":641,"scene_node_reference_offset":653,
+        "collection_reference_offset":664,"wrapper_body_reference_offset":121,
+        "entry_guid_reference_offset":121,"guid_entry_reference_offset":172,
+        "scene_state_reference_offset":133,"scene_auxiliary_reference_offset":148
+    });
+    let texture_rows = if textures {
+        let row = |ordinal, filename_ordinal, guid, flags_guid, filename_guid| {
+            serde_json::json!({
+                "ordinal":ordinal,"resource_guid":guid,"flags_guid_offset":flags_guid,
+                "flags":7,"flags_offset":flags_guid + 36,
+                "filename_ordinal":filename_ordinal,"filename_guid_offset":filename_guid,
+                "filename_record":{"class_tag":"256","record_index":8,"byte_offset":300,"frame_length":35},
+                "filename_record_reference_offset":filename_guid + 36,
+                "filename":"a.png","filename_offset":325,
+                "archive_entry_name":"Textures/a.png","asset":"test:model:asset#texture"
+            })
+        };
+        serde_json::json!([
+            row(1, 0, "BBBBBBBB-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 173, 221),
+            row(0, 1, "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", 129, 272)
+        ])
+    } else {
+        serde_json::json!([])
+    };
+    let body_indices = [104, 104];
+    let scope_offsets = [125, 136];
+    let collection_offsets = [62, 73];
+    let body_rows = [body.clone(), body];
+    serde_json::json!({
+        "id":"f3d:native:mesh-feature#0", "scope_record":identity,
+        "scope_base_record":{"class_tag":"256","record_index":104,"byte_offset":270,"frame_length":30},
+        "collection_record":{"class_tag":"256","record_index":104,"byte_offset":0,"frame_length":73 + 11 * count},
+        "collection_base_record":{"class_tag":"256","record_index":104,"byte_offset":38,"frame_length":35 + 11 * count},
+        "texture_table_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":if textures {219} else {29}},
+        "body_count_offsets":[121,21,58],
+        "body_record_indices":&body_indices[..count],
+        "scope_body_reference_offsets":&scope_offsets[..count],
+        "collection_body_reference_offsets":&collection_offsets[..count],
+        "texture_table_reference_offset":27,
+        "collection_owner_record":{"class_tag":"256","record_index":104,"byte_offset":100,"frame_length":273},
+        "collection_owner_reference_offset":62 + 11 * count,
+        "collection_owner_backlink_offset":362,"scope_owner_record_index":109,
+        "scope_owner_reference_offset":289,
+        "texture_flags_count_offset":121,
+        "texture_filename_count_offset":if textures {213} else {125},
+        "bodies":&body_rows[..count], "textures":texture_rows
+    })
+}
+
+#[test]
+fn mesh_feature_borrowed_wire_matches_owned_wire_bytes() {
+    for (count, textures) in [(0, false), (1, false), (2, true)] {
+        let wire = mesh_feature_wire_for_borrowed(count, textures);
+        let feature: super::DesignMeshFeature = serde_json::from_value(wire).unwrap();
+        let owned = super::DesignMeshFeatureWire::from(feature.clone());
+        assert_eq!(
+            serde_json::to_vec(&feature).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn mesh_feature_native_retained_limit_refuses_before_clone() {
+    let feature: super::DesignMeshFeature =
+        serde_json::from_value(mesh_feature_wire_for_borrowed(2, true)).unwrap();
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &feature,
+        "design_mesh_features",
+        || super::MESH_FEATURE_CLONE_COUNT.with(|count| count.set(0)),
+        || super::MESH_FEATURE_CLONE_COUNT.with(std::cell::Cell::get),
+    );
 }
 
 #[test]

@@ -863,7 +863,8 @@ fn semantic_writer_expands_indexed_tessellation() {
         Vector3::new(0.0, 0.0, -1.0),
     ];
     let mesh = Tessellation::new(
-        "synthetic:test:tessellation#indexed",
+        cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#indexed")
+            .expect("valid identity"),
         cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
             vec![
                 Point3::new(0.0, 0.0, 0.0),
@@ -935,7 +936,8 @@ fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
     let mut channels = original.channels().to_vec();
     channels.push(channels[5].clone());
     let mut extended = Tessellation::new(
-        "synthetic:test:tessellation#extra-channel",
+        cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#extra-channel")
+            .expect("valid identity"),
         original.mesh().clone().into_raw(),
         channels,
     )

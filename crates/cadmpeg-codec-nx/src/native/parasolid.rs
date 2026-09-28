@@ -59,8 +59,9 @@ use super::substrate::{ParsedStreams, StreamView};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its source and owning-partition scope.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "group_record::GroupWire", into = "group_record::GroupWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "group_record::GroupWire")]
 pub(super) struct ParasolidGroupRecord {
     /// Globally unique source-record identity.
     pub(super) id: String,
@@ -82,12 +83,33 @@ pub(super) struct ParasolidGroupRecord {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static GROUP_RECORD_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidGroupRecord {
+    fn clone(&self) -> Self {
+        GROUP_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            origin: self.origin,
+            xmt: self.xmt,
+            node_id: self.node_id,
+            references: self.references,
+            selector: self.selector,
+            linked_reference_status: self.linked_reference_status,
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
 /// One topology member in a fully closed current Parasolid GROUP chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "group_member::MemberWire",
-    into = "group_member::MemberWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "group_member::MemberWire")]
 pub(super) struct ParasolidGroupMember {
     /// Globally unique membership identity.
     pub(super) id: String,
@@ -105,6 +127,28 @@ pub(super) struct ParasolidGroupMember {
     pub(super) member_xmt: u32,
     /// Member family with its required node and optional current identity.
     pub(super) target: GroupMemberTarget,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static GROUP_MEMBER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidGroupMember {
+    fn clone(&self) -> Self {
+        GROUP_MEMBER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            partition_stream_ordinal: self.partition_stream_ordinal,
+            group_xmt: self.group_xmt,
+            group_node_id: self.group_node_id,
+            ordinal: self.ordinal,
+            list_record_xmt: self.list_record_xmt,
+            member_xmt: self.member_xmt,
+            target: self.target,
+        }
+    }
 }
 
 /// Retain GROUP records from partition streams and raw deltas overlays.
@@ -352,11 +396,8 @@ pub(super) fn parasolid_group_members(
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidDeltasRecordWire",
-    into = "ParasolidDeltasRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ParasolidDeltasRecordWire")]
 pub(super) struct ParasolidDeltasRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -370,6 +411,44 @@ pub(super) struct ParasolidDeltasRecord {
     pub(super) byte_len: u64,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use crate::deltas::record_family::RecordFamilyReferences;
+        use serde::ser::SerializeStruct;
+
+        let (group_selector, group_linked_reference_status) = match &self.family {
+            RecordFamily::Group {
+                selector,
+                linked_reference_status,
+                ..
+            } => (Some(*selector), Some(*linked_reference_status)),
+            _ => (None, None),
+        };
+        let mut wire = serializer.serialize_struct(
+            "ParasolidDeltasRecordWire",
+            10 + usize::from(group_selector.is_some())
+                + usize::from(group_linked_reference_status.is_some()),
+        )?;
+        wire.serialize_field("id", &self.id)?;
+        wire.serialize_field("stream_ordinal", &self.stream_ordinal)?;
+        wire.serialize_field("family", self.family.family_name())?;
+        wire.serialize_field("kind", &self.family.kind())?;
+        wire.serialize_field("xmt", &self.xmt)?;
+        wire.serialize_field("node_id", &self.family.node_id())?;
+        wire.serialize_field("references", &RecordFamilyReferences(&self.family))?;
+        if let Some(value) = group_selector {
+            wire.serialize_field("group_selector", &value)?;
+        }
+        if let Some(value) = group_linked_reference_status {
+            wire.serialize_field("group_linked_reference_status", &value)?;
+        }
+        wire.serialize_field("position", &self.family.position())?;
+        wire.serialize_field("byte_len", &self.byte_len)?;
+        wire.serialize_field("inflated_offset", &self.inflated_offset)?;
+        wire.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -398,6 +477,7 @@ struct ParasolidDeltasRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidDeltasRecord> for ParasolidDeltasRecordWire {
     fn from(value: ParasolidDeltasRecord) -> Self {
         let (group_selector, group_linked_reference_status) = match &value.family {
@@ -459,7 +539,33 @@ impl TryFrom<ParasolidDeltasRecordWire> for ParasolidDeltasRecord {
 
 #[cfg(test)]
 mod deltas_record_wire_tests {
-    use super::ParasolidDeltasRecord;
+    use super::{ParasolidDeltasRecord, ParasolidDeltasRecordWire};
+
+    #[test]
+    fn deltas_record_borrowed_wire_matches_owned_bytes() {
+        for json in [
+            r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#,
+            r#"{"id":"nx:deltas:record#type70","stream_ordinal":0,"family":"TYPE_70","kind":70,"xmt":6,"node_id":0,"references":[3,1,1,0,52,52],"position":null,"byte_len":32,"inflated_offset":0}"#,
+            r#"{"id":"nx:deltas:record#empty","stream_ordinal":0,"family":"ENTITY_52","kind":82,"xmt":40,"node_id":null,"references":[],"position":null,"byte_len":10,"inflated_offset":0}"#,
+        ] {
+            let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+            assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+            assert_eq!(
+                serde_json::to_vec(&record).unwrap(),
+                serde_json::to_vec(&ParasolidDeltasRecordWire::from(record.clone())).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn deltas_record_retained_limit_refuses_before_reference_collection() {
+        let json = r#"{"id":"nx:deltas:record#group","stream_ordinal":0,"family":"GROUP","kind":90,"xmt":10,"node_id":7,"references":[3,4,5,6,30],"group_selector":4,"group_linked_reference_status":0,"position":null,"byte_len":22,"inflated_offset":0}"#;
+        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
 
     #[test]
     fn record_family_owns_fixed_and_empty_reference_payloads() {
@@ -582,11 +688,8 @@ mod deltas_record_wire_tests {
 }
 
 /// One compact deletion in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidDeltasTombstoneWire",
-    into = "ParasolidDeltasTombstoneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidDeltasTombstoneWire")]
 pub(super) struct ParasolidDeltasTombstone {
     /// Globally unique event identity.
     pub(super) id: String,
@@ -598,6 +701,32 @@ pub(super) struct ParasolidDeltasTombstone {
     xmt: u32,
     /// Record tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidDeltasTombstoneRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    family: &'static str,
+    kind: u16,
+    xmt: u32,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidDeltasTombstone {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidDeltasTombstoneRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            family: self.kind.name(),
+            kind: u16::from(self.kind.code()),
+            xmt: self.xmt,
+            byte_len: 6,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -618,6 +747,7 @@ struct ParasolidDeltasTombstoneWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidDeltasTombstone> for ParasolidDeltasTombstoneWire {
     fn from(value: ParasolidDeltasTombstone) -> Self {
         Self {
@@ -652,12 +782,35 @@ impl TryFrom<ParasolidDeltasTombstoneWire> for ParasolidDeltasTombstone {
     }
 }
 
+#[cfg(test)]
+mod tombstone_wire_tests {
+    use super::{ParasolidDeltasTombstone, ParasolidDeltasTombstoneWire};
+
+    #[test]
+    fn tombstone_borrowed_wire_matches_owned_bytes() {
+        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
+        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&ParasolidDeltasTombstoneWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn tombstone_native_limit_refuses_before_family_copy() {
+        let json = r#"{"id":"nx:parasolid:tombstone#0","stream_ordinal":0,"family":"BODY","kind":12,"xmt":3,"byte_len":6,"inflated_offset":10}"#;
+        let record: ParasolidDeltasTombstone = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
+    }
+}
+
 /// BODY revision envelope in a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "body_revision_wire::RevisionWire",
-    into = "body_revision_wire::RevisionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "body_revision_wire::RevisionWire")]
 pub(super) struct ParasolidDeltasBodyRevision {
     /// Globally unique revision identity.
     pub(super) id: String,
@@ -678,8 +831,8 @@ pub(super) struct ParasolidDeltasBodyRevision {
 }
 
 /// Parasolid transmit header at the start of a deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "TransmitHeaderWire", into = "TransmitHeaderWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "TransmitHeaderWire")]
 pub(super) struct ParasolidDeltasTransmitHeader {
     /// Globally unique header identity.
     pub(super) id: String,
@@ -693,8 +846,8 @@ pub(super) struct ParasolidDeltasTransmitHeader {
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "tail_wire::NullTailWire", into = "tail_wire::NullTailWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "tail_wire::NullTailWire")]
 pub(super) struct ParasolidDeltasTerminalNullReferences {
     /// Globally unique trailer identity.
     pub(super) id: String,
@@ -707,11 +860,8 @@ pub(super) struct ParasolidDeltasTerminalNullReferences {
 }
 
 /// Count-selected numeric lane following one deltas `term_use` endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "tail_wire::NumericTailWire",
-    into = "tail_wire::NumericTailWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "tail_wire::NumericTailWire")]
 pub(super) struct ParasolidDeltasTermUseNumericTail {
     /// Globally unique numeric-tail identity.
     pub(super) id: String,
@@ -1529,11 +1679,8 @@ impl ParasolidScanRecords for ParasolidBlendBoundRecord {
 }
 
 /// Complete typed source record for one Parasolid `term_use` endpoint.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidTermUseRecordWire",
-    into = "ParasolidTermUseRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "ParasolidTermUseRecordWire")]
 pub(super) struct ParasolidTermUseRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -1549,6 +1696,34 @@ pub(super) struct ParasolidTermUseRecord {
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidTermUseRecordRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    count: u32,
+    form: crate::intersection::TermUseForm,
+    point: FiniteVector<3>,
+    framing: crate::intersection::TermUseFraming,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidTermUseRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidTermUseRecordRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            count: self.form.count(),
+            form: self.form,
+            point: self.point,
+            framing: self.framing,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1571,6 +1746,7 @@ struct ParasolidTermUseRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidTermUseRecord> for ParasolidTermUseRecordWire {
     fn from(value: ParasolidTermUseRecord) -> Self {
         Self {
@@ -1613,6 +1789,20 @@ mod term_use_wire_tests {
         let json = r#"{"id":"term","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
         let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::ParasolidTermUseRecordWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn term_use_native_limit_refuses_before_id_copy() {
+        let json = r#"{"id":"nx:parasolid:term-use#0","stream_ordinal":0,"xmt":0,"count":2,"form":"TF","point":[0.0,-0.0,1.0],"framing":"direct","inflated_offset":10}"#;
+        let record: ParasolidTermUseRecord = serde_json::from_str(json).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(json).unwrap(),
+        );
     }
 }
 
@@ -1648,11 +1838,8 @@ impl ParasolidScanRecords for ParasolidTermUseRecord {
 }
 
 /// Complete typed source record for one Parasolid support-UV values array.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "support_uv_wire::SupportUvWire",
-    into = "support_uv_wire::SupportUvWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "support_uv_wire::SupportUvWire")]
 pub(super) struct ParasolidSupportUvRecord {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -1699,8 +1886,8 @@ impl ParasolidScanRecords for ParasolidSupportUvRecord {
 }
 
 /// Complete typed source record for one physical Parasolid `CHART_s` record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "chart_wire::ChartWire", into = "chart_wire::ChartWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "chart_wire::ChartWire")]
 pub(super) struct ParasolidChartRecord {
     /// Globally unique physical-record identity.
     pub(super) id: String,
@@ -1854,11 +2041,8 @@ fn is_default_legal_owner_flag_count(value: &u8) -> bool {
 }
 
 /// Named Parasolid attribute class declared in one inflated body stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidAttributeDefinitionWire",
-    into = "ParasolidAttributeDefinitionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidAttributeDefinitionWire")]
 pub(super) struct ParasolidAttributeDefinition {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -1886,6 +2070,49 @@ pub(super) struct ParasolidAttributeDefinition {
     pub(super) field_codes: Vec<AttributeField>,
     /// Offset of the declaration in the inflated stream.
     pub(super) inflated_offset: u64,
+}
+
+#[derive(Serialize)]
+struct ParasolidAttributeDefinitionRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: u32,
+    next_definition_xmt: u32,
+    identifier_xmt: u32,
+    identifier_inflated_offset: u64,
+    name: &'a str,
+    type_id: u32,
+    action_codes: [AttributeAction; 8],
+    field_names_xmt: u32,
+    legal_owner_flags: [u8; 16],
+    #[serde(skip_serializing_if = "is_default_legal_owner_flag_count")]
+    legal_owner_flag_count: u8,
+    field_count: usize,
+    field_codes: &'a [AttributeField],
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidAttributeDefinition {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidAttributeDefinitionRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt.into(),
+            next_definition_xmt: XmtTarget::to_wire(self.next_definition_xmt),
+            identifier_xmt: self.identifier_xmt.into(),
+            identifier_inflated_offset: self.identifier_inflated_offset,
+            name: self.name.as_str(),
+            type_id: self.type_id.get(),
+            action_codes: self.action_codes,
+            field_names_xmt: XmtTarget::to_wire(self.field_names_xmt),
+            legal_owner_flags: self.legal_owner_flags.padded(),
+            legal_owner_flag_count: self.legal_owner_flags.as_slice().len() as u8,
+            field_count: self.field_codes.len(),
+            field_codes: &self.field_codes,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1926,6 +2153,7 @@ struct ParasolidAttributeDefinitionWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
     fn from(value: ParasolidAttributeDefinition) -> Self {
         Self {
@@ -2001,11 +2229,8 @@ pub(super) struct ParasolidFieldNamesRecord {
 }
 
 /// Complete type-80 declaration-to-field-name-list relation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "named_fields::FieldNamesWire",
-    into = "named_fields::FieldNamesWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "named_fields::FieldNamesWire")]
 pub(super) struct ParasolidAttributeFieldNames {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2044,8 +2269,8 @@ pub(super) struct ParasolidTopologyAttributeListReference {
 }
 
 /// Framed Parasolid type-81 entity/attribute-list record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "Entity51Wire", into = "Entity51Wire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "Entity51Wire")]
 pub(super) struct ParasolidEntity51Record {
     /// Globally unique record identity.
     pub(super) id: String,
@@ -2184,11 +2409,8 @@ pub(super) struct ParasolidEntity58TagRecord {
 }
 
 /// Counted Parasolid type-98 Unicode-value record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "ParasolidEntity62UnicodeRecordWire",
-    into = "ParasolidEntity62UnicodeRecordWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ParasolidEntity62UnicodeRecordWire")]
 pub(super) struct ParasolidEntity62UnicodeRecord {
     /// Globally unique native-record identity.
     pub(super) id: String,
@@ -2204,6 +2426,45 @@ pub(super) struct ParasolidEntity62UnicodeRecord {
     pub(super) inflated_offset: u64,
 }
 
+struct UnicodeCodeUnits<'a>(&'a str);
+
+impl Serialize for UnicodeCodeUnits<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut units = serializer.serialize_seq(Some(self.0.encode_utf16().count()))?;
+        for unit in self.0.encode_utf16() {
+            units.serialize_element(&unit)?;
+        }
+        units.end()
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidEntity62UnicodeRecordRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    xmt: NonNullXmt,
+    code_units: UnicodeCodeUnits<'a>,
+    value: &'a UnicodeValue,
+    byte_len: u64,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidEntity62UnicodeRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidEntity62UnicodeRecordRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            xmt: self.xmt,
+            code_units: UnicodeCodeUnits(self.value.as_str()),
+            value: &self.value,
+            byte_len: self.byte_len,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct ParasolidEntity62UnicodeRecordWire {
     id: String,
@@ -2215,6 +2476,7 @@ struct ParasolidEntity62UnicodeRecordWire {
     inflated_offset: u64,
 }
 
+#[cfg(test)]
 impl From<ParasolidEntity62UnicodeRecord> for ParasolidEntity62UnicodeRecordWire {
     fn from(value: ParasolidEntity62UnicodeRecord) -> Self {
         let code_units = value.value.as_str().encode_utf16().collect();
@@ -2340,8 +2602,8 @@ pub(super) struct ParasolidEntity51StructuredUse {
 }
 
 /// Resolved registered class of one Parasolid type-81 attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(into = "ParasolidAttributeClassUseWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(super) struct ParasolidAttributeClassUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2357,6 +2619,49 @@ pub(super) struct ParasolidAttributeClassUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static ATTRIBUTE_CLASS_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidAttributeClassUse {
+    fn clone(&self) -> Self {
+        ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            stream_ordinal: self.stream_ordinal,
+            entity_51_record: self.entity_51_record.clone(),
+            definition_xmt: self.definition_xmt,
+            attribute_definition: self.attribute_definition.clone(),
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidAttributeClassUseRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    entity_51_record: &'a str,
+    definition_xmt: NonNullXmt,
+    attribute_definition: &'a str,
+}
+
+impl Serialize for ParasolidAttributeClassUse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidAttributeClassUseRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            entity_51_record: &self.entity_51_record,
+            definition_xmt: self.definition_xmt,
+            attribute_definition: &self.attribute_definition,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 #[derive(Serialize, Deserialize)]
 struct ParasolidAttributeClassUseWire {
     id: String,
@@ -2366,6 +2671,7 @@ struct ParasolidAttributeClassUseWire {
     attribute_definition: String,
 }
 
+#[cfg(test)]
 impl From<ParasolidAttributeClassUse> for ParasolidAttributeClassUseWire {
     fn from(value: ParasolidAttributeClassUse) -> Self {
         Self {
@@ -2419,8 +2725,9 @@ impl ParasolidAttributeFieldValueKind {
 }
 
 /// One uniquely typed type-81 field reference joined to its type-80 declaration.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FieldUseWire", into = "FieldUseWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "FieldUseWire")]
 pub(super) struct ParasolidAttributeFieldUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2444,9 +2751,33 @@ pub(super) struct ParasolidAttributeFieldUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static ATTRIBUTE_FIELD_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidAttributeFieldUse {
+    fn clone(&self) -> Self {
+        ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            stream_ordinal: self.stream_ordinal,
+            attribute_class_use: self.attribute_class_use.clone(),
+            entity_51_record: self.entity_51_record.clone(),
+            attribute_definition: self.attribute_definition.clone(),
+            position: self.position,
+            value_kind: self.value_kind,
+            value_use: self.value_use.clone(),
+            value_record: self.value_record.clone(),
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
 /// Resolved class of one topology-owned Parasolid attribute instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(into = "ParasolidTopologyAttributeClassUseWire")]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), derive(Clone))]
 pub(super) struct ParasolidTopologyAttributeClassUse {
     /// Globally unique relation identity.
     pub(super) id: String,
@@ -2466,6 +2797,53 @@ pub(super) struct ParasolidTopologyAttributeClassUse {
     pub(super) inflated_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ParasolidTopologyAttributeClassUse {
+    fn clone(&self) -> Self {
+        TOPOLOGY_ATTRIBUTE_CLASS_USE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            topology_attribute_reference: self.topology_attribute_reference.clone(),
+            entity_51_record: self.entity_51_record.clone(),
+            attribute_class_use: self.attribute_class_use.clone(),
+            definition_xmt: self.definition_xmt,
+            attribute_definition: self.attribute_definition.clone(),
+            stream_ordinal: self.stream_ordinal,
+            inflated_offset: self.inflated_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ParasolidTopologyAttributeClassUseRef<'a> {
+    id: &'a str,
+    topology_attribute_reference: &'a str,
+    entity_51_record: &'a str,
+    attribute_class_use: &'a str,
+    definition_xmt: NonNullXmt,
+    attribute_definition: &'a str,
+}
+
+impl Serialize for ParasolidTopologyAttributeClassUse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ParasolidTopologyAttributeClassUseRef {
+            id: &self.id,
+            topology_attribute_reference: &self.topology_attribute_reference,
+            entity_51_record: &self.entity_51_record,
+            attribute_class_use: &self.attribute_class_use,
+            definition_xmt: self.definition_xmt,
+            attribute_definition: &self.attribute_definition,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 #[derive(Serialize, Deserialize)]
 struct ParasolidTopologyAttributeClassUseWire {
     id: String,
@@ -2476,6 +2854,7 @@ struct ParasolidTopologyAttributeClassUseWire {
     attribute_definition: String,
 }
 
+#[cfg(test)]
 impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClassUseWire {
     fn from(value: ParasolidTopologyAttributeClassUse) -> Self {
         Self {
@@ -3486,9 +3865,26 @@ mod tests {
         let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
         let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&super::ParasolidEntity62UnicodeRecordWire::from(
+                record.clone()
+            ))
+            .unwrap()
+        );
         let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
         assert!(
             serde_json::from_str::<super::ParasolidEntity62UnicodeRecord>(&inconsistent).is_err()
+        );
+    }
+
+    #[test]
+    fn unicode_record_native_limit_refuses_before_code_unit_copy() {
+        let wire = r#"{"id":"nx:parasolid:unicode-record#0","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
+        let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(wire).unwrap(),
         );
     }
 

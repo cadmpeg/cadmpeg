@@ -58,11 +58,13 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(FinitePoint3, &'a Node)> {
+) -> Result<Vec<(FinitePoint3, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
-        geometry::points(stream)
+        ctx,
+        geometry::points(ctx, stream)?
             .into_iter()
             .map(|point| (point.pos, point.position)),
         graph,
@@ -72,11 +74,13 @@ pub(super) fn ordered_point_candidates<'a>(
 }
 
 pub(super) fn ordered_surface_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(SurfaceGeometry, &'a Node)> {
+) -> Result<Vec<(SurfaceGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
-        geometry::surfaces(stream)
+        ctx,
+        geometry::surfaces(ctx, stream)?
             .into_iter()
             .map(|surface| (surface.pos, surface.geometry)),
         graph,
@@ -92,11 +96,13 @@ pub(super) fn ordered_surface_candidates<'a>(
 }
 
 pub(super) fn ordered_curve_candidates<'a>(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(CurveGeometry, &'a Node)> {
+) -> Result<Vec<(CurveGeometry, &'a Node)>, CodecError> {
     ordered_fixed_candidates(
-        geometry::curves(stream)
+        ctx,
+        geometry::curves(ctx, stream)?
             .into_iter()
             .map(|curve| (curve.pos, curve.geometry)),
         graph,
@@ -105,28 +111,46 @@ pub(super) fn ordered_curve_candidates<'a>(
     )
 }
 
-fn ordered_fixed_candidates<T>(
+fn ordered_fixed_candidates<'a, T>(
+    ctx: &DecodeContext<'_>,
     fallback: impl IntoIterator<Item = (usize, T)>,
-    graph: &Graph,
+    graph: &'a Graph,
     kinds: impl IntoIterator<Item = NodeKind>,
     graph_value: impl Fn(&Node) -> Option<T>,
-) -> Vec<(T, &Node)> {
+) -> Result<Vec<(T, &'a Node)>, CodecError> {
     let mut candidates = BTreeMap::new();
     for (offset, value) in fallback {
+        ctx.charge_work(1, "scan NX analytic candidates")?;
         let Some(node) = graph
             .at_pos(offset)
             .filter(|node| graph_value(node).is_some())
         else {
             continue;
         };
+        if !candidates.contains_key(&offset) {
+            ctx.charge_collection_items(1, "nx analytic candidate index")?;
+        }
         candidates.insert(offset, (value, node));
     }
     for node in kinds.into_iter().flat_map(|kind| graph.of_kind(kind)) {
+        ctx.charge_work(1, "scan NX analytic candidates")?;
         if let Some(value) = graph_value(node) {
+            if !candidates.contains_key(&node.pos) {
+                ctx.charge_collection_items(1, "nx analytic candidate index")?;
+            }
             candidates.insert(node.pos, (value, node));
         }
     }
-    candidates.into_values().collect()
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(candidates.len()),
+        "nx ordered analytic candidates",
+    )?;
+    let mut ordered = Vec::new();
+    ordered
+        .try_reserve_exact(candidates.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx ordered analytic candidates", 0, 1))?;
+    ordered.extend(candidates.into_values());
+    Ok(ordered)
 }
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
@@ -137,6 +161,44 @@ type GeometryDecode = (
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
 );
+
+fn reserve_unknown_pair(
+    ctx: &DecodeContext<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    stream_unknowns: &mut Vec<(usize, usize)>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx geometry unknown streams")?;
+    unknowns
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown streams", 0, 1))?;
+    ctx.charge_collection_items(1, "nx geometry unknown indices")?;
+    stream_unknowns
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx geometry unknown indices", 0, 1))?;
+    Ok(())
+}
+
+fn push_unknown_link(
+    ctx: &DecodeContext<'_>,
+    unknown: &mut UnknownRecord,
+    id: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx unknown entity links")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id.len()),
+        "nx unknown entity link text",
+    )?;
+    let links = unknown.links_mut();
+    links
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity links", 0, 1))?;
+    let mut link = String::new();
+    link.try_reserve_exact(id.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity link text", 0, 1))?;
+    link.push_str(id);
+    links.push(link);
+    Ok(())
+}
 
 pub(super) fn try_decode_geometry(
     ctx: &DecodeContext<'_>,
@@ -153,7 +215,7 @@ pub(super) fn try_decode_geometry(
     let mut stream_unknowns = Vec::new();
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let mut parsed = crate::native::substrate::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::substrate::ParsedStreams::parse(ctx, scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
     let mut topology_losses: Vec<LossNote> = Vec::new();
     let mut native_losses: Vec<LossNote> = Vec::new();
@@ -185,23 +247,38 @@ pub(super) fn try_decode_geometry(
     })
     .flatten();
     let terminal_lineage =
-        rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
-            .then(|| crate::native::model::extract_segment_lineage(&scan.container, &scan.streams));
-    let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
-    let terminal_preselection = terminal_lineage
-        .as_ref()
-        .and_then(|lineage| {
-            crate::native::model::terminal_feature_body_ids(
-                &emitted_body_ids,
-                &lineage.bindings,
-                &lineage.statuses,
-            )
-        })
+        if rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected) {
+            Some(crate::native::model::extract_segment_lineage(
+                ctx,
+                &scan.container,
+                &scan.streams,
+            )?)
+        } else {
+            None
+        };
+    let mut emitted_body_ids = BTreeSet::new();
+    for body in body_node_ids.keys() {
+        ctx.charge_collection_items(1, "nx emitted terminal body index")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+            "nx emitted terminal body identity",
+        )?;
+        emitted_body_ids.insert(body.clone());
+    }
+    let terminal_preselection = match terminal_lineage.as_ref() {
+        Some(lineage) => crate::native::model::terminal_feature_body_ids(
+            ctx,
+            &emitted_body_ids,
+            &lineage.bindings,
+            &lineage.statuses,
+        )?
         .filter(|selected| selected.len() < body_node_ids.len())
         .and_then(|selected| {
             rmfastload_stream_indices(&selected)
                 .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
-        });
+        }),
+        None => None,
+    };
     let preselection = rmfastload_preselection.or(terminal_preselection);
     let chart_count = scan
         .streams
@@ -230,19 +307,15 @@ pub(super) fn try_decode_geometry(
     let support_budget = ctx.work_budget(support_uv_limit as u64);
     let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
     let adaptive_geometry_budget =
-        GeometryWorkBudget::from_work_budget(ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64));
-    let completion_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64),
-    );
-    let support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64),
-    );
-    let coupled_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64),
-    );
-    let serialized_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
-        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64),
-    );
+        GeometryWorkBudget::from_context(ctx, MAX_ADAPTIVE_GEOMETRY_WORK as u64);
+    let completion_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64);
+    let support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64);
+    let coupled_support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64);
+    let serialized_support_uv_geometry_budget =
+        GeometryWorkBudget::from_context(ctx, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64);
     let mut support_uv_lane_geometry_exhausted = false;
     let mut intersection_index = IntersectionIncidenceIndex::default();
     let mut model_endpoint_witnesses = EndpointWitnesses::new();
@@ -263,7 +336,8 @@ pub(super) fn try_decode_geometry(
             .is_some_and(|(_, selected, _)| !selected.contains(&si))
         {
             let unknown_index = unknowns.len();
-            let unknown = unknown_stream_metadata(si, stream);
+            reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
+            let unknown = unknown_stream_metadata(ctx, si, stream)?;
             let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
             annotations
                 .note(unknown.id(), &container_stream, stream.file_offset as u64)
@@ -310,7 +384,7 @@ pub(super) fn try_decode_geometry(
         // The model is accumulated across streams. Completion must not retry
         // unresolved curves that an earlier stream already admitted.
         let procedural_start = ir.model.procedural_curves.len();
-        for (pi, (position, node)) in ordered_point_candidates(semantic, graph)
+        for (pi, (position, node)) in ordered_point_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
@@ -331,7 +405,7 @@ pub(super) fn try_decode_geometry(
             points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
-        for (fi, (geometry, node)) in ordered_surface_candidates(semantic, graph)
+        for (fi, (geometry, node)) in ordered_surface_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
@@ -571,7 +645,7 @@ pub(super) fn try_decode_geometry(
             });
         }
 
-        for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
+        for (ci, (geometry, node)) in ordered_curve_candidates(ctx, semantic, graph)?
             .into_iter()
             .enumerate()
         {
@@ -1128,17 +1202,14 @@ pub(super) fn try_decode_geometry(
         )?;
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let unknown_index = unknowns.len();
-        let mut unknown = unknown_stream_metadata(si, stream);
-        unknown.links_mut().extend(
-            ir.model.surfaces[first_surface..]
-                .iter()
-                .map(|surface| surface.id.as_str().to_owned()),
-        );
-        unknown.links_mut().extend(
-            ir.model.curves[first_curve..]
-                .iter()
-                .map(|curve| curve.id.as_str().to_owned()),
-        );
+        reserve_unknown_pair(ctx, &mut unknowns, &mut stream_unknowns)?;
+        let mut unknown = unknown_stream_metadata(ctx, si, stream)?;
+        for surface in &ir.model.surfaces[first_surface..] {
+            push_unknown_link(ctx, &mut unknown, surface.id.as_str())?;
+        }
+        for curve in &ir.model.curves[first_curve..] {
+            push_unknown_link(ctx, &mut unknown, curve.id.as_str())?;
+        }
         let container_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
         annotations
             .note(unknown.id(), &container_stream, stream.file_offset as u64)
@@ -1171,7 +1242,7 @@ pub(super) fn try_decode_geometry(
         return Ok(None);
     }
 
-    ir.source = Some(source_meta(scan, dialects)?);
+    ir.source = Some(source_meta(ctx, scan, dialects)?);
 
     ctx.admit_entities(
         ir.model.entity_count() as u64,
@@ -1199,7 +1270,7 @@ pub(super) fn try_decode_geometry(
         select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
+        active_body_selection = select_terminal_feature_bodies(ctx, &mut ir, &model)?;
     }
     classify_body_kinds(&mut ir);
     match crate::native::attach_annotations(
@@ -1246,6 +1317,8 @@ pub(super) fn try_decode_geometry(
         transfer_limit,
         support_uv_limit,
     };
+    let adaptive_geometry_exhausted = adaptive_geometry_budget.exhausted();
+    ctx.charge_work(0, "nx geometry work completion")?;
     let mut report = build_geometry_report(
         scan,
         parsed.unmatched_tombstone_counts(),
@@ -1256,7 +1329,7 @@ pub(super) fn try_decode_geometry(
         ir.model.tessellations.len(),
         &model,
         completion_budget,
-        adaptive_geometry_budget.exhausted(),
+        adaptive_geometry_exhausted,
         dialect_losses,
         notes,
     );
@@ -1642,29 +1715,40 @@ pub(super) fn select_active_body(
 }
 
 fn select_terminal_feature_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
-) -> bool {
+) -> Result<bool, CodecError> {
     if ir.model.bodies.len() <= 1 {
-        return false;
+        return Ok(false);
     }
-    let emitted = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut emitted = BTreeSet::new();
+    for body in &ir.model.bodies {
+        ctx.charge_collection_items(1, "nx terminal body selection index")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+            "nx terminal body selection identity",
+        )?;
+        emitted.insert(body.id.clone());
+    }
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
     let Some(selected) = crate::native::model::terminal_feature_body_ids(
+        ctx,
         &emitted,
         &model.segments.segment_body_bindings,
         &model.segments.segment_body_lineage_statuses,
-    ) else {
-        return false;
+    )?
+    else {
+        return Ok(false);
     };
-    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
+    Ok(apply_preselected_active_body_selection(
+        ir,
+        &selected,
+        "terminal_feature_body_lineage",
+        None,
+    ))
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
@@ -1997,3 +2081,6 @@ fn classify_body_kinds(ir: &mut CadIr) {
         };
     }
 }
+
+#[cfg(test)]
+mod tests;

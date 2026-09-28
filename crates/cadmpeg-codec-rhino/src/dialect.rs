@@ -138,22 +138,30 @@ impl ArchiveVersion {
 /// that field rather than reclassifying. The biconditional the decode policy
 /// requires is therefore structural: the note charged and the admission
 /// reported come from one value, not from two authors agreeing.
-pub(crate) fn admission_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn admission_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    matched: &DialectMatch,
+) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
     match matched.admission() {
         Admission::Residual | Admission::Unverified { .. } => {}
-        Admission::Admitted | Admission::Refused => return None,
+        Admission::Admitted | Admission::Refused => return Ok(None),
     }
     let word = matched
         .declared()
         .get(DECLARED_ARCHIVE_VERSION)
         .map_or("absent", String::as_str);
-    let message = format!(
-        "archive version word {word} has no declared row, so no declared identity or \
+    let loss = crate::wire::admitted_loss(
+        ctx,
+        crate::loss::RhinoLossCode::SourceDialectUnverified,
+        format_args!(
+            "archive version word {word} has no declared row, so no declared identity or \
          substituted declared grammar was verified. The document is read by the residual \
          chunked route, with chunk width and version-conditioned record branches selected \
          directly from the observed word."
-    );
-    Some(crate::loss::RhinoLossCode::SourceDialectUnverified.note(message))
+        ),
+        "Rhino dialect admission loss",
+    )?;
+    Ok(Some(loss))
 }
 
 #[cfg(test)]

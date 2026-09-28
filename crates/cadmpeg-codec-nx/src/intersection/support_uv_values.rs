@@ -69,6 +69,7 @@ impl SupportUvValues {
     pub(crate) fn values(&self) -> &[FiniteReal] {
         &self.values
     }
+    #[cfg(test)]
     pub(crate) fn into_values(self) -> Vec<f64> {
         self.values.into_iter().map(FiniteReal::get).collect()
     }

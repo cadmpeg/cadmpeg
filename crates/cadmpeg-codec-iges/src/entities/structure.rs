@@ -1858,16 +1858,13 @@ fn plane_face_draft(
         });
         let mut ring_coedges = reserve_vec(ctx, 1, "iges legacy plane ring coedges")?;
         ring_coedges.push(coedge_id);
-        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(ring_coedges, Vec::new(), ctx)
-        {
-            Ok(ring) => ring,
-            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => {
-                return Err(error.into())
-            }
-            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
-                return Err("legacy plane loop ring is invalid".into())
-            }
-        };
+        let ring =
+            match cadmpeg_ir::topology::LoopRing::try_new_for_decode(ctx, ring_coedges, Vec::new())
+            {
+                Ok(Ok(ring)) => ring,
+                Ok(Err(_)) => return Err("legacy plane loop ring is invalid".into()),
+                Err(error) => return Err(error.into()),
+            };
         reserve_vec_growth(
             ctx,
             &mut candidate.model_mut().loops,

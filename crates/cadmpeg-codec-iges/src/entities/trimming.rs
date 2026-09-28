@@ -501,7 +501,7 @@ pub(super) fn pcurve_geometry(
             PcurveNurbsPoles::Rational { points: mapped }
         }
     };
-    let parameter_curve = PcurveNurbs::from_admitted_parts(degree, knots, poles, periodic)?;
+    let parameter_curve = PcurveNurbs::from_admitted_rows(degree, knots, poles, periodic)?;
     Ok(Some((
         PcurveGeometry::Nurbs {
             nurbs: parameter_curve,
@@ -3035,23 +3035,23 @@ pub(super) fn project(
                     use_curve: None,
                 });
             }
-            let ring =
-                match cadmpeg_ir::topology::LoopRing::new_admitted(coedge_ids, Vec::new(), ctx) {
-                    Ok(ring) => ring,
-                    Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
-                        super::push_optional_entity_loss(
-                            Some(ctx),
-                            &mut losses,
-                            entry,
-                            format_args!("{}", "boundary loop contains no coedges"),
-                        )?;
-                        valid = false;
-                        break;
-                    }
-                    Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => {
-                        return Err(error)
-                    }
-                };
+            let ring = match cadmpeg_ir::topology::LoopRing::try_new_for_decode(
+                ctx,
+                coedge_ids,
+                Vec::new(),
+            )? {
+                Ok(ring) => ring,
+                Err(_) => {
+                    super::push_optional_entity_loss(
+                        Some(ctx),
+                        &mut losses,
+                        entry,
+                        format_args!("{}", "boundary loop contains no coedges"),
+                    )?;
+                    valid = false;
+                    break;
+                }
+            };
             crate::decode_resource::admit_optional_entities(
                 Some(ctx),
                 1,

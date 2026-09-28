@@ -103,12 +103,22 @@ impl NumericTailValues {
     pub(crate) fn byte_len(&self) -> usize {
         self.values().len() * 8
     }
-    pub(crate) fn bytes(&self) -> Vec<u8> {
-        self.values()
-            .iter()
-            .flat_map(|value| value.get().to_be_bytes())
-            .collect()
+    pub(crate) fn encoded_bytes(&self) -> ([u8; 152], usize) {
+        let mut bytes = [0u8; 152];
+        for (slot, value) in self.values().iter().enumerate() {
+            let start = slot * 8;
+            bytes[start..start + 8].copy_from_slice(&value.get().to_be_bytes());
+        }
+        (bytes, self.byte_len())
     }
+
+    #[cfg(test)]
+    pub(crate) fn bytes(&self) -> Vec<u8> {
+        let (bytes, len) = self.encoded_bytes();
+        bytes[..len].to_vec()
+    }
+
+    #[cfg(test)]
     pub(crate) fn into_values(self) -> Vec<f64> {
         match self.0 {
             NumericValues::One(values) => values.map(FiniteReal::get).to_vec(),

@@ -7,10 +7,11 @@ use crate::om::color::PaletteIndex;
 use crate::om::column_row::{LinkedRow, TargetRow};
 use serde::{Deserialize, Serialize};
 
+mod borrowed_wires;
 mod wire;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "wire::EncodingWire", into = "wire::EncodingWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::EncodingWire")]
 pub(in crate::native) enum RmDisplayColorAssignmentEncoding {
     Linked(LinkedRow<(), u64>),
     Target(TargetRow<(), u64>),
@@ -54,11 +55,8 @@ impl DisplayColorFrame {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "wire::RmDisplayColorAssignmentWire",
-    into = "wire::RmDisplayColorAssignmentWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::RmDisplayColorAssignmentWire")]
 pub(in crate::native) struct RmDisplayColorAssignment {
     pub(in crate::native) id: String,
     pub(in crate::native) ordinal: u32,

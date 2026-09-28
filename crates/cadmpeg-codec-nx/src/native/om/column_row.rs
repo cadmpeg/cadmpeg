@@ -6,14 +6,12 @@ use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use serde::{Deserialize, Serialize};
 
+mod borrowed_wires;
 mod wire;
 
 /// Self-framed index row in contiguous offset-store column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "wire::DataBlockIndexRowWire",
-    into = "wire::DataBlockIndexRowWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::DataBlockIndexRowWire")]
 pub(in crate::native) struct DataBlockIndexRow {
     /// Globally unique row identity.
     pub(in crate::native) id: String,
@@ -32,11 +30,8 @@ pub(in crate::native) struct DataBlockIndexRow {
 }
 
 /// Self-framed linked index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "wire::DataBlockLinkedIndexRowWire",
-    into = "wire::DataBlockLinkedIndexRowWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::DataBlockLinkedIndexRowWire")]
 pub(in crate::native) struct DataBlockLinkedIndexRow {
     /// Globally unique row identity.
     pub(in crate::native) id: String,
@@ -55,11 +50,8 @@ pub(in crate::native) struct DataBlockLinkedIndexRow {
 }
 
 /// Self-framed target-index row in contiguous column storage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "wire::DataBlockTargetIndexRowWire",
-    into = "wire::DataBlockTargetIndexRowWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "wire::DataBlockTargetIndexRowWire")]
 pub(in crate::native) struct DataBlockTargetIndexRow {
     /// Globally unique row identity.
     pub(in crate::native) id: String,

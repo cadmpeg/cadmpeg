@@ -14,7 +14,6 @@ impl<O: Copy + From<u8> + std::ops::Add<Output = O>> StateSlotLane<O> {
     pub(crate) fn offset(&self) -> O {
         self.offset
     }
-    #[cfg(test)]
     pub(crate) fn slots(&self) -> &StateSlots<Option<StateIndexToken>> {
         &self.slots
     }

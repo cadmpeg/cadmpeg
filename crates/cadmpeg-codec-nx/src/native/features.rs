@@ -28,9 +28,12 @@ use reference::ConstructionReference;
 
 pub(super) mod block_reference;
 pub(super) mod body_scalar_triple;
+mod borrowed_wires;
 use body_scalar_triple::FeatureOperationBodyScalarTriple;
+mod body_reference_wire;
 mod body_write_wire;
 mod common_frame_wire;
+mod datum_plane_wire;
 pub(super) mod object_frame;
 pub(super) mod operation_record;
 pub(super) mod surface_branches;
@@ -149,11 +152,8 @@ pub(super) fn feature_operation_chronological_labels(
 }
 
 /// Exact body-write frame retained from one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "body_write_wire::BodyWriteWire",
-    into = "body_write_wire::BodyWriteWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "body_write_wire::BodyWriteWire")]
 pub(super) struct FeatureOperationBodyWrite {
     pub(super) id: String,
     pub(super) operation_label: Option<String>,
@@ -236,11 +236,8 @@ pub(super) struct FeatureBodyWriteGroupPartitionUse {
 ///
 /// The optional tag and object identity are native evidence. They do not assign a
 /// body, operand, input, or output role.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationObjectReferenceWire",
-    into = "FeatureOperationObjectReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationObjectReferenceWire")]
 pub(super) struct FeatureOperationObjectReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -291,6 +288,7 @@ struct FeatureOperationObjectReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationObjectReference> for FeatureOperationObjectReferenceWire {
     fn from(value: FeatureOperationObjectReference) -> Self {
         Self {
@@ -342,11 +340,8 @@ impl TryFrom<FeatureOperationObjectReferenceWire> for FeatureOperationObjectRefe
 }
 
 /// Exactly framed common record in one bounded feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "common_frame_wire::CommonFrameWire",
-    into = "common_frame_wire::CommonFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "common_frame_wire::CommonFrameWire")]
 pub(super) struct FeatureOperationCommonFrame {
     pub(super) id: String,
     pub(super) operation_record: String,
@@ -355,11 +350,8 @@ pub(super) struct FeatureOperationCommonFrame {
 }
 
 /// Canonical terminal common-frame suffix of one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "common_frame_wire::TerminalFrameWire",
-    into = "common_frame_wire::TerminalFrameWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "common_frame_wire::TerminalFrameWire")]
 pub(super) struct FeatureOperationTerminalFrame {
     pub(super) id: String,
     pub(super) operation_record: String,
@@ -408,11 +400,8 @@ pub(super) struct FeaturePayloadString {
 }
 
 /// Primary selection or ordered body-reference field in one feature operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBodyReferenceWire",
-    into = "FeatureBodyReferenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBodyReferenceWire")]
 pub(super) struct FeatureBodyReference {
     /// Globally unique reference identity.
     pub(super) id: String,
@@ -447,6 +436,7 @@ struct FeatureBodyReferenceWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureBodyReference> for FeatureBodyReferenceWire {
     fn from(value: FeatureBodyReference) -> Self {
         Self {
@@ -518,11 +508,8 @@ pub(super) struct FeatureInputBlock {
 }
 
 /// Input-block bindings from distinct operations that resolve to one data block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureInputBlockIdentityGroupWire",
-    into = "FeatureInputBlockIdentityGroupWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureInputBlockIdentityGroupWire")]
 pub(super) struct FeatureInputBlockIdentityGroup {
     /// Globally unique group identity.
     pub(super) id: String,
@@ -550,6 +537,7 @@ struct FeatureInputBlockIdentityGroupWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureInputBlockIdentityGroup> for FeatureInputBlockIdentityGroupWire {
     fn from(group: FeatureInputBlockIdentityGroup) -> Self {
         Self {
@@ -680,11 +668,8 @@ enum FeatureInputColumnTargetRow {
 }
 
 /// Unique composite-table target row for one feature input block.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureInputColumnTargetWire",
-    into = "FeatureInputColumnTargetWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureInputColumnTargetWire")]
 pub(super) struct FeatureInputColumnTarget {
     /// Globally unique target identity.
     pub(super) id: String,
@@ -755,6 +740,7 @@ struct FeatureInputColumnTargetWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureInputColumnTarget> for FeatureInputColumnTargetWire {
     fn from(value: FeatureInputColumnTarget) -> Self {
         let (row_kind, leading_index, leading_index_source_offset, discriminator, flag) =
@@ -876,8 +862,8 @@ pub(super) struct FeatureParameterBinding {
 }
 
 /// All binding occurrences by which one operation consumes one expression.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "FeatureParameterUseWire", into = "FeatureParameterUseWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureParameterUseWire")]
 pub(super) struct FeatureParameterUse {
     /// Globally unique use identity.
     pub(super) id: String,
@@ -904,6 +890,7 @@ struct FeatureParameterUseWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureParameterUse> for FeatureParameterUseWire {
     fn from(value: FeatureParameterUse) -> Self {
         let (bindings, source_offsets) = value
@@ -964,11 +951,8 @@ pub(super) struct FeatureSketchRecord {
 }
 
 /// Completely resolved native construction lane of a datum coordinate system.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumCsysConstructionWire",
-    into = "FeatureDatumCsysConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysConstructionWire")]
 pub(super) struct FeatureDatumCsysConstruction {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -986,6 +970,7 @@ struct FeatureDatumCsysConstructionWire {
     source_offsets: [u64; 8],
 }
 
+#[cfg(test)]
 impl From<FeatureDatumCsysConstruction> for FeatureDatumCsysConstructionWire {
     fn from(value: FeatureDatumCsysConstruction) -> Self {
         Self {
@@ -1356,11 +1341,8 @@ impl Serialize for FeaturePayloadScalarPair {
 }
 
 /// One exactly framed signed Q1.55 pair in a reconstructed datum-CSYS payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire",
-    into = "pair_wire::FeatureDatumCsysPayloadFixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureDatumCsysPayloadFixedPairWire")]
 pub(super) struct FeatureDatumCsysPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub(super) id: String,
@@ -1381,11 +1363,8 @@ pub(super) struct FeatureDatumCsysPayloadFixedPair {
 }
 
 /// One exactly framed scalar field in a reconstructed feature payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeaturePayloadScalarWire",
-    into = "FeaturePayloadScalarWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeaturePayloadScalarWire")]
 pub(super) struct FeaturePayloadScalar {
     /// Globally unique scalar-field identity.
     pub(super) id: String,
@@ -1429,6 +1408,7 @@ struct FeaturePayloadScalarWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeaturePayloadScalar> for FeaturePayloadScalarWire {
     fn from(value: FeaturePayloadScalar) -> Self {
         Self {
@@ -1484,11 +1464,8 @@ impl FeatureScalarPayload {
 }
 
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumCsysDescriptorWire",
-    into = "FeatureDatumCsysDescriptorWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysDescriptorWire")]
 pub(super) struct FeatureDatumCsysDescriptor {
     /// Globally unique descriptor identity.
     pub(super) id: String,
@@ -1528,6 +1505,7 @@ struct FeatureDatumCsysDescriptorWire {
     identity_source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
     fn from(value: FeatureDatumCsysDescriptor) -> Self {
         let identity_source_offset = value.descriptor.identity_source_offset();
@@ -1592,11 +1570,8 @@ pub(super) struct FeatureDatumPlaneCsysIdentityUse {
 }
 
 /// Exact logical datum-plane object payload reconstructed in lane order.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumPlanePayloadWire",
-    into = "FeatureDatumPlanePayloadWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumPlanePayloadWire")]
 pub(super) struct FeatureDatumPlanePayload {
     /// Globally unique reconstructed-payload identity.
     pub(super) id: String,
@@ -1643,6 +1618,7 @@ struct FeatureDatumPlanePayloadWire {
     index_lane_trailer: Option<u32>,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
     fn from(value: FeatureDatumPlanePayload) -> Self {
         let (
@@ -1746,11 +1722,8 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
 }
 
 /// Resolved typed descriptor of one datum-plane construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureDatumPlaneDescriptorWire",
-    into = "FeatureDatumPlaneDescriptorWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureDatumPlaneDescriptorWire")]
 pub(super) struct FeatureDatumPlaneDescriptor {
     /// Globally unique descriptor identity.
     pub(super) id: String,
@@ -1792,6 +1765,7 @@ struct FeatureDatumPlaneDescriptorWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
     fn from(value: FeatureDatumPlaneDescriptor) -> Self {
         Self {
@@ -1889,11 +1863,8 @@ struct FeatureConstructionMember {
 }
 
 /// Completely resolved counted-reference field of one sketch construction.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchConstructionInputsWire",
-    into = "FeatureSketchConstructionInputsWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSketchConstructionInputsWire")]
 pub(super) struct FeatureSketchConstructionInputs {
     /// Globally unique construction-input identity.
     pub(super) id: String,
@@ -1920,6 +1891,7 @@ struct FeatureSketchConstructionInputsWire {
     terminal_data_block: String,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchConstructionInputs> for FeatureSketchConstructionInputsWire {
     fn from(value: FeatureSketchConstructionInputs) -> Self {
         let (member_references, member_data_blocks) = value
@@ -2030,11 +2002,8 @@ pub(in crate::native) enum FeaturePatternKind {
 }
 
 /// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureSketchPayloadFixedPairWire",
-    into = "pair_wire::FeatureSketchPayloadFixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadFixedPairWire")]
 pub(super) struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
     pub(super) id: String,
@@ -2055,11 +2024,8 @@ pub(super) struct FeatureSketchPayloadFixedPair {
 }
 
 /// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "pair_wire::FeatureSketchPayloadMixedPairWire",
-    into = "pair_wire::FeatureSketchPayloadMixedPairWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "pair_wire::FeatureSketchPayloadMixedPairWire")]
 pub(super) struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
     pub(super) id: String,
@@ -2080,11 +2046,8 @@ pub(super) struct FeatureSketchPayloadMixedPair {
 }
 
 /// Exact scalar-vector frame retained from one reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchPayloadScalarLaneWire",
-    into = "FeatureSketchPayloadScalarLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureSketchPayloadScalarLaneWire")]
 pub(super) struct FeatureSketchPayloadScalarLane {
     /// Globally unique scalar-lane identity.
     pub(super) id: String,
@@ -2130,6 +2093,7 @@ struct FeatureSketchPayloadScalarLaneWire {
     terminator_source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire {
     fn from(record: FeatureSketchPayloadScalarLane) -> Self {
         Self {
@@ -2285,11 +2249,8 @@ pub(super) struct FeatureSketchPointGroup {
 }
 
 /// Named two-scalar point object spanning consecutive offset-store blocks.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "OffsetStoreNamedPointWire",
-    into = "OffsetStoreNamedPointWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "OffsetStoreNamedPointWire")]
 pub(super) struct OffsetStoreNamedPoint {
     /// Globally unique point-object identity.
     pub(super) id: String,
@@ -2321,6 +2282,7 @@ struct OffsetStoreNamedPointWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<OffsetStoreNamedPoint> for OffsetStoreNamedPointWire {
     fn from(value: OffsetStoreNamedPoint) -> Self {
         Self {
@@ -2398,11 +2360,8 @@ pub(super) struct FeatureSketchPrecedingNamedPointUse {
 }
 
 /// Exact identity of one solved sketch point across its payload and reference lanes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchPointUseWire",
-    into = "FeatureSketchPointUseWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureSketchPointUseWire")]
 pub(super) struct FeatureSketchPointUse {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -2436,6 +2395,7 @@ struct FeatureSketchPointUseWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureSketchPointUse> for FeatureSketchPointUseWire {
     fn from(value: FeatureSketchPointUse) -> Self {
         Self {
@@ -2747,11 +2707,8 @@ pub(super) struct FeatureExtrudeProfileReference {
 }
 
 /// Fixed shifted-IEEE scalar header from a bounded extrusion payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudePayloadHeaderWire",
-    into = "FeatureExtrudePayloadHeaderWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureExtrudePayloadHeaderWire")]
 pub(super) struct FeatureExtrudePayloadHeader {
     /// Globally unique header identity.
     pub(super) id: String,
@@ -2777,6 +2734,7 @@ struct FeatureExtrudePayloadHeaderWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudePayloadHeader> for FeatureExtrudePayloadHeaderWire {
     fn from(value: FeatureExtrudePayloadHeader) -> Self {
         Self {
@@ -2806,11 +2764,8 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
 }
 
 /// Ordered member index in a branch-`11` operation body clause.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyMemberWire",
-    into = "FeatureOperationBodyMemberWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyMemberWire")]
 pub(super) struct FeatureOperationBodyMember {
     /// Globally unique member identity.
     pub(super) id: String,
@@ -2846,6 +2801,7 @@ struct FeatureOperationBodyMemberWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyMember> for FeatureOperationBodyMemberWire {
     fn from(value: FeatureOperationBodyMember) -> Self {
         Self {
@@ -2881,11 +2837,8 @@ impl TryFrom<FeatureOperationBodyMemberWire> for FeatureOperationBodyMember {
 }
 
 /// Wrapped operation member resolved in the feature-body identity namespace.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyOperandWire",
-    into = "FeatureOperationBodyOperandWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyOperandWire")]
 pub(super) struct FeatureOperationBodyOperand {
     /// Globally unique operand identity.
     pub(super) id: String,
@@ -2935,6 +2888,7 @@ struct FeatureOperationBodyOperandWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyOperand> for FeatureOperationBodyOperandWire {
     fn from(value: FeatureOperationBodyOperand) -> Self {
         Self {
@@ -2984,11 +2938,8 @@ impl FeatureOperationBodyOperand {
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "reference::Body11ContinuationWire",
-    into = "reference::Body11ContinuationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "reference::Body11ContinuationWire")]
 pub(super) struct FeatureOperationBody11Continuation {
     /// Globally unique continuation identity.
     pub(super) id: String,
@@ -3024,11 +2975,8 @@ enum FeatureOperationBodyReferences {
 }
 
 /// Counted reference lane following an operation body scalar clause.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationBodyReferenceLaneWire",
-    into = "FeatureOperationBodyReferenceLaneWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyReferenceLaneWire")]
 pub(super) struct FeatureOperationBodyReferenceLane {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3062,6 +3010,7 @@ struct FeatureOperationBodyReferenceLaneWire {
     source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureOperationBodyReferenceLane> for FeatureOperationBodyReferenceLaneWire {
     fn from(value: FeatureOperationBodyReferenceLane) -> Self {
         let mut object_indices = Vec::new();
@@ -3182,11 +3131,8 @@ impl TryFrom<FeatureOperationBodyReferenceLaneWire> for FeatureOperationBodyRefe
 }
 
 /// Atomically witnessed extrusion construction profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudeConstructionProfileWire",
-    into = "FeatureExtrudeConstructionProfileWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureExtrudeConstructionProfileWire")]
 pub(super) struct FeatureExtrudeConstructionProfile {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3217,6 +3163,7 @@ struct FeatureExtrudeConstructionProfileWire {
     witness_source_offsets: Vec<u64>,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudeConstructionProfile> for FeatureExtrudeConstructionProfileWire {
     fn from(value: FeatureExtrudeConstructionProfile) -> Self {
         Self {
@@ -3282,11 +3229,8 @@ impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructi
 }
 
 /// Completely resolved construction-reference field of one `BLOCK` feature.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBlockConstructionWire",
-    into = "FeatureBlockConstructionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBlockConstructionWire")]
 pub(super) struct FeatureBlockConstruction {
     /// Globally unique construction identity.
     pub(super) id: String,
@@ -3313,6 +3257,7 @@ struct FeatureBlockConstructionWire {
     terminal_data_block: String,
 }
 
+#[cfg(test)]
 impl From<FeatureBlockConstruction> for FeatureBlockConstructionWire {
     fn from(value: FeatureBlockConstruction) -> Self {
         let (member_references, member_data_blocks) = value
@@ -3414,11 +3359,8 @@ pub(super) struct FeatureBlockPayloadPointGroup {
 }
 
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    from = "FeatureBlockDimensionsWire",
-    into = "FeatureBlockDimensionsWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(from = "FeatureBlockDimensionsWire")]
 pub(super) struct FeatureBlockDimensions {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3452,6 +3394,7 @@ struct FeatureBlockDimensionsWire {
     values: [cadmpeg_ir::scalar::FiniteReal; 3],
 }
 
+#[cfg(test)]
 impl From<FeatureBlockDimensions> for FeatureBlockDimensionsWire {
     fn from(dimensions: FeatureBlockDimensions) -> Self {
         Self {
@@ -3504,11 +3447,8 @@ pub(super) enum FeatureBooleanKind {
 }
 
 /// Ordered target/tool binding from a feature-history Boolean operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBooleanOperationWire",
-    into = "FeatureBooleanOperationWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "FeatureBooleanOperationWire")]
 pub(super) struct FeatureBooleanOperation {
     pub(super) id: String,
     pub(super) operation_label: String,
@@ -3545,6 +3485,7 @@ struct FeatureBooleanOperationWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
     fn from(operation: FeatureBooleanOperation) -> Self {
         Self {

@@ -255,7 +255,7 @@ pub(crate) fn decode_sketch_placements(
         };
         placement.visibility = visibilities
             .get(&(stream.to_owned(), placement.entity_id.suffix()))
-            .cloned();
+            .copied();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)

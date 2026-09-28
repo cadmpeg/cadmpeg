@@ -178,7 +178,7 @@ fn trimming_projection_refuses_counted_boundary_vectors() {
             bounded_plane_file(),
             "iges trimming candidate vertex derivations",
         ),
-        (bounded_plane_file(), "loop ring validation members"),
+        (bounded_plane_file(), "loop ring members"),
     ] {
         assert_trimming_collection_refusal(&bytes, operation);
     }

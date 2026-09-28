@@ -6552,7 +6552,7 @@ fn recipe_selector_candidates(
                                         .collect()
                                 });
                             crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorClause {
-                                entry: entry.clone(),
+                                entry: *entry,
                                 triplet_edge_slots,
                             }
                         })

@@ -5,6 +5,70 @@ use crate::records::feature::sheet_metal::{
     DesignEdgeFlangeShape, DesignHemOperation,
 };
 
+fn edge_flange_wire_for_borrowed(mode: &str) -> serde_json::Value {
+    let (owners, owners_by_edge) = match mode {
+        "full_edge" => (serde_json::json!([]), serde_json::json!([])),
+        "symmetric" => (serde_json::json!([50]), serde_json::json!([])),
+        "two_sides" => (serde_json::json!([50, 51]), serde_json::json!([])),
+        "symmetric_per_edge" => (serde_json::json!([50, 51]), serde_json::json!([])),
+        "two_sides_per_edge" => (
+            serde_json::json!([50, 51, 52, 53]),
+            serde_json::json!([[50, 51], [52, 53]]),
+        ),
+        _ => unreachable!(),
+    };
+    serde_json::json!({
+        "edge_wrapper_record_indices":[10,11], "edge_group_record_indices":[20,21],
+        "edge_operand_record_indices":[23,24], "aggregate_group_record_index":30,
+        "aggregate_operand_record_indices":[34,35], "height_owner_record_index":40,
+        "angle_owner_record_index":41, "width_mode":mode,
+        "width_distance_owner_record_indices":owners,
+        "width_distance_owner_record_indices_by_edge":owners_by_edge,
+        "settings_record_index":42, "bend_radius":0.25, "bend_radius_offset":50,
+        "reference_side_code":4, "height_datum":"inner_faces", "bend_position":"adjacent"
+    })
+}
+
+#[test]
+fn edge_flange_operation_borrowed_wire_matches_owned_wire_bytes() {
+    for mode in [
+        "full_edge",
+        "symmetric",
+        "two_sides",
+        "symmetric_per_edge",
+        "two_sides_per_edge",
+    ] {
+        let wire = edge_flange_wire_for_borrowed(mode);
+        let operation: DesignEdgeFlangeOperation = serde_json::from_value(wire).unwrap();
+        let owned = super::DesignEdgeFlangeOperationSerde::from(operation.clone());
+        assert_eq!(
+            serde_json::to_vec(&operation).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn edge_flange_operation_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a DesignEdgeFlangeOperation,
+    }
+    let operation: DesignEdgeFlangeOperation =
+        serde_json::from_value(edge_flange_wire_for_borrowed("two_sides_per_edge")).unwrap();
+    let record = NestedRecord {
+        id: "f3d:native:edge-flange#0",
+        value: &operation,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::EDGE_FLANGE_OPERATION_CLONE_COUNT.with(|count| count.set(0)),
+        || super::EDGE_FLANGE_OPERATION_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     let wire = serde_json::json!({
@@ -15,7 +79,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         "form_code":3, "direction_code":1, "direction_reversal_byte":0, "reference_side_code":4
     });
     let mut operation: DesignHemOperation = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
+    assert_eq!(serde_json::to_value(operation).unwrap(), wire);
     for (group, operand) in [
         ("edge_group_record_index", "edge_operand_record_index"),
         (

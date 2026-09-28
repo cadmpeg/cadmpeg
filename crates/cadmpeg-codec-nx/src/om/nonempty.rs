@@ -16,7 +16,7 @@ impl<T> NonEmpty<T> {
         })
     }
 
-    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> + Clone {
         std::iter::once(&self.first).chain(&self.rest)
     }
 
@@ -26,6 +26,14 @@ impl<T> NonEmpty<T> {
 
     pub(crate) fn first(&self) -> &T {
         &self.first
+    }
+
+    pub(crate) fn get(&self, index: usize) -> Option<&T> {
+        if index == 0 {
+            Some(&self.first)
+        } else {
+            self.rest.get(index - 1)
+        }
     }
 
     pub(crate) fn last(&self) -> &T {

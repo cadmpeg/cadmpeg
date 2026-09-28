@@ -61,11 +61,8 @@ impl DesignEdgeIdentityLayout {
 }
 
 /// Persistent selection identity owned by a Fillet or Chamfer operand group.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignEdgeIdentityOperandWire",
-    into = "DesignEdgeIdentityOperandWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignEdgeIdentityOperandWire")]
 pub(crate) struct DesignEdgeIdentityOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
@@ -105,6 +102,93 @@ pub(crate) struct DesignEdgeIdentityOperand {
     pub(crate) resolution_identity_id: Option<String>,
 }
 
+#[cfg(test)]
+thread_local! {
+    static EDGE_IDENTITY_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignEdgeIdentityOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        EDGE_IDENTITY_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            class_tag: self.class_tag.clone(),
+            layout: self.layout,
+            local_id: self.local_id,
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            historical: self.historical.clone(),
+            treatment_radius_candidates: self.treatment_radius_candidates.clone(),
+            transition_edge_candidates: self.transition_edge_candidates.clone(),
+            resolved_edge_slots: self.resolved_edge_slots.clone(),
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolution_identity_id: self.resolution_identity_id.clone(),
+        }
+    }
+}
+
+impl Serialize for DesignEdgeIdentityOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            group_record_index: u32,
+            group_member_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            compact_layout: bool,
+            local_id: u64,
+            local_id_offset: u64,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            #[serde(flatten, skip_serializing_if = "Option::is_none")]
+            historical: Option<&'a HistoricalBinding>,
+            #[serde(skip_serializing_if = "<[DesignEdgeTreatmentRadiusCandidate]>::is_empty")]
+            treatment_radius_candidates: &'a [DesignEdgeTreatmentRadiusCandidate],
+            #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+            transition_edge_candidates: &'a [i64],
+            #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+            resolved_edge_slots: &'a [i64],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_edge_slot: Option<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolution_identity_id: Option<&'a str>,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            compact_layout: self.layout.is_compact(),
+            local_id: self.local_id,
+            local_id_offset: self.local_id_offset(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset(),
+            historical: self.historical.as_ref(),
+            treatment_radius_candidates: &self.treatment_radius_candidates,
+            transition_edge_candidates: &self.transition_edge_candidates,
+            resolved_edge_slots: &self.resolved_edge_slots,
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolution_identity_id: self.resolution_identity_id.as_deref(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl DesignEdgeIdentityOperand {
     pub(crate) fn try_new(draft: DesignEdgeIdentityOperandDraft) -> Result<Self, String> {
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
@@ -139,6 +223,7 @@ impl DesignEdgeIdentityOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignEdgeIdentityOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -316,6 +401,7 @@ impl TryFrom<DesignEdgeIdentityOperandWire> for DesignEdgeIdentityOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
     fn from(operand: DesignEdgeIdentityOperand) -> Self {
         let local_id_offset = operand.local_id_offset();
@@ -346,9 +432,11 @@ impl From<DesignEdgeIdentityOperand> for DesignEdgeIdentityOperandWire {
 }
 
 /// Edge-selection operand owned by an edge-selecting parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignEdgeOperandDraft", into = "DesignEdgeOperandDraft")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignEdgeOperandDraft")]
 pub(crate) struct DesignEdgeOperand {
+    #[cfg(test)]
+    clone_probe: EdgeOperandCloneProbe,
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
     pub(crate) id: String,
@@ -465,6 +553,140 @@ pub(crate) struct DesignEdgeOperand {
     next_byte_offset: u64,
 }
 
+#[cfg(test)]
+thread_local! {
+    static EDGE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct EdgeOperandCloneProbe;
+
+#[cfg(test)]
+impl Clone for EdgeOperandCloneProbe {
+    fn clone(&self) -> Self {
+        EDGE_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
+impl Serialize for DesignEdgeOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            scope_reference_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a DesignClassTag,
+            paired_byte_offset: u64,
+            paired_class_tag: &'a DesignClassTag,
+            recipe_record_index: u32,
+            recipe_record_byte_offset: u64,
+            recipe_id: &'a str,
+            recipe_prefix_offset: u64,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            recipe_prefix_bytes: &'a [u8],
+            recipe_references: &'a Vec<DesignRecipeReference>,
+            recipe_program_offset: u64,
+            recipe_program: &'a Vec<i32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            recipe_structure: Option<&'a DesignEdgeRecipeStructure>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            surface_patch_recipe_structure: Option<&'a DesignSurfacePatchRecipeStructure>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            local_topology_references: Option<&'a Vec<NonZeroU32>>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            result_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            result_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            preceding_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            terminal_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            changed_candidate_faces: &'a Vec<FaceId>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            preceding_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            terminal_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            changed_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            deleted_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            updated_boundary_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            treatment_radius_candidates: &'a Vec<DesignEdgeTreatmentRadiusCandidate>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            changed_boundary_edge_contexts: &'a Vec<DesignHistoricalEdgeContext>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            terminal_boundary_edge_contexts: &'a Vec<DesignHistoricalEdgeContext>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            terminal_reference_edge_slots: &'a Vec<Vec<i64>>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            recipe_reference_contexts: &'a Vec<DesignEdgeRecipeReferenceContext>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            recipe_selectors: &'a Vec<DesignEdgeRecipeSelectorContext>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            recipe_state_id: Option<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_edge_slot: Option<i64>,
+            #[serde(flatten, serialize_with = "serialize_edge_resolved_axis")]
+            resolved_axis: Option<DesignAxis>,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        BorrowedWire {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: self.scope_reference_ordinal,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: &self.class_tag,
+            paired_byte_offset: self.paired_byte_offset,
+            paired_class_tag: &self.paired_class_tag,
+            recipe_record_index: self.recipe_record_index(),
+            recipe_record_byte_offset: self.recipe_record_byte_offset,
+            recipe_id: &self.recipe_id,
+            recipe_prefix_offset: self.recipe_prefix_offset(),
+            recipe_prefix_bytes: &self.recipe_prefix_bytes,
+            recipe_references: &self.recipe_references,
+            recipe_program_offset: self.recipe_program_offset,
+            recipe_program: &self.recipe_program,
+            recipe_structure: self.recipe_structure.as_ref(),
+            surface_patch_recipe_structure: self.surface_patch_recipe_structure.as_ref(),
+            local_topology_references: self.local_topology_references.as_ref(),
+            candidate_faces: &self.candidate_faces,
+            result_candidate_faces: &self.result_candidate_faces,
+            result_boundary_edge_slots: &self.result_boundary_edge_slots,
+            preceding_candidate_faces: &self.preceding_candidate_faces,
+            terminal_candidate_faces: &self.terminal_candidate_faces,
+            changed_candidate_faces: &self.changed_candidate_faces,
+            preceding_boundary_edge_slots: &self.preceding_boundary_edge_slots,
+            terminal_boundary_edge_slots: &self.terminal_boundary_edge_slots,
+            changed_boundary_edge_slots: &self.changed_boundary_edge_slots,
+            deleted_boundary_edge_slots: &self.deleted_boundary_edge_slots,
+            updated_boundary_edge_slots: &self.updated_boundary_edge_slots,
+            treatment_radius_candidates: &self.treatment_radius_candidates,
+            changed_boundary_edge_contexts: &self.changed_boundary_edge_contexts,
+            terminal_boundary_edge_contexts: &self.terminal_boundary_edge_contexts,
+            terminal_reference_edge_slots: &self.terminal_reference_edge_slots,
+            recipe_reference_contexts: &self.recipe_reference_contexts,
+            recipe_selectors: &self.recipe_selectors,
+            recipe_state_id: self.recipe_state_id,
+            resolved_edge_slot: self.resolved_edge_slot,
+            resolved_axis: self.resolved_axis,
+            next_record_index: self.next_record_index,
+            next_byte_offset: self.next_byte_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl DesignEdgeOperand {
     pub(crate) fn try_new(draft: DesignEdgeOperandDraft) -> Result<Self, String> {
         if !(draft.byte_offset < draft.paired_byte_offset
@@ -487,6 +709,8 @@ impl DesignEdgeOperand {
             0,
         )?;
         let value = Self {
+            #[cfg(test)]
+            clone_probe: EdgeOperandCloneProbe,
             frame,
             id: draft.id,
             scope_record_index: draft.scope_record_index,
@@ -534,6 +758,7 @@ impl DesignEdgeOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignEdgeOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -756,6 +981,7 @@ impl TryFrom<DesignEdgeOperandDraft> for DesignEdgeOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignEdgeOperand> for DesignEdgeOperandDraft {
     fn from(value: DesignEdgeOperand) -> Self {
         let value = value.into_draft();

@@ -12,9 +12,11 @@ use crate::om::surface_branches::{
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
 
+mod borrowed_wires;
+
 /// One exact counted branch in a bounded surface-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "SurfaceBranchWire", into = "SurfaceBranchWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "SurfaceBranchWire")]
 pub(in crate::native) struct FeatureSurfaceConstructionBranch {
     id: String,
     pub(in crate::native) operation_label: String,
@@ -60,6 +62,7 @@ struct SurfaceBranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSurfaceConstructionBranch> for SurfaceBranchWire {
     fn from(value: FeatureSurfaceConstructionBranch) -> Self {
         let branch = &value.references;

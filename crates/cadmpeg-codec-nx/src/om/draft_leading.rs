@@ -28,7 +28,7 @@ impl<T, O> DraftLeadingLane<T, O> {
 }
 
 impl<T, O: Copy + Add<Output = O> + From<u16>> DraftLeadingLane<T, O> {
-    pub(crate) fn indices(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> {
+    pub(crate) fn indices(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> + Clone {
         let mut offset = self.offset + O::from(24);
         self.indices.as_slice().iter().map(move |token| {
             let positioned = PositionedIndex {

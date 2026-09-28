@@ -11,8 +11,9 @@ const EPS_TOPOLOGY_TOLERANCE: f64 = 1.0e-8;
 const EPS_PCURVE_POINT_MATCH: f64 = 1.0e-12;
 
 use crate::decode::blend::{
-    closest_nurbs_curve_parameter, closest_pcurve_parameters, homogeneous_residual_distance,
-    real_polynomial_roots, surface_contact_direction, surface_offset_lineage,
+    closest_nurbs_curve_parameter_with_budget, closest_pcurve_parameters,
+    homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
+    surface_offset_lineage,
 };
 use crate::decode::build::{
     rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
@@ -1775,15 +1776,30 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .unwrap();
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
-    let first = closest_nurbs_curve_parameter(&curve, point, Some(0.099))
-        .expect("evaluator allocation succeeds")
-        .expect("first close branch");
-    let second = closest_nurbs_curve_parameter(&curve, point, Some(0.101))
-        .expect("evaluator allocation succeeds")
-        .expect("second close branch");
-    let remote = closest_nurbs_curve_parameter(&curve, point, Some(0.69))
-        .expect("evaluator allocation succeeds")
-        .expect("remote global branch");
+    let first = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.099),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("first close branch");
+    let second = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.101),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("second close branch");
+    let remote = closest_nurbs_curve_parameter_with_budget(
+        &curve,
+        point,
+        Some(0.69),
+        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+    )
+    .expect("evaluator allocation succeeds")
+    .expect("remote global branch");
 
     assert!((first - 0.1).abs() < 1.0e-8);
     assert!((second - 0.1001).abs() < 1.0e-8);
@@ -1827,9 +1843,14 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
         [4.0]
     );
     assert_eq!(
-        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
-            .expect("evaluator allocation succeeds")
-            .expect("periodic curve phase"),
+        closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.0, 0.0, 0.0),
+            Some(4.1),
+            &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000)
+        )
+        .expect("evaluator allocation succeeds")
+        .expect("periodic curve phase"),
         4.0
     );
 }

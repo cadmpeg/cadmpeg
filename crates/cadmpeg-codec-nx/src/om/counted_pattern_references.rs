@@ -39,7 +39,7 @@ impl<B> CountedPatternReferences<B> {
         self.entries.declared_count()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, PayloadIndexToken, &B)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (u64, PayloadIndexToken, &B)> + Clone {
         let mut at = self.offset + 2;
         self.entries.as_slice().iter().map(move |(token, target)| {
             let offset = at;

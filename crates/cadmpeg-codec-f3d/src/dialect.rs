@@ -179,11 +179,12 @@ impl F3dDialect {
 /// identity collision. Returns the layer set and any recoverable
 /// classification loss.
 pub(crate) fn classify_layers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &crate::container::ContainerScan<'_>,
-) -> (DialectLayers, Vec<LossNote>) {
+) -> Result<(DialectLayers, Vec<LossNote>), cadmpeg_core::CodecError> {
     let mut layers = DialectLayers::of(scan.kind.dialect().clone());
     let mut losses = Vec::new();
-    for layer in kernel_layers(scan) {
+    for layer in kernel_layers(ctx, scan)? {
         let format = layer.format().to_owned();
         let instance = layer.instance().unwrap_or("unidentified").to_owned();
         if layers.insert(layer).is_err() {
@@ -192,7 +193,7 @@ pub(crate) fn classify_layers(
             )));
         }
     }
-    (layers, losses)
+    Ok((layers, losses))
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
@@ -239,7 +240,10 @@ fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 }
 
 /// Kernel dialect layers from the binary and text B-rep streams.
-fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch> {
+fn kernel_layers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &crate::container::ContainerScan<'_>,
+) -> Result<Vec<DialectMatch>, cadmpeg_core::CodecError> {
     let text_names = crate::container::text_brep_names(scan);
     let instance = if scan.breps.len() + text_names.len() > 1 {
         LayerInstance::Tagged
@@ -259,7 +263,7 @@ fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch
     for name in text_names {
         let matched = match scan.text_breps.get(name) {
             Some(crate::container::TextBrepFraming::Parsed(stream)) => {
-                let header = stream.header.as_kernel_header();
+                let header = stream.header.as_kernel_header(ctx)?;
                 let reference = match stream.terminator {
                     cadmpeg_asm::sat::Terminator::Asm => {
                         cadmpeg_asm::dialect::KernelHeaderRef::TextAsm(&header)
@@ -278,7 +282,7 @@ fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch
         };
         matches.push(matched);
     }
-    matches
+    Ok(matches)
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.

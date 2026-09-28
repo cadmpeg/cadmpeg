@@ -58,32 +58,43 @@ impl Prefix {
         }
     }
 
+    #[cfg(test)]
     fn raw(&self) -> Vec<u8> {
+        let (bytes, len) = self.raw_stack();
+        bytes[..len].to_vec()
+    }
+
+    fn raw_stack(&self) -> ([u8; 8], usize) {
         // The wire adapter receives the optional field by reference, including its absence.
         #[allow(clippy::ref_option)]
         fn nullable(atom: &Option<CompactIndexAtom>) -> &[u8] {
             atom.as_ref().map_or(&[0xff], CompactIndexAtom::raw)
         }
+        let mut bytes = [0_u8; 8];
+        let mut at = 0;
+        let mut append = |part: &[u8]| {
+            bytes[at..at + part.len()].copy_from_slice(part);
+            at += part.len();
+        };
         match self {
             Self::IndexedBranch {
                 first,
                 second,
                 branch,
             } => {
-                let mut bytes = vec![0x41];
-                bytes.extend_from_slice(first.raw());
-                bytes.push(0xf0);
-                bytes.extend_from_slice(nullable(second));
-                bytes.extend_from_slice(&[u8::from(*branch), 0x01]);
-                bytes
+                append(&[0x41]);
+                append(first.raw());
+                append(&[0xf0]);
+                append(nullable(second));
+                append(&[u8::from(*branch), 0x01]);
             }
             Self::Tagged { index } => {
-                let mut bytes = vec![0x41, 0xf0];
-                bytes.extend_from_slice(nullable(index));
-                bytes.extend_from_slice(&[0xff, 0x02, 0x01]);
-                bytes
+                append(&[0x41, 0xf0]);
+                append(nullable(index));
+                append(&[0xff, 0x02, 0x01]);
             }
         }
+        (bytes, at)
     }
 
     fn byte_len(&self) -> usize {
@@ -174,8 +185,12 @@ impl DraftIdentityFrame {
     pub(crate) fn offset(&self) -> u64 {
         self.offset
     }
+    #[cfg(test)]
     pub(crate) fn prefix(&self) -> Vec<u8> {
         self.prefix.raw()
+    }
+    pub(crate) fn prefix_stack(&self) -> ([u8; 8], usize) {
+        self.prefix.raw_stack()
     }
     pub(crate) fn form(&self) -> DraftIdentityForm {
         self.prefix.form()

@@ -124,11 +124,8 @@ pub(crate) struct DesignSurfaceTrimCellEntry {
 }
 
 /// Exact auxiliary carrier of a `SurfaceTrim` operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignSurfaceTrimOperationWire",
-    into = "DesignSurfaceTrimOperationWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignSurfaceTrimOperationWire")]
 pub(crate) struct DesignSurfaceTrimOperation {
     /// Globally unique deterministic identifier for this native carrier.
     pub(crate) id: String,
@@ -166,6 +163,86 @@ pub(crate) struct DesignSurfaceTrimOperation {
     pub(crate) trailing_value_offset: u64,
     /// Byte offset of the zero value after `trailing_value`.
     pub(crate) trailing_zero_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SURFACE_TRIM_OPERATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignSurfaceTrimOperation {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SURFACE_TRIM_OPERATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            selection_record_index: self.selection_record_index,
+            selection_byte_offset: self.selection_byte_offset,
+            selection_next_record_index: self.selection_next_record_index,
+            selection_next_byte_offset: self.selection_next_byte_offset,
+            chain_records: self.chain_records.clone(),
+            cell_table_record_index: self.cell_table_record_index,
+            cell_table_byte_offset: self.cell_table_byte_offset,
+            cell_table_class_tag: self.cell_table_class_tag.clone(),
+            cell_table_frame_length: self.cell_table_frame_length,
+            cell_table_paired_class_tag: self.cell_table_paired_class_tag.clone(),
+            cell_table_paired_byte_offset: self.cell_table_paired_byte_offset,
+            cell_count_offset: self.cell_count_offset,
+            cell_entries: self.cell_entries.clone(),
+            trailing_value: self.trailing_value,
+            trailing_value_offset: self.trailing_value_offset,
+            trailing_zero_offset: self.trailing_zero_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignSurfaceTrimOperationRef<'a> {
+    id: &'a str,
+    scope_record_index: u32,
+    selection_record_index: u32,
+    selection_byte_offset: u64,
+    selection_next_record_index: u32,
+    selection_next_byte_offset: u64,
+    chain_records: &'a [DesignSurfaceTrimChainRecord; 2],
+    cell_table_record_index: u32,
+    cell_table_byte_offset: u64,
+    cell_table_class_tag: &'a str,
+    cell_table_frame_length: u64,
+    cell_table_paired_class_tag: &'a str,
+    cell_table_paired_byte_offset: u64,
+    cell_count_offset: u64,
+    cell_entries: &'a [DesignSurfaceTrimCellEntry],
+    trailing_value: u32,
+    trailing_value_offset: u64,
+    trailing_zero_offset: u64,
+}
+
+impl Serialize for DesignSurfaceTrimOperation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignSurfaceTrimOperationRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            selection_record_index: self.selection_record_index,
+            selection_byte_offset: self.selection_byte_offset,
+            selection_next_record_index: self.selection_next_record_index,
+            selection_next_byte_offset: self.selection_next_byte_offset,
+            chain_records: &self.chain_records,
+            cell_table_record_index: self.cell_table_record_index,
+            cell_table_byte_offset: self.cell_table_byte_offset,
+            cell_table_class_tag: self.cell_table_class_tag.as_str(),
+            cell_table_frame_length: self.cell_table_frame_length,
+            cell_table_paired_class_tag: self.cell_table_paired_class_tag.as_str(),
+            cell_table_paired_byte_offset: self.cell_table_paired_byte_offset,
+            cell_count_offset: self.cell_count_offset,
+            cell_entries: self.cell_entries.as_slice(),
+            trailing_value: self.trailing_value,
+            trailing_value_offset: self.trailing_value_offset,
+            trailing_zero_offset: self.trailing_zero_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -236,6 +313,7 @@ impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
     }
 }
 
+#[cfg(test)]
 impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
     fn from(value: DesignSurfaceTrimOperation) -> Self {
         Self {
@@ -400,4 +478,71 @@ pub(crate) struct DesignSurfacePatchBoundary {
     /// Indexed record the `rPatchModelRef` reference names: this boundary
     /// component's model reference.
     pub(crate) model_reference: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
+        DesignSurfaceTrimOperationWire, SURFACE_TRIM_OPERATION_CLONE_COUNT,
+    };
+
+    fn record(count: u32) -> DesignSurfaceTrimOperation {
+        let cell_entries = (0..count)
+            .map(|ordinal| DesignSurfaceTrimCellEntry {
+                record_index: 10 + ordinal,
+                record_reference_offset: 100 + u64::from(ordinal) * 8,
+                ordinal: u64::from(ordinal) + 1,
+                ordinal_offset: 104 + u64::from(ordinal) * 8,
+            })
+            .collect();
+        DesignSurfaceTrimOperation::try_from(DesignSurfaceTrimOperationWire {
+            id: "f3d:native:surface-trim-operation#0".into(),
+            scope_record_index: 1,
+            selection_record_index: 2,
+            selection_byte_offset: 20,
+            selection_next_record_index: 3,
+            selection_next_byte_offset: 30,
+            chain_records: std::array::from_fn(|index| DesignSurfaceTrimChainRecord {
+                record_index: 4 + u32::try_from(index).unwrap(),
+                byte_offset: 40 + u64::try_from(index).unwrap() * 10,
+                class_tag: "300".to_owned().try_into().unwrap(),
+                frame_length: 10,
+            }),
+            cell_table_record_index: 6,
+            cell_table_byte_offset: 60,
+            cell_table_class_tag: "301".to_owned().try_into().unwrap(),
+            cell_table_frame_length: 20,
+            cell_table_paired_class_tag: "302".to_owned().try_into().unwrap(),
+            cell_table_paired_byte_offset: 80,
+            cell_count_offset: 90,
+            cell_entries,
+            trailing_value: 10,
+            trailing_value_offset: 110,
+            trailing_zero_offset: 114,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn surface_trim_operation_borrowed_wire_matches_owned_wire_bytes() {
+        for operation in [record(1), record(2)] {
+            let owned = DesignSurfaceTrimOperationWire::from(operation.clone());
+            assert_eq!(
+                serde_json::to_vec(&operation).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn surface_trim_operation_native_retained_limit_refuses_before_clone() {
+        let operation = record(2);
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &operation,
+            "design_surface_trim_operations",
+            || SURFACE_TRIM_OPERATION_CLONE_COUNT.with(|count| count.set(0)),
+            || SURFACE_TRIM_OPERATION_CLONE_COUNT.with(std::cell::Cell::get),
+        );
+    }
 }

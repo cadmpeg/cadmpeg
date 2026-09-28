@@ -48,7 +48,9 @@ impl OperationTerminalDiscriminator {
             (token, offset)
         })
     }
-    pub(crate) fn trailing_indices(&self) -> impl Iterator<Item = (CompactIndexAtom, u64)> + '_ {
+    pub(crate) fn trailing_indices(
+        &self,
+    ) -> impl Iterator<Item = (CompactIndexAtom, u64)> + Clone + '_ {
         let mut at = self.origin
             + 16
             + self
