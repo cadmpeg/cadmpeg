@@ -148,6 +148,16 @@ fn insert_admitted_identity<T>(
     Ok(())
 }
 
+fn copy_admitted_identity(
+    ctx: &DecodeContext<'_>,
+    identity: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let copy = ctx.copy_retained(identity.as_bytes(), operation)?;
+    String::from_utf8(copy)
+        .map_err(|_| CodecError::Malformed("identity copy is not UTF-8".into()))
+}
+
 fn index_model_identities_admitted(
     model: &Model,
     ctx: &DecodeContext<'_>,
@@ -157,9 +167,7 @@ fn index_model_identities_admitted(
         ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
             $(for (slot_index, entity) in model.$field.iter().enumerate() {
                 if identity_index_contains(model, &identity_index, entity.identity()) {
-                    let copy = ctx.copy_retained(entity.identity().as_bytes(), "draft identity collision")?;
-                    let identity = String::from_utf8(copy)
-                        .map_err(|_| CodecError::Malformed("draft identity is not UTF-8".into()))?;
+                    let identity = copy_admitted_identity(ctx, entity.identity(), "draft identity collision")?;
                     return Ok(Err(DraftError::IdentityCollision(identity)));
                 }
                 insert_admitted_identity(
@@ -442,6 +450,68 @@ impl<A> ModelDraft<A> {
         self.identity_index = Some(identity_index);
         Ok(())
     }
+
+    fn validate_with_contains_admitted(
+        &mut self,
+        contains: impl Fn(&str) -> bool,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), DraftError>, CodecError> {
+        let identity_index = match self.take_identity_index() {
+            Ok(index) => index,
+            Err(error) => return Ok(Err(error)),
+        };
+        macro_rules! check_external_identities {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for entity in &self.model.$field {
+                    if contains(entity.identity()) {
+                        let identity = copy_admitted_identity(ctx, entity.identity(), "draft external identity collision")?;
+                        return Ok(Err(DraftError::IdentityCollision(identity)));
+                    }
+                })*
+            };
+        }
+        crate::document::arena_registry!(check_external_identities);
+        macro_rules! validate_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for entity in &self.model.$field {
+                    let owner = entity.identity();
+                    let mut missing = None;
+                    let mut refusal = None;
+                    let walk = entity.visit_reference_ids(&mut |target| {
+                        if missing.is_none()
+                            && refusal.is_none()
+                            && !contains(target)
+                            && !identity_index_contains(&self.model, &identity_index, target)
+                        {
+                            match copy_admitted_identity(ctx, target, "draft missing reference") {
+                                Ok(target) => missing = Some(target),
+                                Err(error) => refusal = Some(error),
+                            }
+                        }
+                    });
+                    if let Some(error) = refusal {
+                        return Err(error);
+                    }
+                    if let Err(source) = walk {
+                        let owner = copy_admitted_identity(ctx, owner, "draft reference walk owner")?;
+                        return Ok(Err(DraftError::ReferenceWalk { owner, source }));
+                    }
+                    if let Some(target) = missing {
+                        let owner = copy_admitted_identity(ctx, owner, "draft missing reference owner")?;
+                        return Ok(Err(DraftError::UnresolvedReference { owner, target }));
+                    }
+                })*
+            };
+        }
+        crate::document::arena_registry!(validate_arenas);
+        if !self.model.features.is_empty() || self.model.has_feature_regeneration_parents() {
+            return Err(CodecError::Malformed(
+                "admitted model draft contains unsupported feature relations".into(),
+            ));
+        }
+        self.identity_index = Some(identity_index);
+        Ok(Ok(()))
+    }
 }
 
 impl ModelDraft<DraftAccounting> {
@@ -576,9 +646,7 @@ fn index_committed_identities_admitted(
         .values()
         .flat_map(|namespace| namespace.arenas().values().flatten())
     {
-        let copy = ctx.copy_retained(record.id().as_bytes(), "committed native identity")?;
-        let identity = String::from_utf8(copy)
-            .map_err(|_| CodecError::Malformed("native identity is not UTF-8".into()))?;
+        let identity = copy_admitted_identity(ctx, record.id(), "committed native identity")?;
         insert_admitted_identity(
             &mut identities,
             identity_hash(record.id()),
@@ -681,9 +749,9 @@ impl<'a> CommitSession<'a> {
         let identities = self.identities.as_mut().ok_or_else(|| {
             CodecError::Malformed("committed identity index is absent".into())
         })?;
-        if let Err(error) = draft.validate_with_contains(&self.base.model, |identity| {
+        if let Err(error) = draft.validate_with_contains_admitted(|identity| {
             committed_identity_contains(self.base, identities, identity)
-        }) {
+        }, ctx)? {
             return Ok(Err(error));
         }
         macro_rules! reserve_arenas {
@@ -792,6 +860,34 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ir.model.points.len(), 1);
+    }
+
+    #[test]
+    fn admitted_draft_commit_refuses_missing_reference_text_before_copy() {
+        let missing = "test:model:point#missing";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(missing.len() - 1).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = CadIr::empty();
+        let result = CommitSession::new(&mut ir).commit_model_admitted(
+            vertex_draft("test:model:vertex#new", missing),
+            &ctx,
+        );
+        assert!(matches!(result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "draft missing reference"
+                    && limit.additional == u64::try_from(missing.len()).unwrap()
+        ));
+        assert!(ir.model.vertices.is_empty());
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let result = CommitSession::new(&mut ir)
+            .commit_model_admitted(vertex_draft("test:model:vertex#new", missing), &ctx)
+            .unwrap();
+        assert!(matches!(result, Err(DraftError::UnresolvedReference { .. })));
     }
 
     #[test]
