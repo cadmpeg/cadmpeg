@@ -3866,21 +3866,13 @@ pub(super) fn feature_operation_labels(
             let label = record.label();
             let ordinal_u32 = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX feature operation ordinal", 0, 1))?;
-            let prefix = "nx:feature-history:operation-label#";
-            let id_len = prefix.len()
-                .checked_add(section_key.len())
-                .and_then(|length| length.checked_add(1 + 10))
-                .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature operation label id", 0, 1))?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(id_len),
-                "retain NX feature operation label id",
+            let id = format_feature_history_id(
+                ctx,
+                "operation-label",
+                &section_key,
+                ordinal,
+                None,
             )?;
-            let mut id = String::new();
-            id.try_reserve_exact(id_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX feature operation label id", 0, 1)
-            })?;
-            write!(&mut id, "{prefix}{section_key}-{ordinal:010}")
-                .map_err(|_| ctx.refuse_codec_limit("write NX feature operation label id", 0, 1))?;
             let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(label.header.end_offset()))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
             labels.push(FeatureOperationLabel {
