@@ -643,13 +643,14 @@ pub(super) fn decode(
             )?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
+            let display_name = record.display_name(ctx)?;
             let message = match ctx {
                 Some(ctx) => crate::decode_alloc::charged_format(
                     ctx,
                     "step_pmi_invalid_tolerance_text",
-                    format_args!("{} #{id} has no numeric magnitude", record.display_name()),
+                    format_args!("{display_name} #{id} has no numeric magnitude"),
                 )?,
-                None => format!("{} #{id} has no numeric magnitude", record.display_name()),
+                None => format!("{display_name} #{id} has no numeric magnitude"),
             };
             push_pmi_vec(
                 &mut losses,
@@ -2509,9 +2510,9 @@ fn measure_inner(
                 }
             }
             let quantity = quantity.unwrap_or_else(|| {
-                if record.display_name().contains("LENGTH") {
+                if record.partials.iter().any(|partial| partial.name.contains("LENGTH")) {
                     PmiQuantity::Length
-                } else if record.display_name().contains("ANGLE") {
+                } else if record.partials.iter().any(|partial| partial.name.contains("ANGLE")) {
                     PmiQuantity::Angle
                 } else {
                     PmiQuantity::Ratio
