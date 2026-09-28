@@ -864,7 +864,7 @@ fn finish_decode(
         .entity_records
         .iter()
         .filter_map(|record| record.relation_expression())
-        .fold(
+        .try_fold(
             (0_usize, 0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
             |(total, placeholder, parser, boolean, opened, typed), expression| {
                 let (placeholder, parser, boolean, opened) = match expression.framing {
@@ -881,16 +881,16 @@ fn finish_decode(
                         ..
                     } => (placeholder, parser, boolean, opened + 1),
                 };
-                (
+                Ok::<_, CodecError>((
                     total + 1,
                     placeholder,
                     parser,
                     boolean,
                     opened,
-                    typed + usize::from(expression.signature().is_some()),
-                )
+                    typed + usize::from(expression.signature_charged(ctx)?.is_some()),
+                ))
             },
-        );
+        )?;
     let parameter_value_count = native
         .entity_records
         .iter()
@@ -1325,19 +1325,14 @@ fn finish_decode(
         .filter_map(|record| record.relation_program_instance())
         .filter(|instance| instance.relation_expression.is_some())
         .count();
-    let typed_relation_expression_entities = resource::collect_set(
-        ctx,
-        native
-            .entity_records
-            .iter()
-            .filter(|entity| {
-                entity
-                    .relation_expression()
-                    .is_some_and(|expression| expression.signature().is_some())
-            })
-            .map(|entity| entity.id.as_str()),
-        "catia_typed_relation_expressions",
-    )?;
+    let mut typed_relation_expression_entities = std::collections::HashSet::new();
+    for entity in &native.entity_records {
+        let Some(expression) = entity.relation_expression() else { continue };
+        if expression.signature_charged(ctx)?.is_some() {
+            resource::insert_set(ctx, &mut typed_relation_expression_entities,
+                entity.id.as_str(), "catia_typed_relation_expressions")?;
+        }
+    }
     let typed_relation_program_instance_count = native
         .entity_records
         .iter()
