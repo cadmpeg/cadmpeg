@@ -37,7 +37,9 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
         .with_endpoint_refs(vec!["native:100".into(), "native:300".into()]),
     ];
 
-    resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities[3].geometry,

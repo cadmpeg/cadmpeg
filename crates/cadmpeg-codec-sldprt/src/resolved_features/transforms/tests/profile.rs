@@ -823,7 +823,14 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         arc("a1", "p1", "p2"),
     ];
 
-    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
 
     for entity in &entities[3..] {
         assert!(matches!(*entity.geometry.definition(),
@@ -841,7 +848,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
                 .expect("nonempty source identity"),
         );
     }
-    resolve_connected_marker_arcs(&mut entities, 1.0e-8);
+    resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-8).unwrap();
     assert!(entities[3..].iter().all(|entity| matches!(
         *entity.geometry.definition(),
         SketchGeometryDefinition::Arc { .. }

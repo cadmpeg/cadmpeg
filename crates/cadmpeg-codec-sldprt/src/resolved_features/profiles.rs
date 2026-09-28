@@ -1852,7 +1852,7 @@ pub(crate) fn project_marker_backed_sketches(
                 &mut projected,
                 QUANTUM,
             )?;
-            resolve_connected_marker_arcs(&mut projected, QUANTUM);
+            resolve_connected_marker_arcs(ctx, &mut projected, QUANTUM)?;
             let Ok(profiles) =
                 cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))
             else {

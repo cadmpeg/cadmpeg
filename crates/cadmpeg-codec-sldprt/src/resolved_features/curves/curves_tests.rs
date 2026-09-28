@@ -33,6 +33,75 @@ fn indexed_rectangle_from_line_cycle(
     super::indexed_rectangle_from_line_cycle(&ctx, payload, markers).unwrap()
 }
 
+fn resolve_connected_arc_test(entities: &mut [SketchEntity], tolerance: f64) {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    super::resolve_connected_marker_arcs(&ctx, entities, tolerance).unwrap();
+}
+
+fn connected_arc_limit_entities() -> Vec<SketchEntity> {
+    let sketch = SketchId::mint("synthetic:test:id#limit-sketch").unwrap();
+    vec![
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#limit-point").unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            })
+            .unwrap(),
+        )
+        .with_native_ref(Some("p".into())),
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#limit-arc").unwrap(),
+            sketch,
+            SketchGeometry::native(
+                cadmpeg_core::text::NonBlankString::new("sldprt:marker-geometry:2").unwrap(),
+            ),
+        )
+        .with_native_ref(Some("arc".into()))
+        .with_endpoint_refs(vec!["p".into(), "q".into()]),
+    ]
+}
+
+#[test]
+fn connected_arc_refuses_collection_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT connected arc points"));
+}
+
+#[test]
+fn connected_arc_refuses_retained_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT connected arc point identity"));
+}
+
+#[test]
+fn connected_arc_refuses_work_limit() {
+    let mut entities = connected_arc_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::resolve_connected_marker_arcs(&ctx, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT connected arc neighbors"));
+}
+
 #[test]
 fn indexed_rectangle_refuses_collection_limit() {
     let markers = rectangle_limit_markers();
@@ -1300,7 +1369,7 @@ fn unresolved_fillet_without_tangent_record_remains_native() {
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(
         *entities[4].geometry.definition(),
@@ -1366,7 +1435,7 @@ fn unresolved_fillet_between_arcs_remains_native_without_tangent_relation() {
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(
         *entities[4].geometry.definition(),
@@ -1427,7 +1496,7 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
         ),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(*entities[3].geometry.definition(),
         SketchGeometryDefinition::Arc {
@@ -1479,7 +1548,7 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
         .with_endpoint_refs(vec!["point:100".into(), "point:300".into()]),
     ];
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(*entities[4].geometry.definition(),
         SketchGeometryDefinition::Native { ref native_kind }
@@ -1570,13 +1639,13 @@ fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
     .with_geometry_ref(witness.geometry_ref.clone())
     .with_endpoint_refs(witness.endpoint_refs.clone());
     ambiguous_entities.push(duplicate_witness);
-    super::resolve_connected_marker_arcs(&mut ambiguous_entities, 1.0e-9);
+    resolve_connected_arc_test(&mut ambiguous_entities, 1.0e-9);
     assert!(matches!(*ambiguous_entities[7].geometry.definition(),
         SketchGeometryDefinition::Native { ref native_kind }
             if native_kind == "sldprt:marker-geometry:2"
     ));
 
-    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+    resolve_connected_arc_test(&mut entities, 1.0e-9);
 
     assert!(matches!(*entities[7].geometry.definition(),
         SketchGeometryDefinition::Arc {
