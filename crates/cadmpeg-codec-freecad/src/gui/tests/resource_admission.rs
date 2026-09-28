@@ -192,6 +192,34 @@ fn gui_techdraw_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
+fn gui_property_diagnostic_refuses_at_matching_retained_limit() {
+    let xml = roxmltree::Document::parse("<Property><Bool value='invalid'/></Property>")
+        .expect("valid property XML");
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd GUI diagnostic", |ctx| {
+        super::super::validate_gui_property(
+            ctx, xml.root_element(), "Enabled", "App::PropertyBool",
+        )
+    });
+}
+
+#[test]
+fn gui_camera_field_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd GUI diagnostic", |ctx| {
+        super::super::camera_field::<3>(ctx, &["bad"], 0, 1, "position")
+    });
+}
+
+#[test]
+fn gui_visual_layer_diagnostic_refuses_at_matching_retained_limit() {
+    let xml = roxmltree::Document::parse(
+        "<Property><VisualLayerList count='0'><VisualLayer/></VisualLayerList></Property>",
+    ).expect("valid property XML");
+    crate::test_support::assert_retained_refusal_at(&[], "FCStd GUI diagnostic", |ctx| {
+        super::super::validate_visual_layer_list(ctx, xml.root_element(), "Layers")
+    });
+}
+
+#[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         &[], "FCStd GUI camera tokens", |ctx| {
