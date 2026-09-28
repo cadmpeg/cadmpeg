@@ -470,7 +470,22 @@ pub(super) fn representation_bodies<'a>(
             )?;
         }
     }
-    let bodies = body_ids.into_iter().collect::<Vec<_>>();
+    let mut bodies = Vec::new();
+    bodies.try_reserve_exact(body_ids.len()).map_err(|_| {
+        ctx.map_or_else(
+            || cadmpeg_core::decode::refuse_local_limit(
+                "step_representation_body_output",
+                0,
+                u64_from_index(body_ids.len()),
+            ),
+            |ctx| ctx.refuse_codec_limit(
+                "step_representation_body_output",
+                0,
+                u64_from_index(body_ids.len()),
+            ),
+        )
+    })?;
+    bodies.extend(body_ids);
     active.remove(&representation);
     drop(active_bytes);
     cache_representation_bodies(cache, representation, &bodies, ctx)?;
