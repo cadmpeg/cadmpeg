@@ -1071,7 +1071,7 @@ fn validate_loaded(
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
-    validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
+    validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records)?;
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
         validate_edge_identity_operands(decode, &ctx, &mut findings, &expected_face_operands)?;
@@ -5430,7 +5430,7 @@ fn validate_fillet_operand_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     fillet_radius_group_records: &HashSet<(&'a str, u32)>,
-) {
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let scopes_by_index = &ctx.scopes_by_index;
     for group in &native.design_construction_operand_groups {
@@ -5440,31 +5440,26 @@ fn validate_fillet_operand_groups<'a>(
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Fillet)
         });
-        let fixed_edge_groups = scope
-            .map(|scope| {
-                native
-                    .design_construction_operand_groups
-                    .iter()
-                    .filter(|candidate| {
-                        design_stream(&candidate.id) == native_stream
-                            && candidate.scope_record_index == scope.record_index
-                            && !candidate.members().is_empty()
-                            && candidate.members().iter().map(|member| &member.value).all(
-                                |member| {
-                                    native.design_edge_operands.iter().any(|operand| {
-                                        design_stream(&operand.id) == native_stream
-                                            && operand.scope_record_index == scope.record_index
-                                            && operand.record_index() == *member
-                                    })
-                                },
-                            )
+        let mut fixed_edge_group_count = 0;
+        let mut is_fixed_edge_group = false;
+        if let Some(scope) = scope {
+            for candidate in &native.design_construction_operand_groups {
+                if design_stream(&candidate.id) == native_stream
+                    && candidate.scope_record_index == scope.record_index
+                    && !candidate.members().is_empty()
+                    && candidate.members().iter().map(|member| &member.value).all(|member| {
+                        native.design_edge_operands.iter().any(|operand| {
+                            design_stream(&operand.id) == native_stream
+                                && operand.scope_record_index == scope.record_index
+                                && operand.record_index() == *member
+                        })
                     })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let is_fixed_edge_group = fixed_edge_groups
-            .iter()
-            .any(|candidate| candidate.record_index == group.record_index);
+                {
+                    fixed_edge_group_count += 1;
+                    is_fixed_edge_group |= candidate.record_index == group.record_index;
+                }
+            }
+        }
         let has_radius_assignment =
             fillet_radius_group_records.contains(&(native_stream, group.record_index));
         let has_parameter_owner = native.design_parameter_owners.iter().any(|owner| {
@@ -5541,12 +5536,9 @@ fn validate_fillet_operand_groups<'a>(
             });
         if full_round_group_shape {
             if !valid_full_round_group {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion Design Fillet full-round face group is invalid".into(),
-                    entity: Some(group.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design Fillet full-round face group is invalid",
+                    Some(ctx.copy_entity(&group.id)?))?;
             }
             continue;
         }
@@ -5581,7 +5573,7 @@ fn validate_fillet_operand_groups<'a>(
                             .count()
                             == 1
                     })
-                    && ((fixed_edge_groups.len() == fixed.groups.len() && is_fixed_edge_group)
+                    && ((fixed_edge_group_count == fixed.groups.len() && is_fixed_edge_group)
                         || (fixed.groups.len() == 1 && sole_compact_group_shape))
             });
         if is_fillet
@@ -5589,14 +5581,12 @@ fn validate_fillet_operand_groups<'a>(
             && !has_fixed_assignment
             && !has_radius_assignment
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Fillet operand group has no radius assignment".into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Fillet operand group has no radius assignment",
+                Some(ctx.copy_entity(&group.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate construction operand identity chains; returns identity-backed groups.
