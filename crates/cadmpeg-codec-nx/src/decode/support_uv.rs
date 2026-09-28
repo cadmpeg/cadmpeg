@@ -2093,26 +2093,28 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
     first: &SurfaceId,
     second: &SurfaceId,
 ) -> bool {
-    fn equivalent(
-        index: &cadmpeg_ir::index::ModelIndex<'_>,
-        first: &SurfaceId,
-        second: &SurfaceId,
-        visited: &mut BTreeSet<(SurfaceId, SurfaceId)>,
-    ) -> bool {
+    enum Step<'a> {
+        Equal,
+        Different,
+        Follow(&'a SurfaceId, &'a SurfaceId),
+    }
+
+    fn step<'a>(
+        index: &'a cadmpeg_ir::index::ModelIndex<'_>,
+        first: &'a SurfaceId,
+        second: &'a SurfaceId,
+    ) -> Step<'a> {
         if first == second {
-            return true;
-        }
-        if !visited.insert((first.clone(), second.clone())) {
-            return false;
+            return Step::Equal;
         }
         let geometry =
             |id: &SurfaceId| index.surfaces(id.as_str()).map(|surface| &surface.geometry);
         let (Some(first_geometry), Some(second_geometry)) = (geometry(first), geometry(second))
         else {
-            return false;
+            return Step::Different;
         };
         if first_geometry == second_geometry {
-            return true;
+            return Step::Equal;
         }
         let (
             Some(ProceduralSurfaceDefinition::Offset(first_payload)),
@@ -2126,7 +2128,7 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
                 .map(cadmpeg_ir::geometry::ProceduralSurface::definition),
         )
         else {
-            return false;
+            return Step::Different;
         };
         let first_support = first_payload.support();
         let first_distance = first_payload.distance();
@@ -2140,15 +2142,37 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
         let second_v_sense = second_payload.v_sense();
         let second_support_extension = second_payload.linear_support_extension();
         let second_extension = second_payload.extension();
-        first_distance.get().to_bits() == second_distance.get().to_bits()
+        if first_distance.get().to_bits() == second_distance.get().to_bits()
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense
             && first_support_extension == second_support_extension
             && first_extension == second_extension
-            && equivalent(index, first_support, second_support, visited)
+        {
+            Step::Follow(first_support, second_support)
+        } else {
+            Step::Different
+        }
     }
 
-    equivalent(index, first, second, &mut BTreeSet::new())
+    let mut slow = (first, second);
+    let mut fast = (first, second);
+    loop {
+        slow = match step(index, slow.0, slow.1) {
+            Step::Equal => return true,
+            Step::Different => return false,
+            Step::Follow(first, second) => (first, second),
+        };
+        for _ in 0..2 {
+            fast = match step(index, fast.0, fast.1) {
+                Step::Equal => return true,
+                Step::Different => return false,
+                Step::Follow(first, second) => (first, second),
+            };
+        }
+        if slow == fast {
+            return false;
+        }
+    }
 }
 
 /// One stream's ownership and provenance context for deferred intersection-chart

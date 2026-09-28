@@ -186,3 +186,53 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         &offsets[1]
     ));
 }
+
+#[test]
+fn cyclic_offset_supports_are_not_parameterization_equivalent() {
+    use cadmpeg_ir::geometry::{ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+
+    let surfaces = [
+        SurfaceId::mint("test:model:entity#cycle-a").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#cycle-b").expect("identity grammar"),
+    ];
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    for (index, surface) in surfaces.iter().enumerate() {
+        let construction = ProceduralSurfaceId::mint(format!(
+            "test:model:entity#cycle-construction-{index}"
+        ))
+        .expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+                cache: None,
+            },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            construction,
+            ProceduralSurfaceDefinition::Offset(
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                    surfaces[1 - index].clone(),
+                    30.0,
+                    Some(0),
+                    Some(0),
+                    false,
+                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        cache: None,
+                    },
+                )
+                .expect("offset construction"),
+            ),
+            None,
+        ));
+    }
+
+    assert!(!parameterization_equivalent_surfaces(
+        &ir,
+        &surfaces[0],
+        &surfaces[1],
+    ));
+}
