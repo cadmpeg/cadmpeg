@@ -16,13 +16,13 @@ use crate::feature::definitions::positional_dimension as parse_positional_dimens
 use crate::feature::definitions::positional_dimension_table as parse_positional_dimension_table;
 use crate::feature::definitions::positional_feature_skamps;
 use crate::feature::definitions::positional_order_table as parse_positional_order_table;
-use crate::feature::definitions::positional_relation_table;
+use crate::feature::definitions::positional_relation_table as parse_positional_relation_table;
 use crate::feature::definitions::positional_relation_triples;
 use crate::feature::definitions::positional_section_3d as parse_positional_section_3d;
 use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
 use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
 use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
-use crate::feature::definitions::relation_table;
+use crate::feature::definitions::relation_table as parse_relation_table;
 use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
 use crate::feature::definitions::section_3d as parse_section_3d;
 use crate::feature::definitions::test_support::with_points;
@@ -267,6 +267,79 @@ fn positional_section_3d(
         parse_positional_section_3d(ctx, payload, start, end)
     })
     .expect("positional section admitted")
+}
+
+fn relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<crate::feature::definitions::FeatureRelationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_relation_table(ctx, payload, start, end))
+        .expect("relation table admitted")
+}
+
+fn positional_relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<crate::feature::definitions::FeatureRelationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_relation_table(ctx, payload, start, end, table_class)
+    })
+    .expect("positional relation table admitted")
+}
+
+const POSITIONAL_RELATION_LIMIT_INPUT: &[u8] = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
+    prototype\xf1\xf7\x64\xe2\
+    \x08\x00\x03\x0f\xf6\xe4\x01\xe4\x00\xe4\x0f\x10\x0f\x18\x00\xf6\x00\xe2";
+
+fn positional_relation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureRelationTable>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(POSITIONAL_RELATION_LIMIT_INPUT, &arena, &policy)
+        .expect("relation input fits root policy");
+    parse_positional_relation_table(
+        &ctx,
+        POSITIONAL_RELATION_LIMIT_INPUT,
+        0,
+        POSITIONAL_RELATION_LIMIT_INPUT.len(),
+        100,
+    )
+}
+
+#[test]
+fn relation_operands_refuse_before_retained_copy() {
+    assert!(matches!(positional_relation_with_limits(1, 11), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo relation operands"));
+    let table = positional_relation_with_limits(1, 29)
+        .expect("relation admitted").expect("table present");
+    assert_eq!(table.rows[0].operands.len(), 12);
+}
+
+#[test]
+fn relation_row_body_refuses_before_retained_copy() {
+    assert!(matches!(positional_relation_with_limits(1, 28), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo relation row body"));
+    let table = positional_relation_with_limits(1, 29)
+        .expect("relation admitted").expect("table present");
+    assert_eq!(table.rows[0].body.len(), 17);
+}
+
+#[test]
+fn relation_row_refuses_before_vec_growth() {
+    assert!(matches!(positional_relation_with_limits(0, 29), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation rows"));
+    assert_eq!(positional_relation_with_limits(1, 29)
+        .expect("relation admitted").expect("table present").rows.len(), 1);
 }
 
 const POSITIONAL_SECTION_LIMIT_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
