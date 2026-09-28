@@ -2242,9 +2242,9 @@ fn feature_definitions(
     }) {
         let payload = section.region;
         let decoded = if section.section.name() == "DEPDB_DATA" {
-            feature::definitions::depdb_definitions(payload)
+            feature::definitions::depdb_definitions(ctx, payload)?
         } else {
-            feature::definitions::definitions(payload)
+            feature::definitions::definitions(ctx, payload)?
         };
         ctx.try_reserve_items(&mut definitions, decoded.len(), "creo feature definitions")?;
         definitions.extend(decoded.into_iter().map(|mut definition| {
@@ -2260,9 +2260,10 @@ fn feature_definitions(
                 .filter(|_| recipe_operations.next().is_none())
             {
                 if let Some(mut definition) = feature::definitions::depdb_section_definition(
+                    ctx,
                     payload,
                     Some(operation.feature_id),
-                ) {
+                )? {
                     offset_feature_definition(&mut definition, section.section.offset());
                     if let Some(existing) = definitions
                         .iter_mut()
@@ -2287,7 +2288,7 @@ fn feature_row_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut definitions = Vec::new();
     for row in rows {
-        let Some(mut definition) = feature::definitions::depdb_section_definition(&row.body, None)
+        let Some(mut definition) = feature::definitions::depdb_section_definition(ctx, &row.body, None)?
         else {
             continue;
         };
@@ -2417,7 +2418,7 @@ fn positional_replay_definitions(
         sections
             .iter()
             .filter(|section| section.section.name() == "FeatDefs"),
-        |bytes| Ok(feature::definitions::positional_replay_definitions(bytes)),
+        |bytes| feature::definitions::positional_replay_definitions(ctx, bytes),
         offset_feature_definition,
         |definition| definition.offset,
     )
