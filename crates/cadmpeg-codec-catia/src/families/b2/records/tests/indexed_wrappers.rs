@@ -192,7 +192,10 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
     let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::b2::records::b2_adjacent_face_owners_from_records(&bytes, &records),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_adjacent_face_owners_from_records(ctx, &bytes, &records)
+                .expect("service decode")
+        }),
         crate::families::b2::records::b2_adjacent_face_owners(&bytes)
     );
 

@@ -926,6 +926,23 @@ fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
 }
 
 #[test]
+fn b2_adjacent_face_owner_indexes_and_pair_refuse_collection_limits() {
+    let bytes = b2_adjacent_face_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (0, "catia_b2_adjacent_face_nodes"),
+        (1, "catia_b2_adjacent_face_owners"),
+        (2, "catia_b2_adjacent_face_pairs"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_adjacent_face_owners_from_records(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+}
+
+#[test]
 fn b2_secondary_face_node_terminal_requires_all_compact_owner() {
     let secondary = b2_adjacent_secondary_face_owner_stream();
     let pairs = crate::families::b2::records::b2_adjacent_face_owners(&secondary);

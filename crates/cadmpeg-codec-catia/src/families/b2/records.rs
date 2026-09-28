@@ -1585,39 +1585,42 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
 #[cfg(test)]
 fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
-    b2_adjacent_face_owners_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_adjacent_face_owners_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_adjacent_face_owners_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2AdjacentFaceOwner> {
-    let nodes = b2_face_nodes_5f_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let owners = b2_owner_packets_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(2)
-        .filter_map(|window| {
-            let [link_record, owner_record] = window else {
-                return None;
-            };
-            let face_node = nodes.get(&link_record.byte_offset())?;
-            let owner = owners.get(&owner_record.byte_offset())?;
+) -> Result<Vec<B2AdjacentFaceOwner>, CodecError> {
+    let mut nodes = BTreeMap::new();
+    for value in b2_face_nodes_5f_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut nodes, value.pos, value,
+            "catia_b2_adjacent_face_nodes")?;
+    }
+    let mut owners = BTreeMap::new();
+    for value in b2_owner_packets_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut owners, value.pos, value,
+            "catia_b2_adjacent_face_owners")?;
+    }
+    let mut adjacent = Vec::new();
+    for window in records.windows(2) {
+            let [link_record, owner_record] = window else { continue };
+            let Some(face_node) = nodes.get(&link_record.byte_offset()) else { continue };
+            let Some(owner) = owners.get(&owner_record.byte_offset()) else { continue };
             let terminal_is_admitted = face_node.terminal == [0x03, 0x05]
                 || (face_node.terminal == [0x03, 0x03]
                     && owner.reference_encoding == B2OwnerReferenceEncoding::AllCompact);
-            (terminal_is_admitted && face_node.target.checked_add(1) == Some(owner.references[8]))
-                .then(|| B2AdjacentFaceOwner {
+            if terminal_is_admitted && face_node.target.checked_add(1) == Some(owner.references[8]) {
+                crate::resource::push(ctx, &mut adjacent, B2AdjacentFaceOwner {
                     face_node: *face_node,
                     owner: owner.clone(),
-                })
-        })
-        .collect()
+                }, "catia_b2_adjacent_face_pairs")?;
+            }
+    }
+    Ok(adjacent)
 }
 
 /// Bind immediately adjacent `5f,62` records when the count-framed packet's
