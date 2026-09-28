@@ -22,6 +22,7 @@ mod edge_flange_allocation;
 mod treatment_allocation;
 mod partition_allocation;
 mod fixed_fillet_allocation;
+mod hem_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -1181,8 +1182,8 @@ fn hem_transition_edge_is_the_unique_non_support_boundary() {
                 support[0].as_slice(),
                 support[1].as_slice(),
                 support[2].as_slice()
-            ]
-        ),
+            ], None
+        ).unwrap(),
         Some(63)
     );
     assert_eq!(
@@ -1193,8 +1194,8 @@ fn hem_transition_edge_is_the_unique_non_support_boundary() {
                 &[63][..],
                 support[1].as_slice(),
                 support[0].as_slice()
-            ]
-        ),
+            ], None
+        ).unwrap(),
         Some(110)
     );
     assert_eq!(
@@ -1204,15 +1205,15 @@ fn hem_transition_edge_is_the_unique_non_support_boundary() {
                 support[0].as_slice(),
                 support[1].as_slice(),
                 support[2].as_slice()
-            ]
-        ),
+            ], None
+        ).unwrap(),
         None
     );
     assert_eq!(
         unique_hem_transition_edge_candidate(
             &[63, 106, 110, 167],
-            [&[][..], &[106, 111][..], support[1].as_slice()]
-        ),
+            [&[][..], &[106, 111][..], support[1].as_slice()], None
+        ).unwrap(),
         None
     );
 }

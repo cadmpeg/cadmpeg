@@ -3894,7 +3894,8 @@ fn project_hem(
         [operand] => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
             crate::history::effective_scope_previous_history_state_id(scope, histories),
-        ),
+            ctx,
+        )?,
         _ => None,
     };
     let semantics = edge_slot
