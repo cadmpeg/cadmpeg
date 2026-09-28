@@ -283,11 +283,23 @@ fn patch_spatial_sketches(
     }
 
     let mut features = crate::history::project::project_features(&native.feature_histories)?;
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &projection_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let (projected_sketches, mut projected_entities) = spatial_sketches(
+        &ctx,
         &mut features,
         &native.feature_histories,
         &native.feature_input_lanes,
-    );
+    )?;
     let mut projected_constraints = Vec::new();
     super::relation_geometry::project_spatial_relation_bindings(
         &mut projected_constraints,

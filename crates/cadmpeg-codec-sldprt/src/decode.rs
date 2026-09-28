@@ -2743,10 +2743,11 @@ fn build_geometry_ir(
     sketch_lanes.extend(supplemental_config_lanes.clone());
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
+            ctx,
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        );
+        )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(
@@ -4046,10 +4047,11 @@ fn build_metadata_ir(
     sketch_lanes.extend(supplemental_config_lanes.clone());
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
+            ctx,
             &mut ir.model.features,
             &histories,
             &sketch_lanes,
-        );
+        )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::profiles::project_marker_backed_sketches(

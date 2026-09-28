@@ -60,6 +60,110 @@ fn current_compact_spatial_point_marker(
     marker
 }
 
+fn spatial_projection_limit_error(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> CodecError {
+    let native_ref = "sldprt:history:feature#spatial-limit";
+    let lane_id = "sldprt:feature-input:resolved-features#spatial-limit";
+    let mut payload = 1u32.to_le_bytes().to_vec();
+    payload.extend(current_compact_spatial_point_marker(
+        0,
+        [0x04, 0x00, 0x02, 0x00],
+        [0.0, 0.015, 0.005],
+    ));
+    let mut sketch_entities = sketch_input_entities(&payload, lane_id);
+    sketch_entities[0].feature_ref = Some(native_ref.into());
+    let lane = FeatureInputLane {
+        id: lane_id.into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities,
+    };
+    let history = FeatureHistory {
+        id: "sldprt:history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![NativeFeature {
+            id: native_ref.into(),
+            parent: "sldprt:history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: FeatureSource::from_value(1),
+            ordinal: 0,
+            name: "3D Sketch".into(),
+            kind: "3D Sketch".into(),
+            input_class: Some("mo3DProfileFeature_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    };
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("sldprt:model:feature#spatial-limit").expect("identity grammar"),
+        ordinal: 0,
+        name: Some("3D Sketch".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None }),
+        ),
+        native_ref: Some(native_ref.into()),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+        .expect("spatial input fits root policy");
+    spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+        .expect_err("spatial projection must refuse the configured limit")
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_collection_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_collection_items = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse collection limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_retained_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse retained limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn spatial_sketch_projection_refuses_work_limit() {
+    let error = spatial_projection_limit_error(|policy| policy.limits.max_work_units = 0);
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("spatial projection must refuse work limit");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+}
+
 #[test]
 fn sketch_marker_identity_refuses_retained_limit() {
     let payload = current_compact_spatial_point_marker(
@@ -447,7 +551,15 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &DecodePolicy::service(),
+    )
+    .expect("spatial marker input fits policy");
+    let (sketches, entities) = spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+        .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -552,7 +664,15 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         native_ref: Some(native_ref.into()),
     }];
 
-    let (sketches, entities) = spatial_sketches(&mut features, &[history], &[lane]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &DecodePolicy::service(),
+    )
+    .expect("spatial marker input fits policy");
+    let (sketches, entities) = spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+        .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
