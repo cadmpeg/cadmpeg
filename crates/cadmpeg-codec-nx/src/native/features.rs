@@ -7238,11 +7238,17 @@ pub(super) fn feature_operation_body_members(ctx: &cadmpeg_core::decode::DecodeC
 ) -> Result<Vec<FeatureOperationBodyMember>, cadmpeg_core::CodecError>
 {
     let mut members = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let groups = match crate::om::operation_body_members(ctx, record.body_view()) {
+                Ok(groups) => groups,
+                Err(error) => { failure = Some(error); return; }
+            };
             members.extend(
-                crate::om::operation_body_members(record.body_view())
+                groups
                     .into_iter()
                     .flat_map(|group| group.members.into_iter().enumerate().map(move |(ordinal, member)| FeatureOperationBodyMember {
                         id: format!(
@@ -7260,6 +7266,7 @@ pub(super) fn feature_operation_body_members(ctx: &cadmpeg_core::decode::DecodeC
             );
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(members)
 }
 
