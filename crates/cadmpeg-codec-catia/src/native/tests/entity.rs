@@ -312,6 +312,40 @@ fn decode_reports_complete_numeric_entity_value_pairs_separately_from_packets() 
 }
 
 #[test]
+fn reference_signature_cohort_refuses_nested_member_and_id_limits() {
+    let value = [
+        0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
+        0x32, 4, 0, 0, 0, 0x82, 0xe9, 0xe0, 0x17, 0x08, 0x37, 0xfe, 0xfe, 0xfe,
+    ];
+    let records = [
+        object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
+    ];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.extend(entity_table_record_with_value(2, &value));
+    bytes.extend(entity_table_record_with_definition_and_value(3, &[0x01], &[0xfe]));
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.reference_signature_cohorts.len(), 1);
+    let collection = crate::test_support::with_collection_limit(1, |ctx| {
+        super::super::derive_reference_signature_cohorts(ctx, &native.entity_records)
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_cohort_members"));
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::derive_reference_signature_cohorts(ctx, &native.entity_records)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_cohort_id"));
+    let cohorts = crate::test_support::with_service_context(|ctx| {
+        super::super::derive_reference_signature_cohorts(ctx, &native.entity_records)
+    }).expect("service profile admits cohort derivation");
+    assert_eq!(cohorts, native.reference_signature_cohorts);
+}
+
+#[test]
 fn native_namespace_retains_and_validates_complete_entity_reference_signatures() {
     let value = [
         0x32, 3, 0, 0, 0, 0x82, 0xe8, 0xe0, 0x0a, 0x37, 0x85, 0x81, b'2', b'(', b'E', b')', 0xfe,
