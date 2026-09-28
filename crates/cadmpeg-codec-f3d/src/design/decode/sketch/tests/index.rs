@@ -1,5 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::sketch::{extend_sketch_stream, IndexedRecordOffsets};
+
+#[test]
+fn sketch_stream_output_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut output = Vec::new();
+    let error = extend_sketch_stream(&ctx, &mut output, vec![17, 18])
+        .expect_err("collection limit must refuse per-stream output");
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch stream output"));
+    assert!(output.is_empty());
+
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    extend_sketch_stream(&ctx, &mut output, vec![17, 18]).expect("two output records");
+    assert_eq!(output, [17, 18]);
+}
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
