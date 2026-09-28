@@ -36,7 +36,7 @@ use crate::decode::analytic::edges::{
     full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
     orient_line_edge_carrier, orient_nonperiodic_nurbs_edge_carrier,
 };
-use crate::decode::analytic::equations::CarrierEquation;
+use crate::decode::analytic::equations::{CarrierEquation, PlaneEquation};
 use crate::decode::analytic::pcurve_geometry::{
     meridian_circle_pcurve, ruled_generator_line_pcurve, surface_of_revolution_parallel_pcurve,
 };
@@ -1158,6 +1158,53 @@ fn push_native_pcurve_candidate(
     Ok(())
 }
 
+struct BrepSourceIndexes<'a> {
+    planes: BTreeMap<u32, PlaneEquation>,
+    half_edges: BTreeMap<HalfEdgeId, &'a crate::topology::HalfEdge>,
+    incidence: BTreeMap<HalfEdgeId, &'a crate::topology::HalfEdgeVertexIncidence>,
+}
+
+impl<'a> BrepSourceIndexes<'a> {
+    fn from_scan(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        carriers: &BTreeMap<u32, CarrierEquation>,
+        scan: &'a ContainerScan<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut planes = BTreeMap::new();
+        for (id, carrier) in carriers {
+            if let CarrierEquation::Plane(plane) = carrier {
+                ctx.charge_collection_items(1, "creo B-rep plane index nodes")?;
+                planes.insert(*id, *plane);
+            }
+        }
+        let mut half_edges = BTreeMap::new();
+        for half_edge in &scan.topology.half_edges {
+            match half_edges.entry(half_edge.id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(half_edge);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo B-rep half-edge index nodes")?;
+                    entry.insert(half_edge);
+                }
+            }
+        }
+        let mut incidence = BTreeMap::new();
+        for binding in &scan.topology.half_edge_vertex_incidence {
+            match incidence.entry(binding.half_edge) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(binding);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo B-rep incidence index nodes")?;
+                    entry.insert(binding);
+                }
+            }
+        }
+        Ok(Self { planes, half_edges, incidence })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -1173,26 +1220,9 @@ pub(in super::super) fn transfer_native_brep(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
     let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
-    let planes = carriers
-        .iter()
-        .filter_map(|(id, carrier)| match carrier {
-            CarrierEquation::Plane(plane) => Some((*id, *plane)),
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
+    let BrepSourceIndexes { planes, half_edges, incidence } =
+        BrepSourceIndexes::from_scan(ctx, &carriers, scan)?;
     let face_orientations = native_face_orientations(scan, ir);
-    let half_edges = scan
-        .topology
-        .half_edges
-        .iter()
-        .map(|half_edge| (half_edge.id, half_edge))
-        .collect::<BTreeMap<_, _>>();
-    let incidence = scan
-        .topology
-        .half_edge_vertex_incidence
-        .iter()
-        .map(|binding| (binding.half_edge, binding))
-        .collect::<BTreeMap<_, _>>();
     let solved_vertex_result = solve_topological_vertices(
         ctx,
         scan,
