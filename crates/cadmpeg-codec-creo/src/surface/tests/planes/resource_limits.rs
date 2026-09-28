@@ -138,7 +138,7 @@ fn torus_scalar_refuses_outline_marker_vector() {
     assert_surface_limit(error, ResourceDimension::CollectionItems, "creo torus outline marker items");
 }
 
-fn plane_corner_limit_error(collection_limit: u64, retained_limit: u64) -> cadmpeg_core::CodecError {
+fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError {
     let body = [
         0x18, 0x18, 0x6d, 0xeb, 0x81, 0x84, 0xcc, 0xcc, 0xd0, 0x00, 0x0c, 0x9a, 0xd5, 0xd6, 0x25,
         0xa6, 0xec, 0x06, 0x18, 0x46, 0x1a, 0xdf, 0x09, 0x9b, 0x3c, 0x32, 0xed, 0x2f, 0x20, 0x00,
@@ -146,12 +146,27 @@ fn plane_corner_limit_error(collection_limit: u64, retained_limit: u64) -> cadmp
         0x2e, 0x20, 0x33, 0xf7, 0x0c,
     ];
     let service = with_surface_limits(&body, u64::MAX, u64::MAX, |ctx| {
-        crate::surface::first_coordinate_plane_corner_tokens(ctx, &body, &scalar::ScalarCache::default())
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::Plane,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
     .expect("corner parser fits service limits");
-    assert_eq!(service.expect("unique corner frame").len(), 6);
-    with_surface_limits(&body, collection_limit, retained_limit, |ctx| {
-        crate::surface::first_coordinate_plane_corner_tokens(ctx, &body, &scalar::ScalarCache::default())
+    assert_eq!(service.iter().filter(|token| token.offset >= 12).count(), 6);
+    let before_corner = service.iter().filter(|token| token.offset < 12);
+    let prior_items = before_corner.clone().count() as u64;
+    let prior_bytes = before_corner.map(|token| token.raw.len() as u64).sum();
+    let collection_items = if collection_limit { prior_items } else { u64::MAX };
+    let retained_bytes = if collection_limit { u64::MAX } else { prior_bytes };
+    with_surface_limits(&body, collection_items, retained_bytes, |ctx| {
+        crate::surface::scalar_tokens(
+            ctx,
+            crate::surface::SurfaceKind::Plane,
+            &body,
+            &scalar::ScalarCache::default(),
+        )
     })
     .err()
     .expect("corner frame exceeds requested limit")
@@ -161,9 +176,9 @@ fn plane_corner_limit_error(collection_limit: u64, retained_limit: u64) -> cadmp
 fn plane_corner_refuses_token_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        plane_corner_limit_error(5, u64::MAX),
+        plane_corner_limit_error(true),
         ResourceDimension::CollectionItems,
-        "creo plane corner token items",
+        "creo surface scalar token items",
     );
 }
 
@@ -171,9 +186,9 @@ fn plane_corner_refuses_token_vector() {
 fn plane_corner_refuses_token_bytes() {
     use cadmpeg_core::decode::ResourceDimension;
     assert_surface_limit(
-        plane_corner_limit_error(u64::MAX, 0),
+        plane_corner_limit_error(false),
         ResourceDimension::RetainedBytes,
-        "creo plane corner token bytes",
+        "creo surface scalar token bytes",
     );
 }
 

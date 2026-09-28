@@ -3754,11 +3754,8 @@ fn scalar_tokens(
     cache: &scalar::ScalarCache,
 ) -> Result<Vec<SurfaceParameterScalar>, CodecError> {
     let mut tokens = Vec::new();
-    let positional_plane_corners = if kind == SurfaceKind::Plane {
-        first_coordinate_plane_corner_tokens(ctx, body, cache)?.unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let positional_plane_corners =
+        (kind == SurfaceKind::Plane).then(|| first_coordinate_plane_corner_tokens(body, cache)).flatten();
     let mut outline_markers = Vec::new();
     if kind == SurfaceKind::TorusOrSphere {
         for marker in torus_outline_markers(body) {
@@ -3778,17 +3775,18 @@ fn scalar_tokens(
     };
     let mut cursor = 0;
     while cursor < body.len() {
-        if let Some(token) = positional_plane_corners
-            .iter()
-            .find(|token| token.offset == cursor)
+        if let Some(&(value, start, end)) = positional_plane_corners
+            .as_ref()
+            .and_then(|corners| corners.iter().find(|(_, start, _)| *start == cursor))
         {
+            let raw = ctx.copy_retained(&body[start..end], "creo surface scalar token bytes")?;
             ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
-                value: token.value,
-                raw: ctx.copy_retained(&token.raw, "creo surface scalar token bytes")?,
-                offset: token.offset,
+                value: Some(value),
+                raw,
+                offset: start,
             });
-            cursor += token.raw.len();
+            cursor = end;
             continue;
         }
         if let Some((_, end, _)) = outline_markers
@@ -3825,9 +3823,11 @@ fn scalar_tokens(
             }
         }
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
-            if positional_plane_corners
-                .iter()
-                .any(|token| cursor < token.offset && next > token.offset)
+            if positional_plane_corners.as_ref().is_some_and(|corners| {
+                corners
+                    .iter()
+                    .any(|(_, start, _)| cursor < *start && next > *start)
+            })
             {
                 cursor += 1;
                 continue;
@@ -3865,10 +3865,9 @@ fn scalar_tokens(
 }
 
 fn first_coordinate_plane_corner_tokens(
-    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Result<Option<Vec<SurfaceParameterScalar>>, CodecError> {
+) -> Option<[(f64, usize, usize); 6]> {
     let frame_end = if body.ends_with(&[0xf7, 0x0c]) {
         body.len() - 2
     } else {
@@ -3903,22 +3902,8 @@ fn first_coordinate_plane_corner_tokens(
             (second_z, second_z_start, end),
         ])
     });
-    let Some(candidate) = candidates.next() else {
-        return Ok(None);
-    };
-    if candidates.next().is_some() {
-        return Ok(None);
-    }
-    let mut tokens = Vec::new();
-    ctx.try_reserve_items(&mut tokens, candidate.len(), "creo plane corner token items")?;
-    for (value, offset, end) in candidate {
-        tokens.push(SurfaceParameterScalar {
-            value: Some(value),
-            raw: ctx.copy_retained(&body[offset..end], "creo plane corner token bytes")?,
-            offset,
-        });
-    }
-    Ok(Some(tokens))
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn opaque_spans(
