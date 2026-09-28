@@ -229,7 +229,7 @@ pub(crate) fn project_sketch_constraints(
         let sole_kind = relation
             .sole_constraint_kind()
             .filter(|_| semantic_entities.len() == relation.return_members().len());
-        let definition = (if let Some(kind) = sole_kind {
+        let mut definition = if let Some(kind) = sole_kind {
             let loci = if kind == SketchConstraintKind::Coincident {
                 exact_coincident_loci(&semantic_entities, ctx)?
             } else {
@@ -238,9 +238,13 @@ pub(crate) fn project_sketch_constraints(
             loci.or_else(|| exact_atomic_constraint(kind, &semantic_entities))
         } else {
             None
-        })
-        .or_else(|| exact_rectangular_pattern(relation, scope, parameters, &semantic_entities))
-        .or_else(|| {
+        };
+        if definition.is_none() {
+            definition = exact_rectangular_pattern(
+                relation, scope, parameters, &semantic_entities, ctx,
+            )?;
+        }
+        let definition = definition.or_else(|| {
             exact_circular_pattern(
                 relation,
                 scope,
@@ -351,22 +355,26 @@ fn exact_rectangular_pattern(
     scope: &str,
     parameters: &[DesignParameter],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
 
     if relation.sole_constraint_kind().is_none()
         || entities.len() != relation.return_members().len()
     {
-        return None;
+        return Ok(None);
     }
-    let distance_form = match relation.rectangular_counted_reference_count? {
+    let Some(counted_references) = relation.rectangular_counted_reference_count else {
+        return Ok(None);
+    };
+    let distance_form = match counted_references {
         0 => RectangularPatternDistanceForm::SeedToFinalSpan,
         _ => RectangularPatternDistanceForm::AdjacentSpacing,
     };
     let pattern = relation.definition.pattern();
     let Some(SketchPatternDefinition::Rectangular { directions }) = pattern else {
-        return None;
+        return Ok(None);
     };
     let source = directions
         .iter()
@@ -408,33 +416,39 @@ fn exact_rectangular_pattern(
                 count_parameter: count_parameter.map(neutral_parameter_id),
             })
         })
-        .collect::<Option<Vec<_>>>()?;
-    let source: [RectangularPatternSourceDirection; 2] = source.try_into().ok()?;
+        .collect::<Option<Vec<_>>>();
+    let Some(source) = source else { return Ok(None); };
+    let Ok(source): Result<[RectangularPatternSourceDirection; 2], _> = source.try_into() else {
+        return Ok(None);
+    };
     if source
         .iter()
         .any(|direction| !scalar_close(direction.direction[0].hypot(direction.direction[1]), 1.0))
     {
-        return None;
+        return Ok(None);
     }
     let dot = source[0].direction[0] * source[1].direction[0]
         + source[0].direction[1] * source[1].direction[1];
     if dot.abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
-        return None;
+        return Ok(None);
     }
-    let directions = rectangular_pattern_directions(&source, distance_form)?;
+    let Some(directions) = rectangular_pattern_directions(&source, distance_form, ctx)? else {
+        return Ok(None);
+    };
     let counts = source.each_ref().map(|direction| direction.count);
-    let rows = exact_rectangular_pattern_instances(&directions, counts, entities)?;
-    let pattern = cadmpeg_ir::sketches::SketchRectangularPattern::new(directions, rows)?;
-    Some(Definition::RectangularPattern { pattern })
+    let Some(rows) = exact_rectangular_pattern_instances(&directions, counts, entities, ctx)? else {
+        return Ok(None);
+    };
+    Ok(cadmpeg_ir::sketches::SketchRectangularPattern::new(directions, rows)
+        .map(|pattern| Definition::RectangularPattern { pattern }))
 }
 
 fn rectangular_pattern_directions(
     source: &[RectangularPatternSourceDirection; 2],
     distance_form: RectangularPatternDistanceForm,
-) -> Option<[cadmpeg_ir::sketches::SketchPatternDirection; 2]> {
-    source
-        .iter()
-        .map(|source| {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<[cadmpeg_ir::sketches::SketchPatternDirection; 2]>, CodecError> {
+    let make = |source: &RectangularPatternSourceDirection| -> Result<Option<_>, CodecError> {
             let spacing = match distance_form {
                 RectangularPatternDistanceForm::AdjacentSpacing => source.distance.get(),
                 RectangularPatternDistanceForm::SeedToFinalSpan => {
@@ -446,11 +460,12 @@ fn rectangular_pattern_directions(
                 }
             };
             if !spacing.is_finite() || spacing < 0.0 {
-                return None;
+                return Ok(None);
             }
-            let distance = source
-                .distance_parameter
-                .clone()
+            let distance = source.distance_parameter.as_ref()
+                .map(|parameter| copy_constraint_id(ctx, parameter.as_str(),
+                    "f3d rectangular pattern distance parameter id"))
+                .transpose()?
                 .map(|parameter| match distance_form {
                     RectangularPatternDistanceForm::AdjacentSpacing => {
                         cadmpeg_ir::sketches::SketchPatternDistance::Spacing { parameter }
@@ -459,42 +474,64 @@ fn rectangular_pattern_directions(
                         cadmpeg_ir::sketches::SketchPatternDistance::Span { parameter }
                     }
                 });
-            cadmpeg_ir::sketches::SketchPatternDirection::new(
+            let count_parameter = source.count_parameter.as_ref()
+                .map(|parameter| copy_constraint_id(ctx, parameter.as_str(),
+                    "f3d rectangular pattern count parameter id"))
+                .transpose()?;
+            Ok(cadmpeg_ir::sketches::SketchPatternDirection::new(
                 source.direction,
-                cadmpeg_ir::scalar::Length::new(spacing)?,
+                match cadmpeg_ir::scalar::Length::new(spacing) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                },
                 distance,
-                source.count_parameter.clone(),
-            )
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+                count_parameter,
+            ))
+    };
+    let Some(first) = make(&source[0])? else { return Ok(None); };
+    let Some(second) = make(&source[1])? else { return Ok(None); };
+    Ok(Some([first, second]))
 }
 
 fn exact_rectangular_pattern_instances(
     directions: &[cadmpeg_ir::sketches::SketchPatternDirection; 2],
     counts: [u32; 2],
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
-) -> Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Vec<cadmpeg_ir::sketches::SketchPatternInstance>>>, CodecError> {
     let instance_count = usize::try_from(counts[0])
-        .ok()?
-        .checked_mul(usize::try_from(counts[1]).ok()?)?;
+        .ok()
+        .and_then(|first| usize::try_from(counts[1]).ok()
+            .and_then(|second| first.checked_mul(second)));
+    let Some(instance_count) = instance_count else { return Ok(None); };
     if instance_count == 0 || !entities.len().is_multiple_of(instance_count) {
-        return None;
+        return Ok(None);
     }
     let entity_count = entities.len() / instance_count;
-    let seed = entities.get(..entity_count)?;
+    let Some(seed) = entities.get(..entity_count) else { return Ok(None); };
     if seed.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let column_count = usize::try_from(counts[1]).ok()?;
-    let instances = entities
-        .chunks_exact(entity_count)
-        .enumerate()
-        .map(|(position, instance)| {
-            let candidates = (0..counts[0])
-                .flat_map(|first| (0..counts[1]).map(move |second| [first, second]))
-                .filter(|indices| {
+    let Ok(column_count) = usize::try_from(counts[1]) else { return Ok(None); };
+    let mut rows = Vec::new();
+    for (position, instance) in entities.chunks_exact(entity_count).enumerate() {
+        let expected = [
+            match u32::try_from(position / column_count) {
+                Ok(value) => value,
+                Err(_) => return Ok(None),
+            },
+            match u32::try_from(position % column_count) {
+                Ok(value) => value,
+                Err(_) => return Ok(None),
+            },
+        ];
+        let mut matched = false;
+        for first in 0..counts[0] {
+            for second in 0..counts[1] {
+                if let Some(ctx) = ctx {
+                    ctx.charge_work(1, "f3d rectangular pattern candidate match")?;
+                }
+                let indices = [first, second];
                     let translation = Point2::new(
                         f64::from(indices[0])
                             * directions[0].spacing().get()
@@ -509,33 +546,36 @@ fn exact_rectangular_pattern_instances(
                                 * directions[1].spacing().get()
                                 * directions[1].direction().get()[1],
                     );
-                    seed.iter().zip(instance).all(|(source, result)| {
+                if seed.iter().zip(instance).all(|(source, result)| {
                         translated_sketch_geometry_matches(
                             &source.geometry,
                             &result.geometry,
                             translation,
                         )
-                    })
-                })
-                .collect::<Vec<_>>();
-            let expected = [
-                u32::try_from(position / column_count).ok()?,
-                u32::try_from(position % column_count).ok()?,
-            ];
-            if candidates.as_slice() != [expected] {
-                return None;
+                    }) {
+                    if matched || indices != expected { return Ok(None); }
+                    matched = true;
+                }
             }
-            Some(cadmpeg_ir::sketches::SketchPatternInstance {
-                entities: instance.iter().map(|entity| entity.id().clone()).collect(),
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let mut instances = instances.into_iter();
-    Some(
-        (0..counts[0])
-            .map(|_| instances.by_ref().take(column_count).collect())
-            .collect(),
-    )
+        }
+        if !matched { return Ok(None); }
+        let mut entity_ids = Vec::new();
+        for entity in instance {
+            let id = copy_constraint_id(ctx, entity.id().as_str(),
+                "f3d rectangular pattern instance entity id")?;
+            push_constraint_item(ctx, &mut entity_ids, id,
+                "f3d rectangular pattern instance entity")?;
+        }
+        if position % column_count == 0 {
+            push_constraint_item(ctx, &mut rows, Vec::new(),
+                "f3d rectangular pattern row")?;
+        }
+        let Some(row) = rows.last_mut() else { return Ok(None); };
+        push_constraint_item(ctx, row,
+            cadmpeg_ir::sketches::SketchPatternInstance { entities: entity_ids },
+            "f3d rectangular pattern instance")?;
+    }
+    Ok(Some(rows))
 }
 
 fn exact_text_relation(

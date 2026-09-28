@@ -22,6 +22,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_test_support::wire;
 
 mod text_allocation;
+mod rectangular_allocation;
 
 #[test]
 fn translated_nurbs_match_borrowed_rational_poles() {
@@ -438,7 +439,7 @@ fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
         rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
     let parameters = rectangular_parameters(3, 1.5);
     let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
+        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], None).unwrap()
     else {
         panic!("rectangular pattern did not resolve");
     };
@@ -462,7 +463,7 @@ fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
         rectangular_point_relation(3, 3.0, RectangularPatternDistanceForm::SeedToFinalSpan);
     let parameters = rectangular_parameters(3, 3.0);
     let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
+        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], None).unwrap()
     else {
         panic!("total-span rectangular pattern did not resolve");
     };
@@ -492,7 +493,8 @@ fn rectangular_pattern_does_not_change_distance_form_to_match_geometry() {
                 "native",
                 &parameters,
                 &[&seed, &second, &third],
-            ),
+                None,
+            ).unwrap(),
             None
         );
     }
@@ -508,7 +510,7 @@ fn rectangular_pattern_requires_the_retained_counted_reference_count() {
     let parameters = rectangular_parameters(2, 1.5);
 
     assert_eq!(
-        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second]),
+        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], None).unwrap(),
         None
     );
 }
@@ -524,7 +526,7 @@ fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
         let relation = rectangular_point_relation(2, 1.5, distance_form);
         let parameters = rectangular_parameters(2, 1.5);
         let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second])
+            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], None).unwrap()
         else {
             panic!("two-instance rectangular pattern did not resolve");
         };
