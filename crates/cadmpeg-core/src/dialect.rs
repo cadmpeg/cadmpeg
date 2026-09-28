@@ -689,6 +689,23 @@ impl DialectMatch {
         self
     }
 
+    /// Adds one declaration after charging its map slot and owned value.
+    pub fn with_declared_entry_charged(
+        mut self,
+        ctx: &crate::decode::DecodeContext<'_>,
+        key: NonBlankString,
+        value: &str,
+        operation: &'static str,
+    ) -> Result<Self, crate::CodecError> {
+        if !self.declared.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        let value = copy_charged_text(ctx, value, operation)?;
+        let previous = self.declared.insert(key, value);
+        drop(previous);
+        Ok(self)
+    }
+
     /// Attaches a report-local layer instance before the match enters a report.
     #[must_use]
     pub fn with_instance(mut self, instance: impl Into<String>) -> Self {
