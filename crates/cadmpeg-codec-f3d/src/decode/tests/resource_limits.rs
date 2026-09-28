@@ -455,6 +455,57 @@ fn unresolved_mesh_attribute_loss_refuses_retained_limit() {
 }
 
 #[test]
+fn source_attribute_map_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut attributes = std::collections::BTreeMap::new();
+    let error = super::super::insert_source_attribute_owned(
+        &ctx,
+        &mut attributes,
+        "active_brep",
+        "BREP0.smb".into(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D source attributes"));
+    assert!(attributes.is_empty());
+}
+
+#[test]
+fn source_attribute_value_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut attributes = std::collections::BTreeMap::new();
+    let error = super::super::insert_source_attribute_copy(
+        &ctx,
+        &mut attributes,
+        "active_brep",
+        "BREP0.smb",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D source attribute value"));
+    assert!(attributes.is_empty());
+}
+
+#[test]
+fn metadata_source_attributes_propagate_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let limited = context(&arena, 0);
+    let error = super::super::build_metadata_ir(&limited, &scan)
+        .err()
+        .expect("metadata attribute must refuse");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D source attributes"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
