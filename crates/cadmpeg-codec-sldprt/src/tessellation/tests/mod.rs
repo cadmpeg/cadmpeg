@@ -4,17 +4,12 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::analytic_surface_normal;
 use super::analytic_surface_residual;
 use super::assign_persistent_owners;
-use super::chordal_hole_constraint;
 use super::circle_overlaps_polygon;
 use super::circular_interval;
 use super::circular_interval_contains;
-use super::circular_outer_and_holes;
-use super::is_simple_polygon;
-use super::parse_table;
 use super::persistent_surface_references;
 use super::planar_boundary_samples;
 use super::plane_frame;
-use super::polygon_contains;
 use super::shortest_arc_span;
 use super::ByteRange;
 use super::CircularHole;
@@ -1612,68 +1607,6 @@ fn mixed_planar_holes_reject_overlap() {
 }
 
 #[test]
-fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
-    let hole = CircularHole {
-        center: Point2::new(0.0, 0.0),
-        radius: 1.0,
-    };
-    let boundary = (0..6)
-        .map(|index| {
-            let angle = f64::from(index) * std::f64::consts::TAU / 6.0;
-            Point2::new(angle.cos(), angle.sin())
-        })
-        .collect::<Vec<_>>();
-    let mut chordal = boundary.clone();
-    let angle = std::f64::consts::PI / 6.0;
-    chordal.push(Point2::new(0.9 * angle.cos(), 0.9 * angle.sin()));
-    let (exclusion, boundary_circle) =
-        chordal_hole_constraint(hole, &chordal, EPS_DISPLAY_QUANTIZATION).unwrap();
-    assert_eq!(boundary_circle.radius, hole.radius);
-    assert!(exclusion.radius < hole.radius);
-    assert!(exclusion.radius > 0.8);
-
-    let mut deep = boundary;
-    deep.push(Point2::new(0.7 * angle.cos(), 0.7 * angle.sin()));
-    assert!(chordal_hole_constraint(hole, &deep, EPS_DISPLAY_QUANTIZATION).is_none());
-
-    let interior = vec![Point2::new(0.5, 0.0), Point2::new(0.0, 0.5)];
-    assert!(chordal_hole_constraint(hole, &interior, EPS_DISPLAY_QUANTIZATION).is_none());
-}
-
-#[test]
-fn circular_planar_bounds_choose_one_enclosing_outer() {
-    let circles = vec![
-        CircularHole {
-            center: Point2::new(0.0, 0.0),
-            radius: 10.0,
-        },
-        CircularHole {
-            center: Point2::new(6.0, 0.0),
-            radius: 2.0,
-        },
-        CircularHole {
-            center: Point2::new(-6.0, 0.0),
-            radius: 2.0,
-        },
-    ];
-    let (outer, holes) = circular_outer_and_holes(&circles, EPS_DISPLAY_QUANTIZATION).unwrap();
-    assert_eq!(outer.radius, 10.0);
-    assert_eq!(holes.len(), 2);
-
-    let ambiguous = vec![
-        CircularHole {
-            center: Point2::new(0.0, 0.0),
-            radius: 10.0,
-        },
-        CircularHole {
-            center: Point2::new(0.0, 0.0),
-            radius: 10.0,
-        },
-    ];
-    assert!(circular_outer_and_holes(&ambiguous, EPS_DISPLAY_QUANTIZATION).is_none());
-}
-
-#[test]
 fn decode_reports_display_list_geometry() {
     let f = sldprt_with_body_and_display_list(&triangle_body());
     let mut cur = Cursor::new(f);
@@ -1975,96 +1908,6 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
-}
-
-#[test]
-fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
-    const CONTAINMENT_TOLERANCE: f64 = 1.0e-9;
-    let concave = vec![
-        Point2::new(0.0, 0.0),
-        Point2::new(4.0, 0.0),
-        Point2::new(4.0, 4.0),
-        Point2::new(2.0, 4.0),
-        Point2::new(2.0, 2.0),
-        Point2::new(0.0, 2.0),
-    ];
-    assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
-    assert!(PlanarHole::polygon(concave.clone(), CONTAINMENT_TOLERANCE).is_some());
-    assert!(polygon_contains(
-        &concave,
-        Point2::new(1.0, 1.0),
-        CONTAINMENT_TOLERANCE
-    ));
-    assert!(polygon_contains(
-        &concave,
-        Point2::new(3.0, 3.0),
-        CONTAINMENT_TOLERANCE
-    ));
-    assert!(!polygon_contains(
-        &concave,
-        Point2::new(1.0, 3.0),
-        CONTAINMENT_TOLERANCE
-    ));
-
-    let crossing = vec![
-        Point2::new(0.0, 0.0),
-        Point2::new(4.0, 4.0),
-        Point2::new(0.0, 4.0),
-        Point2::new(4.0, 0.0),
-    ];
-    assert!(!is_simple_polygon(&crossing, CONTAINMENT_TOLERANCE));
-}
-
-#[test]
-fn persistent_surface_source_sentinels_are_absent() {
-    for source in [0, u32::MAX] {
-        let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
-        let references = decoded_references(
-            &payload,
-            ByteRange::new(0, payload.len()).expect("ordered range"),
-        );
-        assert!(references.is_empty());
-    }
-}
-
-/// A display-list table whose normal lane does not cover its vertex lane
-/// states a shaded mesh it cannot fill. It is refused by name, not dropped.
-#[test]
-fn a_short_normal_lane_refuses_the_display_table() {
-    let mut payload = descriptor(4, 8, 1, &3_u32.to_le_bytes());
-    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-        .into_iter()
-        .flat_map(f32::to_le_bytes)
-        .collect::<Vec<_>>();
-    payload.extend(descriptor(12, 100, 3, &positions));
-    // Two normals against three vertices.
-    payload.extend(descriptor(12, 100, 2, &[0; 24]));
-    payload.extend(descriptor(4, 8, 4, &[0; 16]));
-    payload.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
-    payload.extend(descriptor(1, 8, 4, &[0; 4]));
-
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("root");
-    let error = parse_table(&ctx, &payload, 0)
-        .expect_err("a short normal lane is refused")
-        .to_string();
-    assert!(error.contains("vertex normal(s)"), "{error}");
-}
-
-const EPS_FOLLOWUP_ARC_SAGITTA: f64 = 1e-9;
-
-#[test]
-fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
-    let (segments, error) = super::planar_arc_segments(1e-5, 1e12, EPS_FOLLOWUP_ARC_SAGITTA);
-    assert_eq!(segments, super::MAX_PLANAR_TRIM_ARC_SEGMENTS);
-    let expected = 2e12 * (1e-5 / (4.0 * segments as f64)).sin().powi(2);
-    assert!(error > EPS_FOLLOWUP_ARC_SAGITTA);
-    assert!((error / expected - 1.0).abs() <= 4.0 * f64::EPSILON);
 }
 
 mod geometry_predicates;

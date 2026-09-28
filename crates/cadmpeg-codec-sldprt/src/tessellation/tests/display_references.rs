@@ -131,3 +131,15 @@ fn opaque_surface_suffix_remains_source_only() {
     );
     assert_eq!(face.persistent_surface_identity(), None);
 }
+
+#[test]
+fn persistent_surface_source_sentinels_are_absent() {
+    for source in [0, u32::MAX] {
+        let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
+        let references = decoded_references(
+            &payload,
+            ByteRange::new(0, payload.len()).expect("ordered range"),
+        );
+        assert!(references.is_empty());
+    }
+}
