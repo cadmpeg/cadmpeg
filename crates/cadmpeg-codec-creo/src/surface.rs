@@ -1343,24 +1343,29 @@ impl SurfaceParameterRecord {
         if kind != SurfaceKind::TorusOrSphere {
             return None;
         }
-        let markers = torus_outline_markers(&self.body);
-        let [(marker, after_selector, selector)] = markers.as_slice() else {
-            return None;
-        };
-        let slots = self
+        let mut markers = torus_outline_markers(&self.body);
+        let (marker, after_selector, selector) = markers.next()?;
+        markers.next().is_none().then_some(())?;
+        let mut slots = self
             .scalar_tokens
             .iter()
-            .filter(|slot| slot.offset >= *after_selector)
-            .collect::<Vec<_>>();
-        let [a0, a1, a2, b0, b1, b2] = slots.as_slice() else {
-            return None;
-        };
-        let mut cursor = *after_selector;
-        for slot in &slots {
+            .filter(|slot| slot.offset >= after_selector);
+        let selected = [
+            slots.next()?,
+            slots.next()?,
+            slots.next()?,
+            slots.next()?,
+            slots.next()?,
+            slots.next()?,
+        ];
+        slots.next().is_none().then_some(())?;
+        let mut cursor = after_selector;
+        for slot in selected {
             (slot.offset == cursor).then_some(())?;
             cursor = cursor.checked_add(slot.raw.len())?;
         }
         (cursor == self.body.len()).then_some(())?;
+        let [a0, a1, a2, b0, b1, b2] = selected;
         let values = [
             a0.value?, a1.value?, a2.value?, b0.value?, b1.value?, b2.value?,
         ];
@@ -1369,8 +1374,8 @@ impl SurfaceParameterRecord {
             .all(|value| value.is_finite())
             .then_some(TorusOutlineFrame {
                 values,
-                selector: *selector,
-                offset: *marker,
+                selector,
+                offset: marker,
             })
     }
 
@@ -3669,14 +3674,13 @@ fn decode_row_scalar(
     }
 }
 
-fn torus_outline_markers(body: &[u8]) -> Vec<(usize, usize, u32)> {
+fn torus_outline_markers(body: &[u8]) -> impl Iterator<Item = (usize, usize, u32)> + '_ {
     (0..body.len())
         .filter_map(|offset| {
             (body.get(offset..offset + 3) == Some(&[0x01, 0x12, 0x50])).then_some(())?;
             let (selector, end) = compact_int(body, offset + 3);
             (end > offset + 3).then_some((offset, end, selector))
         })
-        .collect()
 }
 
 fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout> {
@@ -3754,7 +3758,7 @@ fn scalar_tokens(
         .flatten()
         .unwrap_or_default();
     let outline_markers = if kind == SurfaceKind::TorusOrSphere {
-        torus_outline_markers(body)
+        torus_outline_markers(body).collect::<Vec<_>>()
     } else {
         Vec::new()
     };
