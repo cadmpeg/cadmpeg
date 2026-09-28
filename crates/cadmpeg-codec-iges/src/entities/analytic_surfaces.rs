@@ -570,7 +570,7 @@ pub(super) fn project(
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
                 Err(error) => {
-                    let message = super::non_resource_error(error)?;
+                    let message = super::non_resource_error(error, ctx)?;
                     push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                     continue;
                 }

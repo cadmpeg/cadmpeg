@@ -80,10 +80,13 @@ fn push_optional_attributed_loss(
     }
 }
 
-fn non_resource_error(error: CodecError) -> Result<String, CodecError> {
+fn non_resource_error(error: CodecError, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
-        other => Ok(other.to_string()),
+        other => match ctx {
+            Some(ctx) => crate::decode_resource::format_retained(ctx, format_args!("{other}"), "iges diagnostic error text"),
+            None => Ok(other.to_string()),
+        },
     }
 }
 

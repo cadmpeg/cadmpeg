@@ -596,7 +596,7 @@ pub(super) fn project(
         ) {
             Ok(edge) => edge,
             Err(error) => {
-                let message = super::non_resource_error(error)?;
+                let message = super::non_resource_error(error, ctx)?;
                 push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
