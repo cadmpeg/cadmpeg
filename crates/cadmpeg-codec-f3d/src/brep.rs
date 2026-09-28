@@ -8,10 +8,7 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_asm::brep::{
-    collect_entity_adjacency, decode_with_header, decode_with_purpose,
-    retain_root_entities, AsmBrep, DecodePurpose,
-};
+use cadmpeg_asm::brep::{decode_with_header, decode_with_purpose, retain_root_entities, AsmBrep, DecodePurpose};
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
@@ -144,6 +141,92 @@ fn remap_owned_ids_charged(
         _ => {}
     }
     Ok(())
+}
+
+fn insert_brep_string(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<String>,
+    value: String,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if values.contains(&value) { return Ok(()); }
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.insert(value);
+    Ok(())
+}
+
+fn collect_brep_references(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &HashSet<String>,
+    references: &mut HashSet<String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3D BREP references")?;
+    match value {
+        serde_value::Value::String(id) if owned.contains(id) && !references.contains(id) => {
+            let id = copy_brep_text(ctx, id, "copy F3D BREP adjacency reference")?;
+            insert_brep_string(ctx, references, id, "collect F3D BREP adjacency references")?;
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items { collect_brep_references(ctx, item, owned, references)?; }
+        }
+        serde_value::Value::Map(fields) => {
+            for (key, item) in fields {
+                collect_brep_references(ctx, key, owned, references)?;
+                collect_brep_references(ctx, item, owned, references)?;
+            }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            collect_brep_references(ctx, item, owned, references)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn insert_brep_adjacency(
+    ctx: &DecodeContext<'_>,
+    adjacency: &mut HashMap<String, HashSet<String>>,
+    source: &str,
+    target: &str,
+) -> Result<(), CodecError> {
+    if !adjacency.contains_key(source) {
+        let source = copy_brep_text(ctx, source, "copy F3D BREP adjacency source")?;
+        ctx.charge_collection_items(1, "index F3D BREP adjacency")?;
+        adjacency.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D BREP adjacency", 0, 1))?;
+        adjacency.insert(source, HashSet::new());
+    }
+    if let Some(targets) = adjacency.get_mut(source) {
+        if !targets.contains(target) {
+            let target = copy_brep_text(ctx, target, "copy F3D BREP adjacency target")?;
+            insert_brep_string(ctx, targets, target, "collect F3D BREP adjacent IDs")?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_brep_adjacency(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &HashSet<String>,
+) -> Result<HashMap<String, HashSet<String>>, CodecError> {
+    let mut adjacency = HashMap::new();
+    let serde_value::Value::Map(fields) = value else { return Ok(adjacency); };
+    for value in fields.values() {
+        let serde_value::Value::Seq(items) = value else { continue; };
+        for item in items {
+            let Some(id) = cadmpeg_asm::brep::entity_id(item) else { continue; };
+            let mut references = HashSet::new();
+            collect_brep_references(ctx, item, owned, &mut references)?;
+            references.remove(id);
+            for reference in references {
+                insert_brep_adjacency(ctx, &mut adjacency, id, &reference)?;
+                insert_brep_adjacency(ctx, &mut adjacency, &reference, id)?;
+            }
+        }
+    }
+    Ok(adjacency)
 }
 
 fn copy_attribute_target(ctx: &DecodeContext<'_>, target: &AttributeTarget) -> Result<AttributeTarget, CodecError> {
@@ -315,35 +398,40 @@ impl Brep {
         })?;
         let mut owned = HashSet::new();
         collect_owned_ids_charged(ctx, &value, &mut owned)?;
-        let native_body_ids = self
-            .asm
-            .body_native_keys
-            .iter()
-            .map(|native| native.body.as_str())
-            .collect::<HashSet<_>>();
-        let mut roots = self
-            .body_selectors_for(ctx, selected_keys)?
-            .into_keys()
-            .map(cadmpeg_ir::ids::BodyId::into_string)
-            .collect::<HashSet<_>>();
+        let mut native_body_ids = HashSet::new();
+        for native in &self.asm.body_native_keys {
+            if !native_body_ids.contains(native.body.as_str()) {
+                ctx.charge_collection_items(1, "index F3D native BREP bodies")?;
+                native_body_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D native BREP bodies", 0, 1))?;
+                native_body_ids.insert(native.body.as_str());
+            }
+        }
+        let mut reachable = HashSet::new();
+        for body in self.body_selectors_for(ctx, selected_keys)?.into_keys() {
+            insert_brep_string(ctx, &mut reachable, body.into_string(), "collect F3D selected BREP roots")?;
+        }
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key
         // and remain part of the selected BREP blob.
-        roots.extend(
-            self.asm
-                .bodies
-                .iter()
-                .filter(|body| !native_body_ids.contains(body.id.as_str()))
-                .map(|body| body.id.as_str().to_owned()),
-        );
-        let mut adjacency = HashMap::<String, HashSet<String>>::new();
-        collect_entity_adjacency(&value, &owned, &mut adjacency);
-        let mut reachable = roots;
-        let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
+        for body in &self.asm.bodies {
+            if !native_body_ids.contains(body.id.as_str()) {
+                let id = copy_brep_text(ctx, body.id.as_str(), "copy F3D neutral BREP root")?;
+                insert_brep_string(ctx, &mut reachable, id, "collect F3D neutral BREP roots")?;
+            }
+        }
+        let adjacency = collect_brep_adjacency(ctx, &value, &owned)?;
+        let mut pending = Vec::new();
+        for id in &reachable {
+            let id = copy_brep_text(ctx, id, "copy F3D BREP pending root")?;
+            push_brep_item(ctx, &mut pending, id, "collect F3D BREP pending roots")?;
+        }
         while let Some(id) = pending.pop() {
             for adjacent in adjacency.get(&id).into_iter().flatten() {
-                if reachable.insert(adjacent.clone()) {
-                    pending.push(adjacent.clone());
+                if !reachable.contains(adjacent) {
+                    let reached = copy_brep_text(ctx, adjacent, "copy F3D reachable BREP ID")?;
+                    insert_brep_string(ctx, &mut reachable, reached, "collect F3D reachable BREP IDs")?;
+                    let queued = copy_brep_text(ctx, adjacent, "copy F3D pending BREP ID")?;
+                    push_brep_item(ctx, &mut pending, queued, "collect F3D pending BREP IDs")?;
                 }
             }
         }
@@ -353,26 +441,31 @@ impl Brep {
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
-        retained.asm.annotation_records = annotations
-            .into_iter()
-            .filter(|annotation| reachable.contains(&annotation.id))
-            .collect();
-        retained.sketch_curve_links = sketch_curve_links
-            .into_iter()
-            .filter(|link| retained_attribute_target(&link.target, &reachable))
-            .collect();
-        retained.persistent_design_links = persistent_design_links
-            .into_iter()
-            .filter(|link| retained_attribute_target(&link.target, &reachable))
-            .collect();
-        retained.persistent_subentity_tags = persistent_subentity_tags
-            .into_iter()
-            .filter(|tag| retained_attribute_target(&tag.target, &reachable))
-            .collect();
-        retained.creation_timestamps = creation_timestamps
-            .into_iter()
-            .filter(|timestamp| retained_attribute_target(&timestamp.target, &reachable))
-            .collect();
+        for annotation in annotations {
+            if reachable.contains(&annotation.id) {
+                push_brep_item(ctx, &mut retained.asm.annotation_records, annotation, "collect F3D retained annotations")?;
+            }
+        }
+        for link in sketch_curve_links {
+            if retained_attribute_target(&link.target, &reachable) {
+                push_brep_item(ctx, &mut retained.sketch_curve_links, link, "collect F3D retained sketch links")?;
+            }
+        }
+        for link in persistent_design_links {
+            if retained_attribute_target(&link.target, &reachable) {
+                push_brep_item(ctx, &mut retained.persistent_design_links, link, "collect F3D retained design links")?;
+            }
+        }
+        for tag in persistent_subentity_tags {
+            if retained_attribute_target(&tag.target, &reachable) {
+                push_brep_item(ctx, &mut retained.persistent_subentity_tags, tag, "collect F3D retained subentity tags")?;
+            }
+        }
+        for timestamp in creation_timestamps {
+            if retained_attribute_target(&timestamp.target, &reachable) {
+                push_brep_item(ctx, &mut retained.creation_timestamps, timestamp, "collect F3D retained timestamps")?;
+            }
+        }
         *self = retained;
         Ok(())
     }
@@ -828,7 +921,7 @@ fn creation_timestamp(ctx: &DecodeContext<'_>, attribute: &SourceAttribute) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::{persistent_design_links, persistent_subentity_tags, Brep};
+    use super::{collect_brep_references, insert_brep_adjacency, insert_brep_string, persistent_design_links, persistent_subentity_tags, Brep};
     use crate::records::recipes::CreationTimestamp;
     use crate::records::sketch_links::{
         PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
@@ -1156,6 +1249,115 @@ mod tests {
         });
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "rebuild F3D BREP value map"));
+    }
+
+    #[test]
+    fn brep_adjacency_reference_refuses_retained_limit() {
+        let owned = HashSet::from(["f3d:brep:entity#1".to_owned()]);
+        let value = serde_value::Value::String("f3d:brep:entity#1".to_owned());
+        let error = with_limits(u64::MAX, 0, |ctx| {
+            collect_brep_references(ctx, &value, &owned, &mut HashSet::new()).unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D BREP adjacency reference"));
+    }
+
+    #[test]
+    fn brep_adjacency_index_refuses_collection_limit() {
+        let error = with_limits(0, u64::MAX, |ctx| {
+            insert_brep_adjacency(ctx, &mut HashMap::new(), "source", "target").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D BREP adjacency"));
+    }
+
+    #[test]
+    fn brep_adjacent_ids_refuse_collection_limit() {
+        let mut adjacency = HashMap::from([("source".to_owned(), HashSet::new())]);
+        let error = with_limits(0, u64::MAX, |ctx| {
+            insert_brep_adjacency(ctx, &mut adjacency, "source", "target").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D BREP adjacent IDs"));
+    }
+
+    #[test]
+    fn brep_reachable_id_set_refuses_collection_limit() {
+        let error = with_limits(0, u64::MAX, |ctx| {
+            insert_brep_string(ctx, &mut HashSet::new(), "f3d:brep:entity#1".to_owned(), "collect F3D reachable BREP IDs").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D reachable BREP IDs"));
+    }
+
+    #[test]
+    fn brep_retained_sketch_links_refuse_collection_limit() {
+        let mut brep = Brep {
+            sketch_curve_links: vec![SketchCurveLink {
+                id: "f3d:design:sketch-curve-link#1".into(),
+                target: AttributeTarget::Document,
+                sketch_curve_id: 1,
+                ref_b: 0,
+                sense: None,
+                role: 0,
+                closure: 0,
+            }],
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D retained sketch links"));
+    }
+
+    #[test]
+    fn brep_retained_design_links_refuse_collection_limit() {
+        let mut brep = Brep {
+            persistent_design_links: vec![PersistentDesignLink {
+                id: "f3d:design:persistent-design-link#1".into(),
+                target: AttributeTarget::Document,
+                design_id: "301".to_owned().try_into().unwrap(),
+                design_reference: 1,
+                ordinal: 0,
+            }],
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D retained design links"));
+    }
+
+    #[test]
+    fn brep_retained_subentity_tags_refuse_collection_limit() {
+        let mut brep = Brep {
+            persistent_subentity_tags: vec![PersistentSubentityTag {
+                id: "f3d:design:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Document,
+                selector: 1,
+                token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
+                design_references: vec![1],
+                ordinal: 0,
+            }],
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D retained subentity tags"));
+    }
+
+    #[test]
+    fn brep_retained_timestamps_refuse_collection_limit() {
+        let mut brep = Brep {
+            creation_timestamps: vec![CreationTimestamp {
+                id: "f3d:design:creation-timestamp#1".into(),
+                target: AttributeTarget::Document,
+                record_index: 1,
+                unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+            }],
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| brep.retain_body_keys(ctx, &HashSet::new()).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect F3D retained timestamps"));
     }
 
     #[test]
