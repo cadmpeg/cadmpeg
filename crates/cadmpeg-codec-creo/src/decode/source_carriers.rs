@@ -241,9 +241,18 @@ impl SourceUnitCarriers {
 
     pub(super) fn replace_surface_geometry(
         &mut self,
+        ctx: &DecodeContext<'_>,
         surface: &mut Surface,
         mut geometry: SurfaceGeometry,
     ) -> Result<(), CodecError> {
+        if !self.surfaces.contains_key(&surface.id) {
+            ctx.charge_collection_items(1, "creo replacement source surface nodes")?;
+        }
+        let source_id = SurfaceId::mint(ctx.copy_retained_text(
+            surface.id.as_str(),
+            "creo replacement source surface IDs",
+        )?)
+        .map_err(CodecError::malformed)?;
         let source_geometry = geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
@@ -255,7 +264,7 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.surfaces.insert(surface.id.clone(), source_geometry);
+        self.surfaces.insert(source_id, source_geometry);
         surface.geometry = geometry;
         Ok(())
     }
@@ -297,9 +306,18 @@ impl SourceUnitCarriers {
 
     pub(super) fn replace_curve_geometry(
         &mut self,
+        ctx: &DecodeContext<'_>,
         curve: &mut Curve,
         mut geometry: CurveGeometry,
     ) -> Result<(), CodecError> {
+        if !self.curves.contains_key(&curve.id) {
+            ctx.charge_collection_items(1, "creo replacement source curve nodes")?;
+        }
+        let source_id = CurveId::mint(ctx.copy_retained_text(
+            curve.id.as_str(),
+            "creo replacement source curve IDs",
+        )?)
+        .map_err(CodecError::malformed)?;
         let source_geometry = geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
@@ -310,7 +328,7 @@ impl SourceUnitCarriers {
                 }
             })?;
         }
-        self.curves.insert(curve.id.clone(), source_geometry);
+        self.curves.insert(source_id, source_geometry);
         curve.geometry = geometry;
         Ok(())
     }
@@ -575,6 +593,76 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    #[test]
+    fn replacement_curve_refuses_source_node_and_id_copy_limits() {
+        let mut curve = Curve {
+            id: CurveId::mint("creo:test:replacement-curve#1").expect("identity grammar"),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        let geometry = curve.geometry.clone();
+        let arena = DecodeArena::new();
+        let mut item_policy = DecodePolicy::service();
+        item_policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &item_policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
+            .expect_err("source curve node exceeds its limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo replacement source curve nodes"), "{error:?}");
+        let mut byte_policy = DecodePolicy::service();
+        byte_policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .replace_curve_geometry(&ctx, &mut curve, geometry.clone())
+            .expect_err("source curve ID exceeds its retained limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo replacement source curve IDs"), "{error:?}");
+        let mut carriers = SourceUnitCarriers::default();
+        crate::decode::with_test_decode_ctx(|ctx| {
+            carriers.replace_curve_geometry(ctx, &mut curve, geometry.clone())
+        })
+        .expect("service replacement");
+        assert_eq!(carriers.curve_geometry(&curve), &geometry);
+    }
+
+    #[test]
+    fn replacement_surface_refuses_source_node_and_id_copy_limits() {
+        let mut surface = Surface {
+            id: SurfaceId::mint("creo:test:replacement-surface#1").expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        let geometry = surface.geometry.clone();
+        let arena = DecodeArena::new();
+        let mut item_policy = DecodePolicy::service();
+        item_policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &item_policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
+            .expect_err("source surface node exceeds its limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo replacement source surface nodes"), "{error:?}");
+        let mut byte_policy = DecodePolicy::service();
+        byte_policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &byte_policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .replace_surface_geometry(&ctx, &mut surface, geometry.clone())
+            .expect_err("source surface ID exceeds its retained limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo replacement source surface IDs"), "{error:?}");
+        let mut carriers = SourceUnitCarriers::default();
+        crate::decode::with_test_decode_ctx(|ctx| {
+            carriers.replace_surface_geometry(ctx, &mut surface, geometry.clone())
+        })
+        .expect("service replacement");
+        assert_eq!(carriers.surface_geometry(&surface), &geometry);
+    }
 
     #[test]
     fn source_curve_admission_refuses_each_outer_boundary() {

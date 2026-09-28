@@ -1193,6 +1193,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .find(|surface| surface.id == id)
                 {
                     source_carriers.replace_surface_geometry(
+                        ctx,
                         surface,
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                     )?;
