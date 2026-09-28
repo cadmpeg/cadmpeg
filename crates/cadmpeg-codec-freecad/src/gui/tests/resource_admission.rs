@@ -6,6 +6,92 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn assert_gui_decode_limit_at(
+    bytes: &[u8],
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+) {
+    let mut options = DecodeOptions::default();
+    let cap = |options: &DecodeOptions| match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems =>
+            options.policy.limits.max_collection_items,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes =>
+            options.policy.limits.max_retained_bytes,
+        _ => panic!("unsupported GUI test dimension"),
+    };
+    let set_cap = |options: &mut DecodeOptions, value| match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems =>
+            options.policy.limits.max_collection_items = value,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes =>
+            options.policy.limits.max_retained_bytes = value,
+        _ => panic!("unsupported GUI test dimension"),
+    };
+    set_cap(&mut options, 0);
+    for _ in 0..4096 {
+        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            .expect_err("GUI decode must reach a resource refusal");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal)) = error
+        else { panic!("expected resource refusal: {error:?}") };
+        assert_eq!(refusal.dimension, dimension);
+        let threshold = refusal.used.checked_add(refusal.additional)
+            .expect("resource threshold fits u64");
+        assert!(threshold > cap(&options));
+        if refusal.operation == operation {
+            set_cap(&mut options, threshold - 1);
+            let exact = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+                .expect_err("one below the GUI allocation must refuse");
+            assert!(matches!(exact,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref failure))
+                    if failure.dimension == dimension && failure.operation == operation
+                        && failure.used + failure.additional == threshold), "{exact:?}");
+            return;
+        }
+        set_cap(&mut options, threshold);
+    }
+    panic!("{operation} was not reached within 4096 admissions");
+}
+
+#[test]
+fn gui_schema_success_loss_refuses_at_matching_limits() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><Camera settings=""/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document), ("GuiDocument.xml", gui)]);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI schema losses");
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI schema loss text");
+}
+
+#[test]
+fn gui_schema_failure_loss_refuses_at_matching_limits() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let gui = br#"<Document SchemaVersion="2"><Camera settings=""/><Camera settings=""/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document), ("GuiDocument.xml", gui)]);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI schema losses");
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI schema loss text");
+}
+
+#[test]
+fn gui_material_properties_refuse_at_matching_collection_limit() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="A"><Properties Count="2"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property><Property name="ShapeMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="1" diffuseColor="2" specularColor="3" emissiveColor="4" shininess="0.5" transparency="0.25"/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let bytes = archive_entries(&[("Document.xml", document), ("GuiDocument.xml", gui)]);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI material properties");
+}
+
+#[test]
+fn gui_graph_loss_extension_refuses_at_matching_collection_limit() {
+    crate::test_support::assert_collection_refusal_at(&[], "FCStd GUI graph losses", |ctx| {
+        let mut graph = super::super::Graph::default();
+        super::super::append_graph_losses(ctx, &mut graph, vec![
+            crate::loss::FreecadLossCode::SourceGuiSchemaUnverified.note("schema".to_owned())
+        ])
+    });
+}
+
 #[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(

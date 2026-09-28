@@ -243,9 +243,12 @@ pub(crate) fn transfer(
         (GuiSchemaAdmission::Unverified { declaration }, Ok((mut graph, plan))) => {
             let declaration = declaration.as_deref().unwrap_or("missing");
             plan.apply(ctx, ir)?;
-            graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
-                "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
-            )));
+            reserve_vec_items(ctx, &mut graph.losses, 1, "FCStd GUI schema losses")?;
+            graph.losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
+                crate::resource::retained_format(ctx, format_args!(
+                    "GuiDocument.xml declares schema {declaration}; decoded with the schema-1 vocabulary"
+                ), "FCStd GUI schema loss text")?,
+            ));
             Ok(graph)
         }
         (
@@ -253,12 +256,13 @@ pub(crate) fn transfer(
             Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })),
         ) => {
             let declaration = declaration.as_deref().unwrap_or("missing");
-            Ok(Graph {
-                losses: vec![FreecadLossCode::SourceGuiSchemaUnverified.note(format!(
+            let mut losses = collection_vec(ctx, 1, "FCStd GUI schema losses")?;
+            losses.push(FreecadLossCode::SourceGuiSchemaUnverified.note(
+                crate::resource::retained_format(ctx, format_args!(
                     "GuiDocument.xml could not be decoded with the schema-1 vocabulary; declared schema {declaration} is the probable cause: {error}"
-                ))],
-                ..Graph::default()
-            })
+                ), "FCStd GUI schema loss text")?,
+            ));
+            Ok(Graph { losses, ..Graph::default() })
         }
         (GuiSchemaAdmission::Unverified { .. }, Err(error)) => Err(error),
     }
@@ -605,6 +609,7 @@ fn transfer_schema_one(
                     .and_then(|value| value.parse::<f64>().ok())
                     .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 {
+                    ctx.charge_collection_items(1, "FCStd GUI material properties")?;
                     material_properties.insert(target, value);
                 }
             }
@@ -657,7 +662,7 @@ fn transfer_schema_one(
         element_maps,
         &mut material_losses,
     )?;
-    graph.losses.extend(material_losses);
+    append_graph_losses(ctx, &mut graph, material_losses)?;
     let mut presentation_losses = Vec::new();
     transfer_neutral_presentation(
         ctx,
@@ -666,8 +671,18 @@ fn transfer_schema_one(
         neutral_schema_version,
         &mut presentation_losses,
     )?;
-    graph.losses.extend(presentation_losses);
+    append_graph_losses(ctx, &mut graph, presentation_losses)?;
     Ok((graph, plan))
+}
+
+fn append_graph_losses(
+    ctx: &DecodeContext<'_>,
+    graph: &mut Graph,
+    losses: Vec<LossNote>,
+) -> Result<(), CodecError> {
+    reserve_vec_items(ctx, &mut graph.losses, losses.len(), "FCStd GUI graph losses")?;
+    graph.losses.extend(losses);
+    Ok(())
 }
 
 fn presentation_property_type(name: &str) -> Option<&'static str> {
