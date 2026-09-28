@@ -1342,6 +1342,64 @@ fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {
         .flatten()
 }
 
+/// Index recipes by their final record for each native recipe identity.
+fn indexed_operand_recipes<'a>(
+    ctx: &DecodeContext<'_>,
+    recipes: &'a [ConstructionRecipe],
+) -> Result<HashMap<&'a str, &'a ConstructionRecipe>, CodecError> {
+    let mut indexed = HashMap::new();
+    for recipe in recipes {
+        if !indexed.contains_key(recipe.id.as_str()) {
+            ctx.charge_collection_items(1, "f3d operand recipe index")?;
+            indexed.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d operand recipe index allocation", 0, 1)
+            })?;
+        }
+        indexed.insert(recipe.id.as_str(), recipe);
+    }
+    Ok(indexed)
+}
+
+fn push_operand_face_candidate(
+    ctx: &DecodeContext<'_>,
+    candidates: &mut Vec<cadmpeg_ir::ids::FaceId>,
+    face: &cadmpeg_ir::ids::FaceId,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d operand face candidate")?;
+    ctx.charge_retained(
+        u64::try_from(face.as_str().len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d operand face candidate ID length", 0, 1)
+        })?,
+        "f3d operand face candidate ID",
+    )?;
+    candidates.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d operand face candidate allocation", 0, 1)
+    })?;
+    candidates.push(face.clone());
+    Ok(())
+}
+
+fn referenced_operand_faces<'a>(
+    ctx: &DecodeContext<'_>,
+    references: &'a [crate::records::dimensions::DesignRecipeReference],
+    design_reference: i64,
+) -> Result<HashSet<&'a cadmpeg_ir::ids::FaceId>, CodecError> {
+    let mut referenced = HashSet::new();
+    for face in references.iter()
+        .filter(|reference| reference.design_reference == design_reference)
+        .flat_map(|reference| &reference.candidate_faces)
+    {
+        if !referenced.contains(face) {
+            ctx.charge_collection_items(1, "f3d referenced face candidate")?;
+            referenced.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d referenced face candidate allocation", 0, 1)
+            })?;
+            referenced.insert(face);
+        }
+    }
+    Ok(referenced)
+}
+
 /// Join each face recipe's persistent Design reference to active solved faces.
 pub(crate) fn bind_face_operand_candidates(
     ctx: &DecodeContext<'_>,
@@ -1351,10 +1409,7 @@ pub(crate) fn bind_face_operand_candidates(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
-    let recipes = recipes
-        .iter()
-        .map(|recipe| (recipe.id.as_str(), recipe))
-        .collect::<HashMap<_, _>>();
+    let recipes = indexed_operand_recipes(ctx, recipes)?;
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
         for reference in &mut operand.recipe_references {
@@ -1368,40 +1423,30 @@ pub(crate) fn bind_face_operand_candidates(
         else {
             continue;
         };
-        operand.candidate_faces = tags
-            .iter()
-            .filter(|tag| {
-                crate::ids::same_native_occurrence(&tag.id, &operand.id)
-                    && tag.design_references.contains(&design_reference)
-            })
-            .filter_map(|tag| match &tag.target {
-                AttributeTarget::Face(id) => Some(id.clone()),
-                _ => None,
-            })
-            .collect();
+        operand.candidate_faces.clear();
+        for tag in tags.iter().filter(|tag| {
+            crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                && tag.design_references.contains(&design_reference)
+        }) {
+            if let AttributeTarget::Face(face) = &tag.target {
+                push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
+            }
+        }
         operand
             .candidate_faces
             .sort_by(|left, right| left.as_str().cmp(right.as_str()));
         operand.candidate_faces.dedup();
-        let referenced = operand
-            .recipe_references
-            .iter()
-            .filter(|reference| reference.design_reference == design_reference)
-            .flat_map(|reference| &reference.candidate_faces)
-            .collect::<HashSet<_>>();
-        operand.unreferenced_candidate_faces = operand
-            .candidate_faces
-            .iter()
-            .filter(|face| !referenced.contains(face))
-            .cloned()
-            .collect();
-        operand.alternate_selector_candidate_faces = operand
-            .recipe_references
-            .iter()
+        let referenced = referenced_operand_faces(ctx, &operand.recipe_references, design_reference)?;
+        operand.unreferenced_candidate_faces.clear();
+        for face in operand.candidate_faces.iter().filter(|face| !referenced.contains(face)) {
+            push_operand_face_candidate(ctx, &mut operand.unreferenced_candidate_faces, face)?;
+        }
+        for face in operand.recipe_references.iter()
             .filter(|reference| reference.design_reference == design_reference)
             .flat_map(|reference| &reference.alternate_selector_faces)
-            .cloned()
-            .collect();
+        {
+            push_operand_face_candidate(ctx, &mut operand.alternate_selector_candidate_faces, face)?;
+        }
         operand
             .alternate_selector_candidate_faces
             .sort_by(|left, right| left.as_str().cmp(right.as_str()));
@@ -1417,10 +1462,7 @@ pub(crate) fn bind_edge_operand_candidates(
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
-    let recipes = recipes
-        .iter()
-        .map(|recipe| (recipe.id.as_str(), recipe))
-        .collect::<HashMap<_, _>>();
+    let recipes = indexed_operand_recipes(ctx, recipes)?;
     for operand in operands {
         operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
@@ -1434,8 +1476,16 @@ pub(crate) fn bind_edge_operand_candidates(
         else {
             continue;
         };
-        operand.candidate_faces =
-            edge_operand_candidate_faces(design_reference, tags, Some(&operand.id));
+        for tag in tags.iter().filter(|tag| {
+            crate::ids::same_native_occurrence(&tag.id, &operand.id)
+                && tag.design_references.contains(&design_reference)
+        }) {
+            if let cadmpeg_ir::attributes::AttributeTarget::Face(face) = &tag.target {
+                push_operand_face_candidate(ctx, &mut operand.candidate_faces, face)?;
+            }
+        }
+        operand.candidate_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        operand.candidate_faces.dedup();
     }
     Ok(())
 }
