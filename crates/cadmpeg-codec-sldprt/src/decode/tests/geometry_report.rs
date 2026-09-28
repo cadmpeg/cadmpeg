@@ -540,11 +540,13 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
 
     let classification = crate::dialect::classify_layers(&scan);
     let report = super::super::build_geometry_report(
+        &cadmpeg_test_support::service_decode_context(),
         &scan,
-        &decoded,
+        &mut decoded,
         &classification,
         crate::container::notes(&scan),
-    );
+    )
+    .unwrap();
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::SldprtLossCode::GeometryPcurveAmbiguous.kind()
             && loss.message.contains("2 pcurve(s)")

@@ -101,10 +101,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             &mut admitted_entities,
         )?;
         let mut report = build_container_report(
+            ctx,
             &scan,
             &classification,
             container::notes_charged(ctx, &scan)?,
-        );
+        )?;
         ctx.reserve_collection_vec(
             &mut report.losses,
             pmi_losses.len(),
@@ -147,10 +148,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &mut admitted_entities,
     )?;
     let mut report = build_container_report(
+        ctx,
         &scan,
         &classification,
         container::notes_charged(ctx, &scan)?,
-    );
+    )?;
     ctx.reserve_collection_vec(
         &mut report.losses,
         pmi_losses.len(),
@@ -2438,11 +2440,12 @@ fn try_decode_brep(
         merge_brep(ctx, &mut decoded, alternate)?;
     }
     let report = build_geometry_report(
+        ctx,
         scan,
-        &decoded,
+        &mut decoded,
         classification,
         container::notes_charged(ctx, scan)?,
-    );
+    )?;
     Ok(Some((
         DecodedBrep {
             metadata_header,
@@ -3715,11 +3718,12 @@ fn add_solidworks_xml_metadata(
 }
 
 fn build_geometry_report(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    decoded: &Brep,
+    decoded: &mut Brep,
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
-) -> DecodeBody {
+) -> Result<DecodeBody, CodecError> {
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -3741,10 +3745,17 @@ fn build_geometry_report(
                 s.unknown_procedural_supports
             ));
         }
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.extend(decoded.losses.iter().cloned());
+    ctx.reserve_precharged_vec(
+        &mut losses,
+        decoded.losses.len(),
+        "move SLDPRT B-rep losses to report",
+    )?;
+    losses.append(&mut decoded.losses);
     if s.unknown_curve_edges > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
                 "{} edge(s) reference an untyped support curve; topology references an opaque \
@@ -3754,36 +3765,42 @@ fn build_geometry_report(
         );
     }
     if s.ambiguous_pcurve_parameters > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
             "{} pcurve(s) were withheld because more than one geometric parameter satisfies the stored edge or ruling geometry; the decoder does not choose by residual order.",
             s.ambiguous_pcurve_parameters
         )));
     }
     if s.off_surface_nurbs_pcurves > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyPcurveCarrierOffSurface.note(format!(
             "{} NURBS edge carrier(s) have vertex ranges off their bound B-spline surface; pcurve derivation is withheld because the defect is upstream of parameter-space geometry.",
             s.off_surface_nurbs_pcurves
         )));
     }
     if s.unresolved_face_colors > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
         )));
     }
     if s.ambiguous_face_owners > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyFaceOwnerAmbiguous.note(format!(
             "{} face owner(s) have non-equivalent bridge uses; all uses for each owner remain unresolved.",
             s.ambiguous_face_owners
         )));
     }
     if s.unclaimed_faces > 0 {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
             "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
             s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT geometry loss")?;
         losses.push(
             SldprtLossCode::TopologyBodyHierarchyDerived.note(
                 "No body record was available; one body/region/shell hierarchy was derived."
@@ -3793,13 +3810,13 @@ fn build_geometry_report(
     }
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    })
 }
 
 fn build_metadata_ir(
@@ -5192,10 +5209,11 @@ fn preserve_source_image(
 /// Builds the metadata-only report from the same classification the report
 /// carries, including recoverable layer-identity collisions.
 fn build_container_report(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
-) -> DecodeBody {
+) -> Result<DecodeBody, CodecError> {
     let parasolid_sources = scan
         .blocks
         .iter()
@@ -5227,6 +5245,7 @@ fn build_container_report(
     ];
 
     if !container::has_parasolid_body_stream(scan) {
+        ctx.reserve_collection_vec(&mut losses, 1, "append SLDPRT container loss")?;
         losses.push(
             SldprtLossCode::ContainerNoParasolidStream.note(
                 "no Parasolid partition/deltas stream was located in the container".to_string(),
@@ -5236,13 +5255,13 @@ fn build_container_report(
     append_swift_pmi_losses(scan, &mut losses);
     classification.append_losses(&mut losses);
 
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    })
 }
 
 fn append_swift_pmi_losses(
