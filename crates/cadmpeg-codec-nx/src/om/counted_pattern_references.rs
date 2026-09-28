@@ -4,6 +4,8 @@
 use super::branch_items::BranchItems;
 use super::operation_record::OperationPayload;
 use super::reference_index::PayloadIndexToken;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 const TRAILER: [u8; 19] = [
     0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff,
@@ -50,12 +52,13 @@ impl<B> CountedPatternReferences<B> {
 }
 
 impl CountedPatternReferences<()> {
-    pub(crate) fn read(record: OperationPayload<'_>) -> Option<Self> {
+    pub(crate) fn read(ctx: &DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, CodecError> {
         if record.name() != "Pattern Feature" {
-            return None;
+            return Ok(None);
         }
         let bytes = record.payload();
-        let decode = |start: usize| {
+        ctx.charge_work(u64_from_index(bytes.len()), "scan NX counted pattern references")?;
+        let shape = |start: usize| {
             if bytes.get(start) != Some(&1) {
                 return None;
             }
@@ -63,7 +66,7 @@ impl CountedPatternReferences<()> {
             if count == 0 {
                 return None;
             }
-            let mut at = start.checked_add(2)?;
+            let at = start.checked_add(2)?;
             cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().saturating_sub(at))?;
             let mut scan_at = at;
             for _ in 0..count {
@@ -74,34 +77,39 @@ impl CountedPatternReferences<()> {
             if bytes.get(scan_at..end) != Some(&TRAILER) {
                 return None;
             }
-            let mut entries = Vec::with_capacity(usize::from(count));
-            for _ in 0..count {
-                let token = PayloadIndexToken::read(bytes.get(at..)?)?;
-                at += token.raw().len();
-                entries.push((token, ()));
-            }
-            Self::new(
-                (record.payload_offset() + start) as u64,
-                BranchItems::new(entries).ok()?,
-            )
-            .ok()
+            record.payload_offset().checked_add(end)?;
+            Some((start, count))
         };
-        super::unique_candidate((0..bytes.len()).filter_map(decode))
+        let Some((start, count)) = super::unique_candidate((0..bytes.len()).filter_map(shape)) else { return Ok(None); };
+        let count = usize::from(count);
+        let count_u64 = u64_from_index(count);
+        let slot_bytes = count_u64.checked_mul(u64_from_index(std::mem::size_of::<(PayloadIndexToken, ())>()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX counted pattern references", u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(count_u64, "NX counted pattern references")?;
+        ctx.charge_retained(slot_bytes, "NX counted pattern references")?;
+        let mut entries = Vec::new();
+        entries.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit("NX counted pattern references", 0, count_u64))?;
+        let Some(mut at) = start.checked_add(2) else { return Ok(None); };
+        for _ in 0..count {
+            let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+            at += token.raw().len();
+            entries.push((token, ()));
+        }
+        let Some(offset) = record.payload_offset().checked_add(start) else { return Ok(None); };
+        Ok(BranchItems::new(entries).ok().and_then(|entries| Self::new(u64_from_index(offset), entries).ok()))
     }
 
     pub(crate) fn resolve<B>(
         self,
+        ctx: &DecodeContext<'_>,
         file_base: u64,
         mut target: impl FnMut(PayloadIndexToken) -> B,
-    ) -> Result<CountedPatternReferences<B>, &'static str> {
-        let offset = self
-            .offset
-            .checked_add(file_base)
-            .ok_or("source_offset: counted reference frame overflows")?;
-        CountedPatternReferences::new(
+    ) -> Result<Option<CountedPatternReferences<B>>, CodecError> {
+        let Some(offset) = self.offset.checked_add(file_base) else { return Ok(None); };
+        let entries = self.entries.map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
+        Ok(CountedPatternReferences::new(
             offset,
-            self.entries
-                .map_indexed(|_, (token, ())| (token, target(token))),
-        )
+            entries,
+        ).ok())
     }
 }

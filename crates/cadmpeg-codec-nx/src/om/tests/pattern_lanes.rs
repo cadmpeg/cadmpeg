@@ -3,6 +3,23 @@
 use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::operation_record::OperationPayload;
 
+fn read_counted_pattern_test(record: OperationPayload<'_>) -> Option<CountedPatternReferences<()>> {
+    crate::test_support::with_decode_context(|ctx| CountedPatternReferences::read(ctx, record)).unwrap()
+}
+
+#[test]
+fn counted_pattern_references_refuse_collection_limit() {
+    let mut payload = vec![1, 2, 0xf1, 0x06, 0xb1];
+    payload.extend_from_slice(&[0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff]);
+    let record = OperationPayload::new(&payload, 0, "Pattern Feature").unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = CountedPatternReferences::read(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
 #[test]
 fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     const TRAILER: [u8; 19] = [
@@ -17,7 +34,7 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
     payload.extend_from_slice(&TRAILER);
     let payload_offset = 200;
     let record = OperationPayload::new(&payload, payload_offset, "Pattern Feature").unwrap();
-    let lane = CountedPatternReferences::read(record).expect("complete lane");
+    let lane = read_counted_pattern_test(record).expect("complete lane");
     assert_eq!(lane.offset(), (payload_offset + 1) as u64);
     assert_eq!(usize::from(lane.declared_count()), 4);
     assert_eq!(
@@ -38,12 +55,12 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
 
     let mut malformed = payload.clone();
     malformed.pop();
-    assert!(CountedPatternReferences::read(
+    assert!(read_counted_pattern_test(
         OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap()
     )
     .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(CountedPatternReferences::read(
+    assert!(read_counted_pattern_test(
         OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap()
     )
     .is_none());

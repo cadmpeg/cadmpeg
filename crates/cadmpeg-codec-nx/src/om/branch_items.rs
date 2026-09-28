@@ -2,6 +2,8 @@
 //! Explicit entries of a byte-counted branch lane with one implicit slot.
 
 use serde::{Deserialize, Deserializer, Serialize};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
@@ -40,6 +42,21 @@ impl<T> BranchItems<T> {
                 .map(|(i, item)| f(i, item))
                 .collect(),
         )
+    }
+
+    pub(crate) fn map_indexed_charged<U>(self, ctx: &DecodeContext<'_>, mut f: impl FnMut(usize, T) -> U) -> Result<BranchItems<U>, CodecError> {
+        let count = self.0.len();
+        let count_u64 = u64_from_index(count);
+        let bytes = count_u64.checked_mul(u64_from_index(std::mem::size_of::<U>()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX branch item mapping", u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(count_u64, "NX branch item mapping")?;
+        ctx.charge_retained(bytes, "NX branch item mapping")?;
+        let mut mapped = Vec::new();
+        mapped.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit("NX branch item mapping", 0, count_u64))?;
+        for (index, item) in self.0.into_iter().enumerate() {
+            mapped.push(f(index, item));
+        }
+        Ok(BranchItems(mapped))
     }
 }
 

@@ -957,16 +957,22 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(ctx: &cadmpeg_c
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
+    let mut refusal: Option<cadmpeg_core::CodecError> = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = CountedPatternReferences::read(record.payload_view()) else {
-                return;
+            if refusal.is_some() { return; }
+            let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => { refusal = Some(error); return; }
             };
-            let Ok(references) = lane.resolve(entry_offset, |token| {
+            let references = match lane.resolve(ctx, entry_offset, |token| {
                 unique_offset_data_block(&indexed, token.value())
-            }) else {
-                return;
+            }) {
+                Ok(Some(references)) => references,
+                Ok(None) => return,
+                Err(error) => { refusal = Some(error); return; }
             };
             lanes.push(FeaturePatternCountedReferenceLane {
                 id: format!(
@@ -979,6 +985,7 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(ctx: &cadmpeg_c
             });
         },
     )?;
+    if let Some(error) = refusal { return Err(error); }
     Ok(lanes)
 }
 
