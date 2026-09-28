@@ -6,9 +6,30 @@ use crate::classification::{classify, FeatureClass};
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
+use std::hash::Hash;
+
+fn collect_index<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, CodecError> {
+    let mut index = HashMap::new();
+    for (key, value) in items {
+        ctx.charge_work(1, operation)?;
+        if !index.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        index.insert(key, value);
+    }
+    Ok(index)
+}
 
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
@@ -130,28 +151,33 @@ fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 
 /// Bind operation discriminators shared by geometry and metadata decode.
 pub(crate) fn bind_feature_operations(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    bind_extrusion_operations(features, histories, lanes, form_padding);
-    bind_revolution_operations(features, histories, lanes, form_padding);
-    bind_sweep_operations(features, histories, lanes, form_padding);
+) -> Result<(), CodecError> {
+    bind_extrusion_operations(ctx, features, histories, lanes, form_padding)?;
+    bind_revolution_operations(ctx, features, histories, lanes, form_padding)?;
+    bind_sweep_operations(ctx, features, histories, lanes, form_padding)
 }
 
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    let history_features = histories
+) -> Result<(), CodecError> {
+    let history_features = collect_index(
+        ctx,
+        histories
         .iter()
         .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT revolution history",
+    )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -187,20 +213,25 @@ pub(crate) fn bind_revolution_operations(
             }
         });
     }
+    Ok(())
 }
 
 /// Project compact solid-sweep Boolean operation discriminators.
 pub(crate) fn bind_sweep_operations(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    let history_features = histories
+) -> Result<(), CodecError> {
+    let history_features = collect_index(
+        ctx,
+        histories
         .iter()
         .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+        .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT sweep history",
+    )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -262,6 +293,7 @@ pub(crate) fn bind_sweep_operations(
             }
         });
     }
+    Ok(())
 }
 
 /// Inline extrusion trailer fields: the family word and operation byte.
@@ -341,19 +373,20 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
 
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    let history_features = histories
+) -> Result<(), CodecError> {
+    let history_by_id = collect_index(
+        ctx,
+        histories
         .iter()
         .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    let history_by_id = history_features
-        .iter()
-        .map(|feature| (feature.id.as_str(), *feature))
-        .collect::<HashMap<_, _>>();
+        .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT extrusion history",
+    )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
@@ -392,6 +425,7 @@ pub(crate) fn bind_extrusion_operations(
             }
         });
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -403,21 +437,28 @@ enum OperationKind {
 /// Preserve a Boolean operation that is invariant across a configuration lane
 /// when that lane carries no independent operation carrier.
 pub(crate) fn inherit_configuration_operations(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     form_padding: Option<usize>,
-) {
-    let history_by_id = histories
+) -> Result<(), CodecError> {
+    let history_by_id = collect_index(
+        ctx,
+        histories
         .iter()
         .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let base_definitions = base_features
+        .map(|feature| (feature.id.as_str(), feature)),
+        "index SLDPRT configuration history",
+    )?;
+    let base_definitions = collect_index(
+        ctx,
+        base_features
         .iter()
-        .map(|feature| (&feature.id, feature.evaluation.definition()))
-        .collect::<HashMap<_, _>>();
+        .map(|feature| (&feature.id, feature.evaluation.definition())),
+        "index SLDPRT base definitions",
+    )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
@@ -467,6 +508,7 @@ pub(crate) fn inherit_configuration_operations(
             }
         });
     }
+    Ok(())
 }
 
 fn operation_carrier_present(

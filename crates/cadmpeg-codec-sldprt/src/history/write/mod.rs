@@ -307,18 +307,20 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
     )?;
     crate::resolved_features::operations::bind_sweep_operations(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
     project_compact_and_generated(&ctx, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
+        &ctx,
         features,
         &histories,
         &native.feature_input_lanes,
         None,
-    );
+    )?;
     // discarded-value: marking the features is the whole effect on the write route; the collected sketches have a reader only on the decode route
     let _ = crate::resolved_features::markers::spatial_sketches(
         features,

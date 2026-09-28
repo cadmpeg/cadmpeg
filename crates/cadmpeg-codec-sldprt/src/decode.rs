@@ -2376,11 +2376,12 @@ fn build_geometry_ir(
         &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
         form_padding,
-    );
+    )?;
     crate::pmi::apply_to_parameters(
         ctx,
         &mut ir.model.parameters,
@@ -3573,11 +3574,12 @@ fn build_metadata_ir(
         &mut pmi_losses,
     )?;
     crate::resolved_features::operations::bind_feature_operations(
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
         form_padding,
-    );
+    )?;
     crate::pmi::apply_to_parameters(
         ctx,
         &mut ir.model.parameters,

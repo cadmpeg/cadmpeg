@@ -169,23 +169,26 @@ pub(crate) fn project_configuration_design_states(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut resolved_base_features = ir.model.features.clone();
     crate::resolved_features::operations::bind_extrusion_operations(
+        ctx,
         &mut resolved_base_features,
         histories,
         lanes,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_revolution_operations(
+        ctx,
         &mut resolved_base_features,
         histories,
         lanes,
         form_padding,
-    );
+    )?;
     crate::resolved_features::operations::bind_sweep_operations(
+        ctx,
         &mut resolved_base_features,
         histories,
         lanes,
         form_padding,
-    );
+    )?;
     let base_definitions = ir
         .model
         .features
@@ -244,30 +247,34 @@ pub(crate) fn project_configuration_design_states(
         )?;
         project_compact_and_generated(ctx, &mut features, &projection, scoped_lanes)?;
         crate::resolved_features::operations::bind_extrusion_operations(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
-        );
+        )?;
         crate::resolved_features::operations::bind_revolution_operations(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
-        );
+        )?;
         crate::resolved_features::operations::bind_sweep_operations(
+            ctx,
             &mut features,
             histories,
             scoped_lanes,
             form_padding,
-        );
+        )?;
         crate::resolved_features::operations::inherit_configuration_operations(
+            ctx,
             &mut features,
             &resolved_base_features,
             histories,
             scoped_lanes,
             form_padding,
-        );
+        )?;
         inherit_configuration_reference_plane_semantics(&mut features, &resolved_base_features);
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             &mut features,
