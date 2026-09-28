@@ -236,14 +236,14 @@ pub(super) struct CreoSketchBucketHeader {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSketchSection3d {
+pub(super) struct CreoSketchSection3d<'a> {
     pub(super) sketch_plane_entity_id: Option<u32>,
     pub(super) sketch_plane_flip: Option<bool>,
     #[serde(flatten, serialize_with = "serialize_reference_planes")]
-    pub(super) reference_planes: ReferencePlanes,
+    pub(super) reference_planes: &'a ReferencePlanes,
     pub(super) reference_plane_datum_geometry_id: Option<u32>,
     pub(super) orientation: CreoSketchSectionOrientation,
-    pub(super) dimension_ids: Vec<u32>,
+    pub(super) dimension_ids: &'a [u32],
     pub(super) offset: usize,
 }
 
@@ -255,24 +255,34 @@ fn serialize_reference_planes<S: serde::Serializer>(
     let rows = match planes {
         ReferencePlanes::Named(_) => &[][..],
         ReferencePlanes::Positional(rows) => rows.as_slice(),
-    }
-    .iter()
-    .map(|row| CreoSketchReferencePlane {
-        plane_entity_id: row.plane_entity_id,
-        reference_type: row.reference_type,
-        external_reference_id: row.external_reference_id,
-        segment_id: row.segment_id,
-        sub_index: row.sub_index,
-        reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
-    })
-    .collect::<Vec<_>>();
+    };
     let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry(
-        "reference_plane_entity_ids",
-        &planes.entity_ids().collect::<Vec<_>>(),
-    )?;
-    map.serialize_entry("reference_plane_rows", &rows)?;
+    map.serialize_entry("reference_plane_entity_ids", &ReferencePlaneIds(planes))?;
+    map.serialize_entry("reference_plane_rows", &ReferencePlaneRows(rows))?;
     map.end()
+}
+
+struct ReferencePlaneIds<'a>(&'a ReferencePlanes);
+
+impl Serialize for ReferencePlaneIds<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.entity_ids())
+    }
+}
+
+struct ReferencePlaneRows<'a>(&'a [crate::feature::definitions::FeatureSectionReferencePlane]);
+
+impl Serialize for ReferencePlaneRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| CreoSketchReferencePlane {
+            plane_entity_id: row.plane_entity_id,
+            reference_type: row.reference_type,
+            external_reference_id: row.external_reference_id,
+            segment_id: row.segment_id,
+            sub_index: row.sub_index,
+            reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
+        }))
+    }
 }
 
 #[derive(Serialize)]
@@ -353,13 +363,13 @@ pub(super) struct CreoSketchOrderRow {
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum CreoSketchSavedEntity {
+pub(super) enum CreoSketchSavedEntity<'a> {
     Line {
         entity_id: u32,
-        references: Vec<u32>,
-        attributes: Vec<[u8; 5]>,
+        references: &'a [u32],
+        attributes: &'a [[u8; 5]],
         endpoints: [[Option<f64>; 3]; 2],
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Arc {
@@ -368,14 +378,14 @@ pub(super) enum CreoSketchSavedEntity {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Conic {
@@ -384,23 +394,23 @@ pub(super) enum CreoSketchSavedEntity {
         parameters: [Option<f64>; 2],
         coefficients: [Option<f64>; 2],
         local_system: Option<[f64; 12]>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Spline {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
-        interpolation_points: Vec<[f64; 3]>,
-        interpolation_points_body: Vec<u8>,
+        interpolation_points: &'a [[f64; 3]],
+        interpolation_points_body: &'a [u8],
         #[serde(flatten)]
-        endpoint_tangents: SplineTangents,
+        endpoint_tangents: SplineTangents<'a>,
         #[serde(flatten)]
-        parameters: SplineParameters,
+        parameters: SplineParameters<'a>,
         offset: usize,
     },
     Dummy {
         entity_id: Option<u32>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
 }
@@ -419,12 +429,12 @@ fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
 }
 
 /// Optional spline endpoint tangents flattened as their value and body keys.
-pub(super) struct SplineTangents(pub(crate) Option<DecodedField<[[f64; 3]; 2]>>);
+pub(super) struct SplineTangents<'a>(pub(crate) Option<&'a DecodedField<[[f64; 3]; 2]>>);
 
-impl Serialize for SplineTangents {
+impl Serialize for SplineTangents<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_spline_field(
-            self.0.as_ref(),
+            self.0,
             serializer,
             "endpoint_tangents",
             "endpoint_tangents_body",
@@ -433,11 +443,11 @@ impl Serialize for SplineTangents {
 }
 
 /// Optional spline parameters flattened as their value and body keys.
-pub(super) struct SplineParameters(pub(crate) Option<DecodedField<Vec<f64>>>);
+pub(super) struct SplineParameters<'a>(pub(crate) Option<&'a DecodedField<Vec<f64>>>);
 
-impl Serialize for SplineParameters {
+impl Serialize for SplineParameters<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serialize_spline_field(self.0.as_ref(), serializer, "parameters", "parameters_body")
+        serialize_spline_field(self.0, serializer, "parameters", "parameters_body")
     }
 }
 

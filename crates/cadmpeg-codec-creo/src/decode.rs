@@ -29,6 +29,20 @@ pub(crate) fn collect_items<T>(
     Ok(result)
 }
 
+pub(crate) fn project_items<I, T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = I>,
+    operation: &'static str,
+    mut project: impl FnMut(I) -> Result<T, CodecError>,
+) -> Result<Vec<T>, CodecError> {
+    let mut result = Vec::new();
+    for value in values {
+        ctx.try_reserve_items(&mut result, 1, operation)?;
+        result.push(project(value)?);
+    }
+    Ok(result)
+}
+
 mod analytic;
 pub(crate) mod axis;
 mod build;
