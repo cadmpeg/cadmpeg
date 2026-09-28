@@ -12,6 +12,53 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_profile_references_refuse_at_matching_retained_limits() {
+    let sketches = std::collections::HashMap::new();
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd unresolved profile reference", |ctx| {
+            super::profile_ref(ctx, "source-owner", &[], &sketches)
+        },
+    );
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("target".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let property = crate::native::PropertyRecord {
+        id: "profile-property".into(),
+        owner: "source-owner".into(),
+        name: "Profile".into(),
+        type_name: "App::PropertyLink".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(),
+            links: vec![link],
+            side_entries: Vec::new(),
+            dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd native profile reference", |ctx| {
+            super::profile_ref(ctx, "source-owner", &[&property], &sketches)
+        },
+    );
+    let mut sketches = sketches;
+    sketches.insert("target", cadmpeg_ir::sketches::SketchId::mint(
+        "test:test:sketch#profile",
+    ).expect("valid sketch identity"));
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd sketch profile reference", |ctx| {
+            super::profile_ref(ctx, "source-owner", &[&property], &sketches)
+        },
+    );
+}
+
+#[test]
 fn design_nurbs_lanes_refuse_at_each_collection_limit() {
     let xml = roxmltree::Document::parse(
         "<BSplineCurve PolesCount=\"3\" KnotsCount=\"2\" Degree=\"2\" IsPeriodic=\"0\"><Pole X=\"0\" Y=\"0\" Z=\"0\" Weight=\"1\"/><Pole X=\"1\" Y=\"2\" Z=\"0\" Weight=\"0.5\"/><Pole X=\"3\" Y=\"0\" Z=\"0\" Weight=\"1\"/><Knot Value=\"0\" Mult=\"3\"/><Knot Value=\"1\" Mult=\"3\"/></BSplineCurve>",
