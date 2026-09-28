@@ -39,8 +39,8 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface, SurfaceParameterAxis},
-    pcurve::{PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
+    nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
+    pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PolarNurbsPoles, PolarPcurveNurbs},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry, TolerantIntersectionParameterization,
 };
@@ -646,6 +646,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let mut pcurves: [Option<PcurveGeometry>; 2] = [None, None];
             for (side, slot) in pcurves.iter_mut().enumerate() {
                 *slot = orient_tolerant_intersection_pcurve_with_index_and_budget(
+                    ctx,
                     &model_index,
                     owner,
                     &supports[side],
@@ -726,9 +727,12 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     orient_tolerant_intersection_pcurve_with_index_and_budget(
+        &ctx,
         &index,
         curve,
         support,
@@ -742,6 +746,7 @@ pub(super) fn orient_tolerant_intersection_pcurve(
 
 #[allow(clippy::too_many_arguments)]
 fn orient_tolerant_intersection_pcurve_with_index_and_budget(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
     support: &SurfaceId,
@@ -772,10 +777,10 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     let reversed = Point3::distance(first, endpoints[1]) <= tolerance
         && Point3::distance(second, endpoints[0]) <= tolerance;
     match (forward, reversed) {
-        (true, false) => Ok(Some(pcurve.clone())),
-        (false, true) => reverse_pcurve_over_range(pcurve, range).map_err(Into::into),
+        (true, false) => Ok(Some(pcurve.try_clone_for_decode(ctx, "nx oriented forward pcurve")?)),
+        (false, true) => reverse_pcurve_over_range(ctx, pcurve, range),
         (true, true) => {
-            let Some(reversed) = reverse_pcurve_over_range(pcurve, range)? else {
+            let Some(reversed) = reverse_pcurve_over_range(ctx, pcurve, range)? else {
                 return Ok(None);
             };
             // The two reflections agree on the endpoints, so the tangent of
@@ -845,7 +850,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                 })
             })()?;
             Ok(match selected_forward {
-                Some(true) => Some(pcurve.clone()),
+                Some(true) => Some(pcurve.try_clone_for_decode(ctx, "nx oriented forward pcurve")?),
                 Some(false) => Some(reversed),
                 None => None,
             })
@@ -854,12 +859,59 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     }
 }
 
+/// Copy pole rows in reverse order after admitting the retained lane.
+fn reversed_pole_rows<T: Copy>(
+    ctx: &DecodeContext<'_>,
+    rows: &[T],
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(rows.len());
+    let bytes = count
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit("nx reversed pcurve poles", u64::MAX, count))?;
+    ctx.charge_collection_items(count, "nx reversed pcurve poles")?;
+    ctx.charge_retained(bytes, "nx reversed pcurve poles")?;
+    let mut reversed = Vec::new();
+    reversed.try_reserve_exact(rows.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx reversed pcurve poles", 0, count)
+    })?;
+    reversed.extend_from_slice(rows);
+    reversed.reverse();
+    Ok(reversed)
+}
+
+fn reflected_pcurve_knots(
+    ctx: &DecodeContext<'_>,
+    knots: &cadmpeg_ir::geometry::nurbs::KnotVector,
+    lower: FiniteReal,
+    upper: FiniteReal,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(knots.len());
+    let bytes = count
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<f64>()))
+        .ok_or_else(|| ctx.refuse_codec_limit("nx reversed pcurve knots", u64::MAX, count))?;
+    ctx.charge_collection_items(count, "nx reversed pcurve knots")?;
+    ctx.charge_retained(bytes, "nx reversed pcurve knots")?;
+    let mut reversed = Vec::new();
+    reversed.try_reserve_exact(knots.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx reversed pcurve knots", 0, count)
+    })?;
+    for knot in knots.finite_knots().rev() {
+        let Some(reflected) = cadmpeg_ir::math::reflect_parameter(knot, lower, upper) else {
+            return Ok(None);
+        };
+        reversed.push(reflected.get());
+    }
+    Ok(Some(reversed))
+}
+
 /// Reverse a pcurve over `[start, end]`. `Ok(None)` states a pcurve family the
-/// reversal cannot carry; `Err` states reversed lanes the carrier refuses.
+/// reversal cannot carry; `Err` states a resource or carrier refusal.
 fn reverse_pcurve_over_range(
+    ctx: &DecodeContext<'_>,
     pcurve: &PcurveGeometry,
     [start, end]: [f64; 2],
-) -> Result<Option<PcurveGeometry>, NurbsError> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let _depth = ctx.enter_nested("nx pcurve reversal")?;
     let reflection = start + end;
     let (Some(lower), Some(upper)) = (FiniteReal::new(start), FiniteReal::new(end)) else {
         return Ok(None);
@@ -869,37 +921,35 @@ fn reverse_pcurve_over_range(
     }
     match pcurve {
         PcurveGeometry::PolarNurbs { nurbs } => {
-            let Some(reversed_knots) = nurbs
-                .knots()
-                .finite_knots()
-                .rev()
-                .map(|knot| {
-                    cadmpeg_ir::math::reflect_parameter(knot, lower, upper).map(FiniteReal::get)
-                })
-                .collect::<Option<Vec<_>>>()
+            let Some(reversed_knots) = reflected_pcurve_knots(ctx, nurbs.knots(), lower, upper)?
             else {
                 return Ok(None);
             };
-            let mut poles = nurbs.pole_rows().clone();
-            poles.reverse();
+            let poles = match nurbs.pole_rows() {
+                PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
+                    poles: reversed_pole_rows(ctx, poles)?,
+                },
+                PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
+                    poles: reversed_pole_rows(ctx, poles)?,
+                },
+            };
             let reversed =
                 PolarPcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
             Ok(Some(PcurveGeometry::PolarNurbs { nurbs: reversed }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            let Some(reversed_knots) = nurbs
-                .knots()
-                .finite_knots()
-                .rev()
-                .map(|knot| {
-                    cadmpeg_ir::math::reflect_parameter(knot, lower, upper).map(FiniteReal::get)
-                })
-                .collect::<Option<Vec<_>>>()
+            let Some(reversed_knots) = reflected_pcurve_knots(ctx, nurbs.knots(), lower, upper)?
             else {
                 return Ok(None);
             };
-            let mut poles = nurbs.pole_rows().clone();
-            poles.reverse();
+            let poles = match nurbs.pole_rows() {
+                PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                    points: reversed_pole_rows(ctx, points)?,
+                },
+                PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                    points: reversed_pole_rows(ctx, points)?,
+                },
+            };
             let reversed =
                 PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: reversed }))
@@ -907,10 +957,11 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             let same_sense = trimmed_pcurve.same_sense();
-            let Some(basis) = reverse_pcurve_over_range(trimmed_pcurve.basis(), [start, end])?
+            let Some(basis) = reverse_pcurve_over_range(ctx, trimmed_pcurve.basis(), [start, end])?
             else {
                 return Ok(None);
             };
+            ctx.charge_collection_items(1, "nx reversed trimmed pcurve basis")?;
             Ok(cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
                 parameter_range.endpoints(),
                 same_sense,
@@ -920,9 +971,10 @@ fn reverse_pcurve_over_range(
             .map(PcurveGeometry::Trimmed))
         }
         PcurveGeometry::Transformed(placed) => {
-            let Some(reversed) = reverse_pcurve_over_range(placed.basis(), [start, end])? else {
+            let Some(reversed) = reverse_pcurve_over_range(ctx, placed.basis(), [start, end])? else {
                 return Ok(None);
             };
+            ctx.charge_collection_items(1, "nx reversed transformed pcurve basis")?;
             Ok(cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
                 Box::new(reversed),
                 *placed.transform(),
@@ -932,10 +984,11 @@ fn reverse_pcurve_over_range(
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let distance = offset_pcurve.distance().get();
-            let Some(basis) = reverse_pcurve_over_range(offset_pcurve.basis(), [start, end])?
+            let Some(basis) = reverse_pcurve_over_range(ctx, offset_pcurve.basis(), [start, end])?
             else {
                 return Ok(None);
             };
+            ctx.charge_collection_items(1, "nx reversed offset pcurve basis")?;
             Ok(
                 cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(-distance, Box::new(basis))
                     .ok()
