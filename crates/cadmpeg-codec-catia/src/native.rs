@@ -8410,7 +8410,7 @@ fn consolidated_owner_packets(
         "catia_native_fixed_owner_packets",
     )?;
     let mut owner_charts = HashMap::new();
-    for chart in crate::families::b2::records::b2_owner_charts_from_records(bytes, records) {
+    for chart in crate::families::b2::records::b2_owner_charts_from_records(ctx, bytes, records)? {
             let native_reference =
                 |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
                     CatiaOwnerChartBridgeReference::new(
@@ -8467,7 +8467,7 @@ fn consolidated_owner_packets(
     }
     let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
     for target in
-        crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
+        crate::families::b2::records::b2_owner_identity_targets_from_records(ctx, bytes, records)?
     {
         let key = (target.source_index, target.owner_pos);
         let value = CatiaOwnerIdentityTarget {
@@ -8489,8 +8489,8 @@ fn consolidated_owner_packets(
     }
     let mut boundary_cycles = HashMap::new();
     for cycle in crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
-        bytes, records,
-    ) {
+        ctx, bytes, records,
+    )? {
             let key = (cycle.source_index, cycle.owner_pos);
             let value = CatiaOwnerBoundaryCycle {
                     face_node: cycle.face_node.and_then(|face_node| {

@@ -19,7 +19,7 @@ use cadmpeg_ir::scalar::{
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
@@ -935,13 +935,16 @@ pub(crate) fn b2_owner_packets_from_records<'a>(
 /// sequence. The explicit class-`0x65` group separator starts a new
 /// allocation sequence even when its frame is physically contiguous.
 pub(crate) fn b2_owner_identity_targets_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2OwnerIdentityTarget> {
-    let packets = b2_owner_packets_from_records(data, records)
-        .into_iter()
-        .map(|packet| ((packet.source_index, packet.pos), packet))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<Vec<B2OwnerIdentityTarget>, CodecError> {
+    let mut packets = BTreeMap::new();
+    for packet in b2_owner_packets_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut packets,
+            (packet.source_index, packet.pos), packet,
+            "catia_b2_owner_identity_packets")?;
+    }
     let mut allocation = Vec::<usize>::new();
     let mut targets = Vec::new();
     for (index, record) in records.iter().enumerate() {
@@ -961,7 +964,8 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         if record.family == crate::wire::records::ConsolidatedFamily::B
             && matches!(record.class, 0x5d | 0x5e)
         {
-            allocation.push(index);
+            crate::resource::push(ctx, &mut allocation, index,
+                "catia_b2_owner_identity_allocations")?;
         }
         let Some(packet) = packets.get(&(record.source_index, record.byte_offset())) else {
             continue;
@@ -993,17 +997,17 @@ pub(crate) fn b2_owner_identity_targets_from_records(
             else {
                 continue;
             };
-            targets.push(B2OwnerIdentityTarget {
+            crate::resource::push(ctx, &mut targets, B2OwnerIdentityTarget {
                 owner_pos: packet.pos,
                 source_index: packet.source_index,
                 slot,
                 distance,
                 target_pos: target.byte_offset(),
                 target_class,
-            });
+            }, "catia_b2_owner_identity_targets")?;
         }
     }
-    targets
+    Ok(targets)
 }
 
 /// Select a fixed-nine boundary only when its complete resolved target set is
@@ -1040,41 +1044,54 @@ pub(in crate::families) fn b2_closed_owner_boundary_edges(
         return None;
     }
 
-    let mut edge_keys = HashSet::new();
-    let mut degrees = BTreeMap::<usize, usize>::new();
-    for edge in &edges {
+    let mut edge_keys = edges.map(|edge| {
         let [start, end] = edge.endpoint_records;
-        let key = if start < end {
+        if start < end {
             [start, end]
         } else {
             [end, start]
-        };
-        if !edge_keys.insert(key) {
-            return None;
         }
-        *degrees.entry(start).or_default() += 1;
-        *degrees.entry(end).or_default() += 1;
+    });
+    edge_keys.sort_unstable();
+    if edge_keys.windows(2).any(|pair| pair[0] == pair[1]) {
+        return None;
     }
-    (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2)).then_some(edges)
+    let mut vertices = [
+        edges[0].endpoint_records[0], edges[0].endpoint_records[1],
+        edges[1].endpoint_records[0], edges[1].endpoint_records[1],
+        edges[2].endpoint_records[0], edges[2].endpoint_records[1],
+        edges[3].endpoint_records[0], edges[3].endpoint_records[1],
+    ];
+    vertices.sort_unstable();
+    (vertices[0] == vertices[1]
+        && vertices[1] != vertices[2]
+        && vertices[2] == vertices[3]
+        && vertices[3] != vertices[4]
+        && vertices[4] == vertices[5]
+        && vertices[5] != vertices[6]
+        && vertices[6] == vertices[7])
+        .then_some(edges)
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.
 pub(crate) fn b2_owner_charts_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2OwnerChart> {
-    let owners = b2_owner_packets_from_records(data, records)
-        .into_iter()
-        .map(|owner| ((owner.source_index, owner.pos), owner))
-        .collect::<BTreeMap<_, _>>();
-    let parameter_points = b2_parameter_points_from_records(data, records)
-        .into_iter()
-        .map(|point| (point.pos, point))
-        .collect::<BTreeMap<_, _>>();
-
-    records
-        .windows(7)
-        .filter_map(|window| {
+) -> Result<Vec<B2OwnerChart>, CodecError> {
+    let mut owners = BTreeMap::new();
+    for owner in b2_owner_packets_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut owners,
+            (owner.source_index, owner.pos), owner, "catia_b2_owner_chart_owners")?;
+    }
+    let mut parameter_points = BTreeMap::new();
+    for point in b2_parameter_points_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut parameter_points,
+            point.pos, point, "catia_b2_owner_chart_points")?;
+    }
+    let mut charts = Vec::new();
+    for window in records.windows(7) {
+        let chart = (|| {
             let [carrier, references, side_05, side_09, side_0d, side_11, owner_record] = window
             else {
                 return None;
@@ -1098,12 +1115,13 @@ pub(crate) fn b2_owner_charts_from_records(
             }
             let owner = owners.get(&(owner_record.source_index, owner_record.byte_offset()))?;
             let bridge = owner_chart_bridge(data, references, carrier_kind)?;
-            let points = [side_05, side_09, side_0d, side_11]
-                .map(|record| parameter_points.get(&record.byte_offset()).cloned())
-                .into_iter()
-                .collect::<Option<Vec<_>>>()?;
-            let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
-            if points.each_ref().map(|point| point.prefix.as_u8()) != [0x05, 0x09, 0x0d, 0x11]
+            let points = [
+                parameter_points.get(&side_05.byte_offset())?,
+                parameter_points.get(&side_09.byte_offset())?,
+                parameter_points.get(&side_0d.byte_offset())?,
+                parameter_points.get(&side_11.byte_offset())?,
+            ];
+            if points.map(|point| point.prefix.as_u8()) != [0x05, 0x09, 0x0d, 0x11]
                 || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
             {
                 return None;
@@ -1116,8 +1134,12 @@ pub(crate) fn b2_owner_charts_from_records(
                 bridge,
                 parameter_points: points.map(|point| point.pos),
             })
-        })
-        .collect()
+        })();
+        if let Some(chart) = chart {
+            crate::resource::push(ctx, &mut charts, chart, "catia_b2_owner_charts")?;
+        }
+    }
+    Ok(charts)
 }
 
 fn owner_chart_bridge(
@@ -1142,16 +1164,15 @@ fn owner_chart_bridge(
         _ => return None,
     };
     let mut at = frame.payload + 1;
-    let references = (0..count)
-        .map(|_| {
-            let reference = allocation_reference(data, &mut at)?;
-            Some(B2OwnerChartBridgeReference {
+    let mut references = [None; 8];
+    for slot in references.iter_mut().take(count) {
+        let reference = allocation_reference(data, &mut at)?;
+        *slot = Some(B2OwnerChartBridgeReference {
                 value: reference.value,
                 encoding: reference.encoding,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if references.first().map(|reference| reference.value) != Some(1) {
+            });
+    }
+    if references[0]?.value != 1 {
         return None;
     }
     let carrier_selector = *data.get(at)?;
@@ -1180,8 +1201,9 @@ fn owner_chart_bridge(
         {
             return None;
         }
-        let [carrier_surface, support_surface_0, support_surface_1, support_pcurve_0, support_pcurve_1]: [B2OwnerChartBridgeReference; 5] =
-            references.try_into().ok()?;
+        let [Some(carrier_surface), Some(support_surface_0), Some(support_surface_1), Some(support_pcurve_0), Some(support_pcurve_1), ..] = references else {
+            return None;
+        };
         Some(B2OwnerChartBridge::SupportedSurface {
             pos: frame.pos,
             carrier_surface,
@@ -1203,16 +1225,19 @@ fn owner_chart_bridge(
         {
             return None;
         }
+        let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth), Some(seventh), Some(eighth)] = references else {
+            return None;
+        };
         Some(B2OwnerChartBridge::Extended {
             pos: frame.pos,
-            references: references.try_into().ok()?,
+            references: [first, second, third, fourth, fifth, sixth, seventh, eighth],
         })
     }
 }
 
 fn owner_chart_bounds_match(
     carrier: B2OwnerChartCarrier,
-    points: &[B2ParameterPoint; 4],
+    points: &[&B2ParameterPoint; 4],
     tail: &CatiaOwnerNumericTail,
 ) -> bool {
     let [first_lower, first_upper, second_lower, second_upper] =
@@ -1242,25 +1267,28 @@ fn owner_chart_bounds_match(
         && parameter_point_contains(&points[3], second_upper)
 }
 
-fn parameter_point_scalars(point: &B2ParameterPoint) -> Vec<f64> {
+fn parameter_point_scalars(point: &B2ParameterPoint) -> ([f64; 5], usize) {
     match &point.payload {
-        B2ParameterPointPayload::Scalar { value } => vec![value.get()],
-        B2ParameterPointPayload::Uv { uv } => uv.to_vec(),
-        B2ParameterPointPayload::StationUv { station, uv } => vec![station.get(), uv[0], uv[1]],
-        B2ParameterPointPayload::FiveScalars { values } => values.to_vec(),
+        B2ParameterPointPayload::Scalar { value } => ([value.get(), 0.0, 0.0, 0.0, 0.0], 1),
+        B2ParameterPointPayload::Uv { uv } => ([uv[0], uv[1], 0.0, 0.0, 0.0], 2),
+        B2ParameterPointPayload::StationUv { station, uv } =>
+            ([station.get(), uv[0], uv[1], 0.0, 0.0], 3),
+        B2ParameterPointPayload::FiveScalars { values } =>
+            ([values[0], values[1], values[2], values[3], values[4]], 5),
     }
 }
 
 fn parameter_point_matches_tuple(point: &B2ParameterPoint, expected: [f64; 3]) -> bool {
-    let values = parameter_point_scalars(point);
+    let (values, len) = parameter_point_scalars(point);
     expected
         .into_iter()
         .filter(|value| *value != 0.0)
-        .eq(values)
+        .eq(values[..len].iter().copied())
 }
 
 fn parameter_point_contains(point: &B2ParameterPoint, expected: f64) -> bool {
-    expected == 0.0 || parameter_point_scalars(point).contains(&expected)
+    let (values, len) = parameter_point_scalars(point);
+    expected == 0.0 || values[..len].contains(&expected)
 }
 
 fn b2_fixed_owner_packet(

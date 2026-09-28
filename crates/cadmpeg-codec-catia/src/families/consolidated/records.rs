@@ -1090,36 +1090,45 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
 /// Every returned endpoint is closed by the same bounded record source as its
 /// owner. Other fixed-nine roles remain unclassified.
 pub(crate) fn consolidated_owner_boundary_cycles_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedOwnerBoundaryCycle> {
-    let endpoint_records = consolidated_compact_edge_endpoints_from_records(data, records)
-        .into_iter()
-        .map(|binding| (binding.node.pos, binding.endpoint_records))
-        .collect::<HashMap<_, _>>();
-    let face_nodes = b2_face_nodes_5f_from_records(data, records)
-        .into_iter()
-        .map(|node| (node.pos, node))
-        .collect::<BTreeMap<_, _>>();
-    let record_indices = records
-        .iter()
-        .enumerate()
-        .map(|(index, record)| (record.byte_offset(), index))
-        .collect::<BTreeMap<_, _>>();
-    let record_sources = records
-        .iter()
-        .map(|record| (record.byte_offset(), record.source_index))
-        .collect::<HashMap<_, _>>();
-    let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
-    for target in b2_owner_identity_targets_from_records(data, records) {
-        targets_by_owner
-            .entry((target.source_index, target.owner_pos))
-            .or_default()
-            .push(target);
+) -> Result<Vec<ConsolidatedOwnerBoundaryCycle>, CodecError> {
+    let mut endpoint_records = HashMap::new();
+    for binding in consolidated_compact_edge_endpoints_from_records(data, records) {
+        crate::resource::insert_map(ctx, &mut endpoint_records, binding.node.pos,
+            binding.endpoint_records, "catia_owner_boundary_endpoints")?;
     }
-    b2_owner_packets_from_records(data, records)
-        .into_iter()
-        .filter_map(|packet| {
+    let mut face_nodes = BTreeMap::new();
+    for node in b2_face_nodes_5f_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut face_nodes, node.pos, node,
+            "catia_owner_boundary_face_nodes")?;
+    }
+    let mut record_indices = BTreeMap::new();
+    let mut record_sources = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        crate::resource::insert_btree_map(ctx, &mut record_indices,
+            record.byte_offset(), index, "catia_owner_boundary_record_indices")?;
+        crate::resource::insert_map(ctx, &mut record_sources,
+            record.byte_offset(), record.source_index, "catia_owner_boundary_record_sources")?;
+    }
+    let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
+    for target in b2_owner_identity_targets_from_records(ctx, data, records)? {
+        let key = (target.source_index, target.owner_pos);
+        if let Some(targets) = targets_by_owner.get_mut(&key) {
+            crate::resource::push(ctx, targets, target,
+                "catia_owner_boundary_target_entries")?;
+        } else {
+            let mut targets = Vec::new();
+            crate::resource::push(ctx, &mut targets, target,
+                "catia_owner_boundary_target_entries")?;
+            crate::resource::insert_btree_map(ctx, &mut targets_by_owner, key, targets,
+                "catia_owner_boundary_target_groups")?;
+        }
+    }
+    let mut cycles = Vec::new();
+    for packet in b2_owner_packets_from_records(data, records) {
+        let cycle = (|| {
             let targets = targets_by_owner.get(&(packet.source_index, packet.pos))?;
             let edges = b2_closed_owner_boundary_edges(targets, &endpoint_records)?;
             let face_node = (|| {
@@ -1168,8 +1177,12 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                     face_node,
                     edges,
                 })
-        })
-        .collect()
+        })();
+        if let Some(cycle) = cycle {
+            crate::resource::push(ctx, &mut cycles, cycle, "catia_owner_boundary_cycles")?;
+        }
+    }
+    Ok(cycles)
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated
