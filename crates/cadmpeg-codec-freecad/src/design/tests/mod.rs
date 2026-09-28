@@ -12,6 +12,145 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn thickness_faces_identity_refuses_at_retained_limit() {
+    let faces = linked_property("wall", "Base", "faces-property");
+    let value = scalar_property("wall", "Value", "2.5");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd thickness faces identity", |ctx| {
+            super::thickness_definition(ctx, "PartDesign::Thickness", &[&faces, &value])
+        },
+    );
+}
+
+#[test]
+fn offset_source_identity_refuses_at_retained_limit() {
+    let source = linked_property("offset", "Source", "source-property");
+    let value = scalar_property("offset", "Value", "1.5");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd offset source identity", |ctx| {
+            super::offset_shape_definition(ctx, "Part::Offset", &[&source, &value])
+        },
+    );
+}
+
+#[test]
+fn derived_shape_identities_refuse_at_retained_limits() {
+    let links = linked_property("compound", "Links", "compound-links");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd compound members identity", |ctx| {
+            super::derived_shape_definition(ctx, "Part::Compound", &[&links])
+        },
+    );
+    let source = linked_property("refine", "Source", "refine-source");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd derived source identity", |ctx| {
+            super::derived_shape_definition(ctx, "Part::Refine", &[&source])
+        },
+    );
+}
+
+#[test]
+fn ruled_curve_identities_refuse_at_retained_limits() {
+    let first = linked_property("ruled", "Curve1", "first-curve");
+    let second = linked_property("ruled", "Curve2", "second-curve");
+    for operation in ["fcstd ruled first curve identity", "fcstd ruled second curve identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::ruled_surface_definition(ctx, &[&first, &second])
+        });
+    }
+}
+
+#[test]
+fn section_operand_identities_refuse_at_retained_limits() {
+    let base = linked_property("section", "Base", "section-base");
+    let tool = linked_property("section", "Tool", "section-tool");
+    for operation in ["fcstd section base identity", "fcstd section tool identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::section_shape_definition(ctx, &[&base, &tool])
+        });
+    }
+}
+
+#[test]
+fn mirror_shape_identities_refuse_at_retained_limits() {
+    let source = linked_property("mirror", "Source", "mirror-source");
+    let plane = linked_property("mirror", "MirrorPlane", "mirror-plane");
+    let base = vector_property("mirror", "Base", 1.0, 0.0, 0.0);
+    let normal = vector_property("mirror", "Normal", 0.0, 0.0, 1.0);
+    for operation in ["fcstd mirror plane identity", "fcstd mirror source identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::mirror_shape_definition(ctx, &[&source, &plane, &base, &normal])
+        });
+    }
+}
+
+#[test]
+fn projected_surface_identities_refuse_at_retained_limits() {
+    let sources = linked_property("project", "Projection", "projection-sources");
+    let support = linked_property("project", "SupportFace", "projection-support");
+    let direction = vector_property("project", "Direction", 0.0, 0.0, 1.0);
+    for operation in ["fcstd projection sources identity", "fcstd projection support identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::project_on_surface_definition(ctx, &[&sources, &support, &direction])
+        });
+    }
+}
+
+#[test]
+fn draft_face_identities_refuse_at_retained_limits() {
+    let faces = linked_property("draft", "Base", "draft-faces");
+    let neutral = linked_property("draft", "NeutralPlane", "draft-neutral");
+    let angle = scalar_property("draft", "Angle", "4.5");
+    for operation in ["fcstd draft faces identity", "fcstd draft neutral plane identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::draft_definition(ctx, &[&faces, &neutral, &angle], &[], &std::collections::HashMap::new())
+        });
+    }
+}
+
+fn linked_property(owner: &str, name: &str, id: &str) -> crate::native::PropertyRecord {
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None, document_attribute: None, object: Some("base".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    crate::native::PropertyRecord {
+        id: id.into(), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyLink".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(), links: vec![link], side_entries: Vec::new(), dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    }
+}
+
+fn scalar_property(owner: &str, name: &str, value: &str) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("{owner}:{name}"), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyLength".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><Float value=\"{value}\"/></Property>"), 0,
+        ).expect("valid XML span"),
+    }
+}
+
+fn vector_property(owner: &str, name: &str, x: f64, y: f64, z: f64) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("{owner}:{name}"), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyVector".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><PropertyVector valueX=\"{x}\" valueY=\"{y}\" valueZ=\"{z}\"/></Property>"), 0,
+        ).expect("valid XML span"),
+    }
+}
+
+#[test]
 fn dress_up_edge_identity_refuses_at_retained_limit() {
     let base = crate::native::PropertyRecord {
         id: "base-edge-property".into(), owner: "fillet".into(), name: "Base".into(),
