@@ -813,23 +813,31 @@ fn curve_geometry_is_typed_nonlinear(geometry: &SolvedCurveGeometry) -> bool {
 }
 
 fn model_typed_nonlinear_curve_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> BTreeSet<u32> {
-    ir.model
-        .curves
-        .iter()
-        .filter_map(|curve| {
-            let id = curve
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut ids = BTreeSet::new();
+    for curve in &ir.model.curves {
+        let Some(id) = curve
                 .id
                 .as_str()
-                .strip_prefix("creo:visibgeom:curve#")?
-                .parse()
-                .ok()?;
-            curve_geometry_is_typed_nonlinear(source_carriers.curve_geometry(curve).solved()?)
-                .then_some(id)
-        })
-        .collect()
+                .strip_prefix("creo:visibgeom:curve#")
+                .and_then(|text| text.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        if source_carriers
+            .curve_geometry(curve)
+            .solved()
+            .is_some_and(curve_geometry_is_typed_nonlinear)
+            && !ids.contains(&id)
+        {
+            ctx.charge_collection_items(1, "creo B-rep typed curve ID nodes")?;
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
 }
 
 fn scalar_values_agree(first: f64, second: f64) -> bool {
@@ -1322,7 +1330,7 @@ pub(in super::super) fn transfer_native_brep(
             (*face_id, count)
         })
         .collect::<BTreeMap<_, _>>();
-    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir, source_carriers);
+    let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ctx, ir, source_carriers)?;
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
         legacy_nonvisible_face_reference_count,
