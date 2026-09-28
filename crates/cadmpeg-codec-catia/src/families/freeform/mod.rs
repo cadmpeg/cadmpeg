@@ -465,11 +465,16 @@ pub(super) fn try_decode_freeform_surfaces(
             refusal,
         );
         let b2_nurbs_curve_count = b2_nurbs_curves.len();
-        let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
-            &scan.data,
-            &consolidated_records,
-            refusal,
-        );
+        let a5_nurbs_curves =
+            match crate::families::a5a8::records::a5_nurbs_curves_from_records(
+                ctx,
+                &scan.data,
+                &consolidated_records,
+                refusal,
+            ) {
+                Ok(curves) => curves,
+                Err(error) => return Some(Err(error)),
+            };
         let a5_nurbs_curve_count = a5_nurbs_curves.len();
         let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
             &scan.data,
