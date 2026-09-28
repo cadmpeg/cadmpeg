@@ -222,7 +222,11 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
     for (layout, form) in [(243, 4), (259, 5)] {
         let lane = reference_point_lane(layout, form, [0.125, -0.25, 0.0]);
         let mut histories = vec![reference_point_history()];
-        super::enrich_history_reference_points(&mut histories, &[lane]);
+        super::enrich_history_reference_points(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        ).unwrap();
         assert_eq!(
             histories[0].features[0].properties.get("Position"),
             Some(&"125mm,-250mm,0mm".to_string())
@@ -247,7 +251,11 @@ fn solved_reference_point_layouts_project_to_a_datum_point() {
     lanes[1].id = "lane-2".into();
     lanes[1].names[0].parent = "lane-2".into();
     let mut histories = vec![reference_point_history()];
-    super::enrich_history_reference_points(&mut histories, &lanes);
+    super::enrich_history_reference_points(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &lanes,
+    ).unwrap();
     assert!(!histories[0].features[0].properties.contains_key("Position"));
 }
 
@@ -1921,3 +1929,4 @@ fn compact_offset_plane_source_requires_the_reference_record() {
 }
 mod offset_planes;
 mod plane_frames;
+mod reference_points;

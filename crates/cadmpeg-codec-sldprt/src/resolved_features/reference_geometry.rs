@@ -524,24 +524,22 @@ pub(crate) fn enrich_history_reference_planes(
 
 /// Add solved model-space positions to reference-point history records.
 pub(crate) fn enrich_history_reference_points(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let mut candidates = BTreeMap::<(usize, usize), Vec<Point3>>::new();
+) -> Result<(), CodecError> {
+    let mut candidates = BTreeMap::<(usize, usize), Option<Point3>>::new();
     for lane in lanes {
-        let mut starts =
-            histories
-                .iter()
-                .enumerate()
-                .flat_map(|(history_index, history)| {
-                    history.features.iter().enumerate().filter_map(
-                        move |(feature_index, feature)| {
-                            feature_object_name(feature, lane)
-                                .map(|name| (name.offset, history_index, feature_index))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                ctx.charge_work(1, "scan SLDPRT reference point features")?;
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT reference point starts")?;
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
         starts.sort_by_key(|start| start.0);
         for (index, &(_, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
@@ -558,27 +556,33 @@ pub(crate) fn enrich_history_reference_points(
                 .and_then(|next| usize::try_from(next.0).ok())
                 .unwrap_or(lane.native_payload.len());
             if let Some(point) = resolved_reference_point(&lane.native_payload, name, record_end) {
-                candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(point);
+                let key = (history_index, feature_index);
+                if let Some(existing) = candidates.get_mut(&key) {
+                    if existing.is_some_and(|existing| reference_point_key(&existing) != reference_point_key(&point)) {
+                        *existing = None;
+                    }
+                } else {
+                    ctx.charge_collection_items(1, "collect SLDPRT reference point candidates")?;
+                    candidates.insert(key, Some(point));
+                }
             }
         }
     }
 
-    for ((history_index, feature_index), mut points) in candidates {
-        points.sort_by_key(reference_point_key);
-        points.dedup_by_key(|point| reference_point_key(point));
-        let [point] = points.as_slice() else {
+    for ((history_index, feature_index), point) in candidates {
+        let Some(point) = point else {
             continue;
         };
-        histories[history_index].features[feature_index]
-            .properties
-            .insert(
-                cadmpeg_core::nonblank_literal!("Position"),
-                format!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
-            );
+        let value = ctx.format_retained(
+            format_args!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
+            "retain SLDPRT reference point position",
+        )?;
+        ctx.charge_collection_items(1, "insert SLDPRT reference point position")?;
+        histories[history_index].features[feature_index].properties.insert(
+            cadmpeg_core::nonblank_literal!("Position"), value,
+        );
     }
+    Ok(())
 }
 
 fn resolved_reference_point(
@@ -602,7 +606,7 @@ fn resolved_reference_point(
         return None;
     }
 
-    let mut points = [
+    let points = [
         (
             pt_short::ZERO_BEFORE_POSITION,
             pt_short::POSITION,
@@ -635,14 +639,18 @@ fn resolved_reference_point(
             value.is_finite().then_some(value)
         };
         Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
-    })
-    .collect::<Vec<_>>();
-    points.sort_by_key(reference_point_key);
-    points.dedup_by_key(|point| reference_point_key(point));
-    let [point] = points.as_slice() else {
-        return None;
-    };
-    Some(*point)
+    });
+    let mut unique = None;
+    for point in points {
+        match unique {
+            Some(existing) if reference_point_key(&existing) != reference_point_key(&point) => {
+                return None;
+            }
+            None => unique = Some(point),
+            Some(_) => {}
+        }
+    }
+    unique
 }
 
 fn reference_point_key(point: &Point3) -> [u64; 3] {
