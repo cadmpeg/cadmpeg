@@ -5162,7 +5162,7 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::binary64_pair::object_pairs(bytes)),
+        |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
@@ -5308,7 +5308,7 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::binary64_pair::datum_plane_pairs(bytes)),
+        |bytes| crate::om::binary64_pair::datum_plane_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
@@ -5595,7 +5595,7 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::binary64_pair::sketch_pairs(bytes)),
+        |bytes| crate::om::binary64_pair::sketch_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
@@ -6979,14 +6979,14 @@ pub(super) fn feature_surface_construction_scalar_pairs(ctx: &cadmpeg_core::deco
 ) -> Result<Vec<FeaturePayloadScalarPair>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let projected = payloads
         .iter()
-        .flat_map(|payload| {
+        .map(|payload| -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            crate::om::binary64_pair::object_pairs(joined.bytes())
+            Ok(crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
@@ -7005,9 +7005,10 @@ pub(super) fn feature_surface_construction_scalar_pairs(ctx: &cadmpeg_core::deco
                         source_offset: joined.source_offset(pair.offset() as u64)?,
                     })
                 })
-                .collect()
+                .collect())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact printable string frames from reconstructed surface payloads.
