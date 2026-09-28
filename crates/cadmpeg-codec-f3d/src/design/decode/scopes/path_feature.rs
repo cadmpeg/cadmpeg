@@ -105,20 +105,19 @@ pub(super) fn exact_path_feature_construction(
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0) =>
         {
-            let lanes = scope
+            let mut lanes = scope
                 .reference_members()
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
                     (scalar.owner_record_index == Some(scope.record_index))
                         .then_some((*record_index, scalar))
-                })
-                .collect::<Vec<_>>();
-            let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] =
-                lanes.as_slice()
-            else {
+                });
+            let ((angle_record_index, angle), (opposite_angle_record_index, opposite)) =
+                (lanes.next()?, lanes.next()?);
+            if lanes.next().is_some() {
                 return None;
-            };
+            }
             if angle.ordinal != 0
                 || opposite.ordinal != 1
                 || angle.value.get() <= 0.0
@@ -131,10 +130,10 @@ pub(super) fn exact_path_feature_construction(
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value.get())?,
-                    angle_record_index: *angle_record_index,
+                    angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::identity::Located {
-                        value: *opposite_angle_record_index,
+                        value: opposite_angle_record_index,
                         offset: opposite.value_offset,
                     }),
                 },
@@ -220,16 +219,18 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Sweep => {
-            let lanes = scope
+            let mut candidate_lanes = scope
                 .reference_members()
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
                     (scalar.owner_record_index == Some(scope.record_index))
                         .then_some((*record_index, scalar))
-                })
-                .collect::<Vec<_>>();
-            let lanes: [(u32, FixedScalarFrame); 6] = lanes.try_into().ok()?;
+                });
+            let lanes = [candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?, candidate_lanes.next()?];
+            if candidate_lanes.next().is_some() {
+                return None;
+            }
             if lanes
                 .iter()
                 .enumerate()
