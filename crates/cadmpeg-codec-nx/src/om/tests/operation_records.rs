@@ -2,12 +2,58 @@
 //! Operation-header validation and record-boundary tests.
 
 use crate::om::operation_body_write_frames;
-use crate::om::operation_labels;
 use crate::om::operation_record::OperationPayload;
-use crate::om::operation_records_with_labels_and_ordinals;
 use crate::om::unlabeled_operation_body_write_frames;
-use crate::om::unlabeled_operation_records_with_ordinals;
 use crate::om::UnlabeledOperationRecord;
+
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_labels(ctx, bytes, base_offset)).unwrap()
+}
+
+fn operation_records_with_labels_and_ordinals<'a>(bytes: &'a [u8], base_offset: usize, labels: &[crate::om::OperationLabel<'a>]) -> Vec<(usize, crate::om::operation_record::OperationRecord<'a>)> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, base_offset, labels)).unwrap()
+}
+
+fn unlabeled_operation_records_with_ordinals<'a>(bytes: &'a [u8], base_offset: usize, labels: &[crate::om::OperationLabel<'a>]) -> Vec<(usize, crate::om::UnlabeledOperationRecord<'a>)> {
+    crate::test_support::with_decode_context(|ctx| crate::om::unlabeled_operation_records_with_ordinals(ctx, bytes, base_offset, labels)).unwrap()
+}
+
+fn one_labeled_operation() -> &'static [u8] {
+    b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0"
+}
+
+#[test]
+fn operation_header_scan_refuses_collection_limit() {
+    let bytes = one_labeled_operation();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn operation_header_scan_refuses_retained_limit() {
+    let bytes = one_labeled_operation();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn operation_header_scan_refuses_work_limit() {
+    let bytes = one_labeled_operation();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = crate::om::operation_labels(&ctx, bytes, 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 #[test]
 fn unlabeled_operation_header_still_bounds_adjacent_records() {

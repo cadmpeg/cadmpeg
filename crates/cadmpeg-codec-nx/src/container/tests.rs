@@ -143,8 +143,8 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
         assert_eq!(
-            section.operation_records_with_label_ordinals(),
-            expected.operation_records_with_label_ordinals()
+            crate::test_support::with_decode_context(|ctx| section.operation_records_with_label_ordinals(ctx)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| expected.operation_records_with_label_ordinals(ctx)).unwrap()
         );
     }
     let repeated = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
