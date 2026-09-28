@@ -244,7 +244,9 @@ impl CatiaNative {
                         .any(|entity| !valid_entity_record_shape(entity))
                     || graph_entities.iter().any(|entity| {
                         entity.reference_signature
-                            != entity_table::parse_reference_signature(entity.value_payload()).and_then(
+                            != crate::test_support::with_service_context(|ctx| {
+                                entity_table::parse_reference_signature(ctx, entity.value_payload())
+                            }).expect("service reference signature budget").and_then(
                                 |production| {
                                     crate::test_support::with_service_context(|ctx| {
                                         reference_signature(
