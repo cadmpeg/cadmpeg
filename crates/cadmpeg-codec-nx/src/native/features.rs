@@ -5230,7 +5230,7 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::datum_csys_payload_fixed_pairs(bytes)),
+        |bytes| crate::om::datum_csys_payload_fixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureDatumCsysPayloadFixedPair {
                 id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
@@ -5663,7 +5663,7 @@ pub(super) fn feature_sketch_payload_fixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::sketch_payload_fixed_pairs(bytes)),
+        |bytes| crate::om::sketch_payload_fixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadFixedPair {
                 id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
@@ -5692,7 +5692,7 @@ pub(super) fn feature_sketch_payload_mixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::sketch_payload_mixed_pairs(bytes)),
+        |bytes| crate::om::sketch_payload_mixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadMixedPair {
                 id: format!("{}-mixed-pair-{ordinal:010}", payload.id),

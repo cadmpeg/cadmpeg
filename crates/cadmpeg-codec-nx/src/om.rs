@@ -2406,7 +2406,11 @@ pub(crate) fn sketch_payload_scalar_lanes(
 }
 
 /// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
-pub(crate) fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
+pub(crate) fn sketch_payload_fixed_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<SketchPayloadFixedPair>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(SketchPairForm::ALL.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX sketch fixed pairs", 0, cadmpeg_core::decode::u64_from_index(bytes.len())))?;
+    ctx.charge_work(work, "scan NX sketch fixed pairs")?;
     let mut pairs = Vec::new();
     for form in SketchPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2429,6 +2433,7 @@ pub(crate) fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixed
             let Some(second_value) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
+            reserve_om_retained_item(ctx, &mut pairs, "NX sketch fixed pairs")?;
             pairs.push(SketchPayloadFixedPair {
                 offset,
                 values: [first_value, second_value],
@@ -2437,11 +2442,12 @@ pub(crate) fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixed
         }
     }
     pairs.sort_by_key(|pair| pair.offset);
-    pairs
+    Ok(pairs)
 }
 
 /// Decode every exactly framed mixed scaled shifted-binary64/binary32 pair in a sketch payload.
-pub(crate) fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
+pub(crate) fn sketch_payload_mixed_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<SketchPayloadMixedPair>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX sketch mixed pairs")?;
     let discriminator = SketchPairForm::Legacy.discriminator();
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
@@ -2465,6 +2471,7 @@ pub(crate) fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixed
         let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
             continue;
         };
+        reserve_om_retained_item(ctx, &mut pairs, "NX sketch mixed pairs")?;
         pairs.push(SketchPayloadMixedPair {
             offset,
             scalars: SketchMixedScalars {
@@ -2473,7 +2480,7 @@ pub(crate) fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixed
             },
         });
     }
-    pairs
+    Ok(pairs)
 }
 
 fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
@@ -2483,7 +2490,11 @@ fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
-pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixedPair> {
+pub(crate) fn datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DatumCsysPayloadFixedPair>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(bytes.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(DatumPairForm::ALL.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX datum CSYS pairs", 0, cadmpeg_core::decode::u64_from_index(bytes.len())))?;
+    ctx.charge_work(work, "scan NX datum CSYS pairs")?;
     let mut pairs = Vec::new();
     for form in DatumPairForm::ALL {
         let discriminator = form.discriminator();
@@ -2511,6 +2522,7 @@ pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPaylo
             else {
                 continue;
             };
+            reserve_om_retained_item(ctx, &mut pairs, "NX datum CSYS pairs")?;
             pairs.push(DatumCsysPayloadFixedPair {
                 offset,
                 values: [Q155::from_raw(first_raw), Q155::from_raw(second_raw)],
@@ -2519,7 +2531,7 @@ pub(crate) fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPaylo
         }
     }
     pairs.sort_by_key(|pair| pair.offset);
-    pairs
+    Ok(pairs)
 }
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
