@@ -2,7 +2,7 @@ use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
     analytic_offset_magnitude_agrees, counted_cardinality, evaluate_pcurve,
     is_referenced_geometry_class, parse_circle_pcurve, parse_class_1a_pcurve,
-    parse_extrusion_surface, parse_line_pcurve, parse_offset_surface, parse_opaque_pcurve,
+    parse_extrusion_surface, parse_line_pcurve, parse_offset_surface,
     parse_profile, parse_sphere_great_circle_pcurve, parse_surface, rational_arc_pcurve,
     surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
     B5OpaquePcurve, B5Pcurve, B5PcurveParameterization, B5Profile, B5Record,
@@ -11,6 +11,28 @@ use crate::families::b5::graph::{
 use crate::wire;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
+
+fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_opaque_pcurve(ctx, record)
+    }).expect("service budget")
+}
+
+#[test]
+fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
+    let mut payload = vec![0x81, 0x82];
+    payload.extend_from_slice(&[0; 16]);
+    payload.extend_from_slice(&[0x05, 0x05]);
+    payload.extend_from_slice(&[0; 56]);
+    let record = B5Record { offset: 0, family: 0xb5, class: 0x1a,
+        object_id: 7, payload };
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::parse_opaque_pcurve(ctx, &record)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_opaque_pcurve_payload"));
+    assert!(parse_opaque_pcurve(&record).is_some());
+}
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {

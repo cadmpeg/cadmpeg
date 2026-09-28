@@ -8,7 +8,7 @@ use crate::families::b5::graph::{
     object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
     parse_a8_class21_pcurve, parse_edge, parse_extrusion_directrix, parse_extrusion_surface,
     parse_extrusion_surface_with_context, parse_flat, parse_from_frames, parse_from_records,
-    parse_supported_surface, parse_vertex_incidence_link, propagate_vertex_points, records,
+    parse_supported_surface, parse_vertex_incidence_link, records,
     record_from_frame, records_from_frames, records_from_frames_budgeted,
     select_object_stream_population, topology_surface_references,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
@@ -24,6 +24,16 @@ use crate::families::b5::graph::{
     B5Surface, B5VertexIncidenceLink, ObjectFrame,
 };
 use std::collections::{BTreeMap, HashMap};
+
+fn propagate_vertex_points(
+    constraints: &[([u32; 2], [usize; 2])],
+    adjacency: &HashMap<u32, Vec<usize>>,
+    points: &[cadmpeg_ir::features::FinitePoint3],
+) -> HashMap<u32, usize> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::propagate_vertex_points(ctx, constraints, adjacency, points)
+    }).expect("service budget")
+}
 
 #[test]
 fn retained_object_frames_refuse_the_caller_collection_limit() {

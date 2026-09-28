@@ -1256,10 +1256,13 @@ fn parse_from_records_with_class21(
     supported_surfaces.retain(|object_id, construction| {
         surfaces.get(object_id) == surfaces.get(&construction.carrier_surface)
     });
-    let profiles: BTreeMap<u32, B5Profile> = records
-        .iter()
-        .filter_map(|record| parse_profile(record).map(|profile| (record.object_id, profile)))
-        .collect();
+    let mut profiles = BTreeMap::new();
+    for record in records {
+        if let Some(profile) = parse_profile(record) {
+            crate::resource::insert_btree_map(ctx, &mut profiles, record.object_id, profile,
+                "catia_b5_graph_profiles")?;
+        }
+    }
     let mut pcurves = BTreeMap::new();
     for record in records {
         let pcurve = match record.class {
@@ -1276,12 +1279,12 @@ fn parse_from_records_with_class21(
     }
     let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
-    for pcurve in circle_pcurves_from_frames(bytes, frames) {
+    for pcurve in circle_pcurves_from_frames(ctx, bytes, frames)? {
         if surfaces.contains_key(&pcurve.surface) {
-            circle_candidates
-                .entry(pcurve.object_id)
-                .or_default()
-                .push(pcurve);
+            crate::resource::admit_btree_entry(ctx, &circle_candidates,
+                &pcurve.object_id, "catia_b5_circle_candidate_groups")?;
+            crate::resource::push(ctx, circle_candidates.entry(pcurve.object_id).or_default(),
+                pcurve, "catia_b5_circle_candidates")?;
         }
     }
     for (object_id, candidates) in circle_candidates {
@@ -1308,10 +1311,13 @@ fn parse_from_records_with_class21(
         }
         merge_pcurve_candidate(ctx, &mut pcurves, &mut conflicting_pcurves, candidate)?;
     }
-    let mut opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
-        .iter()
-        .filter_map(|record| parse_opaque_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
-        .collect();
+    let mut opaque_pcurves = BTreeMap::new();
+    for record in records {
+        if let Some(pcurve) = parse_opaque_pcurve(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut opaque_pcurves, record.object_id,
+                pcurve, "catia_b5_opaque_pcurves")?;
+        }
+    }
     for pcurve in opaque_pcurves.values_mut() {
         let Some(record) = by_id.get(&pcurve.object_id) else {
             continue;
@@ -1327,20 +1333,20 @@ fn parse_from_records_with_class21(
                 record.object_id, incidence, "catia_b5_graph_parameter_incidences")?;
         }
     }
-    let edges: BTreeMap<u32, B5Edge> = records
-        .iter()
-        .filter(|record| record.class == 0x5e)
-        .filter_map(|record| parse_edge(record).map(|edge| (record.object_id, edge)))
-        .collect();
-    let edge_parameter_incidences: BTreeMap<u32, [u32; 2]> = edges
-        .iter()
-        .filter_map(|(&object_id, edge)| {
-            edge.parameter_incidences
-                .iter()
-                .all(|parameter| parameter_incidences.contains_key(parameter))
-                .then_some((object_id, edge.parameter_incidences))
-        })
-        .collect();
+    let mut edges = BTreeMap::new();
+    for record in records.iter().filter(|record| record.class == 0x5e) {
+        if let Some(edge) = parse_edge(record) {
+            crate::resource::insert_btree_map(ctx, &mut edges, record.object_id, edge,
+                "catia_b5_graph_edges")?;
+        }
+    }
+    let mut edge_parameter_incidences = BTreeMap::new();
+    for (&object_id, edge) in &edges {
+        if edge.parameter_incidences.iter().all(|parameter| parameter_incidences.contains_key(parameter)) {
+            crate::resource::insert_btree_map(ctx, &mut edge_parameter_incidences,
+                object_id, edge.parameter_incidences, "catia_b5_edge_parameter_index")?;
+        }
+    }
     let implicit_pcurves =
         implicit_pcurve_bindings(ctx, records, by_id, &pcurves, &opaque_pcurves, &surfaces)?;
     for pcurve in pcurves.values_mut() {
@@ -1377,32 +1383,36 @@ fn parse_from_records_with_class21(
                 record.object_id, face, "catia_b5_graph_face_records")?;
         }
     }
-    let surface_aliases = records
-        .iter()
-        .filter(|record| surfaces.contains_key(&record.object_id))
-        .filter_map(|record| surface_alias_target(record).map(|target| (record.object_id, target)))
-        .collect();
-    let faces: Vec<B5Face> = records
-        .iter()
-        .filter_map(|record| face_records.get(&record.object_id))
-        .filter_map(|record| parse_face(record, &loops, &surfaces, &surface_aliases))
-        .collect();
+    let mut surface_aliases = BTreeMap::new();
+    for record in records.iter().filter(|record| surfaces.contains_key(&record.object_id)) {
+        if let Some(target) = surface_alias_target(record) {
+            crate::resource::insert_btree_map(ctx, &mut surface_aliases, record.object_id,
+                target, "catia_b5_surface_aliases")?;
+        }
+    }
+    let mut faces = Vec::new();
+    for record in records.iter().filter_map(|record| face_records.get(&record.object_id)) {
+        if let Some(face) = parse_face(record, &loops, &surfaces, &surface_aliases) {
+            crate::resource::push(ctx, &mut faces, face, "catia_b5_graph_faces")?;
+        }
+    }
     if require_topology && (faces.is_empty() || loops.is_empty()) {
         return Ok(None);
     }
     let vertex_points = crate::families::consolidated::records::object_stream_vertices(ctx, bytes)?;
-    let geometric_edge_vertices = bind_edge_vertices(&loops, &geometry, &vertex_points);
-    let vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink> = records
-        .iter()
-        .filter(|record| record.class == 0x5d)
-        .filter_map(|record| {
-            parse_vertex_incidence_link(record).map(|link| (record.object_id, link))
-        })
-        .collect();
-    let native_edge_vertices: BTreeMap<u32, [u32; 2]> = edges
-        .iter()
-        .map(|(&object_id, edge)| (object_id, edge.vertices))
-        .collect();
+    let geometric_edge_vertices = bind_edge_vertices(ctx, &loops, &geometry, &vertex_points)?;
+    let mut vertex_incidence_links = BTreeMap::new();
+    for record in records.iter().filter(|record| record.class == 0x5d) {
+        if let Some(link) = parse_vertex_incidence_link(record) {
+            crate::resource::insert_btree_map(ctx, &mut vertex_incidence_links,
+                record.object_id, link, "catia_b5_vertex_incidence_links")?;
+        }
+    }
+    let mut native_edge_vertices = BTreeMap::new();
+    for (&object_id, edge) in &edges {
+        crate::resource::insert_btree_map(ctx, &mut native_edge_vertices, object_id,
+            edge.vertices, "catia_b5_native_edge_vertices")?;
+    }
     let native_vertex_coordinates = incidence_vertex_coordinates(
         ctx,
         &native_edge_vertices,
@@ -1410,21 +1420,24 @@ fn parse_from_records_with_class21(
         by_id,
         &geometry,
     )?;
-    let bound_vertices = bind_native_vertices(
+    let bound_vertices = bind_native_vertices(ctx,
         &loops,
         &geometry,
         &native_edge_vertices,
         &geometric_edge_vertices,
         &native_vertex_coordinates,
         &vertex_points,
-    );
+    )?;
     let edge_vertices = bound_vertices.edges;
     let logical_vertices = bound_vertices.vertices;
     let vertex_tolerances = bound_vertices.tolerances;
-    let referenced_loops: std::collections::HashSet<u32> = faces
-        .iter()
-        .flat_map(|face| face.loops.iter().copied())
-        .collect();
+    let mut referenced_loops = HashSet::new();
+    for face in &faces {
+        for &loop_id in &face.loops {
+            crate::resource::insert_set(ctx, &mut referenced_loops, loop_id,
+                "catia_b5_referenced_loops")?;
+        }
+    }
     loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
     let complete = faces.len() == source_face_count
         && face_loop_owner_counts(ctx, &faces)?
@@ -2601,28 +2614,40 @@ struct BoundNativeVertices {
 }
 
 fn bind_native_vertices(
+    ctx: &DecodeContext<'_>,
     loops: &BTreeMap<u32, B5Loop>,
     geometry: &B5PcurveContext<'_>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     geometric_edges: &BTreeMap<u32, [usize; 2]>,
     native_coordinates: &BTreeMap<u32, FinitePoint3>,
     points: &[FinitePoint3],
-) -> BoundNativeVertices {
-    let constraints: Vec<([u32; 2], [usize; 2])> = native_edges
-        .iter()
-        .filter_map(|(edge, vertices)| geometric_edges.get(edge).map(|points| (*vertices, *points)))
-        .collect();
+) -> Result<BoundNativeVertices, CodecError> {
+    let mut constraints = Vec::new();
+    for (edge, vertices) in native_edges {
+        if let Some(points) = geometric_edges.get(edge) {
+            crate::resource::push(ctx, &mut constraints, (*vertices, *points),
+                "catia_b5_vertex_constraints")?;
+        }
+    }
     let mut adjacency = HashMap::<u32, Vec<usize>>::new();
     for (index, (vertices, _)) in constraints.iter().enumerate() {
-        adjacency.entry(vertices[0]).or_default().push(index);
-        adjacency.entry(vertices[1]).or_default().push(index);
+        for vertex in vertices {
+            crate::resource::admit_map_entry(ctx, &mut adjacency, vertex,
+                "catia_b5_vertex_adjacency_groups")?;
+            crate::resource::push(ctx, adjacency.entry(*vertex).or_default(), index,
+                "catia_b5_vertex_adjacency_links")?;
+        }
     }
-    let vertex_points = propagate_vertex_points(&constraints, &adjacency, points);
-    let mut logical_coordinates: HashMap<u32, FinitePoint3> = vertex_points
-        .into_iter()
-        .map(|(vertex, point)| (vertex, points[point]))
-        .collect();
-    logical_coordinates.extend(native_coordinates);
+    let vertex_points = propagate_vertex_points(ctx, &constraints, &adjacency, points)?;
+    let mut logical_coordinates = HashMap::new();
+    for (vertex, point) in vertex_points {
+        crate::resource::insert_map(ctx, &mut logical_coordinates, vertex, points[point],
+            "catia_b5_logical_coordinates")?;
+    }
+    for (&vertex, &point) in native_coordinates {
+        crate::resource::insert_map(ctx, &mut logical_coordinates, vertex, point,
+            "catia_b5_logical_coordinates")?;
+    }
     // Native vertex identity fixes topology even when incident lifted endpoints
     // are separated. Keep the first deterministic finite lift as the logical
     // coordinate; the pass below records every separation in vertex tolerance.
@@ -2635,33 +2660,37 @@ fn bind_native_vertices(
                 continue;
             };
             for lane in 0..2 {
+                crate::resource::admit_map_entry(ctx, &mut logical_coordinates, &vertices[lane],
+                    "catia_b5_logical_coordinates")?;
                 logical_coordinates
                     .entry(vertices[lane])
                     .or_insert(lifted[lane]);
             }
         }
     }
-    let mut ranked: Vec<_> = logical_coordinates.into_iter().collect();
+    let mut ranked = crate::resource::collect_vec(ctx, logical_coordinates,
+        "catia_b5_ranked_logical_vertices")?;
     ranked.sort_unstable_by_key(|(vertex, _)| *vertex);
-    let logical_vertex_indices: HashMap<u32, B5VertexRef> = ranked
-        .iter()
-        .enumerate()
-        .map(|(rank, (vertex, _))| (*vertex, B5VertexRef::Logical(rank)))
-        .collect();
-    let logical_vertices: Vec<B5LogicalVertex> = ranked
-        .into_iter()
-        .map(|(object_id, point)| B5LogicalVertex { object_id, point })
-        .collect();
-    let mut edge_vertices = geometric_edges
-        .iter()
-        .map(|(&edge, vertices)| (edge, vertices.map(B5VertexRef::Raw)))
-        .collect::<BTreeMap<_, _>>();
+    let mut logical_vertex_indices = HashMap::new();
+    let mut logical_vertices = Vec::new();
+    for (rank, (object_id, point)) in ranked.into_iter().enumerate() {
+        crate::resource::insert_map(ctx, &mut logical_vertex_indices, object_id,
+            B5VertexRef::Logical(rank), "catia_b5_logical_vertex_indices")?;
+        crate::resource::push(ctx, &mut logical_vertices, B5LogicalVertex { object_id, point },
+            "catia_b5_logical_vertices")?;
+    }
+    let mut edge_vertices = BTreeMap::new();
+    for (&edge, vertices) in geometric_edges {
+        crate::resource::insert_btree_map(ctx, &mut edge_vertices, edge,
+            vertices.map(B5VertexRef::Raw), "catia_b5_bound_edge_vertices")?;
+    }
     for (&edge, vertices) in native_edges {
         if let (Some(&start), Some(&end)) = (
             logical_vertex_indices.get(&vertices[0]),
             logical_vertex_indices.get(&vertices[1]),
         ) {
-            edge_vertices.insert(edge, [start, end]);
+            crate::resource::insert_btree_map(ctx, &mut edge_vertices, edge, [start, end],
+                "catia_b5_bound_edge_vertices")?;
         }
     }
     let mut tolerances = BTreeMap::<usize, PositiveReal>::new();
@@ -2699,6 +2728,8 @@ fn bind_native_vertices(
                 let Some(candidate) = PositiveReal::new(residual + EPS_B5_GRAPH_GEOMETRY) else {
                     continue;
                 };
+                crate::resource::admit_btree_entry(ctx, &tolerances,
+                    &locus.combined_index(points.len()), "catia_b5_vertex_tolerances")?;
                 tolerances
                     .entry(locus.combined_index(points.len()))
                     .and_modify(|tolerance| {
@@ -2710,18 +2741,19 @@ fn bind_native_vertices(
             }
         }
     }
-    BoundNativeVertices {
+    Ok(BoundNativeVertices {
         edges: edge_vertices,
         vertices: logical_vertices,
         tolerances,
-    }
+    })
 }
 
 fn propagate_vertex_points(
+    ctx: &DecodeContext<'_>,
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
     points: &[FinitePoint3],
-) -> HashMap<u32, usize> {
+) -> Result<HashMap<u32, usize>, CodecError> {
     let mut mapping = HashMap::<u32, usize>::new();
     let mut completed = HashSet::new();
     for seed in 0..constraints.len() {
@@ -2729,21 +2761,28 @@ fn propagate_vertex_points(
             continue;
         }
         let (component, members, consistent) =
-            propagate_vertex_component(seed, constraints, adjacency, points);
-        completed.extend(members);
+            propagate_vertex_component(ctx, seed, constraints, adjacency, points)?;
+        for member in members {
+            crate::resource::insert_set(ctx, &mut completed, member,
+                "catia_b5_completed_vertex_constraints")?;
+        }
         if consistent {
-            mapping.extend(component);
+            for (vertex, locus) in component {
+                crate::resource::insert_map(ctx, &mut mapping, vertex, locus,
+                    "catia_b5_propagated_vertex_points")?;
+            }
         }
     }
-    mapping
+    Ok(mapping)
 }
 
 fn propagate_vertex_component(
+    ctx: &DecodeContext<'_>,
     seed: usize,
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
     points: &[FinitePoint3],
-) -> (HashMap<u32, usize>, Vec<usize>, bool) {
+) -> Result<(HashMap<u32, usize>, Vec<usize>, bool), CodecError> {
     let mut mapping = HashMap::new();
     let mut members = Vec::new();
     let mut pending = std::collections::VecDeque::new();
@@ -2753,7 +2792,7 @@ fn propagate_vertex_component(
                   pending: &mut std::collections::VecDeque<u32>,
                   consistent: &mut bool,
                   vertex,
-                  locus| {
+                  locus| -> Result<(), CodecError> {
         if let Some(&previous) = mapping.get(&vertex) {
             let residual =
                 distance_squared(coordinates(points[previous]), coordinates(points[locus]));
@@ -2761,9 +2800,12 @@ fn propagate_vertex_component(
                 *consistent = false;
             }
         } else {
-            mapping.insert(vertex, locus);
-            pending.push_back(vertex);
+            crate::resource::insert_map(ctx, mapping, vertex, locus,
+                "catia_b5_component_vertex_points")?;
+            crate::resource::push_back(ctx, pending, vertex,
+                "catia_b5_component_pending_vertices")?;
         }
+        Ok(())
     };
     let (seed_vertices, seed_loci) = constraints[seed];
     assign(
@@ -2772,20 +2814,22 @@ fn propagate_vertex_component(
         &mut consistent,
         seed_vertices[0],
         seed_loci[0],
-    );
+    )?;
     assign(
         &mut mapping,
         &mut pending,
         &mut consistent,
         seed_vertices[1],
         seed_loci[1],
-    );
+    )?;
     while let Some(vertex) = pending.pop_front() {
         for &index in adjacency.get(&vertex).into_iter().flatten() {
-            if !visited.insert(index) {
+            if !crate::resource::insert_set(ctx, &mut visited, index,
+                "catia_b5_component_visited_constraints")? {
                 continue;
             }
-            members.push(index);
+            crate::resource::push(ctx, &mut members, index,
+                "catia_b5_component_members")?;
             let (vertices, loci) = constraints[index];
             for lane in 0..2 {
                 assign(
@@ -2794,11 +2838,11 @@ fn propagate_vertex_component(
                     &mut consistent,
                     vertices[lane],
                     loci[lane],
-                );
+                )?;
             }
         }
     }
-    (mapping, members, consistent)
+    Ok((mapping, members, consistent))
 }
 
 fn vertex_coordinate(
@@ -2894,11 +2938,12 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
 }
 
 fn bind_edge_vertices(
+    ctx: &DecodeContext<'_>,
     loops: &BTreeMap<u32, B5Loop>,
     geometry: &B5PcurveContext<'_>,
     points: &[FinitePoint3],
-) -> BTreeMap<u32, [usize; 2]> {
-    let point_index = point_index(points);
+) -> Result<BTreeMap<u32, [usize; 2]>, CodecError> {
+    let point_index = point_index(ctx, points)?;
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
     let mut conflicts = HashSet::new();
     for loop_ in loops.values() {
@@ -2909,14 +2954,11 @@ fn bind_edge_vertices(
             let Some(endpoints) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
                 continue;
             };
-            let indices: Option<[usize; 2]> = endpoints
-                .map(|endpoint| canonical_point(points, &point_index, coordinates(endpoint)))
-                .into_iter()
-                .collect::<Option<Vec<_>>>()
-                .and_then(|indices| indices.try_into().ok());
-            let Some(indices) = indices else {
+            let [Some(start), Some(end)] = endpoints
+                .map(|endpoint| canonical_point(points, &point_index, coordinates(endpoint))) else {
                 continue;
             };
+            let indices = [start, end];
             if let Some(previous) = edges.get(&member.edge) {
                 let mut previous_sorted = *previous;
                 let mut current_sorted = indices;
@@ -2924,14 +2966,16 @@ fn bind_edge_vertices(
                 current_sorted.sort_unstable();
                 if previous_sorted != current_sorted {
                     edges.remove(&member.edge);
-                    conflicts.insert(member.edge);
+                    crate::resource::insert_set(ctx, &mut conflicts, member.edge,
+                        "catia_b5_conflicting_edge_vertices")?;
                 }
             } else {
-                edges.insert(member.edge, indices);
+                crate::resource::insert_btree_map(ctx, &mut edges, member.edge, indices,
+                    "catia_b5_geometric_edge_vertices")?;
             }
         }
     }
-    edges
+    Ok(edges)
 }
 
 fn pcurve_endpoints(
@@ -2989,15 +3033,16 @@ fn point_cell(point: [f64; 3]) -> [i64; 3] {
     point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
 }
 
-fn point_index(points: &[FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
+fn point_index(ctx: &DecodeContext<'_>, points: &[FinitePoint3]) -> Result<HashMap<[i64; 3], Vec<usize>>, CodecError> {
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
     for (point_index, point) in points.iter().enumerate() {
-        index
-            .entry(point_cell(coordinates(*point)))
-            .or_default()
-            .push(point_index);
+        let cell = point_cell(coordinates(*point));
+        crate::resource::admit_map_entry(ctx, &mut index, &cell,
+            "catia_b5_point_index_cells")?;
+        crate::resource::push(ctx, index.entry(cell).or_default(), point_index,
+            "catia_b5_point_index_members")?;
     }
-    index
+    Ok(index)
 }
 
 fn canonical_point(
@@ -3006,7 +3051,7 @@ fn canonical_point(
     endpoint: [f64; 3],
 ) -> Option<usize> {
     let cell = point_cell(endpoint);
-    let mut matches = Vec::new();
+    let mut best = None;
     for dx in -1..=1 {
         for dy in -1..=1 {
             for dz in -1..=1 {
@@ -3015,17 +3060,16 @@ fn canonical_point(
                     cell[1].saturating_add(dy),
                     cell[2].saturating_add(dz),
                 ];
-                matches.extend(index.get(&neighbor).into_iter().flatten().filter_map(
-                    |&point_index| {
-                        (distance_squared(coordinates(points[point_index]), endpoint)
-                            <= POINT_TOLERANCE * POINT_TOLERANCE)
-                            .then_some(point_index)
-                    },
-                ));
+                for &point_index in index.get(&neighbor).into_iter().flatten() {
+                    if distance_squared(coordinates(points[point_index]), endpoint)
+                        <= POINT_TOLERANCE * POINT_TOLERANCE {
+                        best = Some(best.map_or(point_index, |previous: usize| previous.min(point_index)));
+                    }
+                }
             }
         }
     }
-    matches.into_iter().min()
+    best
 }
 
 fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -4809,7 +4853,19 @@ fn rational_arc_pcurve(
     })
 }
 
-fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+fn parse_opaque_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<B5OpaquePcurve>, CodecError> {
+    let Some(surface) = parse_opaque_pcurve_surface(record) else { return Ok(None) };
+    Ok(Some(B5OpaquePcurve {
+        object_id: record.object_id,
+        surface,
+        class: record.class,
+        payload: crate::resource::copy_retained_slice(ctx, &record.payload,
+            "catia_b5_opaque_pcurve_payload")?,
+        sphere_great_circle: None,
+    }))
+}
+
+fn parse_opaque_pcurve_surface(record: &B5Record) -> Option<u32> {
     if parse_class_1a_pcurve(record).is_some() {
         return None;
     }
@@ -4838,13 +4894,7 @@ fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
         }
         _ => return None,
     }
-    Some(B5OpaquePcurve {
-        object_id: record.object_id,
-        surface,
-        class: record.class,
-        payload: record.payload.clone(),
-        sphere_great_circle: None,
-    })
+    Some(surface)
 }
 
 fn parse_sphere_great_circle_pcurve(
@@ -4963,7 +5013,7 @@ fn sphere_great_circle_point(
     FinitePoint3::new(Point3::from(point))
 }
 
-fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
+fn circle_pcurves_from_frames(ctx: &DecodeContext<'_>, bytes: &[u8], frames: &[ObjectFrame]) -> Result<Vec<B5Pcurve>, CodecError> {
     let mut pcurves = Vec::new();
     for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x19 {
@@ -4974,13 +5024,14 @@ fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcu
             family: 0xb5,
             class: 0x19,
             object_id: frame.object_id,
-            payload: bytes[frame.start + 8..frame.end].to_vec(),
+            payload: crate::resource::copy_retained_slice(ctx, &bytes[frame.start + 8..frame.end],
+                "catia_b5_circle_frame_payload")?,
         };
         if let Some(pcurve) = parse_circle_pcurve(&record) {
-            pcurves.push(pcurve);
+            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_b5_circle_frame_pcurves")?;
         }
     }
-    pcurves
+    Ok(pcurves)
 }
 
 fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {

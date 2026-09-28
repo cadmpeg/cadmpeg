@@ -3,7 +3,7 @@ use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
-    bind_edge_vertices, bind_native_vertices, canonical_point, canonical_surface_id,
+    canonical_point, canonical_surface_id,
     counted_references, distance_squared, edge_support_pcurve_references, evaluate_pcurve,
     face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
     loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
@@ -11,7 +11,7 @@ use crate::families::b5::graph::{
     parameter_incidence, parse_face,
     parse_face_record, parse_loop, parse_loop_record, pcurve_endpoints,
     pcurve_nurbs_knots,
-    pcurve_parameter_domain, point_index,
+    pcurve_parameter_domain,
     sphere_great_circle_point, typed_face_records_from_records,
     typed_loop_records_from_records,
     B5FaceRecord, B5IncidenceLane,
@@ -23,6 +23,79 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn bind_edge_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    geometry: &B5PcurveContext<'_>,
+    points: &[cadmpeg_ir::features::FinitePoint3],
+) -> BTreeMap<u32, [usize; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::bind_edge_vertices(ctx, loops, geometry, points)
+    }).expect("service budget")
+}
+
+fn bind_native_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    geometry: &B5PcurveContext<'_>,
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    geometric_edges: &BTreeMap<u32, [usize; 2]>,
+    native_coordinates: &BTreeMap<u32, cadmpeg_ir::features::FinitePoint3>,
+    points: &[cadmpeg_ir::features::FinitePoint3],
+) -> super::super::BoundNativeVertices {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(ctx, loops, geometry, native_edges,
+            geometric_edges, native_coordinates, points)
+    }).expect("service budget")
+}
+
+fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
+    crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, points))
+        .expect("service budget")
+}
+
+#[test]
+fn topology_binding_refuses_the_caller_collection_limit() {
+    let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::point_index(ctx, &[point])
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_point_index_cells"));
+
+    let loops = BTreeMap::new();
+    let pcurves = BTreeMap::new();
+    let opaque_pcurves = BTreeMap::new();
+    let surfaces = BTreeMap::new();
+    let profiles = BTreeMap::new();
+    let edge_parameter_incidences = BTreeMap::new();
+    let parameter_incidences = BTreeMap::new();
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+        edge_parameter_incidences: &edge_parameter_incidences,
+        parameter_incidences: &parameter_incidences,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::bind_edge_vertices(ctx, &loops, &geometry, &[point])
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_point_index_cells"));
+
+    let native = BTreeMap::from([(7, [11, 12])]);
+    let geometric = BTreeMap::from([(7, [0, 0])]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::bind_native_vertices(ctx, &loops, &geometry, &native, &geometric,
+            &BTreeMap::new(), &[point])
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_vertex_constraints"));
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(ctx, &loops, &geometry, &native, &geometric,
+            &BTreeMap::new(), &[point])
+    }).is_ok());
+}
 
 fn merge_pcurve_candidate(
     pcurves: &mut BTreeMap<u32, B5Pcurve>,
