@@ -3352,15 +3352,11 @@ pub(crate) struct EntryRecord {
 }
 
 /// Check the exact ZIP name used by source scans and retained entry records.
-pub(crate) fn check_entry_name(name: &str) -> Result<(), String> {
-    if name.contains('\\')
-        || name
+pub(crate) fn is_safe_entry_name(name: &str) -> bool {
+    !name.contains('\\')
+        && !name
             .split('/')
             .any(|component| component.is_empty() || component == "." || component == "..")
-    {
-        return Err(format!("unsafe ZIP entry path {name:?}"));
-    }
-    Ok(())
 }
 
 impl EntryRecord {
@@ -3417,7 +3413,9 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
     type Error = String;
 
     fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
-        check_entry_name(&wire.name)?;
+        if !is_safe_entry_name(&wire.name) {
+            return Err(format!("unsafe ZIP entry path {:?}", wire.name));
+        }
         let record = Self {
             id: wire.id,
             name: wire.name,

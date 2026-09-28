@@ -100,7 +100,13 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = retained_string(ctx, &file.name, "FCStd archive entry name")?;
-        crate::native::check_entry_name(&name).map_err(CodecError::Malformed)?;
+        if !crate::native::is_safe_entry_name(&name) {
+            return Err(crate::resource::malformed_charged(
+                ctx,
+                format_args!("unsafe ZIP entry path {name:?}"),
+                "FCStd unsafe entry name diagnostic",
+            ));
+        }
         let view = if file.name == "Document.xml" {
             document_view
         } else {
