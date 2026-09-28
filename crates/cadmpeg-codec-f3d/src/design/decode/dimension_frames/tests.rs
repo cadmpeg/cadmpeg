@@ -11,6 +11,7 @@ use super::{
     find_dimension_null_locus_pair, indexed_record_containing, parse_dimension_annotation_frame,
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
     parse_dimension_presentation_frame, recipe_record_prefix,
+    push_dimension_recipe_edge_id,
 };
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
@@ -77,6 +78,30 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
+#[test]
+fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let id = "f3d:Design/BulkStream.dat:edge-operand#100";
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d dimension recipe edge IDs"),
+        (u64::MAX, u64::try_from(id.len() - 1).unwrap(), ResourceDimension::RetainedBytes, "f3d dimension recipe edge ID text"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ids = Vec::new();
+        assert!(matches!(
+            push_dimension_recipe_edge_id(&ctx, &mut ids, id),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(ids.is_empty());
+    }
+}
 
 #[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
