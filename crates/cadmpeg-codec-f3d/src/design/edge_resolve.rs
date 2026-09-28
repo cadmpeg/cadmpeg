@@ -25,6 +25,53 @@ macro_rules! or_none {
     };
 }
 
+fn push_edge_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
+fn insert_edge_set<T: Eq + std::hash::Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if items.contains(&item) { return Ok(false); }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(items.insert(item))
+}
+
+fn copy_edge_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("validated edge identity is not UTF-8"))
+}
+
+fn copy_edge_id(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &cadmpeg_ir::ids::EdgeId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::ids::EdgeId, CodecError> {
+    let text = copy_edge_text(ctx, value.as_str(), operation)?;
+    cadmpeg_ir::ids::EdgeId::try_from(text).map_err(CodecError::malformed)
+}
+
 pub(super) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -77,36 +124,29 @@ pub(super) fn resolved_surface_patch_edge_group(
     };
     let stream = native_stream(&group.id);
     let mut member_ids = HashSet::new();
-    if group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .any(|member| !member_ids.insert(*member))
-    {
-        return fallback();
+    for member in group.members() {
+        if !insert_edge_set(ctx, &mut member_ids, member.value,
+            "f3d surface patch edge member index")? {
+            return fallback();
+        }
     }
-    let matched_operands = group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .map(|member| {
+    let mut matched_operands = Vec::new();
+    for member in group.members() {
             let mut matches = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
                     && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index() == *member
+                    && operand.record_index() == member.value
             });
-            let operand = matches.next()?;
-            matches.next().is_none().then_some(operand)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(matched_operands) = matched_operands else {
-        return fallback();
-    };
-    let edges = match surface_patch_grouped_recipe_edges(&matched_operands) {
+            let Some(operand) = matches.next() else { return fallback(); };
+            if matches.next().is_some() { return fallback(); }
+            push_edge_item(ctx, &mut matched_operands, operand,
+                "f3d surface patch matched edge operand")?;
+    }
+    let edges = match surface_patch_grouped_recipe_edges(&matched_operands, ctx)? {
         SurfacePatchRecipeEdges::Absent => return fallback(),
         SurfacePatchRecipeEdges::Inconclusive => {
             return Ok(cadmpeg_ir::features::EdgeSelection::Native(
-                group.id.clone(),
+                copy_edge_text(ctx, &group.id, "f3d surface patch native group id")?,
             ));
         }
         SurfacePatchRecipeEdges::Resolved(edges) => edges,
@@ -125,28 +165,32 @@ pub(super) fn resolved_surface_patch_edge_group(
     let Some(state_id) = state_id else {
         return Ok(cadmpeg_ir::features::EdgeSelection::Edges(edges));
     };
-    let Some(edge_slots) = edges
-        .iter()
-        .map(stable_edge_slot)
-        .collect::<Option<Vec<_>>>()
-    else {
-        return fallback();
-    };
+    let mut edge_slots = Vec::new();
+    for edge in &edges {
+        let Some(slot) = stable_edge_slot(edge) else { return fallback(); };
+        push_edge_item(ctx, &mut edge_slots, slot,
+            "f3d surface patch stable edge slot")?;
+    }
     let feature_key = feature_id.key();
-    Ok(cadmpeg_ir::features::EdgeSelection::historical(
+    let mut historical_edges = Vec::new();
+    for edge_slot in edge_slots {
+        let id = ids::history_input_edge_id(
+            &ids::history_input_prefix(&feature_key, state_id), edge_slot,
+        );
+        push_edge_item(ctx, &mut historical_edges, id,
+            "f3d surface patch historical edge")?;
+    }
+    let native = copy_edge_text(ctx, &group.id,
+        "f3d surface patch historical group id")?;
+    let resolved = cadmpeg_ir::features::EdgeSelection::historical(
         feature_input_topology_id(feature_id, state_id),
-        edge_slots
-            .into_iter()
-            .map(|edge_slot| {
-                ids::history_input_edge_id(
-                    &ids::history_input_prefix(&feature_key, state_id),
-                    edge_slot,
-                )
-            })
-            .collect(),
-        group.id.clone(),
-    )
-    .unwrap_or_else(|_| cadmpeg_ir::features::EdgeSelection::Native(group.id.clone())))
+        historical_edges, native,
+    );
+    Ok(match resolved {
+        Ok(selection) => selection,
+        Err(_) => cadmpeg_ir::features::EdgeSelection::Native(copy_edge_text(ctx,
+            &group.id, "f3d surface patch fallback group id")?),
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -156,11 +200,14 @@ enum SurfacePatchRecipeEdges {
     Resolved(Vec<cadmpeg_ir::ids::EdgeId>),
 }
 
-fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> SurfacePatchRecipeEdges {
+fn surface_patch_grouped_recipe_edges(
+    operands: &[&DesignEdgeOperand],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<SurfacePatchRecipeEdges, CodecError> {
     if operands.is_empty() {
-        return SurfacePatchRecipeEdges::Absent;
+        return Ok(SurfacePatchRecipeEdges::Absent);
     }
-    let mut edges = Vec::with_capacity(operands.len());
+    let mut edges = Vec::new();
     let mut has_absent_member = false;
     for operand in operands {
         let mut exact = operand
@@ -172,24 +219,27 @@ fn surface_patch_grouped_recipe_edges(operands: &[&DesignEdgeOperand]) -> Surfac
             continue;
         };
         let [edge] = first.candidate_edges.as_slice() else {
-            return SurfacePatchRecipeEdges::Inconclusive;
+            return Ok(SurfacePatchRecipeEdges::Inconclusive);
         };
         if exact.any(|reference| reference.candidate_edges.as_slice() != std::slice::from_ref(edge))
         {
-            return SurfacePatchRecipeEdges::Inconclusive;
+            return Ok(SurfacePatchRecipeEdges::Inconclusive);
         }
-        edges.push(edge.clone());
+        let copied = copy_edge_id(ctx, edge, "f3d surface patch recipe edge id")?;
+        push_edge_item(ctx, &mut edges, copied,
+            "f3d surface patch recipe edge")?;
     }
     if has_absent_member {
-        return SurfacePatchRecipeEdges::Absent;
+        return Ok(SurfacePatchRecipeEdges::Absent);
     }
-    let mut distinct = edges.clone();
-    distinct.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    distinct.dedup();
-    if distinct.len() != edges.len() {
-        return SurfacePatchRecipeEdges::Inconclusive;
+    let mut distinct = HashSet::new();
+    for edge in &edges {
+        if !insert_edge_set(ctx, &mut distinct, edge.as_str(),
+            "f3d surface patch distinct recipe edge")? {
+            return Ok(SurfacePatchRecipeEdges::Inconclusive);
+        }
     }
-    SurfacePatchRecipeEdges::Resolved(edges)
+    Ok(SurfacePatchRecipeEdges::Resolved(edges))
 }
 
 fn stable_edge_slot(edge: &cadmpeg_ir::ids::EdgeId) -> Option<i64> {
