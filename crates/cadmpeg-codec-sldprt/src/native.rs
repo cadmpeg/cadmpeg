@@ -7,7 +7,10 @@ use serde::{ser::SerializeMap, Deserialize, Serialize};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
-use self::admission::{admit_retained_clones, admit_temporary_clones, admit_validation_candidates, NativeAdmission};
+use self::admission::{
+    admit_retained_clones, admit_temporary_clones, admit_validation_candidates, collect_index_map,
+    collect_index_set, NativeAdmission,
+};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -378,12 +381,12 @@ impl SldprtNative {
         let relation_instances: Vec<FeatureInputRelationInstance> =
             read_arena!("feature_input_relation_instances");
         let scalars: Vec<FeatureInputScalar> = read_arena!("feature_input_scalars");
-        admit_index!(native.feature_histories.len(), "index SLDPRT history ids");
-        let history_ids = native
-            .feature_histories
-            .iter()
-            .map(|history| history.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
+        let history_ids = collect_index_set(
+            admission,
+            native.feature_histories.len(),
+            native.feature_histories.iter().map(|history| history.id.as_str()),
+            "index SLDPRT history ids",
+        )?;
         if let Some(record) = configurations
             .iter()
             .find(|record| !history_ids.contains(record.parent.as_str()))
@@ -402,26 +405,24 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
-        admit_index!(features.len(), "index SLDPRT feature ids");
-        let feature_ids = features
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        admit_index!(native.feature_input_lanes.len(), "index SLDPRT lane ids");
-        let lane_ids = native
-            .feature_input_lanes
-            .iter()
-            .map(|lane| lane.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        admit_index!(
+        let feature_ids = collect_index_set(
+            admission,
+            features.len(),
+            features.iter().map(|record| record.id.as_str()),
+            "index SLDPRT feature ids",
+        )?;
+        let lane_ids = collect_index_set(
+            admission,
             native.feature_input_lanes.len(),
-            "index SLDPRT lane payloads"
-        );
-        let lane_payloads = native
-            .feature_input_lanes
-            .iter()
-            .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice()))
-            .collect::<std::collections::HashMap<_, _>>();
+            native.feature_input_lanes.iter().map(|lane| lane.id.as_str()),
+            "index SLDPRT lane ids",
+        )?;
+        let lane_payloads = collect_index_map(
+            admission,
+            native.feature_input_lanes.len(),
+            native.feature_input_lanes.iter().map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
+            "index SLDPRT lane payloads",
+        )?;
         if let Some(record) = entity_wires
             .iter()
             .find(|record| !lane_ids.contains(record.parent.as_str()))
@@ -550,11 +551,12 @@ impl SldprtNative {
                 record.id, record.parent
             )));
         }
-        admit_index!(names.len(), "index SLDPRT feature names");
-        let name_ids = names
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
+        let name_ids = collect_index_set(
+            admission,
+            names.len(),
+            names.iter().map(|record| record.id.as_str()),
+            "index SLDPRT feature names",
+        )?;
         if let Some(record) = body_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
@@ -613,21 +615,24 @@ impl SldprtNative {
                 record.id, record.name
             )));
         }
-        admit_index!(references.len(), "index SLDPRT references");
-        let references_by_id = references
-            .iter()
-            .map(|record| (record.id.as_str(), record))
-            .collect::<std::collections::HashMap<_, _>>();
-        admit_index!(classes.len(), "index SLDPRT classes");
-        let class_ids = classes
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        admit_index!(scalars.len(), "index SLDPRT scalars");
-        let scalar_ids = scalars
-            .iter()
-            .map(|record| record.id.as_str())
-            .collect::<std::collections::HashSet<_>>();
+        let references_by_id = collect_index_map(
+            admission,
+            references.len(),
+            references.iter().map(|record| (record.id.as_str(), record)),
+            "index SLDPRT references",
+        )?;
+        let class_ids = collect_index_set(
+            admission,
+            classes.len(),
+            classes.iter().map(|record| record.id.as_str()),
+            "index SLDPRT classes",
+        )?;
+        let scalar_ids = collect_index_set(
+            admission,
+            scalars.len(),
+            scalars.iter().map(|record| record.id.as_str()),
+            "index SLDPRT scalars",
+        )?;
         if let Some(record) = relation_bindings.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !scalar_ids.contains(record.scalar_ref.as_str())
