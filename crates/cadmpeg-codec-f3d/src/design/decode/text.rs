@@ -98,6 +98,16 @@ pub(in crate::design::decode) fn fixed_guid_ascii(
     Some((guid, end))
 }
 
+/// Read a fixed-width relaxed GUID into its native value after code-unit validation.
+pub(in crate::design::decode) fn fixed_relaxed_guid_text(
+    bytes: &[u8],
+    count_at: usize,
+) -> Option<(crate::records::mesh::DesignRelaxedGuidText, usize)> {
+    let (guid, end) = fixed_guid_ascii(bytes, count_at)?;
+    let text = String::from_utf8(guid.to_vec()).ok()?;
+    Some((crate::records::mesh::DesignRelaxedGuidText::try_from(text).ok()?, end))
+}
+
 /// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
 pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
     fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
