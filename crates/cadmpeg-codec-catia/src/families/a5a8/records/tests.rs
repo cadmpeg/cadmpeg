@@ -1645,13 +1645,19 @@ fn indexed_a5_record_decoders_match_one_shot_wrappers() {
     let nurbs = a5_nurbs_curve_stream();
     let records = crate::wire::records::consolidated_records(&nurbs);
     assert_eq!(
-        crate::families::a5a8::records::a5_nurbs_curves(&nurbs),
-        crate::families::a5a8::records::a5_nurbs_curves_from_records(
-            &nurbs,
-            &records,
-            &mut crate::nurbs::LaneRefusals::new()
-        )
+        parsed_a5_nurbs_curves(&nurbs),
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::a5a8::records::a5_nurbs_curves_from_records(
+                ctx, &nurbs, &records, &mut crate::nurbs::LaneRefusals::new(),
+            ).expect("service decode")
+        })
     );
+}
+
+fn parsed_a5_nurbs_curves(data: &[u8]) -> Vec<crate::families::a5a8::records::A5NurbsCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a5_nurbs_curves(ctx, data).expect("service decode")
+    })
 }
 
 fn a5_nurbs_curve_stream() -> Vec<u8> {
@@ -1721,7 +1727,7 @@ fn a5_nurbs_curve_stream_with_knot_count(knot_count: usize) -> Vec<u8> {
 
 #[test]
 fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
-    let curves = crate::families::a5a8::records::a5_nurbs_curves(&a5_nurbs_curve_stream());
+    let curves = parsed_a5_nurbs_curves(&a5_nurbs_curve_stream());
     let [curve] = curves.as_slice() else {
         panic!("one degree-five curve");
     };
@@ -1736,23 +1742,53 @@ fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
 
 #[test]
 fn a5_nurbs_curve_parser_accepts_frame_bounded_knot_count() {
-    let curves = crate::families::a5a8::records::a5_nurbs_curves(
-        &a5_nurbs_curve_stream_with_knot_count(8193),
-    );
+    let curves = parsed_a5_nurbs_curves(&a5_nurbs_curve_stream_with_knot_count(8193));
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].geometry.control_points().len(), 24_579);
     assert_eq!(curves[0].geometry.knots().len(), 24_585);
 }
 
 #[test]
+fn a5_nurbs_distinct_knots_refuse_collection_limit_before_materialization() {
+    assert_a5_nurbs_collection_refusal(2, "catia_a5_nurbs_distinct_knots");
+}
+
+#[test]
+fn a5_nurbs_control_points_refuse_collection_limit_before_materialization() {
+    assert_a5_nurbs_collection_refusal(11, "catia_a5_nurbs_control_points");
+}
+
+#[test]
+fn a5_nurbs_expanded_knots_refuse_collection_limit_before_materialization() {
+    assert_a5_nurbs_collection_refusal(26, "catia_a5_nurbs_expanded_knots");
+}
+
+#[test]
+fn a5_nurbs_curve_collection_refuses_before_retention() {
+    assert_a5_nurbs_collection_refusal(27, "catia_a5_nurbs_curves");
+}
+
+fn assert_a5_nurbs_collection_refusal(limit: u64, operation: &'static str) {
+    let bytes = a5_nurbs_curve_stream();
+    let result = crate::test_support::with_collection_limit(limit, |ctx| {
+        crate::families::a5a8::records::a5_nurbs_curves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == operation
+    ));
+    assert_eq!(parsed_a5_nurbs_curves(&bytes).len(), 1);
+}
+
+#[test]
 fn a5_nurbs_curve_parser_rejects_nonfinite_knots_and_control_points() {
     let mut nonfinite_knot = a5_nurbs_curve_stream();
     nonfinite_knot[11..19].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_knot).is_empty());
+    assert!(parsed_a5_nurbs_curves(&nonfinite_knot).is_empty());
 
     let mut nonfinite_control_point = a5_nurbs_curve_stream();
     nonfinite_control_point[36..44].copy_from_slice(&f64::NAN.to_le_bytes());
-    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_control_point).is_empty());
+    assert!(parsed_a5_nurbs_curves(&nonfinite_control_point).is_empty());
 }
 
 #[test]
@@ -1762,7 +1798,7 @@ fn a5_nurbs_curve_parser_rejects_broken_frame_invariants() {
         let mut broken = valid.clone();
         broken[offset] ^= 1;
         assert!(
-            crate::families::a5a8::records::a5_nurbs_curves(&broken).is_empty(),
+            parsed_a5_nurbs_curves(&broken).is_empty(),
             "offset {offset}"
         );
     }

@@ -646,27 +646,40 @@ pub(in crate::families) struct A5NurbsCurve {
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[must_use]
 #[cfg(test)]
-fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
+fn a5_nurbs_curves(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<A5NurbsCurve>, CodecError> {
     let records = consolidated_records(data);
-    a5_nurbs_curves_from_records(data, &records, &mut crate::nurbs::LaneRefusals::new())
+    a5_nurbs_curves_from_records(ctx, data, &records, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(in crate::families) fn a5_nurbs_curves_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<A5NurbsCurve> {
-    family_frames_from_records(records, ConsolidatedFamily::A, 0x16)
-        .into_iter()
-        .filter_map(|frame| parse_a5_nurbs_curve(data, frame, refusal))
-        .collect()
+) -> Result<Vec<A5NurbsCurve>, CodecError> {
+    let mut curves = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.family == ConsolidatedFamily::A && record.class == 0x16
+    }) {
+        let (Some(payload), Some(end)) = (record.payload(), record.range()) else { continue };
+        let frame = ConsolidatedFrame {
+            pos: record.byte_offset(), payload: payload.start, end: end.end,
+            header_token: record.header_token,
+        };
+        if let Some(curve) = parse_a5_nurbs_curve(ctx, data, frame, refusal)? {
+            crate::resource::push(ctx, &mut curves, curve, "catia_a5_nurbs_curves")?;
+        }
+    }
+    Ok(curves)
 }
 
 fn parse_a5_nurbs_curve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<A5NurbsCurve> {
+) -> Result<Option<A5NurbsCurve>, CodecError> {
+    let Some((degree, knot_count, control_count, knot_start, control_start)) = (|| {
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
@@ -682,22 +695,25 @@ fn parse_a5_nurbs_curve(
     if at.checked_add(known_bytes)? > frame.end {
         return None;
     }
-    let mut distinct_knots = Vec::with_capacity(knot_count);
+    let knot_start = at;
+    let mut previous_knot = None;
     for _ in 0..knot_count {
-        distinct_knots.push(f64_le(data, at)?.get());
+        let knot = f64_le(data, at)?.get();
+        if previous_knot.is_some_and(|previous| knot <= previous) {
+            return None;
+        }
+        previous_knot = Some(knot);
         at += 8;
     }
-    if !knots_strictly_increasing(&distinct_knots) || data.get(at) != Some(&0x01) {
+    if data.get(at) != Some(&0x01) {
         return None;
     }
     at += 1;
-    let control_points = (0..control_count)
-        .map(|_| {
-            let point = f64_point(data, at)?;
-            at += 24;
-            Some(point)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let control_start = at;
+    for _ in 0..control_count {
+        f64_point(data, at)?;
+        at += 24;
+    }
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 2 {
         return None;
     }
@@ -707,14 +723,34 @@ fn parse_a5_nurbs_curve(
     let offset = f64_le(data, at + 24)?.get();
     at += 32;
     if range_origin.to_bits() != 0.0f64.to_bits()
-        || repeated_end.to_bits() != distinct_knots.last()?.to_bits()
+        || repeated_end.to_bits() != previous_knot?.to_bits()
         || scale.to_bits() != 1.0f64.to_bits()
         || offset.to_bits() != 0.0f64.to_bits()
         || data.get(at..frame.end) != Some(&[0x00, 0x07])
     {
         return None;
     }
-    let mut knots = Vec::with_capacity(control_count + usize::try_from(degree).ok()? + 1);
+    Some((degree, knot_count, control_count, knot_start, control_start))
+    })() else { return Ok(None) };
+    let mut distinct_knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut distinct_knots, knot_count, "catia_a5_nurbs_distinct_knots")?;
+    for index in 0..knot_count {
+        let Some(at) = knot_start.checked_add(index * 8) else { return Ok(None) };
+        let Some(knot) = f64_le(data, at) else { return Ok(None) };
+        distinct_knots.push(knot.get());
+    }
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count, "catia_a5_nurbs_control_points")?;
+    for index in 0..control_count {
+        let Some(at) = control_start.checked_add(index * 24) else { return Ok(None) };
+        let Some(point) = f64_point(data, at) else { return Ok(None) };
+        control_points.push(point);
+    }
+    let Some(expanded_count) = usize::try_from(degree).ok()
+        .and_then(|degree| control_count.checked_add(degree))
+        .and_then(|count| count.checked_add(1)) else { return Ok(None) };
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, expanded_count, "catia_a5_nurbs_expanded_knots")?;
     for (index, knot) in distinct_knots.into_iter().enumerate() {
         let multiplicity = if index == 0 || index + 1 == knot_count {
             6
@@ -723,20 +759,19 @@ fn parse_a5_nurbs_curve(
         };
         knots.extend(std::iter::repeat_n(knot, multiplicity));
     }
-    Some(A5NurbsCurve {
+    Ok(crate::nurbs::note_refusal(
+        NurbsCurve::from_lanes(degree, knots, control_points, None, false),
+        refusal,
+        format_args!("a5 NURBS curve record at byte {}", frame.pos),
+    ).map(|geometry| A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
-        geometry: crate::nurbs::note_refusal(
-            NurbsCurve::from_lanes(degree, knots, control_points, None, false),
-            refusal,
-            format_args!("a5 NURBS curve record at byte {}", frame.pos),
-        )?,
-    })
+        geometry,
+    }))
 }
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
-#[cfg(test)]
 #[cfg(test)]
 fn a5_guide_curves(
     ctx: &DecodeContext<'_>, data: &[u8],
