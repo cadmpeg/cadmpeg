@@ -5739,29 +5739,56 @@ pub(super) fn expression_declarations(
 pub(super) fn expressions(
     ctx: &DecodeContext<'_>,
     container: &Container,
+    declarations: &[ExpressionDeclaration],
 ) -> Result<Vec<Expression>, CodecError> {
-    let declarations = expression_declarations(ctx, container)?;
+    let declaration_bytes = declarations.len()
+        .checked_mul(std::mem::size_of::<((&str, &str), Vec<&ExpressionDeclaration>)>() * 4
+            + std::mem::size_of::<&ExpressionDeclaration>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX expression declaration index size", 0, 1))?;
+    let _declaration_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(declaration_bytes),
+        "NX expression declaration index",
+    )?;
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
-    for declaration in &declarations {
-        declarations_by_name
-            .entry((declaration.source_entry.as_str(), declaration.name.as_str()))
-            .or_default()
-            .push(declaration);
+    for declaration in declarations {
+        let key = (declaration.source_entry.as_str(), declaration.name.as_str());
+        if !declarations_by_name.contains_key(&key) {
+            ctx.charge_collection_items(1, "NX declaration name groups")?;
+        }
+        let group = declarations_by_name.entry(key).or_default();
+        ctx.charge_collection_items(1, "NX declaration name members")?;
+        group.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX declaration name members", 0, 1))?;
+        group.push(declaration);
     }
-    let mut indexed = BTreeMap::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
-    {
+    let sections = container.indexed_om_sections(ctx)?;
+    let maximum_indexed = sections.iter().try_fold(0usize, |count, (_, section)| {
+        let records = match &section.store {
+            IndexedStore::Fixed { records } => records.len(),
+            IndexedStore::OffsetOnly { records, .. } => records.len(),
+        };
+        count.checked_add(records)
+    }).ok_or_else(|| ctx.refuse_codec_limit("NX indexed expression lookup size", 0, 1))?;
+    let indexed_bytes = maximum_indexed
+        .checked_mul(std::mem::size_of::<((&str, usize), (u32, usize, usize))>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX indexed expression lookup size", 0, 1))?;
+    let _indexed_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(indexed_bytes),
+        "NX indexed expression lookup",
+    )?;
+    let mut indexed = BTreeMap::<(&str, usize), (u32, usize, usize)>::new();
+    for (section_ordinal, (entry, section)) in sections.into_iter().enumerate() {
+        let Some(directory_entry) = container.entries.get(entry.index()) else { continue; };
         for (record_ordinal, expression) in section.numeric_expression_records(ctx)? {
             let Some(object_id) = expression.object_id else {
                 continue;
             };
+            if !indexed.contains_key(&(directory_entry.name.as_str(), expression.offset)) {
+                ctx.charge_collection_items(1, "NX indexed expression lookup entries")?;
+            }
             indexed.insert(
-                (entry.name.clone(), expression.offset),
-                (
-                    object_id,
-                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                ),
+                (directory_entry.name.as_str(), expression.offset),
+                (object_id, section_ordinal, record_ordinal),
             );
         }
     }
@@ -5773,7 +5800,8 @@ pub(super) fn expressions(
         let (Ok(offset), Ok(size)) = (usize::try_from(entry_offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = container.data.get(offset..offset.saturating_add(size)) else {
+        let Some(end) = offset.checked_add(size) else { continue; };
+        let Some(payload) = container.data.get(offset..end) else {
             continue;
         };
         for expression in crate::om::numeric_expressions(ctx, payload)? {
@@ -5783,53 +5811,55 @@ pub(super) fn expressions(
             else {
                 continue;
             };
-            let indexed_record = indexed
-                .get(&(entry.name.clone(), expression.offset))
-                .cloned();
+            let indexed_record = indexed.get(&(entry.name.as_str(), expression.offset)).copied();
             let declaration = declarations_by_name
                 .get(&(entry.name.as_str(), expression.name.as_str()))
                 .and_then(|candidates| {
-                    let same_record_arena = |first: &str, second: &str| {
-                        first.split_once(":entry#").map(|pair| pair.0)
-                            == second.split_once(":entry#").map(|pair| pair.0)
-                    };
-                    let candidates = candidates
+                    let mut matches = candidates
                         .iter()
                         .copied()
                         .filter(|declaration| {
-                            indexed_record.as_ref().is_none_or(|(_, record)| {
-                                same_record_arena(&declaration.record, record)
+                            indexed_record.is_none_or(|(_, section_ordinal, _)| {
+                                declaration.record
+                                    .split_once(":entry#")
+                                    .and_then(|(prefix, _)| prefix.strip_prefix("nx:om-record-directory-"))
+                                    .and_then(|ordinal| ordinal.parse::<usize>().ok())
+                                    == Some(section_ordinal)
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    let [declaration] = candidates.as_slice() else {
-                        return None;
-                    };
-                    Some(declaration.id.clone())
+                        });
+                    let first = matches.next()?;
+                    matches.next().is_none().then_some(first)
                 });
             let value = expression.constant_value(ctx)?;
-            let Some(source_table) = cadmpeg_core::text::NonBlankString::new(format!(
-                "nx:om-entry-{entry_index}:expression-table#{table_offset}"
-            )) else {
+            let source_table_text = retained_om_index_id(ctx, "nx:om-entry-", entry_index, ":expression-table#", cadmpeg_core::decode::u64_from_index(table_offset), "NX expression source table")?;
+            let Some(source_table) = cadmpeg_core::text::NonBlankString::new(source_table_text) else {
                 continue;
             };
+            let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(expression.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX expression source offset", 0, 1))?;
+            ctx.charge_collection_items(1, "NX native expressions")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Expression>()), "retain NX native expression")?;
+            expressions.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX native expressions", 0, 1))?;
             expressions.push(Expression {
-                id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
-                owner: indexed_record
-                    .map(|(object_id, record)| ExpressionOwner { object_id, record }),
-                declaration,
-                name: expression.name.into_owned(),
+                id: retained_om_index_id(ctx, "nx:om-entry-", entry_index, ":expression#", cadmpeg_core::decode::u64_from_index(expression.offset), "NX expression id")?,
+                owner: indexed_record.map(|(object_id, section_ordinal, record_ordinal)| {
+                    retained_om_index_id(ctx, "nx:om-record-directory-", section_ordinal, ":entry#", cadmpeg_core::decode::u64_from_index(record_ordinal), "NX expression owner record")
+                        .map(|record| ExpressionOwner { object_id, record })
+                }).transpose()?,
+                declaration: declaration.map(|declaration| copy_om_retained_text(ctx, &declaration.id, "NX expression declaration id")).transpose()?,
+                name: ParameterName::new(copy_om_retained_text(ctx, expression.name.as_str(), "NX expression name")?),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
                     crate::om::ExpressionUnit::Native(unit) => ExpressionUnit::Native(unit),
                 },
-                expression: expression.expression.to_string(),
+                expression: copy_om_retained_text(ctx, expression.expression, "NX expression formula")?,
                 value,
-                source_entry: entry.name.clone(),
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX expression source entry")?,
                 source_table,
-                source_offset: entry_offset + expression.offset as u64,
+                source_offset,
             });
         }
     }
@@ -5841,67 +5871,80 @@ fn evaluate_expression_graphs(
     ctx: &DecodeContext<'_>,
     expressions: &mut [Expression],
 ) -> Result<(), CodecError> {
-    let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
-    for expression in expressions.iter() {
-        *name_counts
-            .entry((
-                expression.source_table.as_str().to_string(),
-                expression.name.as_str().to_string(),
-                expression.unit.clone(),
-            ))
-            .or_default() += 1;
-    }
-    let mut values = BTreeMap::<(String, String, ExpressionUnit), f64>::new();
-    for expression in expressions.iter_mut() {
-        let key = (
-            expression.source_table.as_str().to_string(),
-            expression.name.as_str().to_string(),
-            expression.unit.clone(),
-        );
-        if name_counts.get(&key) != Some(&1) {
-            expression.value = None;
-            continue;
-        }
-        if let Some(value) = expression.value {
-            values.insert(key, value.get());
-        }
+    struct Group {
+        count: usize,
+        value: Option<FiniteReal>,
     }
 
+    let index_bytes = expressions.len()
+        .checked_mul(std::mem::size_of::<((&str, &str, &ExpressionUnit), Group)>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX expression graph index size", 0, 1))?;
+    let _index_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "NX expression graph index",
+    )?;
+    let mut groups = BTreeMap::<(&str, &str, &ExpressionUnit), Group>::new();
+    for expression in expressions.iter() {
+        let key = (expression.source_table.as_str(), expression.name.as_str(), &expression.unit);
+        match groups.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX expression graph names")?;
+                entry.insert(Group { count: 1, value: expression.value });
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let group = entry.get_mut();
+                group.count = group.count.checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX expression graph name count", 0, 1))?;
+                group.value = None;
+            }
+        }
+    }
     loop {
         let mut changed = false;
-        for expression in expressions
-            .iter_mut()
-            .filter(|expression| expression.value.is_none())
-        {
-            let expression_key = (
-                expression.source_table.as_str().to_string(),
-                expression.name.as_str().to_string(),
-                expression.unit.clone(),
-            );
-            if name_counts.get(&expression_key) != Some(&1) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(expressions.len()), "evaluate NX expression graph")?;
+        for expression in expressions.iter().filter(|expression| expression.value.is_none()) {
+            let key = (expression.source_table.as_str(), expression.name.as_str(), &expression.unit);
+            if !groups.get(&key).is_some_and(|group| group.count == 1 && group.value.is_none()) {
                 continue;
             }
             let evaluated =
                 evaluate_parameterized_expression(ctx, &expression.expression, |name| {
-                    let key = (
-                        expression.source_table.as_str().to_string(),
-                        name.to_string(),
-                        expression.unit.clone(),
-                    );
-                    if name_counts.get(&key) != Some(&1) {
-                        return None;
-                    }
-                    values.get(&key).copied()
+                    let dependency = (expression.source_table.as_str(), name, &expression.unit);
+                    groups.get(&dependency)
+                        .filter(|group| group.count == 1)
+                        .and_then(|group| group.value)
+                        .map(FiniteReal::get)
                 })?;
             if let Some(value) = evaluated {
-                expression.value = Some(value);
-                values.insert(expression_key.clone(), value.get());
+                if let Some(group) = groups.get_mut(&key) {
+                    group.value = Some(value);
+                }
                 changed = true;
             }
         }
         if !changed {
             break;
         }
+    }
+    let result_bytes = expressions.len().checked_mul(std::mem::size_of::<Option<FiniteReal>>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX expression graph results size", 0, 1))?;
+    let _result_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(result_bytes),
+        "NX expression graph results",
+    )?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(expressions.len()), "NX expression graph results")?;
+    let mut results = Vec::new();
+    results.try_reserve_exact(expressions.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX expression graph results", 0, 1))?;
+    for expression in expressions.iter() {
+        let key = (expression.source_table.as_str(), expression.name.as_str(), &expression.unit);
+        results.push(groups.get(&key)
+            .filter(|group| group.count == 1)
+            .and_then(|group| group.value));
+    }
+    drop(groups);
+    for (expression, value) in expressions.iter_mut().zip(results) {
+        expression.value = value;
     }
     Ok(())
 }
@@ -7551,7 +7594,10 @@ mod tests {
             .unwrap()
             .is_empty()
         );
-        let expressions = with_test_ctx(|ctx| super::expressions(ctx, &container).unwrap());
+        let expressions = with_test_ctx(|ctx| {
+            let declarations = super::expression_declarations(ctx, &container).unwrap();
+            super::expressions(ctx, &container, &declarations).unwrap()
+        });
         assert_eq!(expressions.len(), 1);
         assert_eq!(
             expressions[0].owner.as_ref().map(|owner| owner.object_id),

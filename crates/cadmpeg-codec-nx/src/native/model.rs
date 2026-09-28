@@ -1304,7 +1304,7 @@ impl NativeModel {
             &feature_datum_csys_payload_scalars,
         );
         let expression_declarations = expression_declarations(ctx, container)?;
-        let expressions = expressions(ctx, container)?;
+        let expressions = expressions(ctx, container, &expression_declarations)?;
         let classes = class_definitions(ctx, container)?;
         let fields = field_definitions(ctx, container)?;
         let object_records = object_records(ctx, container)?;
