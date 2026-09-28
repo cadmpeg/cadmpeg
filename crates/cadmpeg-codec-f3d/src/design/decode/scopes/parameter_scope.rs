@@ -212,11 +212,25 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(construction) =
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners)
             {
-                scope
-                    .try_edit(|draft| {
-                        draft.payload = construction.into();
-                    })
-                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+                match (scope.payload_mut(), construction) {
+                    (
+                        scope::DesignScopePayloadMut::SpherePrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Sphere(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::TorusPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Torus(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::BoxPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Box(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::CylinderPrimitive(slot),
+                        crate::records::feature::primitives::DesignSolidPrimitive::Cylinder(value),
+                    ) => *slot = Some(value),
+                    _ => return Err(CodecError::NotImplemented("F3D solid primitive payload kind mismatch".into())),
+                }
             }
             {
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
@@ -304,11 +318,28 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(construction) =
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
             {
-                scope
-                    .try_edit(|draft| {
-                        draft.payload = construction.into();
-                    })
-                    .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+                match (scope.payload_mut(), construction) {
+                    (
+                        scope::DesignScopePayloadMut::Revolve(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Loft(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Pipe(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Pipe(value),
+                    ) => *slot = Some(value),
+                    (
+                        scope::DesignScopePayloadMut::Sweep(slot),
+                        crate::records::feature::path_features::DesignPathFeatureConstruction::Sweep(value),
+                    ) => *slot = Some(scope::DesignSweepScope {
+                        construction: Some(value),
+                        sweep_profile: None,
+                    }),
+                    _ => return Err(CodecError::NotImplemented("F3D path feature payload kind mismatch".into())),
+                }
             }
             {
                 let construction = exact_combine_operation(ctx, bytes, &records, &scope)?;
