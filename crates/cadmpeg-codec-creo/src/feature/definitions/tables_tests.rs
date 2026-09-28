@@ -11,11 +11,11 @@ use crate::feature::definitions::equation_table;
 use crate::feature::definitions::feature_relation_triples;
 use crate::feature::definitions::feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
-use crate::feature::definitions::order_table;
+use crate::feature::definitions::order_table as parse_order_table;
 use crate::feature::definitions::positional_dimension;
 use crate::feature::definitions::positional_dimension_table;
 use crate::feature::definitions::positional_feature_skamps;
-use crate::feature::definitions::positional_order_table;
+use crate::feature::definitions::positional_order_table as parse_positional_order_table;
 use crate::feature::definitions::positional_relation_table;
 use crate::feature::definitions::positional_relation_triples;
 use crate::feature::definitions::positional_section_3d;
@@ -240,6 +240,62 @@ fn trim_vertex_entry(
     crate::decode::with_test_decode_ctx(|ctx| parse_trim_vertex_entry(ctx, payload, offset, end))
         .expect("trim vertex entities admitted")
 }
+
+fn order_table(payload: &[u8], start: usize, end: usize) -> Option<super::FeatureOrderTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_order_table(ctx, payload, start, end))
+        .expect("named order table admitted")
+}
+
+fn positional_order_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<super::FeatureOrderTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_order_table(ctx, payload, start, end, table_class)
+    })
+    .expect("positional order table admitted")
+}
+
+fn order_with_limit(
+    limit: u64,
+    positional: bool,
+) -> Result<Option<super::FeatureOrderTable>, cadmpeg_core::CodecError> {
+    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\
+            \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
+            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2\x0a\x02\x01";
+    let replay = b"prefix\xf8\x02\xf7\x42\xfb\xe2\xf7\x43\
+            \x09\x01\x00\xf1\xf7\x42\xe2\x0a\x02\x01";
+    with_trim_limits(limit, u64::MAX, |ctx| {
+        if positional {
+            parse_positional_order_table(ctx, replay, 0, replay.len(), 66)
+        } else {
+            parse_order_table(ctx, named, 0, named.len())
+        }
+    })
+}
+
+macro_rules! order_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            for positional in [false, true] {
+                assert!(matches!(order_with_limit($limit, positional),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == ResourceDimension::CollectionItems
+                            && refusal.operation == $operation));
+                assert_eq!(order_with_limit(3, positional)
+                    .expect("order table admitted")
+                    .expect("one order table").rows.len(), 1);
+            }
+        }
+    };
+}
+
+order_collection_limit_test!(order_external_id_nodes_refuse_before_btree_insertion, 0, "creo order external ID nodes");
+order_collection_limit_test!(order_internal_id_nodes_refuse_before_btree_insertion, 1, "creo order internal ID nodes");
+order_collection_limit_test!(order_rows_refuse_before_vec_growth, 2, "creo order rows");
 
 fn variable_table(
     payload: &[u8],
