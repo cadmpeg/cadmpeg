@@ -1252,10 +1252,14 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     let points = object_stream_vertices_from_records(ctx, data, records)?;
     let embedded = crate::resource::collect_vec(ctx, b2_embedded_cylinders_from_records(data, records), "catia_resolved_embedded_cylinders")?;
     let standalone = crate::resource::collect_vec(ctx, b2_cylinders_from_records(data, records), "catia_resolved_standalone_cylinders")?;
-    let circles = b2_circles_from_records(data, records);
-    let cones = b2_cones_from_records(data, records);
-    let spheres = b2_spheres_from_records(data, records);
-    let tori = b2_tori_from_records(data, records);
+    let circles = crate::resource::collect_vec(ctx, b2_circles_from_records(data, records),
+        "catia_resolved_circles")?;
+    let cones = crate::resource::collect_vec(ctx, b2_cones_from_records(data, records),
+        "catia_resolved_cones")?;
+    let spheres = crate::resource::collect_vec(ctx, b2_spheres_from_records(data, records),
+        "catia_resolved_spheres")?;
+    let tori = crate::resource::collect_vec(ctx, b2_tori_from_records(data, records),
+        "catia_resolved_tori")?;
     let planes = b2_plane_carriers_from_records(data, records);
     let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let carriers = ConsolidatedCarriers {

@@ -2465,12 +2465,15 @@ fn b2_construction_offset_supports_from_records(
 #[cfg(test)]
 fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     let records = consolidated_records(data);
-    b2_cones_from_records(data, &records)
+    b2_cones_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Cone> {
-    let mut out = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x29) {
+pub(crate) fn b2_cones_from_records<'a>(
+    data: &'a [u8], records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Cone> + 'a {
+    let mut frames = family_frames_from_records(records, ConsolidatedFamily::B, 0x29);
+    std::iter::from_fn(move || loop {
+        let frame = frames.next()?;
         let pos = frame.pos;
         let p = frame.payload;
         if frame.end - p != 0xb8 {
@@ -2534,7 +2537,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         )) else {
             continue;
         };
-        out.push(B2Cone {
+        return Some(B2Cone {
             pos,
             apex,
             frame,
@@ -2553,8 +2556,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
                 half_angle,
             ),
         });
-    }
-    out
+    })
 }
 
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
@@ -2562,15 +2564,16 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
 #[cfg(test)]
 fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     let records = consolidated_records(data);
-    b2_revolutions_from_records(data, &records)
+    b2_revolutions_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_revolutions_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2Revolution> {
-    let mut out = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x2d) {
+pub(crate) fn b2_revolutions_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Revolution> + 'a {
+    let mut frames = family_frames_from_records(records, ConsolidatedFamily::B, 0x2d);
+    std::iter::from_fn(move || loop {
+        let frame = frames.next()?;
         let p = frame.payload;
         let Ok(reference_token) = data.get(p).copied().ok_or(()).and_then(|token| {
             crate::native::CatiaRevolutionReferenceToken::try_from(token).map_err(|_| ())
@@ -2640,7 +2643,7 @@ pub(crate) fn b2_revolutions_from_records(
         {
             continue;
         }
-        out.push(B2Revolution {
+        return Some(B2Revolution {
             pos: frame.pos,
             reference_token,
             profile_allocation_id,
@@ -2652,8 +2655,7 @@ pub(crate) fn b2_revolutions_from_records(
             profile_range,
             angular_scale,
         });
-    }
-    out
+    })
 }
 
 /// Bind revolution profiles by direct allocation identity, then by an exact,
@@ -2662,32 +2664,35 @@ pub(crate) fn b2_revolutions_from_records(
 #[cfg(test)]
 fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
     let records = consolidated_records(data);
-    b2_resolved_revolutions_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_resolved_revolutions_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_resolved_revolutions_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2ResolvedRevolution> {
-    let circles = b2_circles_from_records(data, records);
-    b2_revolutions_from_records(data, records)
+) -> Result<Vec<B2ResolvedRevolution>, CodecError> {
+    let circles = crate::resource::collect_vec(ctx, b2_circles_from_records(data, records),
+        "catia_b2_revolution_profiles")?;
+    crate::resource::collect_vec(ctx, b2_revolutions_from_records(data, records)
         .into_iter()
         .enumerate()
         .filter_map(|(revolution_index, revolution)| {
-            let identity_profiles = circles
+            let mut identity_profiles = circles
                 .iter()
                 .filter(|circle| circle.record_id == u32::from(revolution.profile_allocation_id));
-            let identity_profiles = identity_profiles.collect::<Vec<_>>();
-            let profile = match identity_profiles.as_slice() {
-                [profile]
+            let profile = match (identity_profiles.next(), identity_profiles.next()) {
+                (Some(profile), None)
                     if profile.range.lower().to_bits()
                         == revolution.profile_range.lower().to_bits()
                         && profile.range.upper().to_bits()
                             == revolution.profile_range.upper().to_bits() =>
                 {
-                    (*profile).clone()
+                    profile.clone()
                 }
-                [] => {
+                (None, None) => {
                     let mut interval_profiles = circles.iter().filter(|circle| {
                         circle.range.lower().to_bits() == revolution.profile_range.lower().to_bits()
                             && circle.range.upper().to_bits()
@@ -2706,8 +2711,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
                 revolution,
                 profile,
             })
-        })
-        .collect()
+        }), "catia_b2_resolved_revolutions")
 }
 
 /// Decode exact B-family metric line profiles.
@@ -2749,13 +2753,15 @@ pub(crate) fn b2_line_profiles_from_records(
 #[cfg(test)]
 fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
     let records = consolidated_records(data);
-    b2_tori_from_records(data, &records)
+    b2_tori_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Torus> {
+pub(crate) fn b2_tori_from_records<'a>(
+    data: &'a [u8], records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Torus> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x2b)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(move |frame| {
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(200)).then_some(())?;
             let values = read_f64_array::<25>(data, p)?;
@@ -2801,7 +2807,6 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
                 minor_scale,
             })
         })
-        .collect()
 }
 
 /// Decode `b2 03 2a` radius-scaled sphere charts.
@@ -2809,16 +2814,16 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
 #[cfg(test)]
 fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
     let records = consolidated_records(data);
-    b2_spheres_from_records(data, &records)
+    b2_spheres_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_spheres_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2Sphere> {
+pub(crate) fn b2_spheres_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Sphere> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x2a)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(move |frame| {
             let p = frame.payload;
             (frame.end.checked_sub(p) == Some(152)).then_some(())?;
             let values = read_f64_array::<19>(data, p)?;
@@ -2857,7 +2862,6 @@ pub(crate) fn b2_spheres_from_records(
                 latitude_range: IncreasingParameterInterval::new(latitude_range)?,
             })
         })
-        .collect()
 }
 
 /// Decode constant `b2 03 65` group separators.
@@ -3064,15 +3068,16 @@ pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
 #[cfg(test)]
 fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
     let records = consolidated_records(data);
-    b2_circles_from_records(data, &records)
+    b2_circles_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_circles_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2Circle> {
-    let mut out = Vec::new();
-    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x19) {
+pub(crate) fn b2_circles_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Circle> + 'a {
+    let mut frames = family_frames_from_records(records, ConsolidatedFamily::B, 0x19);
+    std::iter::from_fn(move || loop {
+        let frame = frames.next()?;
         let pos = frame.pos;
         let Some(layout) = u8::try_from(frame.end - frame.payload)
             .ok()
@@ -3106,7 +3111,7 @@ pub(crate) fn b2_circles_from_records(
             continue;
         };
         if c1.abs() <= 1e6 && c2.abs() <= 1e6 {
-            out.push(B2Circle {
+            return Some(B2Circle {
                 pos,
                 layout,
                 record_id,
@@ -3117,8 +3122,7 @@ pub(crate) fn b2_circles_from_records(
                 chart_shift,
             });
         }
-    }
-    out
+    })
 }
 
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {

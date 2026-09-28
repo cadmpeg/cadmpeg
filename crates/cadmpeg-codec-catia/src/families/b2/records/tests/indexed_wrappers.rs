@@ -66,7 +66,9 @@ fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {
     let bytes = b2_resolved_revolution_stream();
     let consolidated = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &consolidated,),
+        crate::test_support::with_service_context(|ctx|
+            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &consolidated)
+        ).expect("service decode"),
         crate::families::b2::records::b2_resolved_revolutions(&bytes)
     );
 }

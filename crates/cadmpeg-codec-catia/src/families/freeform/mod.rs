@@ -492,10 +492,12 @@ pub(super) fn try_decode_freeform_surfaces(
         )
         .len();
         let resolved_consolidated_revolutions =
-            crate::families::b2::records::b2_resolved_revolutions_from_records(
-                &scan.data,
-                &consolidated_records,
-            );
+            match crate::families::b2::records::b2_resolved_revolutions_from_records(
+                ctx, &scan.data, &consolidated_records,
+            ) {
+                Ok(revolutions) => revolutions,
+                Err(error) => return Some(Err(error)),
+            };
         let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
         let b2_spatial_circle_count = b2_spatial_circles.len();
         let no_a8_jets = if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
@@ -3250,8 +3252,9 @@ mod tests {
     fn consolidated_revolution_entity_limit_refuses_before_directrix_append() {
         let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved =
-            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        let resolved = crate::test_support::with_service_context(|ctx|
+            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+        ).expect("service decode");
         assert_eq!(resolved.len(), 1);
         crate::test_support::with_entity_limit(0, |ctx| {
             let mut ir = CadIr::empty();
@@ -4542,7 +4545,7 @@ mod tests {
                 crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
             assert!(carriers.is_empty());
             assert!(
-                crate::families::b2::records::b2_cones_from_records(&bytes, &records).is_empty()
+                crate::families::b2::records::b2_cones_from_records(&bytes, &records).next().is_none()
             );
         }
     }
@@ -4574,8 +4577,9 @@ mod tests {
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
         let records = crate::wire::records::consolidated_records(&bytes);
-        let resolved =
-            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        let resolved = crate::test_support::with_service_context(|ctx|
+            crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+        ).expect("service decode");
         assert_eq!(resolved.len(), 1);
 
         let bindings = with_admission(|admission| {
@@ -4624,9 +4628,9 @@ mod tests {
                 bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             }
             let records = crate::wire::records::consolidated_records(&bytes);
-            let resolved = crate::families::b2::records::b2_resolved_revolutions_from_records(
-                &bytes, &records,
-            );
+            let resolved = crate::test_support::with_service_context(|ctx|
+                crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+            ).expect("service decode");
             assert_eq!(resolved.len(), 1);
             with_admission(|admission| {
                 super::append_consolidated_revolutions(
