@@ -397,3 +397,32 @@ fn a_declared_face_count_disagreement_refuses_the_display_face() {
         "{text}"
     );
 }
+
+/// A display-list table whose normal lane does not cover its vertex lane
+/// states a shaded mesh it cannot fill. It is refused by name, not dropped.
+#[test]
+fn a_short_normal_lane_refuses_the_display_table() {
+    let mut payload = descriptor(4, 8, 1, &3_u32.to_le_bytes());
+    let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect::<Vec<_>>();
+    payload.extend(descriptor(12, 100, 3, &positions));
+    // Two normals against three vertices.
+    payload.extend(descriptor(12, 100, 2, &[0; 24]));
+    payload.extend(descriptor(4, 8, 4, &[0; 16]));
+    payload.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+    payload.extend(descriptor(1, 8, 4, &[0; 4]));
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    let error = parse_table(&ctx, &payload, 0)
+        .expect_err("a short normal lane is refused")
+        .to_string();
+    assert!(error.contains("vertex normal(s)"), "{error}");
+}
