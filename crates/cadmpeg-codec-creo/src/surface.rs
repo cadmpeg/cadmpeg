@@ -223,21 +223,27 @@ pub(crate) enum ExtrusionLabel {
 
 impl SurfacePrototypeFamily {
     fn from_name(name: &str) -> Self {
+        Self::from_known_name(name).unwrap_or_else(|| Self::Other(name.to_string()))
+    }
+
+    fn from_known_name(name: &str) -> Option<Self> {
         match name {
-            "plane" => Self::Plane,
-            "cylinder" => Self::Cylinder,
-            "cone" => Self::Cone,
-            "torus" => Self::Torus(TorusLabel::Torus),
-            "sphere" => Self::Torus(TorusLabel::Sphere),
-            "spline" => Self::Spline(SplineLabel::Spline),
-            "splsrf" => Self::Spline(SplineLabel::Splsrf),
-            "fillet" => Self::Fillet(FilletLabel::Fillet),
-            "fillet_srf" => Self::Fillet(FilletLabel::FilletSrf),
-            "surface_of_extrusion" => Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion),
-            "extrusion" => Self::Extrusion(ExtrusionLabel::Extrusion),
-            "tab_cyl" => Self::Extrusion(ExtrusionLabel::TabulatedCylinder),
-            "ruled_srf" => Self::Extrusion(ExtrusionLabel::RuledSurface),
-            other => Self::Other(other.to_string()),
+            "plane" => Some(Self::Plane),
+            "cylinder" => Some(Self::Cylinder),
+            "cone" => Some(Self::Cone),
+            "torus" => Some(Self::Torus(TorusLabel::Torus)),
+            "sphere" => Some(Self::Torus(TorusLabel::Sphere)),
+            "spline" => Some(Self::Spline(SplineLabel::Spline)),
+            "splsrf" => Some(Self::Spline(SplineLabel::Splsrf)),
+            "fillet" => Some(Self::Fillet(FilletLabel::Fillet)),
+            "fillet_srf" => Some(Self::Fillet(FilletLabel::FilletSrf)),
+            "surface_of_extrusion" => {
+                Some(Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion))
+            }
+            "extrusion" => Some(Self::Extrusion(ExtrusionLabel::Extrusion)),
+            "tab_cyl" => Some(Self::Extrusion(ExtrusionLabel::TabulatedCylinder)),
+            "ruled_srf" => Some(Self::Extrusion(ExtrusionLabel::RuledSurface)),
+            _ => None,
         }
     }
 
@@ -7236,10 +7242,22 @@ fn complete_plane_compact_scalar_suffix(
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
 pub(crate) fn prototype_count(payload: &[u8]) -> usize {
-    let named = named_prototype_frames(payload)
-        .iter()
-        .filter(|frame| !matches!(frame.family, SurfacePrototypeFamily::Other(_)))
-        .count();
+    let mut named = 0;
+    let mut search = 0;
+    while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
+        let family_start = record_start + b"srf_prim_ptr(".len();
+        let Some(close) = find(payload, b")\0", family_start) else {
+            break;
+        };
+        if std::str::from_utf8(&payload[family_start..close])
+            .ok()
+            .and_then(SurfacePrototypeFamily::from_known_name)
+            .is_some()
+        {
+            named += 1;
+        }
+        search = close + 2;
+    }
     let mut unlabeled = 0;
     let mut start = 0;
     while let Some(record) = find(payload, b"srf_prim_ptr\0", start) {
