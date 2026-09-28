@@ -21,6 +21,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_test_support::wire;
 
+mod text_allocation;
+
 #[test]
 fn translated_nurbs_match_borrowed_rational_poles() {
     let source = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
@@ -871,7 +873,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
     let projected =
         std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
     let definition =
-        exact_text_relation(&relation, "scope", &projected).expect("typed text path");
+        exact_text_relation(&relation, "scope", &projected, None).unwrap().expect("typed text path");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::TextPath {
@@ -901,6 +903,6 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
             }),
         )
         .unwrap();
-        assert!(exact_text_relation(&relation, "scope", &projected).is_none());
+        assert!(exact_text_relation(&relation, "scope", &projected, None).unwrap().is_none());
     }
 }
