@@ -717,15 +717,19 @@ fn plane_intersection_axis_requires_two_complete_known_references() {
     let mut payload = record(17, 0xb6, 3);
     payload.extend_from_slice(&record(23, 0x98, 0));
     let known = [17, 23].into_iter().collect();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     assert_eq!(
-        plane_intersection_axis_sources(&payload, &known),
+        plane_intersection_axis_sources(&ctx, &payload, &known).unwrap(),
         Some([17, 23])
     );
 
     payload.pop();
-    assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
+    assert_eq!(plane_intersection_axis_sources(&ctx, &payload, &known).unwrap(), None);
     let incomplete = record(17, 0xb6, 3);
-    assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
+    assert_eq!(plane_intersection_axis_sources(&ctx, &incomplete, &known).unwrap(), None);
 }
 
 #[test]
