@@ -9,8 +9,8 @@ use crate::records::{
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_asm::brep::{
-    collect_entity_adjacency, collect_owned_ids, decode_with_header, decode_with_purpose,
-    remap_owned_ids, retain_root_entities, AsmBrep, DecodePurpose,
+    collect_entity_adjacency, decode_with_header, decode_with_purpose,
+    retain_root_entities, AsmBrep, DecodePurpose,
 };
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
@@ -78,6 +78,70 @@ fn merge_brep_counts(
                 entry.insert(count);
             }
         }
+    }
+    Ok(())
+}
+
+fn collect_owned_ids_charged(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &mut HashSet<String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3D BREP owned IDs")?;
+    if let Some(id) = cadmpeg_asm::brep::entity_id(value) {
+        if !owned.contains(id) {
+            let key = copy_brep_text(ctx, id, "copy F3D BREP owned ID")?;
+            ctx.charge_collection_items(1, "index F3D BREP owned IDs")?;
+            owned.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D BREP owned IDs", 0, 1))?;
+            owned.insert(key);
+        }
+    }
+    match value {
+        serde_value::Value::Map(fields) => {
+            for (key, item) in fields {
+                collect_owned_ids_charged(ctx, key, owned)?;
+                collect_owned_ids_charged(ctx, item, owned)?;
+            }
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items { collect_owned_ids_charged(ctx, item, owned)?; }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            collect_owned_ids_charged(ctx, item, owned)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn remap_owned_ids_charged(
+    ctx: &DecodeContext<'_>,
+    value: &mut serde_value::Value,
+    replacements: &HashMap<String, String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("remap F3D BREP owned IDs")?;
+    match value {
+        serde_value::Value::String(id) => {
+            if let Some(replacement) = replacements.get(id) {
+                *id = copy_brep_text(ctx, replacement, "copy F3D BREP remapped ID")?;
+            }
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items { remap_owned_ids_charged(ctx, item, replacements)?; }
+        }
+        serde_value::Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                remap_owned_ids_charged(ctx, &mut key, replacements)?;
+                remap_owned_ids_charged(ctx, &mut item, replacements)?;
+                ctx.charge_collection_items(1, "rebuild F3D BREP value map")?;
+                fields.insert(key, item);
+            }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            remap_owned_ids_charged(ctx, item, replacements)?;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -250,7 +314,7 @@ impl Brep {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
+        collect_owned_ids_charged(ctx, &value, &mut owned)?;
         let native_body_ids = self
             .asm
             .body_native_keys
@@ -317,6 +381,7 @@ impl Brep {
     /// coexist in one document model without record-index collisions.
     pub(crate) fn qualify_ids(
         &mut self,
+        ctx: &DecodeContext<'_>,
         format: IdFormat,
         namespace: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
@@ -325,31 +390,27 @@ impl Brep {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(&value, &mut owned);
-        let scheme_prefix = format!("{format}:");
-        let replacements = owned
-            .into_iter()
-            .map(|id| {
-                let replacement = format!(
-                    "{format}:brep/{namespace}/{}",
-                    id.strip_prefix(&scheme_prefix).unwrap_or(&id)
-                );
-                (id, replacement)
-            })
-            .collect::<HashMap<_, _>>();
-        remap_owned_ids(&mut value, &replacements);
+        collect_owned_ids_charged(ctx, &value, &mut owned)?;
+        let scheme_prefix = format_brep_text(ctx, format_args!("{format}:"), "retain F3D BREP scheme prefix")?;
+        let mut replacements = HashMap::new();
+        for id in owned {
+            let replacement = format_brep_text(ctx, format_args!("{format}:brep/{namespace}/{}", id.strip_prefix(&scheme_prefix).unwrap_or(&id)), "retain F3D qualified BREP ID")?;
+            ctx.charge_collection_items(1, "index F3D BREP replacements")?;
+            replacements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D BREP replacements", 0, 1))?;
+            replacements.insert(id, replacement);
+        }
+        remap_owned_ids_charged(ctx, &mut value, &replacements)?;
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("qualified BREP is invalid: {error}"))
         })?;
-        qualified.asm.annotation_records = annotations
-            .into_iter()
-            .map(|mut annotation| {
-                if let Some(id) = replacements.get(&annotation.id) {
-                    annotation.id.clone_from(id);
-                }
-                annotation
-            })
-            .collect();
+        let mut qualified_annotations = Vec::new();
+        for mut annotation in annotations {
+            if let Some(id) = replacements.get(&annotation.id) {
+                annotation.id = copy_brep_text(ctx, id, "copy F3D qualified annotation ID")?;
+            }
+            push_brep_item(ctx, &mut qualified_annotations, annotation, "collect F3D qualified annotations")?;
+        }
+        qualified.asm.annotation_records = qualified_annotations;
         *self = qualified;
         Ok(())
     }
@@ -1004,7 +1065,7 @@ mod tests {
             ..Brep::default()
         };
 
-        brep.qualify_ids(crate::ids::ID_FORMAT, "source")
+        with_context(|ctx| brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source"))
             .expect("qualify BREP");
 
         let qualified = BodyId::mint("f3d:brep/source/brep:entity#1").expect("identity grammar");
@@ -1024,6 +1085,77 @@ mod tests {
             brep.asm.body_native_keys[0].source_brep.as_deref(),
             Some("BREP.source.smbh")
         );
+    }
+
+    fn one_body_brep() -> Brep {
+        Brep {
+            asm: AsmBrep {
+                bodies: vec![Body {
+                    id: BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    kind: BodyKind::default(),
+                    regions: Vec::new(),
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                }],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        }
+    }
+
+    #[test]
+    fn brep_owned_id_copy_refuses_retained_limit() {
+        let mut brep = one_body_brep();
+        let error = with_limits(u64::MAX, 0, |ctx| {
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D BREP owned ID"));
+    }
+
+    #[test]
+    fn brep_owned_id_index_refuses_collection_limit() {
+        let mut brep = one_body_brep();
+        let error = with_limits(0, u64::MAX, |ctx| {
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D BREP owned IDs"));
+    }
+
+    #[test]
+    fn brep_replacement_index_refuses_collection_limit() {
+        let mut brep = one_body_brep();
+        let error = with_limits(1, u64::MAX, |ctx| {
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D BREP replacements"));
+    }
+
+    #[test]
+    fn brep_remapped_id_refuses_retained_limit() {
+        let mut brep = one_body_brep();
+        let original = "f3d:brep:entity#1";
+        let replacement = format!("f3d:brep/source/{}", original.strip_prefix("f3d:").unwrap());
+        let before_remap = original.len() + "f3d:".len() + replacement.len();
+        let error = with_limits(u64::MAX, before_remap as u64, |ctx| {
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D BREP remapped ID"));
+    }
+
+    #[test]
+    fn brep_value_map_rebuild_refuses_collection_limit() {
+        let mut brep = one_body_brep();
+        let error = with_limits(2, u64::MAX, |ctx| {
+            brep.qualify_ids(ctx, crate::ids::ID_FORMAT, "source").unwrap_err()
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "rebuild F3D BREP value map"));
     }
 
     #[test]
