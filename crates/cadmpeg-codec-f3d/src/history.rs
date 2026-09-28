@@ -716,7 +716,7 @@ fn bind_complete_record_tables(
                     break;
                 }
             };
-        let Some(topology) = historical_topology_with_tags(&decoded) else {
+        let Some(topology) = historical_topology_with_tags(ctx, &decoded)? else {
             complete = false;
             break;
         };
@@ -9284,25 +9284,82 @@ fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
         .collect()
 }
 
-fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistoricalTopology> {
-    fn refs<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
-        ids.map(stable_ref).collect()
+fn collect_topology_items<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut collected = Vec::new();
+    for item in items {
+        ctx.charge_collection_items(1, operation)?;
+        collected.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, 1)
+        })?;
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
+fn collect_optional_topology_items<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    items: impl IntoIterator<Item = Option<T>>,
+    operation: &'static str,
+) -> Result<Option<Vec<T>>, cadmpeg_core::CodecError> {
+    let mut collected = Vec::new();
+    for item in items {
+        let Some(item) = item else { return Ok(None) };
+        ctx.charge_collection_items(1, operation)?;
+        collected.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, 1)
+        })?;
+        collected.push(item);
+    }
+    Ok(Some(collected))
+}
+
+fn historical_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    macro_rules! topology_some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
     }
 
-    fn relations<'a>(
-        items: impl Iterator<Item = (&'a str, Vec<&'a str>)>,
-    ) -> Option<Vec<AsmHistoricalRelation>> {
-        items
-            .map(|(owner, members)| {
-                Some(AsmHistoricalRelation {
-                    owner_ref: stable_ref(owner)?,
-                    member_refs: refs(members.into_iter())?,
-                })
-            })
-            .collect()
+    fn refs<'a>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ids: impl Iterator<Item = &'a str>,
+    ) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
+        collect_optional_topology_items(
+            ctx, ids.map(stable_ref), "collect F3D historical topology references",
+        )
     }
 
-    let mut surface_radii = brep
+    fn relations<'a, M>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        items: impl Iterator<Item = (&'a str, M)>,
+    ) -> Result<Option<Vec<AsmHistoricalRelation>>, cadmpeg_core::CodecError>
+    where
+        M: Iterator<Item = &'a str>,
+    {
+        let mut collected = Vec::new();
+        for (owner, members) in items {
+            let Some(owner_ref) = stable_ref(owner) else { return Ok(None) };
+            let Some(member_refs) = refs(ctx, members)? else { return Ok(None) };
+            ctx.charge_collection_items(1, "collect F3D historical topology relations")?;
+            collected.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect F3D historical topology relations", 0, 1)
+            })?;
+            collected.push(AsmHistoricalRelation { owner_ref, member_refs });
+        }
+        Ok(Some(collected))
+    }
+
+    let mut surface_radii = collect_topology_items(ctx, brep
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -9324,7 +9381,7 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 radius: radius.abs(),
             })
         })
-        .collect::<Vec<_>>();
+        , "collect F3D historical surface radii")?;
     for (owner, procedural) in &brep.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
             procedural.definition()
@@ -9340,13 +9397,17 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
             continue;
         };
         surface_radii.retain(|candidate| candidate.surface != surface);
+        ctx.charge_collection_items(1, "collect F3D historical surface radii")?;
+        surface_radii.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect F3D historical surface radii", 0, 1)
+        })?;
         surface_radii.push(crate::history_records::AsmHistoricalSurfaceRadius {
             surface,
             radius: signed_radius.get().abs(),
         });
     }
     surface_radii.sort_by_key(|candidate| candidate.surface);
-    let mut surface_cylinders = brep
+    let mut surface_cylinders = collect_topology_items(ctx, brep
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -9364,9 +9425,9 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 radius: radius.abs(),
             })
         })
-        .collect::<Vec<_>>();
+        , "collect F3D historical surface cylinders")?;
     surface_cylinders.sort_by_key(|candidate| candidate.surface);
-    let mut surface_planes = brep
+    let mut surface_planes = collect_topology_items(ctx, brep
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -9382,9 +9443,9 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 normal,
             })
         })
-        .collect::<Vec<_>>();
+        , "collect F3D historical surface planes")?;
     surface_planes.sort_by_key(|candidate| candidate.surface);
-    let mut surface_axes = brep
+    let mut surface_axes = collect_topology_items(ctx, brep
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -9413,26 +9474,26 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                 direction,
             })
         })
-        .collect::<Vec<_>>();
+        , "collect F3D historical surface axes")?;
     surface_axes.sort_by_key(|candidate| candidate.surface);
 
-    Some(AsmHistoricalTopology {
-        bodies: refs(brep.bodies.iter().map(|entity| entity.id.as_str()))?,
-        regions: refs(brep.regions.iter().map(|entity| entity.id.as_str()))?,
-        shells: refs(brep.shells.iter().map(|entity| entity.id.as_str()))?,
-        faces: refs(brep.faces.iter().map(|entity| entity.id.as_str()))?,
-        loops: refs(brep.loops.iter().map(|entity| entity.id.as_str()))?,
-        coedges: refs(brep.coedges.iter().map(|entity| entity.id.as_str()))?,
-        edges: refs(brep.edges.iter().map(|entity| entity.id.as_str()))?,
-        vertices: refs(brep.vertices.iter().map(|entity| entity.id.as_str()))?,
-        points: refs(brep.points.iter().map(|entity| entity.id.as_str()))?,
-        surfaces: refs(brep.surfaces.iter().map(|entity| entity.id.as_str()))?,
+    Ok(Some(AsmHistoricalTopology {
+        bodies: topology_some!(refs(ctx, brep.bodies.iter().map(|entity| entity.id.as_str()))?),
+        regions: topology_some!(refs(ctx, brep.regions.iter().map(|entity| entity.id.as_str()))?),
+        shells: topology_some!(refs(ctx, brep.shells.iter().map(|entity| entity.id.as_str()))?),
+        faces: topology_some!(refs(ctx, brep.faces.iter().map(|entity| entity.id.as_str()))?),
+        loops: topology_some!(refs(ctx, brep.loops.iter().map(|entity| entity.id.as_str()))?),
+        coedges: topology_some!(refs(ctx, brep.coedges.iter().map(|entity| entity.id.as_str()))?),
+        edges: topology_some!(refs(ctx, brep.edges.iter().map(|entity| entity.id.as_str()))?),
+        vertices: topology_some!(refs(ctx, brep.vertices.iter().map(|entity| entity.id.as_str()))?),
+        points: topology_some!(refs(ctx, brep.points.iter().map(|entity| entity.id.as_str()))?),
+        surfaces: topology_some!(refs(ctx, brep.surfaces.iter().map(|entity| entity.id.as_str()))?),
         surface_radii,
         surface_cylinders,
         surface_planes,
         surface_axes,
-        curves: refs(brep.curves.iter().map(|entity| entity.id.as_str()))?,
-        curve_axes: brep
+        curves: topology_some!(refs(ctx, brep.curves.iter().map(|entity| entity.id.as_str()))?),
+        curve_axes: collect_topology_items(ctx, brep
             .curves
             .iter()
             .filter_map(|curve| {
@@ -9461,78 +9522,71 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     direction,
                 })
             })
-            .collect(),
-        pcurves: refs(brep.pcurves.iter().map(|entity| entity.id.as_str()))?,
+            , "collect F3D historical curve axes")?,
+        pcurves: topology_some!(refs(ctx, brep.pcurves.iter().map(|entity| entity.id.as_str()))?),
         persistent_subentity_tags: Vec::new(),
-        body_regions: relations(brep.bodies.iter().map(|body| {
+        body_regions: topology_some!(relations(ctx, brep.bodies.iter().map(|body| {
             (
                 body.id.as_str(),
                 body.regions
                     .iter()
-                    .map(cadmpeg_ir::ids::RegionId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::RegionId::as_str),
             )
-        }))?,
-        region_shells: relations(brep.regions.iter().map(|region| {
+        }))?),
+        region_shells: topology_some!(relations(ctx, brep.regions.iter().map(|region| {
             (
                 region.id.as_str(),
                 region
                     .shells
                     .iter()
-                    .map(cadmpeg_ir::ids::ShellId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::ShellId::as_str),
             )
-        }))?,
-        shell_faces: relations(brep.shells.iter().map(|shell| {
+        }))?),
+        shell_faces: topology_some!(relations(ctx, brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
                 shell
                     .faces()
                     .iter()
-                    .map(cadmpeg_ir::ids::FaceId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::FaceId::as_str),
             )
-        }))?,
-        shell_wire_edges: relations(brep.shells.iter().map(|shell| {
+        }))?),
+        shell_wire_edges: topology_some!(relations(ctx, brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
                 shell
                     .wire_edges()
                     .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::EdgeId::as_str),
             )
-        }))?,
-        shell_free_vertices: relations(brep.shells.iter().map(|shell| {
+        }))?),
+        shell_free_vertices: topology_some!(relations(ctx, brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
                 shell
                     .free_vertices()
                     .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::VertexId::as_str),
             )
-        }))?,
-        face_loops: relations(brep.faces.iter().map(|face| {
+        }))?),
+        face_loops: topology_some!(relations(ctx, brep.faces.iter().map(|face| {
             (
                 face.id.as_str(),
                 face.loops
                     .iter()
-                    .map(cadmpeg_ir::ids::LoopId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::LoopId::as_str),
             )
-        }))?,
-        loop_coedges: relations(brep.loops.iter().map(|loop_| {
+        }))?),
+        loop_coedges: topology_some!(relations(ctx, brep.loops.iter().map(|loop_| {
             (
                 loop_.id.as_str(),
                 loop_
                     .coedges()
                     .iter()
-                    .map(cadmpeg_ir::ids::CoedgeId::as_str)
-                    .collect(),
+                    .map(cadmpeg_ir::ids::CoedgeId::as_str),
             )
-        }))?,
-        coedge_topology: brep
+        }))?),
+        coedge_topology: topology_some!(collect_optional_topology_items(ctx, brep
             .coedges
             .iter()
             .map(|coedge| {
@@ -9547,8 +9601,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     radial_next: stable_ref(coedge.radial_next.as_str())?,
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        edge_vertices: brep
+            , "collect F3D historical coedges")?),
+        edge_vertices: topology_some!(collect_optional_topology_items(ctx, brep
             .edges
             .iter()
             .map(|edge| {
@@ -9558,8 +9612,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     end_vertex: stable_ref(edge.end.as_str())?,
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        face_surfaces: brep
+            , "collect F3D historical edges")?),
+        face_surfaces: topology_some!(collect_optional_topology_items(ctx, brep
             .faces
             .iter()
             .map(|face| {
@@ -9568,8 +9622,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     carrier: stable_ref(face.surface.as_str())?,
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        edge_curves: brep
+            , "collect F3D historical face surfaces")?),
+        edge_curves: topology_some!(collect_optional_topology_items(ctx, brep
             .edges
             .iter()
             .map(|edge| {
@@ -9581,8 +9635,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     },
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        coedge_pcurves: brep
+            , "collect F3D historical edge curves")?),
+        coedge_pcurves: topology_some!(collect_optional_topology_items(ctx, brep
             .coedges
             .iter()
             .map(|coedge| {
@@ -9594,8 +9648,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     },
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        vertex_points: brep
+            , "collect F3D historical coedge pcurves")?),
+        vertex_points: topology_some!(collect_optional_topology_items(ctx, brep
             .vertices
             .iter()
             .map(|vertex| {
@@ -9604,8 +9658,8 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     carrier: stable_ref(vertex.point.as_str())?,
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-        point_positions: brep
+            , "collect F3D historical vertex points")?),
+        point_positions: topology_some!(collect_optional_topology_items(ctx, brep
             .points
             .iter()
             .map(|point| {
@@ -9614,40 +9668,51 @@ fn historical_topology(brep: &cadmpeg_asm::brep::AsmBrep) -> Option<AsmHistorica
                     position: point.position().get(),
                 })
             })
-            .collect::<Option<Vec<_>>>()?,
-    })
+            , "collect F3D historical point positions")?),
+    }))
 }
 
 pub(crate) fn historical_topology_with_tags(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     brep: &crate::brep::Brep,
-) -> Option<AsmHistoricalTopology> {
-    let mut topology = historical_topology(&brep.asm)?;
-    topology.persistent_subentity_tags = brep
-        .persistent_subentity_tags
-        .iter()
-        .filter_map(|tag| {
+) -> Result<Option<AsmHistoricalTopology>, cadmpeg_core::CodecError> {
+    let Some(mut topology) = historical_topology(ctx, &brep.asm)? else {
+        return Ok(None);
+    };
+    for tag in &brep.persistent_subentity_tags {
             let (entity_kind, entity_ref) = match &tag.target {
                 cadmpeg_ir::attributes::AttributeTarget::Face(face) => {
-                    (AsmHistoricalEntityKind::Face, stable_ref(face.as_str())?)
+                    (AsmHistoricalEntityKind::Face, stable_ref(face.as_str()))
                 }
                 cadmpeg_ir::attributes::AttributeTarget::Edge(edge) => {
-                    (AsmHistoricalEntityKind::Edge, stable_ref(edge.as_str())?)
+                    (AsmHistoricalEntityKind::Edge, stable_ref(edge.as_str()))
                 }
-                _ => return None,
+                _ => continue,
             };
-            Some(
+            let Some(entity_ref) = entity_ref else { continue };
+            let design_references = collect_topology_items(
+                ctx,
+                tag.design_references.iter().copied(),
+                "collect F3D historical tag design references",
+            )?;
+            let token = copy_history_string(ctx, tag.token.as_str(),
+                "copy F3D historical tag token")?;
+            ctx.charge_collection_items(1, "collect F3D historical persistent tags")?;
+            topology.persistent_subentity_tags.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect F3D historical persistent tags", 0, 1)
+            })?;
+            topology.persistent_subentity_tags.push(
                 crate::history_records::AsmHistoricalPersistentSubentityTag {
                     entity_kind,
                     entity_ref,
                     selector: tag.selector,
-                    token: tag.token.as_str().to_owned(),
-                    design_references: tag.design_references.clone(),
+                    token,
+                    design_references,
                     ordinal: tag.ordinal,
                 },
-            )
-        })
-        .collect();
-    Some(topology)
+            );
+    }
+    Ok(Some(topology))
 }
 
 fn materialize_record_table(
