@@ -849,6 +849,7 @@ pub(super) fn try_decode_geometry(
                             return Ok(None);
                         };
                         let mut support_uv = validate_serialized_support_uv_with_index(
+                            ctx,
                             &model_index,
                             &surfaces_by_xmt,
                             [Some(charted.primary_support), charted.secondary_support],
@@ -858,6 +859,7 @@ pub(super) fn try_decode_geometry(
                             &serialized_support_uv_geometry_budget,
                         )?;
                         if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
+                            ctx,
                             &model_index,
                             &surfaces_by_xmt,
                             [Some(charted.primary_support), charted.secondary_support],
