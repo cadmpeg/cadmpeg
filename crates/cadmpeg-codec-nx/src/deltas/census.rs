@@ -4,10 +4,9 @@
 use super::record_kind::RecordKind;
 use super::tails::{TermUseNumericTail, TerminalNullReferences};
 use super::{
-    body_revision_prefix, compact_tombstone, consume_attdef_list, consume_fixed,
-    consume_intersection_auxiliary, consume_intersection_data, consume_nurbs_auxiliary,
-    consume_shared_record, consume_type_101, consume_type_141, consume_type_45, consume_type_67,
-    consume_type_70, consume_variable, fixed_signature, inline_body_states,
+    body_revision_prefix, compact_tombstone, consume_fixed,
+    consume_intersection_auxiliary, consume_shared_record, consume_variable,
+    first_complete_record, fixed_signature, inline_body_states,
     inline_schema_declaration, inline_schema_declarations, is_value_family, merged_event_spans,
     reference_marker_packets, reference_state_packets, reference_type_map, reference_type_maps,
     schema_reference_preamble, schema_reference_preambles, tagged_reference_lanes,
@@ -209,15 +208,12 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             shared_record
         } else {
             consume_intersection_auxiliary(ctx, stream, offset)?
-        }
-        .or_else(|| consume_nurbs_auxiliary(stream, offset))
-        .or_else(|| consume_type_141(stream, offset))
-        .or_else(|| consume_type_45(stream, offset))
-        .or_else(|| consume_type_67(stream, offset))
-        .or_else(|| consume_type_70(stream, offset))
-        .or_else(|| consume_attdef_list(stream, offset))
-        .or_else(|| consume_type_101(stream, offset))
-        .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
+        };
+        let complete_record = if complete_record.is_some() {
+            complete_record
+        } else {
+            first_complete_record(ctx, stream, offset, intersection_schema_anchor_seen, true)?
+        };
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
             offset = record.end;
@@ -267,8 +263,11 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 }
             }
         }
-        let fixed = fixed_signature(kind)
-            .and_then(|signature| consume_fixed(stream, offset, kind, signature));
+        let fixed = if let Some(signature) = fixed_signature(kind) {
+            consume_fixed(ctx, stream, offset, kind, signature)?
+        } else {
+            None
+        };
         let decoded = if fixed.is_some() || !value_owned {
             fixed
         } else {

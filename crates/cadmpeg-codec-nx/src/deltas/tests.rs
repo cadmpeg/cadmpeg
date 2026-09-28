@@ -160,6 +160,20 @@ fn deltas_walks_fixed_record_that_shares_a_terminal_zero() {
 }
 
 #[test]
+fn deltas_fixed_record_route_refuses_retained_limit() {
+    let stream = status_framed_deltas_point_stream();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 39;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+        .expect("test root is admitted");
+    assert!(matches!(
+        crate::deltas::census::walk(&ctx, &stream),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn deltas_fixed_records_share_a_terminal_zero_with_their_successor() {
     let mut stream = Vec::new();
     stream.extend_from_slice(&13u16.to_be_bytes());
