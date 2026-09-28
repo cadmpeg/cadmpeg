@@ -118,6 +118,21 @@ fn xref_occurrence_path_refuses_retained_limit() {
 }
 
 #[test]
+fn xref_occurrence_native_reference_refuses_retained_limit() {
+    let bytes = redirections_json("root.f3d", &[("part.f3d", "role")]);
+    let table = super::parse(&cadmpeg_test_support::service_decode_context(), bytes.as_bytes())
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = "part.f3d".len() as u64;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::project_occurrences(&ctx, &table).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D xref native reference"));
+}
+
+#[test]
 fn xref_record_frame_index_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 0);
