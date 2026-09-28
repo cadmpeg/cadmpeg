@@ -87,6 +87,77 @@ fn material_definition_index_refuses_collection_limit() {
         if limit.operation == "index F3D definition catalog"));
 }
 
+#[test]
+fn material_body_id_copy_refuses_retained_limit() {
+    let id = cadmpeg_ir::ids::BodyId::mint("f3d:design:body#one").unwrap();
+    let error = material_context_with_limits(u64::MAX, 0, |ctx| {
+        super::super::copy_body_id(ctx, &id).unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D material body ID"));
+}
+
+#[test]
+fn material_appearance_id_copy_refuses_retained_limit() {
+    let id = cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance:asset#one").unwrap();
+    let error = material_context_with_limits(u64::MAX, 0, |ctx| {
+        super::super::copy_appearance_id(ctx, &id).unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D material appearance ID"));
+}
+
+fn named_channel_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    let channels = std::collections::BTreeMap::from([("name".to_owned(), "guid".to_owned())]);
+    material_context_with_limits(max_items, max_retained, |ctx| {
+        super::super::named_act_channels(ctx, format_args!("owner"), Some(&channels)).unwrap_err()
+    })
+}
+
+#[test]
+fn material_act_channel_name_refuses_retained_limit() {
+    let error = named_channel_error(u64::MAX, 3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel name"));
+}
+
+#[test]
+fn material_act_channel_guid_refuses_retained_limit() {
+    let error = named_channel_error(u64::MAX, 7);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel GUID"));
+}
+
+#[test]
+fn material_act_channel_copy_refuses_collection_limit() {
+    let error = named_channel_error(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D ACT channel map"));
+}
+
+#[test]
+fn material_named_act_channel_refuses_collection_limit() {
+    let error = named_channel_error(1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D named ACT channels"));
+}
+
+#[test]
+fn material_fixed_appearance_vector_refuses_collection_limit() {
+    let error = material_context_with_limits(0, u64::MAX, |ctx| {
+        let mut appearances = Vec::new();
+        super::super::push_material_item(
+            ctx,
+            &mut appearances,
+            (),
+            "collect F3D fixed appearances",
+        )
+        .unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D fixed appearances"));
+}
+
 fn schema_appearance_error(
     records: &[cadmpeg_protein::DecodedRecord],
     max_items: u64,
