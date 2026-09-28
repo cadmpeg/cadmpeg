@@ -2304,6 +2304,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
+            ctx,
             scan,
             &self.native.design_entity_headers,
         )?;
@@ -4243,7 +4244,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|scope| {
@@ -4284,7 +4285,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|scope| {
@@ -4405,7 +4406,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
@@ -4511,7 +4512,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
@@ -4641,7 +4642,7 @@ fn extend_related_design_records(
         })
         .collect::<std::collections::HashSet<_>>();
     native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, &indices)?
             .into_iter()
             .filter(|record| {
                 crate::ids::native_stream(&record.id).is_none_or(|stream| {
