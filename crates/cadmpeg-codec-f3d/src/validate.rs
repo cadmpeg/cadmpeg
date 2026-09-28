@@ -661,6 +661,24 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(())
     }
 
+    fn insert_unique<K: Eq + Hash>(
+        &self,
+        values: &mut HashSet<K>,
+        key: K,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if !values.contains(&key) {
+            self.charge_item(operation)?;
+            values.try_reserve(1).map_err(|_| {
+                self.decode.map_or_else(
+                    || CodecError::malformed("F3D validation set allocation failed"),
+                    |decode| decode.refuse_codec_limit(operation, 0, 1),
+                )
+            })?;
+        }
+        Ok(values.insert(key))
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -985,7 +1003,7 @@ fn validate_loaded(
     validate_parameters(&ctx, &mut findings)?;
     validate_entity_headers(&ctx, &mut findings)?;
     validate_sketch_relations(&ctx, &mut findings)?;
-    validate_sketch_geometry_identities(&ctx, &mut findings);
+    validate_sketch_geometry_identities(&ctx, &mut findings)?;
     validate_sketch_relation_owners(decode, &ctx, &mut findings)?;
     validate_body_links(&ctx, &mut findings);
     validate_subentity_tags(&ctx, &mut findings);
@@ -7817,92 +7835,122 @@ fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> 
 }
 
 /// Validate sketch point, curve, and surface persistent identities.
-fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_sketch_geometry_identities(
+    ctx: &Ctx<'_, '_>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut sketch_point_identities = HashSet::new();
     let mut sketch_geometry_records = HashSet::new();
     // An unresolved owner is not one shared sketch. Enforce uniqueness only
     // when the owning sketch reference is known.
     for point in &native.sketch_points {
-        let duplicate = point.persistent_id().is_some_and(|persistent_id| {
-            point.owner_reference.is_some_and(|owner_reference| {
-                !sketch_point_identities.insert((
-                    design_stream(&point.id),
-                    owner_reference,
-                    persistent_id,
-                ))
-            })
-        });
+        let duplicate = if let (Some(persistent_id), Some(owner_reference)) =
+            (point.persistent_id(), point.owner_reference)
+        {
+            !ctx.insert_unique(
+                &mut sketch_point_identities,
+                (design_stream(&point.id), owner_reference, persistent_id),
+                "index F3D sketch point identities",
+            )?
+        } else {
+            false
+        };
         if duplicate {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch point has an invalid persistent identity".into(),
-                entity: Some(point.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch point has an invalid persistent identity",
+                Some(ctx.copy_entity(&point.id)?),
+            )?;
         }
-        if !sketch_geometry_records.insert((design_stream(&point.id), point.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch geometry aliases another typed indexed record".into(),
-                entity: Some(point.id.clone()),
-            });
+        if !ctx.insert_unique(
+            &mut sketch_geometry_records,
+            (design_stream(&point.id), point.record_index),
+            "index F3D sketch geometry records",
+        )? {
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch geometry aliases another typed indexed record",
+                Some(ctx.copy_entity(&point.id)?),
+            )?;
         }
     }
     let mut sketch_curve_identities = HashSet::new();
     for curve in &native.sketch_curve_identities {
-        let duplicate = curve.owner_reference.is_some_and(|owner_reference| {
-            !sketch_curve_identities.insert((
-                design_stream(&curve.id),
-                owner_reference,
-                curve.primary_id.get(),
-                curve.secondary_id,
-            ))
-        });
+        let duplicate = if let Some(owner_reference) = curve.owner_reference {
+            !ctx.insert_unique(
+                &mut sketch_curve_identities,
+                (
+                    design_stream(&curve.id),
+                    owner_reference,
+                    curve.primary_id.get(),
+                    curve.secondary_id,
+                ),
+                "index F3D sketch curve identities",
+            )?
+        } else {
+            false
+        };
         if duplicate {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch curve has an invalid persistent identity".into(),
-                entity: Some(curve.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch curve has an invalid persistent identity",
+                Some(ctx.copy_entity(&curve.id)?),
+            )?;
         }
-        if !sketch_geometry_records.insert((design_stream(&curve.id), curve.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch geometry aliases another typed indexed record".into(),
-                entity: Some(curve.id.clone()),
-            });
+        if !ctx.insert_unique(
+            &mut sketch_geometry_records,
+            (design_stream(&curve.id), curve.record_index),
+            "index F3D sketch geometry records",
+        )? {
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch geometry aliases another typed indexed record",
+                Some(ctx.copy_entity(&curve.id)?),
+            )?;
         }
     }
     let mut sketch_surface_identities = HashSet::new();
     for surface in &native.sketch_surfaces {
-        let duplicate = surface.owner_reference.is_some_and(|owner_reference| {
-            !sketch_surface_identities.insert((
-                design_stream(&surface.id),
-                owner_reference,
-                surface.persistent_id.get(),
-            ))
-        });
+        let duplicate = if let Some(owner_reference) = surface.owner_reference {
+            !ctx.insert_unique(
+                &mut sketch_surface_identities,
+                (
+                    design_stream(&surface.id),
+                    owner_reference,
+                    surface.persistent_id.get(),
+                ),
+                "index F3D sketch surface identities",
+            )?
+        } else {
+            false
+        };
         if duplicate {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch surface has an invalid persistent identity".into(),
-                entity: Some(surface.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch surface has an invalid persistent identity",
+                Some(ctx.copy_entity(&surface.id)?),
+            )?;
         }
-        if !sketch_geometry_records.insert((design_stream(&surface.id), surface.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion sketch geometry aliases another typed indexed record".into(),
-                entity: Some(surface.id.clone()),
-            });
+        if !ctx.insert_unique(
+            &mut sketch_geometry_records,
+            (design_stream(&surface.id), surface.record_index),
+            "index F3D sketch geometry records",
+        )? {
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion sketch geometry aliases another typed indexed record",
+                Some(ctx.copy_entity(&surface.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate the sketch ownership graph across relations, dimensions, and loci.
