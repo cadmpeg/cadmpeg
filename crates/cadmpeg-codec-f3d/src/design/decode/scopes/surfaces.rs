@@ -4,7 +4,7 @@
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
@@ -414,8 +414,8 @@ pub(super) fn exact_ruled_surface_operation(
     let (trailing_edge_groups, next) = take_reference_list(cursor)?;
     cursor = next;
     edge_group_record_indices.extend(trailing_edge_groups);
-    let (direction_entity_id, direction_end) = lp_utf16_bounded(bytes, cursor, 36..=36)?;
-    let direction_absent = direction_entity_id == "00000000-0000-0000-0000-000000000000";
+    let (direction_entity_id, direction_end) = fixed_relaxed_guid_text(bytes, cursor)?;
+    let direction_absent = direction_entity_id.as_str() == "00000000-0000-0000-0000-000000000000";
     if direction_end.checked_add(3)? != reference_count_at
         || bytes.get(direction_end..reference_count_at)? != [0; 3]
         || paired_at <= reference_count_at
@@ -425,7 +425,7 @@ pub(super) fn exact_ruled_surface_operation(
     let direction_entity_id = if direction_absent {
         None
     } else {
-        Some(crate::records::mesh::DesignRelaxedGuidText::try_from(direction_entity_id).ok()?)
+        Some(direction_entity_id)
     };
     if reference_members.first() != Some(&distance_owner_record_index)
         || reference_members.get(1) != Some(&angle_owner_record_index)
