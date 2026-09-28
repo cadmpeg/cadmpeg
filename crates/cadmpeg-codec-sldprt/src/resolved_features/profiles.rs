@@ -1694,23 +1694,6 @@ pub(crate) fn project_marker_backed_sketches(
                         | SketchInputKind::Native(_)
                         | SketchInputKind::NativeHandle(_) => return None,
                     };
-                    let endpoint_refs = if matches!(
-                        marker.kind(),
-                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                    ) {
-                        let endpoints = output_curve_endpoint_markers(
-                            &lane.native_payload,
-                            marker,
-                            &markers_by_id,
-                            &object_markers,
-                        );
-                        endpoints
-                            .iter()
-                            .map(|endpoint| endpoint.id().to_string())
-                            .collect::<Vec<_>>()
-                    } else {
-                        Vec::new()
-                    };
                     if matches!(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
@@ -1730,23 +1713,52 @@ pub(crate) fn project_marker_backed_sketches(
                             ) && marker_profile_curve_role(&lane.native_payload, offset)
                                 == Some(1))
                     });
-                    Some(
-                        SketchEntity::new(
-                            SketchEntityId::mint(format!(
-                                "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
-                                native_feature.ordinal,
-                                marker.ordinal()
-                            ))
-                            .ok()?,
-                            sketch_id.clone(),
-                            geometry,
-                        )
-                        .with_construction(construction)
-                        .with_native_ref(Some(marker.id().to_string()))
-                        .with_endpoint_refs(endpoint_refs),
-                    )
+                    Some((geometry, construction))
                 })();
-                if let Some(entity) = entity {
+                if let Some((geometry, construction)) = entity {
+                    let mut endpoint_refs = Vec::new();
+                    if matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc) {
+                        let endpoints = output_curve_endpoint_markers(
+                            &lane.native_payload,
+                            marker,
+                            &markers_by_id,
+                            &object_markers,
+                        );
+                        for endpoint in endpoints {
+                            let reference = ctx.format_retained(
+                                format_args!("{}", endpoint.id()),
+                                "copy SLDPRT marker endpoint reference",
+                            )?;
+                            ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT marker endpoint references")?;
+                            endpoint_refs.push(reference);
+                        }
+                    }
+                    let id_text = ctx.format_retained(
+                        format_args!(
+                            "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
+                            native_feature.ordinal,
+                            marker.ordinal()
+                        ),
+                        "format SLDPRT marker entity identity",
+                    )?;
+                    let Ok(entity_id) = SketchEntityId::mint(id_text) else {
+                        continue;
+                    };
+                    let sketch_text = ctx.format_retained(
+                        format_args!("{}", sketch_id.as_str()),
+                        "copy SLDPRT marker entity sketch identity",
+                    )?;
+                    let Ok(owner) = SketchId::mint(sketch_text) else {
+                        continue;
+                    };
+                    let native_ref = ctx.format_retained(
+                        format_args!("{}", marker.id()),
+                        "copy SLDPRT marker native reference",
+                    )?;
+                    let entity = SketchEntity::new(entity_id, owner, geometry)
+                        .with_construction(construction)
+                        .with_native_ref(Some(native_ref))
+                        .with_endpoint_refs(endpoint_refs);
                     ctx.reserve_collection_vec(&mut projected, 1, "collect SLDPRT projected marker entities")?;
                     projected.push(entity);
                 }
@@ -3861,6 +3873,79 @@ mod detached_legacy_sketch_tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "index SLDPRT marker profile native features"));
+    }
+
+    #[test]
+    fn marker_profile_projection_refuses_retained_limit() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "empty".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64],
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: ObjectId::from_value(30),
+                value: "empty".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let neutral_feature = cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#neutral").unwrap(),
+            ordinal: 30,
+            name: Some("empty".into()),
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }),
+            ),
+            native_ref: Some("feature".into()),
+        };
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let error = project_marker_backed_sketches(
+            &ctx,
+            &mut [neutral_feature],
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &[history],
+            &[lane],
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
     }
 
     #[test]
