@@ -1620,11 +1620,10 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             } else {
                                 key.source_brep.is_none()
                             }
-                    })
-                    .collect::<Vec<_>>();
+                    });
                 matches!(
-                    crate::brep::resolve_body_selector(&source_keys, binding.asm_body_key),
-                    Ok(Some(resolved)) if &resolved == body
+                    crate::brep::resolve_body_selector(source_keys, binding.asm_body_key),
+                    Ok(Some(resolved)) if resolved == body
                 )
             })
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset()));

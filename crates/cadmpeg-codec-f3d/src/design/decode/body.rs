@@ -1029,9 +1029,10 @@ pub(crate) fn decode_design_body_bindings(
                             || active_basename == Some(record.blob_name.as_str()),
                             |source| source == record.blob_name,
                         )
-                    })
-                    .collect::<Vec<_>>();
-                let body = crate::brep::resolve_body_selector(&source_bodies, binding.asm_key)?;
+                    });
+                let body = crate::brep::resolve_body_selector(source_bodies, binding.asm_key)?
+                    .map(|id| crate::brep::copy_body_id(ctx, id))
+                    .transpose()?;
                 out.push(
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
                         id: ids::native_design_body_binding_id(&entry.name, binding.asm_key_offset),
