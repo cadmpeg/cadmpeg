@@ -3484,8 +3484,8 @@ fn derive_cylindrical_pcurves(
                         continue;
                     };
                     match (
-                        nurbs_parameter_at_point(nurbs, start)?,
-                        nurbs_parameter_at_point(nurbs, end)?,
+                        nurbs_parameter_at_point(ctx, nurbs, start)?,
+                        nurbs_parameter_at_point(ctx, nurbs, end)?,
                     ) {
                         (InverseResolution::Unique(start), InverseResolution::Unique(end)) => {
                             Some([start.min(end), start.max(end)])
@@ -3703,22 +3703,26 @@ where
 /// each nonzero knot span. Endpoints are always retained, so a candidate at a
 /// knot is not lost when adjacent spans share it.
 fn sampled_parameter_minima<F>(
+    ctx: &DecodeContext<'_>,
     knots: &[f64],
     domain: [f64; 2],
     mut objective: F,
-) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit>
+) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::CodecError>
 where
     F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit>,
 {
     let mut candidates = Vec::new();
     for span in knots.windows(2).filter(|span| span[0] < span[1]) {
+        ctx.charge_work(1, "sample Parasolid inverse knot spans")?;
         let start = span[0].max(domain[0]);
         let end = span[1].min(domain[1]);
         if start >= end {
             continue;
         }
-        let mut samples = Vec::with_capacity(INVERSE_SAMPLE_COUNT + 1);
+        let mut samples = Vec::new();
+        ctx.reserve_collection_vec(&mut samples, INVERSE_SAMPLE_COUNT + 1, "sample Parasolid inverse span")?;
         for index in 0..=INVERSE_SAMPLE_COUNT {
+            ctx.charge_work(1, "sample Parasolid inverse span")?;
             let Some(parameter) = cadmpeg_ir::math::interpolate(
                 start,
                 end,
@@ -3732,6 +3736,7 @@ where
             };
             samples.push((parameter, distance));
         }
+        ctx.reserve_collection_vec(&mut candidates, samples.len(), "collect Parasolid inverse candidates")?;
         candidates.extend(samples.iter().copied());
         for index in 1..INVERSE_SAMPLE_COUNT {
             if samples[index].1 <= samples[index - 1].1 && samples[index].1 <= samples[index + 1].1
@@ -3743,6 +3748,7 @@ where
                 )? else {
                     return Ok(None);
                 };
+                ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid inverse minima")?;
                 candidates.push(minimum);
             }
         }
@@ -3763,19 +3769,22 @@ fn unique_inverse_parameter(
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
         - INVERSE_PARAMETER_TOLERANCE * parameter_domain[0])
         .abs();
-    let mut unique = Vec::<(f64, f64)>::new();
-    for candidate in candidates {
-        if let Some(previous) = unique.last_mut() {
-            if (candidate.0 - previous.0).abs() <= parameter_tolerance {
-                if candidate.1 < previous.1 {
-                    *previous = candidate;
-                }
-                continue;
+    let mut unique_len = 0;
+    for index in 0..candidates.len() {
+        let candidate = candidates[index];
+        if unique_len > 0
+            && (candidate.0 - candidates[unique_len - 1].0).abs() <= parameter_tolerance
+        {
+            if candidate.1 < candidates[unique_len - 1].1 {
+                candidates[unique_len - 1] = candidate;
             }
+        } else {
+            candidates[unique_len] = candidate;
+            unique_len += 1;
         }
-        unique.push(candidate);
     }
-    match unique.as_slice() {
+    candidates.truncate(unique_len);
+    match candidates.as_slice() {
         [] => InverseResolution::NoMatch,
         [(parameter, _)] => InverseResolution::Unique(*parameter),
         _ => InverseResolution::Ambiguous,
@@ -3783,9 +3792,10 @@ fn unique_inverse_parameter(
 }
 
 fn nurbs_parameter_at_point(
+    ctx: &DecodeContext<'_>,
     nurbs: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     target: cadmpeg_ir::math::Point3,
-) -> Result<InverseResolution<f64>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<InverseResolution<f64>, cadmpeg_core::CodecError> {
     let squared_distance = |parameter: f64| {
         let Some(point) =
             cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(nurbs, parameter))?
@@ -3803,18 +3813,20 @@ fn nurbs_parameter_at_point(
     else {
         return Ok(InverseResolution::NoMatch);
     };
-    let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance)? else {
+    let Some(candidates) = sampled_parameter_minima(ctx, nurbs.knots(), domain, squared_distance)? else {
         return Ok(InverseResolution::NoMatch);
+    };
+    let tolerance = match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+            inverse_coordinate_tolerance(points.iter().copied().map(FinitePoint3::get).chain(std::iter::once(target)))
+        }
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+            inverse_coordinate_tolerance(points.iter().map(|pole| pole.point.get()).chain(std::iter::once(target)))
+        }
     };
     Ok(unique_inverse_parameter(
         candidates,
-        inverse_coordinate_tolerance(
-            nurbs
-                .control_points()
-                .into_iter()
-                .map(FinitePoint3::get)
-                .chain(std::iter::once(target)),
-        ),
+        tolerance,
         domain,
     ))
 }
@@ -4360,7 +4372,7 @@ fn derive_nurbs_isoparametric_pcurves(
         };
         let (geometry, parameter_range, fit_tolerance, cache) = match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
-                let Some(parameter_range) = nurbs_edge_parameter_range(edge, curve, endpoints)?
+                let Some(parameter_range) = nurbs_edge_parameter_range(ctx, edge, curve, endpoints)?
                 else {
                     continue;
                 };
@@ -4399,8 +4411,8 @@ fn derive_nurbs_isoparametric_pcurves(
                 let origin = line_curve.origin().get();
                 let direction = *line_curve.direction().as_raw();
                 let resolution = resolve_axis_candidates([
-                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::U, origin, direction)?,
-                    ruled_surface_line_pcurve(surface, SurfaceParameterAxis::V, origin, direction)?,
+                    ruled_surface_line_pcurve(ctx, surface, SurfaceParameterAxis::U, origin, direction)?,
+                    ruled_surface_line_pcurve(ctx, surface, SurfaceParameterAxis::V, origin, direction)?,
                 ]);
                 match resolution {
                     InverseResolution::Unique(geometry) => (geometry, None, None, false),
@@ -5773,10 +5785,11 @@ fn nurbs_degree_one_cache_pcurve(
 }
 
 fn nurbs_edge_parameter_range(
+    ctx: &DecodeContext<'_>,
     edge: &Edge,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
-) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let Some(domain) = nurbs_curve_parameter_domain(curve) else {
         return Ok(None);
     };
@@ -5788,8 +5801,8 @@ fn nurbs_edge_parameter_range(
             return Ok(None);
         };
         match (
-            nurbs_parameter_at_point(curve, start)?,
-            nurbs_parameter_at_point(curve, end)?,
+            nurbs_parameter_at_point(ctx, curve, start)?,
+            nurbs_parameter_at_point(ctx, curve, end)?,
         ) {
             (InverseResolution::Unique(start), InverseResolution::Unique(end)) => [start, end],
             _ => return Ok(None),
@@ -5832,11 +5845,12 @@ fn derive_nurbs_edge_pcurve(
 }
 
 fn ruled_surface_line_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     fixed_axis: SurfaceParameterAxis,
     line_origin: cadmpeg_ir::math::Point3,
     line_direction: cadmpeg_ir::math::Vector3,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
     let (uc, vc) = (surface.u_count(), surface.v_count());
     let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
@@ -5933,7 +5947,7 @@ fn ruled_surface_line_pcurve(
         };
         Ok(Some(perpendicular_squared(a.get()).max(perpendicular_squared(b.get()))))
     };
-    let Some(candidates) = sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)?
+    let Some(candidates) = sampled_parameter_minima(ctx, fixed_knots, [fixed_min, fixed_max], objective)?
     else {
         return Ok(InverseResolution::NoMatch);
     };
@@ -7814,12 +7828,13 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             None,
         );
-        let geometry = match super::ruled_surface_line_pcurve(
+        let geometry = match with_test_context(|ctx| super::ruled_surface_line_pcurve(
+            ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
             cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        )
+        ))
         .expect("ruling evaluation")
         {
             super::InverseResolution::Unique(geometry) => geometry,
@@ -8143,12 +8158,13 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             None,
         );
-        let geometry = match super::ruled_surface_line_pcurve(
+        let geometry = match with_test_context(|ctx| super::ruled_surface_line_pcurve(
+            ctx,
             &surface,
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        )
+        ))
         .expect("ruling evaluation")
         {
             super::InverseResolution::Unique(geometry) => geometry,
@@ -8186,12 +8202,13 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             None,
         );
         assert!(matches!(
-            super::ruled_surface_line_pcurve(
+            with_test_context(|ctx| super::ruled_surface_line_pcurve(
+                ctx,
                 &surface,
                 cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ).expect("ruling evaluation"),
+            )).expect("ruling evaluation"),
             super::InverseResolution::Ambiguous
         ));
     }
@@ -8209,7 +8226,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             None,
         );
         assert!(matches!(
-            super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),).expect("inverse evaluation"),
+            with_test_context(|ctx| super::nurbs_parameter_at_point(ctx, &curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))).expect("inverse evaluation"),
             super::InverseResolution::Ambiguous
         ));
     }

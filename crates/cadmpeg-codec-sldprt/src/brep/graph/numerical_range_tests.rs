@@ -212,6 +212,10 @@ fn numerical_0922b_large_sphere_equator() {
 }
 #[test]
 fn numerical_0922b_wide_curve_inverse() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     for d in [[0., 1.], [-1e308, 1e308], [1e308, 1.1e308]] {
         let curve = NurbsCurve::from_lanes(
             1,
@@ -221,7 +225,7 @@ fn numerical_0922b_wide_curve_inverse() {
             false,
         )
         .unwrap();
-        let r = nurbs_parameter_at_point(&curve, Point3::new(0.3, 0., 0.)).unwrap();
+        let r = nurbs_parameter_at_point(&ctx, &curve, Point3::new(0.3, 0., 0.)).unwrap();
         let result = match r {
             InverseResolution::Unique(p) => Some(p),
             InverseResolution::NoMatch => None,
