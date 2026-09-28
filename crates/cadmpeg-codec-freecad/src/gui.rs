@@ -866,10 +866,10 @@ fn transfer_neutral_presentation(
         charge_refused_gui_keys(ctx, losses, &refused)?;
         reserve_vec_items(ctx, &mut plan.view_presentations, 1, "FCStd view presentations")?;
         plan.view_presentations.push(ViewPresentation {
-            id: PresentationId::compose(
-                &cadmpeg_ir::identity_namespace!("fcstd", "model", "presentation-view"),
-                crate::native::model_key(&provider.id, "state").map_err(CodecError::malformed)?,
-            ),
+            id: PresentationId::mint(crate::native::model_id_charged_at(
+                ctx, "presentation-view", &provider.id, "state",
+                "FCStd view presentation identity",
+            )?).map_err(CodecError::malformed)?,
             object: provider
                 .object
                 .as_ref()

@@ -1025,6 +1025,25 @@ fn gui_presentation_document_refuses_at_caller_limit() {
 }
 
 #[test]
+fn gui_view_presentation_identity_refuses_at_matching_retained_limit() {
+    let graph = super::super::Graph {
+        providers: vec![crate::native::GuiViewProviderRecord {
+            id: "fcstd:gui:view-provider#Provider".into(), object: None, name: "Provider".into(),
+            expanded: None, order: 0, raw_xml: String::new(),
+        }],
+        ..Default::default()
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd view presentation identity", |ctx| {
+            super::super::transfer_neutral_presentation(
+                ctx, &mut super::super::AppearancePlan::default(), &graph, None,
+                &mut Vec::new(),
+            )
+        },
+    );
+}
+
+#[test]
 fn gui_view_presentation_refuses_at_caller_limit() {
     let graph = super::super::Graph {
         providers: vec![crate::native::GuiViewProviderRecord {
