@@ -83,6 +83,69 @@ fn push_material_item<T>(
     Ok(())
 }
 
+fn append_material_items<T>(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<T>,
+    mut additional: Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(additional.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    items.try_reserve(additional.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    items.append(&mut additional);
+    Ok(())
+}
+
+fn index_schema_appearance_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    appearances: &'a [Appearance],
+) -> Result<std::collections::HashSet<&'a str>, CodecError> {
+    let count = u64::try_from(appearances.len()).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D schema appearance IDs", 0, u64::MAX)
+    })?;
+    ctx.charge_collection_items(count, "index F3D schema appearance IDs")?;
+    let mut ids = std::collections::HashSet::new();
+    ids.try_reserve(appearances.len()).map_err(|_| {
+        ctx.refuse_codec_limit("index F3D schema appearance IDs", 0, count)
+    })?;
+    for appearance in appearances {
+        ids.insert(appearance.id.as_str());
+    }
+    Ok(ids)
+}
+
+struct MaterialFormatLength {
+    len: usize,
+}
+
+impl std::fmt::Write for MaterialFormatLength {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.len = self.len.checked_add(text.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn format_material_text_charged(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut length = MaterialFormatLength { len: 0 };
+    std::fmt::write(&mut length, args.clone())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length_u64 = u64::try_from(length.len)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length_u64, operation)?;
+    let mut formatted = String::new();
+    formatted.try_reserve(length.len)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length_u64))?;
+    std::fmt::write(&mut formatted, args)
+        .map_err(|_| CodecError::Malformed("F3D material diagnostic formatting failed".into()))?;
+    Ok(formatted)
+}
+
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
     if !appearance.textures.is_empty() {
         return Err(CodecError::NotImplemented(
@@ -581,12 +644,17 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
             let outcome =
                 cadmpeg_protein::decode_frames_admitted(ctx, &mut schema_catalog, &record_frames)?;
-            notes.extend(outcome.rejected.iter().map(|rejected| {
-                format!(
-                    "Protein {} record {} rejected: {}",
-                    entry.name, rejected.ordinal, rejected.detail
-                )
-            }));
+            for rejected in &outcome.rejected {
+                let note = format_material_text_charged(
+                    ctx,
+                    format_args!(
+                        "Protein {} record {} rejected: {}",
+                        entry.name, rejected.ordinal, rejected.detail
+                    ),
+                    "retain F3D protein rejection note",
+                )?;
+                push_material_item(ctx, &mut notes, note, "collect F3D protein rejection notes")?;
+            }
             let records = outcome.records;
             let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
             untyped_distance_properties = untyped_distance_properties
@@ -594,15 +662,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 .ok_or_else(|| {
                     CodecError::Malformed("untyped material distance count overflows".into())
                 })?;
-            let decoded_ids = decoded
-                .iter()
-                .map(|appearance| appearance.id.clone())
-                .collect::<std::collections::HashSet<_>>();
-            decoded.extend(
-                decode_fixed_logical_records(ctx, &record_frames)?
-                    .into_iter()
-                    .filter(|appearance| !decoded_ids.contains(&appearance.id)),
-            );
+            let decoded_ids = index_schema_appearance_ids(ctx, &decoded)?;
+            let mut fixed = decode_fixed_logical_records(ctx, &record_frames)?;
+            fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
+            append_material_items(ctx, &mut decoded, fixed, "merge F3D fixed appearances")?;
             decoded
         } else {
             decode_fixed_logical_records(ctx, &record_frames)?
@@ -624,7 +687,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 }
             }
         }
-        out.extend(appearances);
+        append_material_items(ctx, &mut out, appearances, "collect F3D asset appearances")?;
     }
     out.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
     if let Some(pair) = out

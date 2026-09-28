@@ -146,3 +146,94 @@ schema_appearance_text_limit_test!(schema_appearance_name_refuses_retained_limit
 schema_appearance_text_limit_test!(schema_appearance_guid_refuses_retained_limit, 9, "copy F3D appearance GUID");
 schema_appearance_text_limit_test!(schema_appearance_visual_guid_refuses_retained_limit, 45, "copy F3D appearance visual GUID");
 schema_appearance_text_limit_test!(schema_appearance_schema_refuses_retained_limit, 81, "copy F3D appearance schema");
+
+#[test]
+fn material_note_format_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let note = "Protein A record 1 rejected: B";
+    policy.limits.max_retained_bytes = u64::try_from(note.len() - 1).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = super::super::format_material_text_charged(
+        &ctx,
+        format_args!("Protein {} record {} rejected: {}", "A", 1, "B"),
+        "retain F3D protein rejection note",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D protein rejection note"));
+}
+
+#[test]
+fn material_note_vector_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let mut notes = Vec::new();
+    let error = super::super::push_material_item(
+        &ctx,
+        &mut notes,
+        "note".to_owned(),
+        "collect F3D protein rejection notes",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D protein rejection notes"));
+}
+
+#[test]
+fn material_appearance_merge_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let mut merged = Vec::new();
+    let error = super::super::append_material_items(
+        &ctx,
+        &mut merged,
+        vec![1, 2],
+        "merge F3D fixed appearances",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "merge F3D fixed appearances"));
+}
+
+#[test]
+fn material_asset_appearance_vector_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let mut appearances = Vec::new();
+    let error = super::super::append_material_items(
+        &ctx,
+        &mut appearances,
+        vec![1, 2],
+        "collect F3D asset appearances",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D asset appearances"));
+}
+
+#[test]
+fn material_schema_id_index_refuses_collection_limit() {
+    let (appearances, _) = super::schema_appearances(&[
+        appearance_record("GenericSchema", Default::default()),
+    ])
+    .expect("schema appearance");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = super::super::index_schema_appearance_ids(&ctx, &appearances).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D schema appearance IDs"));
+}
