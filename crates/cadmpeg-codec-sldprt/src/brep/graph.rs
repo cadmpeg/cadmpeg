@@ -1380,9 +1380,19 @@ fn admit_brep_entity(ctx: &DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecE
     Ok(())
 }
 
-fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::BodyModifier> {
+fn unique_body_modifiers(
+    ctx: &DecodeContext<'_>,
+    modifiers: Vec<attrib::BodyModifier>,
+) -> Result<Vec<attrib::BodyModifier>, cadmpeg_core::CodecError> {
     let mut by_attr = HashMap::<u16, Option<attrib::BodyModifier>>::new();
     for modifier in modifiers {
+        ctx.charge_work(1, "select Parasolid body modifiers")?;
+        reserve_graph_map_key(
+            ctx,
+            &mut by_attr,
+            &modifier.body_attr,
+            "index Parasolid body modifiers",
+        )?;
         match by_attr.entry(modifier.body_attr) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(modifier));
@@ -1398,17 +1408,29 @@ fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::Bo
             }
         }
     }
-    let mut out = by_attr.into_values().flatten().collect::<Vec<_>>();
+    let mut out = Vec::new();
+    for modifier in by_attr.into_values().flatten() {
+        ctx.reserve_collection_vec(&mut out, 1, "collect Parasolid body modifiers")?;
+        out.push(modifier);
+    }
     out.sort_by_key(|modifier| modifier.body_attr);
-    out
+    Ok(out)
 }
 
 fn unique_face_colors(
+    ctx: &DecodeContext<'_>,
     colors: Vec<entity::FaceColor>,
     versions: Vec<entity::FaceColorVersion>,
-) -> (Vec<entity::FaceColor>, usize) {
+) -> Result<(Vec<entity::FaceColor>, usize), cadmpeg_core::CodecError> {
     let mut current_versions = HashMap::<u16, (u32, usize)>::new();
     for version in versions {
+        ctx.charge_work(1, "select current Parasolid face colors")?;
+        reserve_graph_map_key(
+            ctx,
+            &mut current_versions,
+            &version.face_attr,
+            "index Parasolid face color versions",
+        )?;
         current_versions
             .entry(version.face_attr)
             .and_modify(|current| {
@@ -1419,19 +1441,24 @@ fn unique_face_colors(
 
     let mut by_face = HashMap::<u16, Vec<entity::FaceColor>>::new();
     for color in colors {
+        ctx.charge_work(1, "select Parasolid face colors")?;
         if current_versions.get(&color.face_attr) == Some(&(color.face_seq, color.stream_order)) {
-            by_face.entry(color.face_attr).or_default().push(color);
+            reserve_graph_map_key(ctx, &mut by_face, &color.face_attr, "index Parasolid face colors")?;
+            let candidates = by_face.entry(color.face_attr).or_default();
+            ctx.reserve_collection_vec(candidates, 1, "collect Parasolid face color candidates")?;
+            candidates.push(color);
         }
     }
 
     let mut unresolved = 0;
     let mut selected = Vec::new();
-    for candidates in by_face.into_values() {
+    for mut candidates in by_face.into_values() {
         let first = &candidates[0];
         if candidates.iter().all(|candidate| {
             candidate.color_attr == first.color_attr && candidate.color == first.color
         }) {
-            selected.push(first.clone());
+            ctx.reserve_collection_vec(&mut selected, 1, "collect selected Parasolid face colors")?;
+            selected.push(candidates.swap_remove(0));
         } else {
             unresolved += 1;
         }
@@ -1439,7 +1466,11 @@ fn unique_face_colors(
 
     let mut by_color = HashMap::<u16, Vec<entity::FaceColor>>::new();
     for color in selected {
-        by_color.entry(color.color_attr).or_default().push(color);
+        ctx.charge_work(1, "resolve Parasolid color identities")?;
+        reserve_graph_map_key(ctx, &mut by_color, &color.color_attr, "index Parasolid color identities")?;
+        let candidates = by_color.entry(color.color_attr).or_default();
+        ctx.reserve_collection_vec(candidates, 1, "collect Parasolid color identity candidates")?;
+        candidates.push(color);
     }
     let mut out = Vec::new();
     for candidates in by_color.into_values() {
@@ -1448,13 +1479,14 @@ fn unique_face_colors(
             .iter()
             .all(|candidate| candidate.color == first.color)
         {
+            ctx.reserve_collection_vec(&mut out, candidates.len(), "collect resolved Parasolid face colors")?;
             out.extend(candidates);
         } else {
             unresolved += candidates.len();
         }
     }
     out.sort_by_key(|color| (color.face_attr, color.offset));
-    (out, unresolved)
+    Ok((out, unresolved))
 }
 
 fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option<Vec<BodyRecord>> {
@@ -1526,9 +1558,9 @@ fn decode_graph(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let typed_records = typed_body_records(typed_facts, t);
     let body_records = typed_records.unwrap_or_default();
-    let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
+    let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
     let (face_colors, conflicting_face_colors) =
-        unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
+        unique_face_colors(ctx, entity_facts.face_colors, entity_facts.face_color_versions)?;
     let mut face_bridge_sequences = t
         .bridges()
         .values()
@@ -6428,8 +6460,17 @@ mod tests {
     use crate::brep::entity;
     use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
     use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
-    use cadmpeg_ir::topology::Color;
-    use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::topology::Sense;
+
+fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    f(&ctx)
+}
 
     fn intersection_support_pcurve(
         support_data: &crate::brep::intersection::IntersectionSupportData,
@@ -6659,10 +6700,13 @@ mod tests {
     fn current_uncolored_face_version_removes_an_older_color() {
         let colors = vec![face_color(700, 900, 1, [0.25, 0.5, 0.75])];
 
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
-        );
+        let (resolved, unresolved) = with_test_context(|ctx| {
+            unique_face_colors(
+                ctx,
+                colors,
+                vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
+            ).expect("face colors")
+        });
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 0);
@@ -6674,10 +6718,13 @@ mod tests {
         let mut current = face_color(700, 901, 2, [0.75, 0.5, 0.25]);
         current.stream_order = 1;
 
-        let (resolved, unresolved) = unique_face_colors(
-            vec![old, current],
-            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
-        );
+        let (resolved, unresolved) = with_test_context(|ctx| {
+            unique_face_colors(
+                ctx,
+                vec![old, current],
+                vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
+            ).expect("face colors")
+        });
 
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].color_attr, 901);
@@ -6691,10 +6738,13 @@ mod tests {
             face_color(700, 901, 2, [0.75, 0.5, 0.25]),
         ];
 
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
-        );
+        let (resolved, unresolved) = with_test_context(|ctx| {
+            unique_face_colors(
+                ctx,
+                colors,
+                vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
+            ).expect("face colors")
+        });
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 1);
@@ -6707,10 +6757,13 @@ mod tests {
             face_color(701, 900, 2, [0.75, 0.5, 0.25]),
         ];
 
-        let (resolved, unresolved) = unique_face_colors(
-            colors,
-            vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
-        );
+        let (resolved, unresolved) = with_test_context(|ctx| {
+            unique_face_colors(
+                ctx,
+                colors,
+                vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
+            ).expect("face colors")
+        });
 
         assert!(resolved.is_empty());
         assert_eq!(unresolved, 2);
