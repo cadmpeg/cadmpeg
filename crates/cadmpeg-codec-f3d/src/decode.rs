@@ -4600,11 +4600,12 @@ fn extend_related_design_records(
     });
     native.design_fillet_radius_groups =
         crate::design::decode::operands::decode_fillet_radius_groups(
+            ctx,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
             &native.design_parameters,
-        );
+        )?;
     crate::design::decode::operands::bind_lost_edge_groups(
         ctx,
         &mut native.design_construction_operand_groups,
