@@ -449,50 +449,38 @@ pub(super) fn operation_state_messages(
     container: &Container,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
-        .into_iter()
-        .enumerate()
-        .map(|(section_ordinal, link)| {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
-                return Ok(Vec::new());
-            };
-            let Some(messages) = section.operation_state_messages(ctx)? else {
-                return Ok(Vec::new());
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            let rows = messages
-                .into_iter()
-                .enumerate()
-                .map(
-                    |(ordinal, message)| -> Result<Option<OmOperationStateMessage>, CodecError> {
-                        let Ok(ordinal) = u32::try_from(ordinal) else {
-                            return Ok(None);
-                        };
-                        Ok(Some(OmOperationStateMessage {
-                            id: format!(
-                            "nx:feature-history:operation-state-message#{section_key}-{ordinal:010}"
-                        ),
-                            section_link: link.id.clone(),
-                            ordinal,
-                            body: message.body().into_owned(ctx)?,
-                            source_entry: entry.name.clone(),
-                            source_offset: entry_offset + message.offset() as u64,
-                        }))
-                    },
-                )
-                .collect::<Result<Vec<_>, CodecError>>()?;
-            Ok(rows.into_iter().flatten().collect())
-        })
-        .collect::<Result<Vec<Vec<_>>, CodecError>>()
-        .map(|rows| rows.into_iter().flatten().collect())
+    let mut output = Vec::new();
+    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
+        .into_iter().enumerate()
+    {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX state message section")?;
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry.file_span().map_or(section.offset as u64, |(offset, _)| {
+                offset + section.offset as u64
+            }) == link.location.section_offset()
+        }) else { continue; };
+        let Some(messages) = section.operation_state_messages(ctx)? else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (ordinal, message) in messages.into_iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else { continue; };
+            let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(message.offset()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX state message source offset", 0, 1))?;
+            let body = message.body().into_owned(ctx)?;
+            ctx.charge_collection_items(1, "NX operation state messages")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateMessage>()), "retain NX operation state message")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX operation state messages", 0, 1))?;
+            output.push(OmOperationStateMessage {
+                id: retained_om_padded_state_id(ctx, "nx:feature-history:operation-state-message#", section_ordinal, ordinal, "NX operation state message id")?,
+                section_link: copy_om_retained_text(ctx, &link.id, "NX state message section link")?,
+                ordinal,
+                body,
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX state message source entry")?,
+                source_offset,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact per-object operation-state status rows from feature-history areas.
@@ -501,55 +489,46 @@ pub(super) fn operation_state_statuses(
     container: &Container,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
-        .into_iter()
-        .enumerate()
-        .map(|(section_ordinal, link)| {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
-                return Ok(Vec::new());
-            };
-            let Some(table) = section.operation_state_status_table(ctx)? else {
-                return Ok(Vec::new());
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            let rows = table
-                .into_entries()
-                .filter_map(|(offset, entry)| match entry {
-                    StateTableEntry::Status(row) => Some((offset, row)),
-                    StateTableEntry::Slots(_) => None,
-                })
-                .enumerate()
-                .map(|(ordinal, (offset, row))| -> Result<Option<OmOperationStateStatus>, CodecError> {
-                    let Ok(ordinal) = u32::try_from(ordinal) else {
-                        return Ok(None);
-                    };
-                    Ok(OmOperationStateStatus::new(
-                        format!(
-                            "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
-                        ),
-                        link.id.clone(),
-                        ordinal,
-                        row.into_owned(ctx)?,
-                        entry.name.clone(),
-                        match entry_offset.checked_add(offset as u64) {
-                            Some(value) => value,
-                            None => return Ok(None),
-                        },
-                    ))
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
-            Ok(rows.into_iter().flatten().collect())
-        })
-        .collect::<Result<Vec<Vec<_>>, CodecError>>()
-        .map(|rows| rows.into_iter().flatten().collect())
+    let mut output = Vec::new();
+    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
+        .into_iter().enumerate()
+    {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX state status section")?;
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry.file_span().map_or(section.offset as u64, |(offset, _)| {
+                offset + section.offset as u64
+            }) == link.location.section_offset()
+        }) else { continue; };
+        let Some(table) = section.operation_state_status_table(ctx)? else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (ordinal, (offset, row)) in table.into_entries()
+            .filter_map(|(offset, entry)| match entry {
+                StateTableEntry::Status(row) => Some((offset, row)),
+                StateTableEntry::Slots(_) => None,
+            }).enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(ordinal) else { continue; };
+            let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(offset)) else { continue; };
+            if source_offset.checked_add(cadmpeg_core::decode::u64_from_index(row.byte_len())).is_none() {
+                continue;
+            }
+            let body = row.into_owned(ctx)?;
+            let Some(record) = OmOperationStateStatus::new(
+                retained_om_padded_state_id(ctx, "nx:feature-history:operation-state-status#", section_ordinal, ordinal, "NX operation state status id")?,
+                copy_om_retained_text(ctx, &link.id, "NX state status section link")?,
+                ordinal,
+                body,
+                copy_om_retained_text(ctx, &entry.name, "NX state status source entry")?,
+                source_offset,
+            ) else { continue; };
+            ctx.charge_collection_items(1, "NX operation state statuses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateStatus>()), "retain NX operation state status")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX operation state statuses", 0, 1))?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact feature-record slot lanes from feature-history status blocks.
@@ -558,48 +537,41 @@ pub(super) fn operation_state_slot_lanes(
     container: &Container,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
-        .into_iter()
-        .enumerate()
-        .map(|(section_ordinal, link)| {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
-                return Ok(Vec::new());
-            };
-            let Some(table) = section.operation_state_status_table(ctx)? else {
-                return Ok(Vec::new());
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            Ok(table
-                .into_entries()
-                .filter_map(|(offset, entry)| match entry {
-                    StateTableEntry::Status(_) => None,
-                    StateTableEntry::Slots(slots) => Some((offset, slots)),
-                })
-                .enumerate()
-                .filter_map(move |(ordinal, (offset, slots))| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmOperationStateSlotLane {
-                        id: format!(
-                            "nx:feature-history:operation-state-slot-lane#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        frame: crate::om::state_slot_lane::StateSlotLane::new(entry_offset.checked_add(offset as u64)?, slots).ok()?,
-                        source_entry: entry.name.clone(),
-                    })
-                })
-                .collect())
-        })
-        .collect::<Result<Vec<Vec<_>>, CodecError>>()
-        .map(|rows| rows.into_iter().flatten().collect())
+    let mut output = Vec::new();
+    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
+        .into_iter().enumerate()
+    {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX state slot section")?;
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry.file_span().map_or(section.offset as u64, |(offset, _)| {
+                offset + section.offset as u64
+            }) == link.location.section_offset()
+        }) else { continue; };
+        let Some(table) = section.operation_state_status_table(ctx)? else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (ordinal, (offset, slots)) in table.into_entries()
+            .filter_map(|(offset, entry)| match entry {
+                StateTableEntry::Status(_) => None,
+                StateTableEntry::Slots(slots) => Some((offset, slots)),
+            }).enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(ordinal) else { continue; };
+            let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(offset)) else { continue; };
+            let Ok(frame) = crate::om::state_slot_lane::StateSlotLane::new(source_offset, slots) else { continue; };
+            ctx.charge_collection_items(1, "NX operation state slot lanes")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateSlotLane>()), "retain NX operation state slot lane")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX operation state slot lanes", 0, 1))?;
+            output.push(OmOperationStateSlotLane {
+                id: retained_om_padded_state_id(ctx, "nx:feature-history:operation-state-slot-lane#", section_ordinal, ordinal, "NX operation state slot lane id")?,
+                section_link: copy_om_retained_text(ctx, &link.id, "NX state slot section link")?,
+                ordinal,
+                frame,
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX state slot source entry")?,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Unit declared by an NX numeric expression.
