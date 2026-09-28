@@ -1324,6 +1324,7 @@ pub(super) fn try_decode_geometry(
     let adaptive_geometry_exhausted = adaptive_geometry_budget.exhausted();
     ctx.charge_work(0, "nx geometry work completion")?;
     let mut report = build_geometry_report(
+        ctx,
         scan,
         parsed.unmatched_tombstone_counts(),
         &ir,
@@ -1336,7 +1337,7 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_exhausted,
         dialect_losses,
         notes,
-    );
+    )?;
     report.losses.extend(carrier_refusals);
     report.losses.extend(topology_losses);
     report.losses.extend(native_losses);

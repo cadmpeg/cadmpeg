@@ -62,6 +62,7 @@ pub(super) struct CompletionBudgetStatus {
 // Keep the independent report facts explicit at the decode/report boundary.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_geometry_report(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan,
     unmatched_delta_tombstone_counts: &BTreeMap<&'static str, usize>,
     ir: &CadIr,
@@ -74,7 +75,7 @@ pub(super) fn build_geometry_report(
     adaptive_geometry_exhausted: bool,
     dialect_losses: &[LossNote],
     notes: &[String],
-) -> DecodeBody {
+) -> Result<DecodeBody, cadmpeg_core::CodecError> {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
@@ -272,7 +273,7 @@ pub(super) fn build_geometry_report(
         )));
     }
 
-    append_design_intent_losses(ir, &mut losses);
+    append_design_intent_losses(ctx, ir, &mut losses)?;
 
     if has_untransferred_attribute_fields {
         losses.push(NxLossCode::AttributeValueUnresolved.note(
@@ -282,16 +283,16 @@ pub(super) fn build_geometry_report(
     }
 
     losses.extend_from_slice(dialect_losses);
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: notes.to_vec(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    })
 }
 
-pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+pub(crate) fn append_design_intent_losses(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, losses: &mut Vec<LossNote>) -> Result<(), cadmpeg_core::CodecError> {
     let current_body_ids = ir
         .model
         .bodies
@@ -378,7 +379,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         )));
     }
 
-    let incomplete_expression_count = incomplete_expression_parameters(ir).len();
+    let incomplete_expression_count = incomplete_expression_parameters(ctx, ir)?.len();
     if incomplete_expression_count != 0 {
         losses.push(NxLossCode::ExpressionParameterIncomplete.note(format!(
             "Neutral evaluation or dependency semantics remain incomplete for \
@@ -826,4 +827,5 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                  record(s)."
         )));
     }
+    Ok(())
 }

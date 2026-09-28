@@ -1,8 +1,14 @@
-use crate::om::evaluate_constant_expression;
-use crate::om::expression_declaration_name;
 use crate::om::numeric_expressions;
 use crate::om::reference_value::{DirectReference, Tagged28};
 use crate::om::ExpressionUnit;
+
+fn evaluate_constant_expression_for_test(text: &str) -> Option<cadmpeg_ir::scalar::FiniteReal> {
+    crate::test_support::with_decode_context(|ctx| crate::om::evaluate_constant_expression(ctx, text)).unwrap()
+}
+
+fn expression_declaration_name_for_test(bytes: &[u8]) -> Option<crate::om::ExpressionDeclarationName<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::expression_declaration_name(ctx, bytes)).unwrap()
+}
 
 fn references_for_test(bytes: &[u8], base_offset: usize) -> Vec<crate::om::LocatedReference<DirectReference>> {
     crate::test_support::with_decode_context(|ctx| crate::om::references(ctx, bytes, base_offset)).unwrap()
@@ -35,8 +41,8 @@ fn om_numeric_expression_types_only_canonical_parameter_names() {
         assert_eq!(expressions[0].name.index(), None);
         assert_eq!(expressions[0].name.qualifier(), None);
     }
-    assert!(expression_declaration_name(b"\x04\x08p12foo\0").is_none());
-    assert!(expression_declaration_name(b"\x04\x06p12_\0").is_none());
+    assert!(expression_declaration_name_for_test(b"\x04\x08p12foo\0").is_none());
+    assert!(expression_declaration_name_for_test(b"\x04\x06p12_\0").is_none());
 }
 
 #[test]
@@ -56,7 +62,7 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
     assert_eq!(expressions[0].expression, "(193.94 - 6) / 2 + 1.5e1");
     assert_eq!(
         expressions[0]
-            .constant_value()
+            .constant_value(&ctx).unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(108.97)
     );
@@ -87,19 +93,19 @@ fn om_numeric_expression_accepts_inches_and_terminal_comments() {
     assert_eq!(expressions[0].expression, "0.5");
     assert_eq!(
         expressions[0]
-            .constant_value()
+            .constant_value(&ctx).unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(0.5)
     );
     assert_eq!(expressions[1].expression, "p1 * 2");
-    assert_eq!(expressions[1].constant_value(), None);
+    assert_eq!(expressions[1].constant_value(&ctx).unwrap(), None);
     assert_eq!(
         expressions[2].unit,
         ExpressionUnit::Native("custom/unit".into())
     );
     assert_eq!(
         expressions[2]
-            .constant_value()
+            .constant_value(&ctx).unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(4.0)
     );
@@ -165,7 +171,7 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
         ("2^3^2", 512.0),
     ] {
         assert_eq!(
-            evaluate_constant_expression(formula).map(cadmpeg_ir::scalar::FiniteReal::get),
+            evaluate_constant_expression_for_test(formula).map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(expected),
             "{formula}"
         );
@@ -178,18 +184,18 @@ fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
 
     let nested = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
     assert_eq!(
-        evaluate_constant_expression(&nested).map(cadmpeg_ir::scalar::FiniteReal::get),
+        evaluate_constant_expression_for_test(&nested).map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(1.0)
     );
 
     let unary = format!("{}1", "+".repeat(DEPTH));
     assert_eq!(
-        evaluate_constant_expression(&unary).map(cadmpeg_ir::scalar::FiniteReal::get),
+        evaluate_constant_expression_for_test(&unary).map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(1.0)
     );
 
     let malformed = format!("{}1", "(".repeat(DEPTH));
-    assert_eq!(evaluate_constant_expression(&malformed), None);
+    assert_eq!(evaluate_constant_expression_for_test(&malformed), None);
 }
 
 #[test]
@@ -278,7 +284,7 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
     );
     assert_eq!(
         expressions[0]
-            .constant_value()
+            .constant_value(&ctx).unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
@@ -363,4 +369,42 @@ fn printable_strings_refuse_retained_limit() {
 fn printable_strings_refuse_work_limit() {
     let error = printable_string_refusal(|policy| policy.limits.max_work_units = 0);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+fn expression_stack_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = b"(1 + 2) * 3";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::om::evaluate_constant_expression(&ctx, std::str::from_utf8(bytes).unwrap()).unwrap_err()
+}
+
+#[test]
+fn expression_stacks_refuse_collection_limit() {
+    let error = expression_stack_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn expression_stacks_refuse_scoped_limit() {
+    let error = expression_stack_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn expression_stacks_refuse_work_limit() {
+    let error = expression_stack_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn expression_declaration_propagates_expression_limit() {
+    let bytes = b"\x04\x04p1\0\x04\x052+2\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = crate::om::expression_declaration_name(&ctx, bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
