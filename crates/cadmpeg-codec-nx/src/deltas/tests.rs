@@ -845,7 +845,7 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
         census.bytes_decoded(),
         schema_end + (record_end - record_offset)
     );
-    let curves = crate::topology::intersection_data_curves(&stream);
+    let curves = crate::test_support::with_decode_context(|ctx| crate::topology::intersection_data_curves(ctx, &stream)).unwrap();
     assert_eq!(curves.len(), 1);
     assert_eq!(
         curves[0]
@@ -896,7 +896,7 @@ fn deltas_rejects_single_byte_intersection_data_before_its_schema_anchor() {
     let census = crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &stream)).unwrap();
     assert!(census.records.iter().all(|record| record.kind() != 90));
     assert!(!crate::test_support::with_decode_context(|ctx| census.full_counts(ctx)).unwrap().contains_key("INTERSECTION_DATA"));
-    assert!(crate::topology::intersection_data_curves(&stream).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::intersection_data_curves(ctx, &stream)).unwrap().is_empty());
 }
 
 #[test]

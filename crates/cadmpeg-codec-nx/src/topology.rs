@@ -624,12 +624,27 @@ pub(crate) struct CompositeCurve {
 
 /// Decode validated type-38 surface-intersection construction records.
 pub(crate) fn composite_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<CompositeCurve>, CodecError> {
-    Ok(Graph::parse(ctx, stream)?.composite_curves())
+    Graph::parse(ctx, stream)?.composite_curves(ctx)
+}
+
+fn collect_graph_records<T>(
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+    records: impl Iterator<Item = T>,
+) -> Result<Vec<T>, CodecError> {
+    let mut out = Vec::new();
+    for record in records {
+        ctx.charge_collection_items(1, operation)?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+        out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        out.push(record);
+    }
+    Ok(out)
 }
 
 impl Graph {
-    pub(crate) fn composite_curves(&self) -> Vec<CompositeCurve> {
-        self.of_kind(NodeKind::Intersection)
+    pub(crate) fn composite_curves(&self, ctx: &DecodeContext<'_>) -> Result<Vec<CompositeCurve>, CodecError> {
+        collect_graph_records(ctx, "NX composite curves", self.of_kind(NodeKind::Intersection)
             .filter_map(|node| {
                 let mut at = 8 + node.shift;
                 let header = read_sequence_at(&node.bytes, &mut at, 5)?;
@@ -658,15 +673,16 @@ impl Graph {
                         pos: node.pos,
                     })
             })
-            .collect()
+        )
     }
 }
 
 /// Decode single-byte `0x5a` intersection-data construction records.
-pub(crate) fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
+pub(crate) fn intersection_data_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<CompositeCurve>, CodecError> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
     let mut schema_anchor_seen = false;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.len()), "scan NX intersection data")?;
     for (pos, byte) in stream.iter().enumerate() {
         schema_anchor_seen |= intersection_data_schema_header_at(stream, pos);
         if *byte != 0x5a || !schema_anchor_seen {
@@ -675,12 +691,17 @@ pub(crate) fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         let Some((curve, _)) = intersection_data_curve_at(stream, pos, schema_anchor_seen) else {
             continue;
         };
-        if !seen.insert(curve.xmt) {
+        if seen.contains(&curve.xmt) {
             continue;
         }
+        ctx.charge_collection_items(1, "NX intersection identities")?;
+        seen.insert(curve.xmt);
+        ctx.charge_collection_items(1, "NX intersection data curves")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<CompositeCurve>()), "NX intersection data curves")?;
+        out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX intersection data curves", 0, 1))?;
         out.push(curve);
     }
-    out
+    Ok(out)
 }
 
 /// Return whether the complete type-38 schema header starts at `offset`.
@@ -739,12 +760,12 @@ pub(crate) fn intersection_data_curve_at(
 
 /// Decode validated type-56 rolling-ball blend surfaces.
 pub(crate) fn blend_surfaces(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<BlendSurface>, CodecError> {
-    Ok(Graph::parse(ctx, stream)?.blend_surfaces())
+    Graph::parse(ctx, stream)?.blend_surfaces(ctx)
 }
 
 impl Graph {
-    pub(crate) fn blend_surfaces(&self) -> Vec<BlendSurface> {
-        self.of_kind(NodeKind::BlendSurface)
+    pub(crate) fn blend_surfaces(&self, ctx: &DecodeContext<'_>) -> Result<Vec<BlendSurface>, CodecError> {
+        collect_graph_records(ctx, "NX blend surfaces", self.of_kind(NodeKind::BlendSurface)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
@@ -769,18 +790,18 @@ impl Graph {
                     pos: node.pos,
                 })
             })
-            .collect()
+        )
     }
 }
 
 /// Decode validated type-60 offset-surface records.
 pub(crate) fn offset_surfaces(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<OffsetSurface>, CodecError> {
-    Ok(Graph::parse(ctx, stream)?.offset_surfaces())
+    Graph::parse(ctx, stream)?.offset_surfaces(ctx)
 }
 
 impl Graph {
-    pub(crate) fn offset_surfaces(&self) -> Vec<OffsetSurface> {
-        self.of_kind(NodeKind::OffsetSurface)
+    pub(crate) fn offset_surfaces(&self, ctx: &DecodeContext<'_>) -> Result<Vec<OffsetSurface>, CodecError> {
+        collect_graph_records(ctx, "NX offset surfaces", self.of_kind(NodeKind::OffsetSurface)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let discriminator =
@@ -803,18 +824,18 @@ impl Graph {
                     pos: node.pos,
                 })
             })
-            .collect()
+        )
     }
 }
 
 /// Decode type-137 surface-curve records as aliases of their 3D basis curves.
 pub(crate) fn surface_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<SurfaceCurve>, CodecError> {
-    Ok(Graph::parse(ctx, stream)?.surface_curves())
+    Graph::parse(ctx, stream)?.surface_curves(ctx)
 }
 
 impl Graph {
-    pub(crate) fn surface_curves(&self) -> Vec<SurfaceCurve> {
-        self.of_kind(NodeKind::SpCurve)
+    pub(crate) fn surface_curves(&self, ctx: &DecodeContext<'_>) -> Result<Vec<SurfaceCurve>, CodecError> {
+        collect_graph_records(ctx, "NX surface curves", self.of_kind(NodeKind::SpCurve)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
@@ -825,7 +846,7 @@ impl Graph {
                     pos: node.pos,
                 })
             })
-            .collect()
+        )
     }
 }
 
@@ -834,12 +855,12 @@ impl Graph {
 /// The result retains the basis-curve reference and parameter range. Topological
 /// endpoints come from the corresponding edge and vertex records.
 pub(crate) fn trimmed_curves(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<TrimmedCurve>, CodecError> {
-    Ok(Graph::parse(ctx, stream)?.trimmed_curves())
+    Graph::parse(ctx, stream)?.trimmed_curves(ctx)
 }
 
 impl Graph {
-    pub(crate) fn trimmed_curves(&self) -> Vec<TrimmedCurve> {
-        self.of_kind(NodeKind::TrimmedCurve)
+    pub(crate) fn trimmed_curves(&self, ctx: &DecodeContext<'_>) -> Result<Vec<TrimmedCurve>, CodecError> {
+        collect_graph_records(ctx, "NX trimmed curves", self.of_kind(NodeKind::TrimmedCurve)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
@@ -854,7 +875,7 @@ impl Graph {
                     pos: node.pos,
                 })
             })
-            .collect()
+        )
     }
 }
 

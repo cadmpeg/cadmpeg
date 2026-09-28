@@ -129,7 +129,7 @@ pub fn topology(data: &[u8]) {
         }
     }
     drop(crate::topology::composite_curves(&ctx, data));
-    let _ = crate::topology::intersection_data_curves(data);
+    drop(crate::topology::intersection_data_curves(&ctx, data));
     drop(crate::topology::blend_surfaces(&ctx, data));
     drop(crate::topology::offset_surfaces(&ctx, data));
     drop(crate::topology::surface_curves(&ctx, data));

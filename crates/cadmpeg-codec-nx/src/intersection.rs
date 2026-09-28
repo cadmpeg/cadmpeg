@@ -365,21 +365,19 @@ pub(crate) fn curves(
 /// Decode chart-backed constructions and classify every rejected construction.
 fn scan(ctx: &DecodeContext<'_>, stream: &[u8], point_layout: ChartPointLayout) -> Result<CurveScan, CodecError> {
     let graph = topology::Graph::parse(ctx, stream)?;
-    Ok(scan_with_graph(stream, &graph, point_layout))
+    scan_with_graph(ctx, stream, &graph, point_layout)
 }
 
 pub(crate) fn scan_with_graph(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
-) -> CurveScan {
+) -> Result<CurveScan, CodecError> {
     let uv = uv_records(stream);
-    let constructions = graph
-        .composite_curves()
-        .into_iter()
-        .chain(topology::intersection_data_curves(stream))
-        .collect();
-    scan_with_auxiliaries(
+    let mut constructions = graph.composite_curves(ctx)?;
+    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    Ok(scan_with_auxiliaries(
         &chart_records(stream, point_layout),
         &term_records(stream),
         &uv,
@@ -387,7 +385,24 @@ pub(crate) fn scan_with_graph(
         graph,
         constructions,
         CrossFormCollision::Reject,
-    )
+    ))
+}
+
+fn append_intersection_data_curves(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    constructions: &mut Vec<CompositeCurve>,
+) -> Result<(), CodecError> {
+    let twins = topology::intersection_data_curves(ctx, stream)?;
+    let count = cadmpeg_core::decode::u64_from_index(twins.len());
+    ctx.charge_collection_items(count, "NX intersection constructions")?;
+    let bytes = count.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<CompositeCurve>()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX intersection constructions", 0, count))?;
+    ctx.charge_retained(bytes, "NX intersection constructions")?;
+    constructions.try_reserve(twins.len())
+        .map_err(|_| ctx.refuse_codec_limit("NX intersection constructions", 0, count))?;
+    constructions.extend(twins);
+    Ok(())
 }
 
 /// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
@@ -399,15 +414,16 @@ fn scan_with_auxiliary_replacements(
     replacement_streams: &[&[u8]],
 ) -> Result<CurveScan, CodecError> {
     let graph = topology::Graph::parse(ctx, stream)?;
-    Ok(scan_with_auxiliary_replacements_and_graph(stream, base_stream, replacement_streams, &graph))
+    scan_with_auxiliary_replacements_and_graph(ctx, stream, base_stream, replacement_streams, &graph)
 }
 
 pub(crate) fn scan_with_auxiliary_replacements_and_graph(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
     graph: &topology::Graph,
-) -> CurveScan {
+) -> Result<CurveScan, CodecError> {
     let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
     let mut terms = term_records(base_stream);
     let mut uv = uv_records(base_stream);
@@ -418,12 +434,9 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         uv.extend(uv_records(replacement_stream));
         bridges.extend(blend_bound_records(replacement_stream));
     }
-    let constructions = graph
-        .composite_curves()
-        .into_iter()
-        .chain(topology::intersection_data_curves(stream))
-        .collect();
-    scan_with_auxiliaries(
+    let mut constructions = graph.composite_curves(ctx)?;
+    append_intersection_data_curves(ctx, stream, &mut constructions)?;
+    Ok(scan_with_auxiliaries(
         &charts,
         &terms,
         &uv,
@@ -431,7 +444,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         graph,
         constructions,
         CrossFormCollision::PreferDeltaTwin,
-    )
+    ))
 }
 
 #[derive(Clone, Copy)]

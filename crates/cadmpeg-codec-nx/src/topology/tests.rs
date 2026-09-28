@@ -278,13 +278,39 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
             .and_then(|node| node.u32_at(4)),
         Some(u32::MAX)
     );
-    assert_eq!(graph.offset_surfaces().len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| graph.offset_surfaces(ctx)).unwrap().len(), 1);
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+}
+
+#[test]
+fn topology_projection_route_refuses_collection_limit() {
+    let stream = offset_surface_topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    let error = graph.offset_surfaces(&ctx).expect_err("offset surface collection refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn topology_projection_route_refuses_retained_limit() {
+    let stream = offset_surface_topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    let error = graph.offset_surfaces(&ctx).expect_err("offset surface retained refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
@@ -776,7 +802,7 @@ fn intersection_data_requires_complete_schema_header() {
         source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
     incomplete_header.push(0xfe);
     incomplete_header.extend_from_slice(&source[record_start..]);
-    assert!(intersection_data_curves(&incomplete_header).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| intersection_data_curves(ctx, &incomplete_header)).unwrap().is_empty());
     assert!(crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &incomplete_header)).unwrap()
         .records
         .iter()
