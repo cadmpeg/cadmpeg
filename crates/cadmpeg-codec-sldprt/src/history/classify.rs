@@ -463,10 +463,12 @@ pub(super) fn extrude_op(kind: &str) -> Option<BooleanOp> {
 }
 
 pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
-    match kind.to_ascii_lowercase().as_str() {
-        "bossloft" | "boundaryboss" => Some(BooleanOp::Join),
-        "cutloft" | "boundarycut" => Some(BooleanOp::Cut),
-        _ => None,
+    if ["bossloft", "boundaryboss"].iter().any(|name| kind.eq_ignore_ascii_case(name)) {
+        Some(BooleanOp::Join)
+    } else if ["cutloft", "boundarycut"].iter().any(|name| kind.eq_ignore_ascii_case(name)) {
+        Some(BooleanOp::Cut)
+    } else {
+        None
     }
 }
 
