@@ -409,7 +409,7 @@ pub(super) fn emit_faces(
     let pcurve_uses = emitted.pcurve_uses;
     let edge_id_map = emitted.edge_ids;
     let ownership = &plan.ownership;
-    let components = ownership.components();
+    let components = ownership.components(admission.ctx)?;
     let loop_orientation = &plan.loop_orientation;
 
     let body_id = BodyId::compose(

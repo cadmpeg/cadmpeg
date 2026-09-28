@@ -16,7 +16,7 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
 use crate::families::b5::transfer::{
-    curve_on_parameter_range, referenced_surface_ids, transfer, SurfacePlan,
+    curve_on_parameter_range, transfer, SurfacePlan,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -30,6 +30,19 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn referenced_surface_ids(
+    roots: impl IntoIterator<Item = u32>,
+    offsets: &BTreeMap<u32, B5OffsetSurface>,
+    supported: &BTreeMap<u32, B5SupportedSurface>,
+    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
+    aliases: &BTreeMap<u32, u32>,
+) -> HashSet<u32> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::referenced_surface_ids(ctx, roots, offsets, supported,
+            extrusions, aliases)
+    }).expect("service budget")
+}
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
@@ -317,6 +330,13 @@ fn surface_closure_follows_aliases_to_native_constructions() {
         },
     )]);
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);
+
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::referenced_surface_ids(ctx, [10], &offsets, &BTreeMap::new(),
+            &BTreeMap::new(), &aliases)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_referenced_surface_ids"));
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
@@ -1258,7 +1278,11 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("service decode")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    assert_eq!(ownership.components().len(), 2);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| ownership.components(ctx));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_component_groups"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+        .expect("service budget").len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -1292,7 +1316,8 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("service decode")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(ownership.components().len(), 1);
+    assert_eq!(crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+        .expect("service budget").len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
