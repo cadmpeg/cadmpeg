@@ -730,3 +730,26 @@ fn f3z_prefix_detects_as_f3d() {
         Confidence::High
     );
 }
+
+#[test]
+fn f3z_member_scan_propagates_collection_limit() {
+    let member = crate::test_support::zip_test::synthetic_f3d(true);
+    let archive = crate::test_support::assembly_test::f3z_archive(
+        "part.f3d",
+        &[("part.f3d", member.as_slice())],
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &archive, &arena, &policy,
+    ).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+    limited_policy.limits.max_collection_items = 0;
+    let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &limited_policy,
+    ).unwrap();
+    let error = crate::f3z::archive::classify_members(&limited, &scan)
+        .err().expect("member scan must refuse");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
