@@ -41,6 +41,10 @@ arrangement_item_refusal!(edge_bounds_refuse_limit, "f3d arrangement edge bounds
 arrangement_item_refusal!(face_boundary_refuses_limit, "f3d arrangement face boundary");
 arrangement_item_refusal!(face_point_refuses_limit, "f3d arrangement face point");
 arrangement_item_refusal!(face_refuses_limit, "f3d arrangement face");
+arrangement_item_refusal!(retained_edge_mark_refuses_limit,
+    "f3d arrangement retained edge mark");
+arrangement_item_refusal!(retained_edge_refuses_limit,
+    "f3d arrangement retained edge");
 
 macro_rules! arrangement_id_refusal {
     ($name:ident, $operation:literal) => {
@@ -77,6 +81,17 @@ fn node_refuses_limit() {
             0.0, Some(&ctx)),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement node"
+    ));
+}
+
+#[test]
+fn pending_node_refuses_limit() {
+    let (arena, policy) = context_with_collection_limit(1);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::arrangement_has_alternate_path(&[], 0, 0, 0, 1, Some(&ctx)),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d arrangement pending nodes"
     ));
 }
 

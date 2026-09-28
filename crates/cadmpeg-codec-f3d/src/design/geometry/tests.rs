@@ -721,7 +721,7 @@ fn arrangement_refusal_at_operation(
 
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 1826);
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 0);
     assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
     assert_eq!(limit.used, maximum);
     assert_eq!(limit.additional, 2);
@@ -748,7 +748,7 @@ fn arrangement_outgoing_entries_refuse_materialized_limit() {
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 1829);
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 0);
     assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
     assert_eq!(limit.used, maximum);
     assert_eq!(limit.additional, 3);
