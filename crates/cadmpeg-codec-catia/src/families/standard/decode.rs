@@ -3867,11 +3867,12 @@ pub(super) fn standard_object_evidence_from_streams(
                 "catia_standard_requested_surfaces")?;
         }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            ctx,
             &stream,
             &requested_surfaces,
             &frames,
             refusal,
-        );
+        )?;
         let targeted_graph = crate::families::b5::graph::targeted_geometry_graph_from_frames(
             ctx, &stream, &frames, refusal,
         )?;
@@ -3963,11 +3964,12 @@ pub(super) fn standard_object_evidence_from_streams(
                 "catia_standard_pcurve_surface_ids")?;
         }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            ctx,
             &stream,
             &surface_ids,
             &frames,
             refusal,
-        );
+        )?;
         for (edge, references) in edge_pcurves {
             let sides = references.map(|reference| -> Result<_, cadmpeg_core::CodecError> {
                 let Some(pcurve) = pcurves.get(&reference).and_then(Option::as_ref) else {
