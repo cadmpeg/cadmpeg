@@ -548,7 +548,7 @@ fn edge_flange_operation_at(
     // names one edge group and one aggregate group in the same two slots, so
     // neither the further groups nor the order of their operands against the
     // aggregate operands is established, and such a frame is refused.
-    if references.len() < 8 {
+    if !(8..=8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS).contains(&references.len()) {
         return None;
     }
     let common = start.checked_add(85)?.checked_add(header_shift)?;
