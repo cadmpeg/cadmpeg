@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
 use crate::container::ContainerScan;
 use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -137,7 +137,7 @@ fn parse_canvas_image(
     let geometry_record_index = marked_reference(bytes, geometry_reference_at)?;
     let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
     let (geometry_class_tag, after_geometry_tag) =
-        lp_ascii_filtered(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, geometry_at, 0..=2000, u8::is_ascii_graphic)?;
     let geometry_prologue: [u8; 15] = bytes
         .get(geometry_at + 11..geometry_at + 26)?
         .try_into()
@@ -153,7 +153,7 @@ fn parse_canvas_image(
         geometry_record_index,
     )?;
     let (paired_geometry_class_tag, after_paired_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let paired_component_at = paired_at + 19;
     if View::u32_le_at(bytes, after_paired_tag)? != geometry_record_index
         || paired_at <= geometry_at
@@ -220,7 +220,7 @@ fn parse_canvas_image(
     }
     let asset_record_at = paired_at.checked_add(30)?;
     let (asset_class_tag, after_asset_tag) =
-        lp_ascii_filtered(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
         || bytes.get(asset_record_at + 11..asset_record_at + 21)? != [0; 10]
     {
@@ -234,6 +234,18 @@ fn parse_canvas_image(
     if after_asset_name != scope_at {
         return None;
     }
+    let geometry_class_tag = match copy_ascii_retained(ctx, geometry_class_tag, "f3d Canvas geometry class tag") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let paired_geometry_class_tag = match copy_ascii_retained(ctx, paired_geometry_class_tag, "f3d Canvas paired geometry class tag") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let asset_class_tag = match copy_ascii_retained(ctx, asset_class_tag, "f3d Canvas asset class tag") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
 
     DesignCanvasImage::new(
         ids::native_design_canvas_image_id(stream, geometry_at),
@@ -326,6 +338,35 @@ mod tests {
             "paired_byte_offset": 500
         })).unwrap();
         (bytes, scope)
+    }
+
+    fn assert_class_tag_retained_refusal(limit: u64, operation: &'static str) {
+        let (bytes, scope) = fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_canvas_image(&ctx, &bytes, "Design/BulkStream.dat", &scope)
+            .err()
+            .unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == operation));
+    }
+
+    #[test]
+    fn canvas_geometry_class_tag_refuses_retained_limit() {
+        assert_class_tag_retained_refusal(8, "f3d Canvas geometry class tag");
+    }
+
+    #[test]
+    fn canvas_paired_geometry_class_tag_refuses_retained_limit() {
+        assert_class_tag_retained_refusal(11, "f3d Canvas paired geometry class tag");
+    }
+
+    #[test]
+    fn canvas_asset_class_tag_refuses_retained_limit() {
+        assert_class_tag_retained_refusal(14, "f3d Canvas asset class tag");
     }
 
     #[test]
