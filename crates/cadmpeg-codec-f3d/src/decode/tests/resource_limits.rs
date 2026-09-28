@@ -763,6 +763,43 @@ fn dimension_native() -> crate::native::F3dNative {
 }
 
 #[test]
+fn container_only_dimension_companion_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let error = super::super::collect_decode_set(
+        &ctx,
+        [("f3d:Design", 30)],
+        "index F3D container-only dimension companions",
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D container-only dimension companions"));
+}
+
+#[test]
+fn container_only_neutral_parameter_id_refuses_retained_limit() {
+    let native = dimension_native();
+    let parameter = native.design_parameters.iter().next().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::ids::neutral_parameter_id_charged(&ctx, parameter).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn container_only_neutral_parameter_id_matches_identity_shape() {
+    let native = dimension_native();
+    let parameter = native.design_parameters.iter().next().unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(
+        crate::ids::neutral_parameter_id_charged(&ctx, parameter).unwrap(),
+        crate::ids::neutral_parameter_id(parameter),
+    );
+}
+
+#[test]
 fn dimension_owner_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 1);

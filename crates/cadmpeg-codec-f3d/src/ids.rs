@@ -461,6 +461,45 @@ pub(crate) fn neutral_parameter_id(
     )
 }
 
+struct EncodedParameterKey<'a> {
+    stream: &'a str,
+    encoded_len: usize,
+    record_index: u32,
+}
+
+impl std::fmt::Display for EncodedParameterKey<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}:", self.encoded_len)?;
+        for character in self.stream.chars() {
+            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    write!(formatter, "%{byte:02X}")?;
+                }
+            } else {
+                write!(formatter, "{character}")?;
+            }
+        }
+        write!(formatter, "{}", self.record_index)
+    }
+}
+
+/// Compose a neutral parameter identity after admitting its complete text.
+pub(crate) fn neutral_parameter_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameter: &DesignParameter,
+) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
+    let stream = native_stream(&parameter.id).unwrap_or(DEFAULT_STREAM);
+    let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral parameter ID")?;
+    let id = native_scoped_id_charged(
+        ctx,
+        "model",
+        "parameter",
+        EncodedParameterKey { stream, encoded_len, record_index: parameter.record_index },
+    )?;
+    cadmpeg_ir::features::ParameterId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
+}
+
 /// The neutral parameter key from its `stream` and indexed-record identity, with
 /// `stream` length-prefixed into a `#{len}:{key}` segment.
 pub(crate) fn neutral_parameter_id_parts(
