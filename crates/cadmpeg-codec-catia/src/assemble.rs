@@ -674,26 +674,30 @@ pub(crate) fn link_payload_carriers(
     Ok(())
 }
 
-pub(crate) fn build_container_report(scan: &ContainerScan) -> DecodeBody {
-    let mut losses = vec![CatiaLossCode::GeometryBrepNotTransferred.note(format!(
+pub(crate) fn build_container_report(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    let mut losses = Vec::new();
+    resource::push_loss(ctx, &mut losses, CatiaLossCode::GeometryBrepNotTransferred, format_args!(
         "No B-rep geometry was transferred. This file's storage variant is `{}` ({}); the \
          applicable decoded record families transfer geometry in this codec.",
         scan.variant.id(),
         scan.variant.description()
-    ))];
+    ), "catia_container_report_brep_loss")?;
 
-    losses.push(CatiaLossCode::TopologyGraphNotBuilt.note(
+    resource::push_loss(ctx, &mut losses, CatiaLossCode::TopologyGraphNotBuilt, format_args!(
         "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
-                  for this file.",
-    ));
+                  for this file."
+    ), "catia_container_report_topology_loss")?;
 
-    DecodeBody {
+    Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
         notes: Vec::new(),
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    })
 }
 
 pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
@@ -857,6 +861,29 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn container_report_losses_refuse_low_retained_and_collection_limits() {
+        let scan = crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(ctx, crate::test_support::test_container::standard_catpart())
+        }).expect("service profile admits container scan");
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::build_container_report(ctx, &scan)
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_container_report_brep_loss"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::build_container_report(ctx, &scan)
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_container_report_brep_loss"));
+        let report = crate::test_support::with_service_context(|ctx| {
+            super::build_container_report(ctx, &scan)
+        }).expect("service profile admits container report");
+        assert_eq!(report.losses.len(), 2);
+        assert!(report.losses[0].message.contains("No B-rep geometry was transferred"));
+        assert!(report.losses[1].message.contains("topology graph"));
+    }
 
     #[test]
     fn payload_carrier_links_refuse_collection_and_retained_limits() {

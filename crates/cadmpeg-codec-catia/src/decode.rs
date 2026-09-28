@@ -78,7 +78,7 @@ fn decode_over_routes(
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-        let report = build_container_report(&scan);
+        let report = build_container_report(ctx, &scan)?;
         return decode_result(ctx, &scan, &matched, ir, report, annotations, unknowns);
     }
 
@@ -125,7 +125,7 @@ fn decode_over_routes(
     }
 
     let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
-    let report = build_container_report(&scan);
+    let report = build_container_report(ctx, &scan)?;
     finish_decode(
         ctx,
         &scan,
