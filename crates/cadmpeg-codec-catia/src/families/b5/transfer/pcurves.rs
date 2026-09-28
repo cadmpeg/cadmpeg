@@ -765,16 +765,16 @@ pub(super) fn emit_pcurves(
         let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
         let range_count = ranges.len();
         for (rank, (parameter_range, occurrences)) in ranges.into_values().enumerate() {
-            let key = cadmpeg_ir::ids::IdentityKey::from(object_id);
-            let key = if range_count == 1 {
-                key
+            let id = if range_count == 1 {
+                crate::resource::format_retained(admission.context(),
+                    format_args!("catia:b5:pcurve#{object_id}"),
+                    "catia_b5_emitted_pcurve_id")?
             } else {
-                key.then(cadmpeg_ir::identity_key!("@")).then(rank)
+                crate::resource::format_retained(admission.context(),
+                    format_args!("catia:b5:pcurve#{object_id}@{rank}"),
+                    "catia_b5_emitted_pcurve_id")?
             };
-            let id = PcurveId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "b5", "pcurve"),
-                key,
-            );
+            let id = PcurveId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
                 admission.context(),
                 annotations,
