@@ -36,6 +36,23 @@ append_refuses_collection_limit!(local_occurrence_append_refuses_collection_limi
 append_refuses_collection_limit!(unresolved_occurrence_append_refuses_collection_limit, "append F3D unresolved occurrences");
 
 #[test]
+fn model_brep_candidate_index_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let blob_names: Vec<String> = crate::container::design_breps(&scan)
+        .map(|brep| brep.name.rsplit('/').next().unwrap().to_owned())
+        .collect();
+    assert!(!blob_names.is_empty());
+    let limited = context(&arena, 0);
+    let error = super::super::model_brep_candidates(&limited, &scan, &blob_names).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D model BREP candidates"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
