@@ -463,18 +463,58 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
 fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
     let bodies = [2, 4, 5, 6, 7].into_iter().collect();
 
-    assert_eq!(
-        pattern_combine_tool_slots(&bodies, 4, 4),
-        Some(vec![2, 5, 6, 7])
-    );
-    assert_eq!(pattern_combine_tool_slots(&bodies, 3, 5), None);
-    assert_eq!(pattern_combine_tool_slots(&bodies, 4, 3), None);
-    assert_eq!(pattern_combine_tool_slots(&bodies, 4, 5), None);
+    with_history_decode_context(|ctx| {
+        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 4).unwrap(), Some(vec![2, 5, 6, 7]));
+        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 3, 5).unwrap(), None);
+        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 3).unwrap(), None);
+        assert_eq!(pattern_combine_tool_slots(ctx, &bodies, 4, 5).unwrap(), None);
+    });
     assert_eq!(
         historical_body_slot("f3d:history-input:body#80:escaped-feature:35:2"),
         Some(2)
     );
     assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+}
+
+fn with_combine_collection_limit<T>(
+    max_items: u64,
+    f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    f(&ctx)
+}
+
+#[test]
+fn pattern_combine_tool_slots_refuse_collection_limit() {
+    let bodies = [2, 4, 5].into_iter().collect();
+    let result = with_combine_collection_limit(1, |ctx|
+        pattern_combine_tool_slots(ctx, &bodies, 4, 2));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn combine_recipe_tool_index_refuses_collection_limit() {
+    let result = with_combine_collection_limit(0, |ctx|
+        combine_recipe_family_tool_slots(ctx, "f3d:design", 1, &[1], 1, 0, &[], &[]));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn combine_historical_rows_refuse_collection_limit() {
+    let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#combine").unwrap();
+    let result = with_combine_collection_limit(0, |ctx|
+        super::super::combine_historical_rows(ctx, &feature, 1, vec![2], vec!["native".into()]));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn combine_member_validation_refuses_collection_limit() {
+    let result = with_combine_collection_limit(1, |ctx|
+        super::super::charge_combine_body_members(ctx, 1));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
 }
 
 #[test]
@@ -580,17 +620,18 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         operand(4, &recipes[3], None, &[]),
     ];
 
-    assert_eq!(
-        combine_recipe_family_tool_slots(stream, 10, &[1, 2, 3, 4], 317, 1, &operands, &recipes,),
+    with_history_decode_context(|ctx| assert_eq!(
+        combine_recipe_family_tool_slots(ctx, stream, 10, &[1, 2, 3, 4], 317, 1, &operands, &recipes).unwrap(),
         Some(vec![5, 6, 7, 8])
-    );
+    ));
 
     *operands[1]
         .reference_bindings_mut()
         .next()
         .unwrap()
         .preceding_body_slots = vec![6, 7, 9];
-    assert!(combine_recipe_family_tool_slots(
+    assert!(with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
+        ctx,
         stream,
         10,
         &[1, 2, 3, 4],
@@ -598,7 +639,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         1,
         &operands,
         &recipes,
-    )
+    ).unwrap())
     .is_none());
 
     operands[1]
@@ -610,7 +651,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
     let mut duplicate_selector = recipes.clone();
     duplicate_selector[1].design.as_mut().unwrap().selector =
         duplicate_selector[2].design.as_ref().unwrap().selector;
-    assert!(combine_recipe_family_tool_slots(
+    assert!(with_history_decode_context(|ctx| combine_recipe_family_tool_slots(
+        ctx,
         stream,
         10,
         &[1, 2, 3, 4],
@@ -618,16 +660,13 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         1,
         &operands,
         &duplicate_selector,
-    )
+    ).unwrap())
     .is_none());
 }
 
-#[test]
-fn combine_external_tools_retain_complete_occurrence_local_identities() {
-    use cadmpeg_ir::features::BodySelection;
-
-    let identity = |occurrence_reference| {
-        crate::records::feature::combine::DesignCombineExternalBodyIdentityWire {
+fn combine_external_identity(occurrence_reference: u64) ->
+    crate::records::feature::combine::DesignCombineExternalBodyIdentity {
+    crate::records::feature::combine::DesignCombineExternalBodyIdentityWire {
             selector_asset_id: "11111111-1111-4111-8111-111111111111"
                 .to_owned()
                 .try_into()
@@ -657,10 +696,24 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             external_version_urn_offset: None,
             tail_values: [0, 0],
             tail_value_offsets: [359, 371],
-        }
-        .try_into()
-        .unwrap()
-    };
+    }
+    .try_into()
+    .unwrap()
+}
+
+#[test]
+fn combine_external_identity_refuses_retained_limit() {
+    let identity = combine_external_identity(500);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = crate::ids::neutral_combine_external_body_id_charged(&ctx, &identity);
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+fn combine_external_scope() -> crate::records::feature::scope::DesignParameterScope {
+    let identity = combine_external_identity;
     let tool = |record_index, occurrence_reference| {
         crate::records::feature::combine::DesignCombineBodySelection {
             record_index,
@@ -688,8 +741,31 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             },
         });
     }
+    scope
+}
+
+#[test]
+fn combine_external_tools_refuse_collection_limit() {
+    let scope = combine_external_scope();
+    let result = with_combine_collection_limit(0, |ctx|
+        super::super::combine_external_local_tools(ctx, &scope));
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn combine_external_tools_retain_complete_occurrence_local_identities() {
+    use cadmpeg_ir::features::BodySelection;
+
+    let tool = |record_index, occurrence_reference| {
+        crate::records::feature::combine::DesignCombineBodySelection {
+            record_index,
+            external_identity: Some(combine_external_identity(occurrence_reference)),
+        }
+    };
+    let mut scope = combine_external_scope();
     let BodySelection::Local { bodies, native } =
-        super::super::combine_external_local_tools(&scope).expect("complete local tool identity")
+        with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
+            .unwrap().expect("complete local tool identity")
     else {
         panic!("local body selection");
     };
@@ -702,7 +778,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
         .expect("Combine operation")
         .tools
         .additional[0] = tool(13, 500);
-    assert!(super::super::combine_external_local_tools(&scope).is_none());
+    assert!(with_history_decode_context(|ctx| super::super::combine_external_local_tools(ctx, &scope))
+        .unwrap().is_none());
 }
 
 #[test]
