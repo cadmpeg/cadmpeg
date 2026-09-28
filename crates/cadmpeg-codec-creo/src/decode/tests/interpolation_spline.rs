@@ -290,6 +290,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         ExtrusionSpan::new(-2.0, 3.0).expect("valid span fixture"),
         &mut diagnostics,
     )
+    .expect("spline side surface resources")
     .expect("spline side surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(side)) = side else {
         panic!("spline side surface is not NURBS");

@@ -6,6 +6,48 @@ use crate::{
 };
 
 #[test]
+fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::geometry::nurbs::NurbsCurve;
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    ).expect("rational curve");
+    for limit in [0, 4] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = curve.map_control_points_admitted(
+            &ctx, "mapped NURBS fixture", |point| Point3::new(point.x + 2.0, point.y, point.z),
+        ).expect_err("knot or pole limit refuses the map");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "mapped NURBS fixture"
+                && resource.dimension == ResourceDimension::CollectionItems));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mapped = curve.map_control_points_admitted(
+        &ctx, "mapped NURBS fixture", |point| Point3::new(point.x + 2.0, point.y, point.z),
+    ).expect("mapping resources").expect("finite mapped curve");
+    assert_eq!(mapped.knots(), curve.knots());
+    assert_eq!(mapped.weights(), curve.weights());
+    assert_eq!(mapped.control_points(), vec![
+        Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0),
+    ]);
+    assert!(curve.map_control_points_admitted(
+        &ctx, "mapped NURBS fixture", |_| Point3::new(f64::INFINITY, 0.0, 0.0),
+    ).expect("mapping resources").is_none());
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;
