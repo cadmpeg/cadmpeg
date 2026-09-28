@@ -1087,7 +1087,7 @@ fn validate_loaded(
         &body_recipe_operand_records,
         &edge_operand_records,
         &edge_treatment_vertex_records,
-    );
+    )?;
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings)?;
     validate_extrude_selection_group_members(&ctx, &mut findings)?;
@@ -5933,19 +5933,18 @@ fn validate_operand_group_carriers<'a>(
     body_recipe_operand_records: &HashSet<(&'a str, u32)>,
     edge_operand_records: &HashSet<(&'a str, u32)>,
     edge_treatment_vertex_records: &HashSet<(&'a str, u32)>,
-) {
+) -> Result<(), CodecError> {
     let native = ctx.native;
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
-        let mut identity_members = native
+        let mut identity_members = ctx.collect_vec(native
             .design_edge_identity_operands
             .iter()
             .filter(|operand| {
                 design_stream(&operand.id) == native_stream
                     && operand.scope_record_index == group.scope_record_index
                     && operand.group_record_index == group.record_index
-            })
-            .collect::<Vec<_>>();
+            }), "collect F3D operand group identity members")?;
         identity_members.sort_by_key(|operand| operand.group_member_ordinal);
         let has_exact_identity_members = !group.members().is_empty()
             && identity_members.len() == group.members().len()
@@ -6093,24 +6092,23 @@ fn validate_operand_group_carriers<'a>(
             || has_exact_sketch_profile_member
             || has_exact_group_members;
         if !has_exact_member_carrier {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design construction operand group has no exact typed member"
-                    .into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design construction operand group has no exact typed member",
+                Some(ctx.copy_entity(&group.id)?),
+            )?;
         }
         if !has_exact_trailing_carrier {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design construction operand group has no exact trailing carrier"
-                    .into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design construction operand group has no exact trailing carrier",
+                Some(ctx.copy_entity(&group.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate Extrude selection members against their resolved sketch geometry.
