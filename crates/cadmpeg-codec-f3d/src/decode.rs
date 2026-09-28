@@ -1873,6 +1873,25 @@ fn push_decode_loss(
     Ok(())
 }
 
+fn push_decode_note(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    args: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "collect F3D decode notes";
+    ctx.charge_collection_items(1, OPERATION)?;
+    report
+        .notes
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    report.notes.push(format_decode_string(
+        ctx,
+        "retain F3D decode note",
+        args,
+    )?);
+    Ok(())
+}
+
 fn report_design_projection_gaps(
     ctx: &DecodeContext<'_>,
     report: &mut DecodeBody,
@@ -3117,9 +3136,10 @@ impl<'a> F3dDecodeSession<'a> {
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
                 if mesh_projection.count > 0 {
-                    apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
+                    apply_mesh_body_classification(ctx, &mut self.report, scan, mesh_projection.count)?;
                 } else {
                     apply_bodyless_design_classification(
+                        ctx,
                         &mut self.report,
                         container::design_breps(scan).count(),
                         container::text_brep_names(scan).count(),
@@ -3128,7 +3148,7 @@ impl<'a> F3dDecodeSession<'a> {
                         self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
                         self.native.design_canvas_images.len(),
-                    );
+                    )?;
                 }
                 report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
                 match inputs.xref {
@@ -3934,9 +3954,14 @@ fn report_xref_placement_overrides(
 ///
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
-fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan, bodies: usize) {
+fn apply_mesh_body_classification(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    scan: &ContainerScan,
+    bodies: usize,
+) -> Result<(), CodecError> {
     if container::design_breps(scan).next().is_some() {
-        return;
+        return Ok(());
     }
     report.losses.retain(|loss| {
         !matches!(
@@ -3947,11 +3972,16 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
         )
     });
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
-    report
-        .losses
-        .push(F3dLossCode::MeshVertexPrecisionReduced.note(format!(
+    push_decode_loss(
+        ctx,
+        report,
+        F3dLossCode::MeshVertexPrecisionReduced,
+        format_args!(
             "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
-        )));
+        ),
+        "collect F3D mesh classification losses",
+        "retain F3D mesh classification loss",
+    )
 }
 
 /// Classify a bodyless design whose transferred content requires no BREP.
@@ -3960,19 +3990,20 @@ fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan,
 /// Sketch entities can supply the complete geometry. Reference-image timeline
 /// objects are presentation content and require no geometry carrier.
 fn apply_bodyless_design_classification(
+    ctx: &DecodeContext<'_>,
     report: &mut DecodeBody,
     brep_streams: usize,
     text_brep_streams: usize,
     declared_bodies: usize,
     sketch_entities: usize,
     reference_images: usize,
-) {
+) -> Result<(), CodecError> {
     if brep_streams != 0
         || text_brep_streams != 0
         || declared_bodies != 0
         || (sketch_entities == 0 && reference_images == 0)
     {
-        return;
+        return Ok(());
     }
     report.losses.retain(|loss| {
         !matches!(
@@ -3984,19 +4015,38 @@ fn apply_bodyless_design_classification(
     });
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
     let message = match (sketch_entities, reference_images) {
-        (0, reference_images) => format!(
-            "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
-        ),
-        (sketch_entities, 0) => format!(
-            "sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"
-        ),
-        (sketch_entities, reference_images) => format!(
-            "bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
-        ),
+        (0, _) => format_decode_string(
+            ctx,
+            "retain F3D bodyless classification loss",
+            format_args!(
+                "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+            ),
+        )?,
+        (_, 0) => format_decode_string(
+            ctx,
+            "retain F3D bodyless classification loss",
+            format_args!(
+                "sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"
+            ),
+        )?,
+        _ => format_decode_string(
+            ctx,
+            "retain F3D bodyless classification loss",
+            format_args!(
+                "bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+            ),
+        )?,
     };
+    const OPERATION: &str = "collect F3D bodyless classification losses";
+    ctx.charge_collection_items(1, OPERATION)?;
+    report
+        .losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
     report
         .losses
         .push(F3dLossCode::BodylessDesignCarrier.note(message));
+    Ok(())
 }
 
 /// Reclassify a BREP-less assembly document: its model is the placement of
@@ -4018,42 +4068,50 @@ fn apply_assembly_classification(
                 LossCategory::Geometry | LossCategory::Topology
             ))
     });
-    report
-        .losses
-        .push(F3dLossCode::AssemblyComponentsExternal.note(format!(
+    push_decode_loss(ctx, report, F3dLossCode::AssemblyComponentsExternal, format_args!(
             "assembly document: geometry is defined by {} external reference(s); decode the \
          containing .f3z archive to resolve them",
             table.references.len()
-        )));
+        ), "collect F3D assembly classification losses", "retain F3D assembly classification loss")?;
     for reference in &table.references {
-        let property_note = if reference.neutron_data.is_empty()
-            || reference.neutron_data == reference.neutron_role
-        {
-            format!("neutronRole {}", reference.neutron_role)
-        } else {
-            format!(
-                "neutronRole {}, neutronData {}",
-                reference.neutron_role, reference.neutron_data
-            )
-        };
-        let note = match crate::xref::design_for(table, reference) {
-            Some(design) => format!(
-                "xref {}: {} -> {} (lineage {}, version {}, {})",
-                reference.ordinal,
-                design.display_name,
-                design.target_file_name,
-                design.lineage_urn,
-                design.version_urn,
-                property_note
-            ),
-            None => format!(
-                "xref {}: -> {} ({})",
-                reference.ordinal, reference.relative_path, property_note
-            ),
-        };
-        report.notes.push(note);
+        let property_note = XrefPropertyNote(reference);
+        match crate::xref::design_for(table, reference) {
+            Some(design) => push_decode_note(
+                ctx,
+                report,
+                format_args!(
+                    "xref {}: {} -> {} (lineage {}, version {}, {})",
+                    reference.ordinal,
+                    design.display_name,
+                    design.target_file_name,
+                    design.lineage_urn,
+                    design.version_urn,
+                    property_note
+                ),
+            )?,
+            None => push_decode_note(
+                ctx,
+                report,
+                format_args!(
+                    "xref {}: -> {} ({})",
+                    reference.ordinal, reference.relative_path, property_note
+                ),
+            )?,
+        }
     }
     Ok(())
+}
+
+struct XrefPropertyNote<'a>(&'a crate::records::xref::XrefReference);
+
+impl std::fmt::Display for XrefPropertyNote<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "neutronRole {}", self.0.neutron_role)?;
+        if !self.0.neutron_data.is_empty() && self.0.neutron_data != self.0.neutron_role {
+            write!(formatter, ", neutronData {}", self.0.neutron_data)?;
+        }
+        Ok(())
+    }
 }
 
 /// A decoded member whose authored source remains available to archive composition.
