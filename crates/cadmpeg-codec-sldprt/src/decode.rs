@@ -2849,6 +2849,11 @@ fn build_geometry_ir(
     attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
     ));
+    ctx.reserve_precharged_vec(
+        &mut lanes,
+        supplemental_config_lanes.len(),
+        "merge SLDPRT feature input lanes",
+    )?;
     lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
         feature_histories: histories.clone(),
@@ -4249,6 +4254,11 @@ fn build_metadata_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
+    ctx.reserve_precharged_vec(
+        &mut lanes,
+        supplemental_config_lanes.len(),
+        "merge SLDPRT feature input lanes",
+    )?;
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
         feature_histories: histories.clone(),
