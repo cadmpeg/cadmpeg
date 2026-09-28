@@ -31,6 +31,17 @@ fn collect_index<K: Eq + Hash, V>(
     Ok(index)
 }
 
+fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
 pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
 pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
 pub(crate) const SPLIT_LINE_TOOL_PROPERTY: &str = "SplitLineTool";
@@ -556,19 +567,20 @@ fn operation_carrier_present(
 /// Establish projected split-line mode and source sketch from each
 /// `moPLine_c` feature-input object while native dimension values remain raw.
 pub(crate) fn enrich_history_split_lines(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
+) -> Result<(), CodecError> {
     let mut observations = HashMap::<String, (bool, bool)>::new();
     for lane in lanes {
-        let mut objects = features
-            .iter()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
+        let mut objects = Vec::new();
+        for feature in histories.iter().flat_map(|history| &history.features) {
+            ctx.charge_work(1, "scan SLDPRT split-line objects")?;
+            if let Some(name) = feature_object_name(feature, lane) {
+                ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT split-line objects")?;
+                objects.push((name.offset, feature));
+            }
+        }
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, (start, feature)) in objects.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moPLine_c") {
@@ -584,42 +596,72 @@ pub(crate) fn enrich_history_split_lines(
                     class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
                 })
                 .count();
-            let observation = observations.entry(feature.id.clone()).or_default();
-            if project_classes == 1 {
-                observation.0 = true;
+            if let Some(observation) = observations.get_mut(&feature.id) {
+                if project_classes == 1 {
+                    observation.0 = true;
+                } else {
+                    observation.1 = true;
+                }
             } else {
-                observation.1 = true;
+                ctx.charge_collection_items(1, "index SLDPRT split-line observations")?;
+                observations.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT split-line observations", u64::MAX - 1, u64::MAX)
+                })?;
+                let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line observation ID")?;
+                observations.insert(key, (project_classes == 1, project_classes != 1));
             }
         }
     }
-    let tools = histories
-        .iter()
-        .flat_map(|history| {
-            history.features.iter().filter_map(|feature| {
-                (observations.get(&feature.id) == Some(&(true, false)))
-                    .then(|| split_line_source_sketch(feature, &history.features))
-                    .flatten()
-                    .map(|tool| (feature.id.clone(), tool.id.clone()))
-            })
-        })
-        .collect::<HashMap<_, _>>();
+    let mut tools = HashMap::new();
+    for history in histories.iter() {
+        for feature in &history.features {
+            if observations.get(&feature.id) != Some(&(true, false)) {
+                continue;
+            }
+            ctx.charge_work(
+                u64::try_from(history.features.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("resolve SLDPRT split-line source", u64::MAX - 1, u64::MAX)
+                })?,
+                "resolve SLDPRT split-line source",
+            )?;
+            let Some(tool) = split_line_source_sketch(feature, &history.features) else {
+                continue;
+            };
+            if !tools.contains_key(&feature.id) {
+                ctx.charge_collection_items(1, "index SLDPRT split-line tools")?;
+                tools.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT split-line tools", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
+            let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
+            tools.insert(key, value);
+        }
+    }
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
         if observations.get(&feature.id) == Some(&(true, false)) {
+            if !feature.properties.contains_key(SPLIT_LINE_MODE_PROPERTY) {
+                ctx.charge_collection_items(1, "bind SLDPRT split-line mode")?;
+            }
             feature.properties.insert(
                 cadmpeg_core::nonblank_const!(SPLIT_LINE_MODE_PROPERTY),
                 SPLIT_LINE_PROJECTION_MODE.into(),
             );
             if let Some(tool) = tools.get(&feature.id) {
+                if !feature.properties.contains_key(SPLIT_LINE_TOOL_PROPERTY) {
+                    ctx.charge_collection_items(1, "bind SLDPRT split-line tool")?;
+                }
                 feature.properties.insert(
                     cadmpeg_core::nonblank_const!(SPLIT_LINE_TOOL_PROPERTY),
-                    tool.clone(),
+                    copy_retained_string(ctx, tool, "retain SLDPRT split-line tool property")?,
                 );
             }
         }
     }
+    Ok(())
 }
 
 fn split_line_source_sketch<'a>(
