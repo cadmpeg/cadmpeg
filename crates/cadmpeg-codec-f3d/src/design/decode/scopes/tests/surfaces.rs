@@ -173,7 +173,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let construction = exact_base_feature_construction(&bytes, &scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
         .expect("generated Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -237,7 +237,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
+    let expanded = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &expanded_bytes, &expanded_scope).unwrap()
         .expect("expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -269,7 +269,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     legacy_compact_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     let legacy_compact =
-        exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope)
+        exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &legacy_compact_bytes, &legacy_compact_scope).unwrap()
             .expect("legacy compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -298,7 +298,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
 
     legacy_compact_bytes[96..100].copy_from_slice(&301u32.to_le_bytes());
     assert!(
-        exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope).is_none()
+        exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &legacy_compact_bytes, &legacy_compact_scope).unwrap().is_none()
     );
 
     let mut snapshot_bytes = vec![0u8; 485];
@@ -388,7 +388,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         .unwrap();
     snapshot_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
-    let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &snapshot_bytes, &snapshot_scope).unwrap()
         .expect("body-snapshot Base Feature frame is canonical");
     let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
     assert!(serialized.get("form").is_none());
@@ -436,7 +436,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     packed_snapshot_bytes[59..63].copy_from_slice(&snapshot_bytes[58..62]);
     packed_snapshot_bytes[63..215].copy_from_slice(&snapshot_bytes[62..214]);
     packed_snapshot_bytes[214..].copy_from_slice(&snapshot_bytes[214..]);
-    let packed = exact_base_feature_construction(&packed_snapshot_bytes, &snapshot_scope)
+    let packed = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &packed_snapshot_bytes, &snapshot_scope).unwrap()
         .expect("packed body-snapshot Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::BodySnapshot {
         related_guid_offsets,
@@ -457,7 +457,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &snapshot_bytes, &invalid_scope).unwrap().is_none());
 }
 
 #[test]
@@ -519,7 +519,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_base_feature_construction(&bytes, &scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -548,7 +548,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
 
     let mut nonzero_prefix = bytes;
     nonzero_prefix[11] = 1;
-    assert!(exact_base_feature_construction(&nonzero_prefix, &scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &nonzero_prefix, &scope).unwrap().is_none());
 }
 
 #[test]
@@ -619,7 +619,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
 
     for body_count in [1, 3, 4] {
         let (bytes, scope) = frame(body_count);
-        let construction = exact_base_feature_construction(&bytes, &scope)
+        let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
             .expect("class-409/class-262 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
             bodies,
@@ -651,7 +651,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             crate::records::references::DesignClassTag::try_from("360".to_owned()).unwrap();
         class_360_scope.paired_class_tag =
             crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-        let construction = exact_base_feature_construction(&bytes, &class_360_scope)
+        let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &class_360_scope).unwrap()
             .expect("class-360/class-258 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
             bodies,
@@ -707,7 +707,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_base_feature_construction(&zero_body, &zero_scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &zero_body, &zero_scope).unwrap()
         .expect("class-409/class-262 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -730,7 +730,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
 
     let mut nonzero_padding = zero_body.clone();
     nonzero_padding[prefix + 47] = 1;
-    assert!(exact_base_feature_construction(&nonzero_padding, &zero_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &nonzero_padding, &zero_scope).unwrap().is_none());
 }
 
 #[test]
@@ -794,7 +794,7 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         .unwrap();
     assert_eq!(cursor, 155);
 
-    let construction = exact_base_feature_construction(&bytes, &scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
         .expect("class-290/class-261 result-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -892,7 +892,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 
     for body_count in [1, 3, 4] {
         let (bytes, scope) = frame(body_count);
-        let construction = exact_base_feature_construction(&bytes, &scope)
+        let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
             .expect("class-444/class-263 result-body frame is canonical");
         let DesignBaseFeatureConstruction::ResultBodies {
             bodies,
@@ -922,7 +922,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 
     let (mut bytes, scope) = frame(1);
     bytes[24 + 30 + 6] = 1;
-    assert!(exact_base_feature_construction(&bytes, &scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap().is_none());
 
     let prefix = 17;
     let mut zero_body = vec![0u8; prefix + 258];
@@ -973,7 +973,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_base_feature_construction(&zero_body, &zero_scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &zero_body, &zero_scope).unwrap()
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
         bodies,
@@ -996,11 +996,11 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 
     let mut nonzero_tail = zero_body.clone();
     nonzero_tail[prefix + 41] = 1;
-    assert!(exact_base_feature_construction(&nonzero_tail, &zero_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &nonzero_tail, &zero_scope).unwrap().is_none());
 
     let mut mismatched_reference = zero_body.clone();
     mismatched_reference[prefix + 139] = 1;
-    assert!(exact_base_feature_construction(&mismatched_reference, &zero_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &mismatched_reference, &zero_scope).unwrap().is_none());
 }
 
 #[test]
@@ -1116,7 +1116,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         })
         .unwrap();
 
-    let construction = exact_base_feature_construction(&bytes, &scope)
+    let construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &scope).unwrap()
         .expect("class-377/class-259 Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::BodyBasedOnFaces {
         body,
@@ -1165,7 +1165,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap();
     class_365_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    let class_365_construction = exact_base_feature_construction(&bytes, &class_365_scope)
+    let class_365_construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &class_365_scope).unwrap()
         .expect("class-365/class-262 Base Feature frame is canonical");
     assert_eq!(class_365_construction, construction);
 
@@ -1178,7 +1178,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
 
     let mut nonzero_field = bytes.clone();
     nonzero_field[class_377::PARAMETER_REFERENCE_FIELD] = 1;
-    assert!(exact_base_feature_construction(&nonzero_field, &scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &nonzero_field, &scope).unwrap().is_none());
 
     let mut mismatched_previous = scope.clone();
     mismatched_previous
@@ -1187,12 +1187,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_base_feature_construction(&bytes, &mismatched_previous).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &mismatched_previous).unwrap().is_none());
 
     let mut mismatched_pair = scope;
     mismatched_pair.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
-    assert!(exact_base_feature_construction(&bytes, &mismatched_pair).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &bytes, &mismatched_pair).unwrap().is_none());
 }
 
 #[test]
@@ -1399,7 +1399,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             draft.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
         })
         .unwrap();
-    let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
+    let compact_construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &compact_bytes, &compact_scope).unwrap()
         .expect("class-452 compact Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
@@ -1474,7 +1474,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     );
 
     compact_bytes[compact::MODE] = 1;
-    let mode_one = exact_base_feature_construction(&compact_bytes, &compact_scope)
+    let mode_one = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &compact_bytes, &compact_scope).unwrap()
         .expect("mode-one class-452 compact frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
@@ -1579,7 +1579,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             draft.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
         })
         .unwrap();
-    let expanded_construction = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
+    let expanded_construction = exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &expanded_bytes, &expanded_scope).unwrap()
         .expect("class-452 expanded Base Feature frame is canonical");
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
         form,
@@ -1610,11 +1610,11 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
 
     let mut invalid_mode = compact_bytes;
     invalid_mode[compact::MODE] = 2;
-    assert!(exact_base_feature_construction(&invalid_mode, &compact_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &invalid_mode, &compact_scope).unwrap().is_none());
 
     let mut invalid_count = expanded_bytes.clone();
     put_u32(&mut invalid_count, expanded::BODY_COUNT, 1);
-    assert!(exact_base_feature_construction(&invalid_count, &expanded_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &invalid_count, &expanded_scope).unwrap().is_none());
 
     let mut invalid_scope_reference = expanded_bytes;
     put_u32_reference(
@@ -1622,7 +1622,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         expanded::SCOPE_REFERENCE_MARKER,
         999,
     );
-    assert!(exact_base_feature_construction(&invalid_scope_reference, &expanded_scope).is_none());
+    assert!(exact_base_feature_construction(&cadmpeg_test_support::service_decode_context(), &invalid_scope_reference, &expanded_scope).unwrap().is_none());
 }
 
 #[test]

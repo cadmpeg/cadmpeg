@@ -432,7 +432,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_base_feature_construction(bytes, &scope);
+                let construction = exact_base_feature_construction(ctx, bytes, &scope)?;
                 if let scope::DesignScopePayloadMut::BaseFeature(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
