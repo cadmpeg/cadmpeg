@@ -458,14 +458,17 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         physical_token: None,
         visual_preset: None,
     };
-    let projected = super::bind_bodies(
-        &[appearance],
-        &[assignment],
-        &std::collections::HashMap::new(),
-        &std::collections::HashMap::new(),
-        &[first, second],
-    )
-    .expect("blob-qualified material binding");
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        super::bind_bodies(
+            ctx,
+            &[appearance],
+            &[assignment],
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &[first, second],
+        )
+        .expect("blob-qualified material binding")
+    });
     let [binding] = projected.as_slice() else {
         panic!("one appearance binding expected")
     };

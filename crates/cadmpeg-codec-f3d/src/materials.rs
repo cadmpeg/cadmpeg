@@ -20,7 +20,7 @@ use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_protein::appearance::{
@@ -68,6 +68,55 @@ fn copy_material_text(
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
     copy.push_str(value);
     Ok(copy)
+}
+
+fn copy_material_option(
+    ctx: &DecodeContext<'_>,
+    value: Option<&str>,
+    operation: &'static str,
+) -> Result<Option<String>, CodecError> {
+    value.map(|text| copy_material_text(ctx, text, operation)).transpose()
+}
+
+fn copy_body_id(ctx: &DecodeContext<'_>, value: &BodyId) -> Result<BodyId, CodecError> {
+    let text = copy_material_text(ctx, value.as_str(), "copy F3D material body ID")?;
+    BodyId::mint(text).map_err(CodecError::malformed)
+}
+
+fn copy_appearance_id(
+    ctx: &DecodeContext<'_>,
+    value: &AppearanceId,
+) -> Result<AppearanceId, CodecError> {
+    let text = copy_material_text(ctx, value.as_str(), "copy F3D material appearance ID")?;
+    AppearanceId::mint(text).map_err(CodecError::malformed)
+}
+
+fn copy_act_channels(
+    ctx: &DecodeContext<'_>,
+    channels: Option<&BTreeMap<String, String>>,
+) -> Result<BTreeMap<String, String>, CodecError> {
+    let mut copied = BTreeMap::new();
+    if let Some(channels) = channels {
+        for (name, guid) in channels {
+            let name = copy_material_text(ctx, name, "copy F3D ACT channel name")?;
+            let guid = copy_material_text(ctx, guid, "copy F3D ACT channel GUID")?;
+            ctx.charge_collection_items(1, "copy F3D ACT channel map")?;
+            copied.insert(name, guid);
+        }
+    }
+    Ok(copied)
+}
+
+fn named_act_channels(
+    ctx: &DecodeContext<'_>,
+    owner: std::fmt::Arguments<'_>,
+    channels: Option<&BTreeMap<String, String>>,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, CodecError> {
+    let copied = copy_act_channels(ctx, channels)?;
+    let count = u64::try_from(copied.len())
+        .map_err(|_| ctx.refuse_codec_limit("index F3D named ACT channels", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "index F3D named ACT channels")?;
+    Ok(cadmpeg_core::text::named_entries(owner, copied)?)
 }
 
 fn lp_ascii_printable_charged(
@@ -709,8 +758,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 });
                 if let Some(((_, schema), category)) = matches.next() {
                     if matches.next().is_none() {
-                        appearance.schema = Some(schema.clone());
-                        appearance.category = category.clone();
+                        appearance.schema = Some(copy_material_text(ctx, schema, "copy F3D catalog schema")?);
+                        appearance.category = copy_material_option(ctx, category.as_deref(), "copy F3D catalog category")?;
                     }
                 }
             }
@@ -735,17 +784,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
         if appearance_for_assignment(&out, assignment)?.is_none() {
             push_material_item(ctx, &mut out, Appearance {
                 id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
-                name: assignment
-                    .visual_preset
-                    .as_ref()
-                    .map(|field| field.value.clone()),
-                asset_guid: Some(assignment.visual_guid.to_string()),
+                name: copy_material_option(ctx, assignment.visual_preset.as_ref().map(|field| field.value.as_str()), "copy F3D assigned appearance name")?,
+                asset_guid: Some(copy_material_text(ctx, &assignment.visual_guid, "copy F3D assigned asset GUID")?),
                 library_id: None,
-                visual_guid: Some(assignment.visual_guid.to_string()),
-                physical_token: assignment
-                    .physical_token
-                    .as_ref()
-                    .map(|field| field.value.clone()),
+                visual_guid: Some(copy_material_text(ctx, &assignment.visual_guid, "copy F3D assigned visual GUID")?),
+                physical_token: copy_material_option(ctx, assignment.physical_token.as_ref().map(|field| field.value.as_str()), "copy F3D assigned physical token")?,
                 schema: None,
                 category: None,
                 base_color: None,
@@ -757,17 +800,15 @@ pub(crate) fn decode_with_body_bindings<'a>(
     for appearance in &mut out {
         if let Some(assignment) = assignments.iter().find(|assignment| {
             appearance.visual_guid.as_deref().is_some_and(|guid| {
-                DesignVisualToken::try_from(guid.to_owned())
-                    .is_ok_and(|token| assignment.visual_guid.matches(&token))
+                crate::design::presentation::visual_token(guid).is_some()
+                    && guid.eq_ignore_ascii_case(&assignment.visual_guid)
             })
         }) {
-            appearance.physical_token = assignment
-                .physical_token
-                .as_ref()
-                .map(|field| field.value.clone());
+            appearance.physical_token = copy_material_option(ctx, assignment.physical_token.as_ref().map(|field| field.value.as_str()), "copy F3D matched physical token")?;
         }
     }
     let mut bindings = bind_bodies(
+        ctx,
         &out,
         &assignments,
         &act_channels,
@@ -778,7 +819,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     for over in &body_overrides {
         if bindings
             .iter()
-            .any(|binding| binding.target == AppearanceTarget::Body(over.body.clone()))
+            .any(|binding| matches!(&binding.target, AppearanceTarget::Body(body) if body == &over.body))
         {
             continue;
         }
@@ -790,20 +831,18 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 over.entity_suffix,
                 over.visual_guid.identity_key(),
             ),
-            target: AppearanceTarget::Body(over.body.clone()),
-            appearance: appearance.id.clone(),
+            target: AppearanceTarget::Body(copy_body_id(ctx, &over.body)?),
+            appearance: copy_appearance_id(ctx, &appearance.id)?,
             source_entity_id: None,
-            object_type: object_types.get(&over.entity_suffix).cloned(),
+            object_type: copy_material_option(ctx, object_types.get(&over.entity_suffix).map(String::as_str), "copy F3D override object type")?,
             visible: None,
-            channels: cadmpeg_core::text::named_entries(
+            channels: named_act_channels(
+                ctx,
                 format_args!(
                     "f3d:appearance:body#{}:{}",
                     over.entity_suffix, over.visual_guid
                 ),
-                act_channels
-                    .get(&over.entity_suffix)
-                    .cloned()
-                    .unwrap_or_default(),
+                act_channels.get(&over.entity_suffix),
             )?,
         }, "collect F3D override appearance bindings")?;
     }
@@ -1103,6 +1142,7 @@ fn decode_body_appearance_overrides(
                 continue;
             };
             let Some(body) = resolved_body_for_map_pair(
+                ctx,
                 body_bindings,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
@@ -1556,6 +1596,7 @@ fn body_node_candidate(
 }
 
 fn bind_bodies(
+    ctx: &DecodeContext<'_>,
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
@@ -1565,6 +1606,7 @@ fn bind_bodies(
     let mut out = Vec::new();
     for assignment in assignments {
         let Some(body) = resolved_body_for_map_pair(
+            ctx,
             body_bindings,
             &assignment.id,
             assignment.asm_body_key,
@@ -1578,7 +1620,7 @@ fn bind_bodies(
         let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
             continue;
         };
-        out.push(AppearanceBinding {
+        push_material_item(ctx, &mut out, AppearanceBinding {
             id: crate::ids::assignment_appearance_binding_id(
                 assignment.entity_id.as_str(),
                 assignment.visual_guid.identity_key(),
@@ -1589,22 +1631,20 @@ fn bind_bodies(
                 ))
             })?,
             target: AppearanceTarget::Body(body),
-            appearance: appearance.id.clone(),
-            source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
-            object_type: object_types.get(&assignment.entity_id.suffix()).cloned(),
+            appearance: copy_appearance_id(ctx, &appearance.id)?,
+            source_entity_id: Some(copy_material_text(ctx, assignment.entity_id.as_str(), "copy F3D binding entity ID")?),
+            object_type: copy_material_option(ctx, object_types.get(&assignment.entity_id.suffix()).map(String::as_str), "copy F3D binding object type")?,
             visible: None,
-            channels: cadmpeg_core::text::named_entries(
+            channels: named_act_channels(
+                ctx,
                 format_args!(
                     "f3d:appearance:binding#{}:{}",
                     assignment.entity_id.as_str(),
                     assignment.visual_guid
                 ),
-                act_channels
-                    .get(&assignment.entity_id.suffix())
-                    .cloned()
-                    .unwrap_or_default(),
+                act_channels.get(&assignment.entity_id.suffix()),
             )?,
-        });
+        }, "collect F3D material body bindings")?;
     }
     Ok(out)
 }
@@ -1678,6 +1718,7 @@ fn unique_appearance<'a>(
 ///
 /// ASM keys are local to the pair's BREP basename.
 fn resolved_body_for_map_pair(
+    ctx: &DecodeContext<'_>,
     body_bindings: &[DesignBodyBinding],
     owner_id: &str,
     asm_body_key: u64,
@@ -1705,7 +1746,7 @@ fn resolved_body_for_map_pair(
             "F3D material owner {owner_id} matches multiple exact body-map pairs"
         )));
     }
-    Ok(binding.body.clone())
+    binding.body.as_ref().map(|body| copy_body_id(ctx, body)).transpose()
 }
 
 fn decode_design_object_types(
@@ -2122,11 +2163,13 @@ fn decode_fixed_logical_records(
     ctx: &DecodeContext<'_>,
     frames: &[cadmpeg_protein::framing::RecordFrame],
 ) -> Result<Vec<Appearance>, CodecError> {
-    frames
-        .iter()
-        .map(|frame| decode_fixed_record(ctx, frame.bytes()))
-        .filter_map(Result::transpose)
-        .collect()
+    let mut appearances = Vec::new();
+    for frame in frames {
+        if let Some(appearance) = decode_fixed_record(ctx, frame.bytes())? {
+            push_material_item(ctx, &mut appearances, appearance, "collect F3D fixed appearances")?;
+        }
+    }
+    Ok(appearances)
 }
 
 /// Decode one record of a fixed source-less layout.
