@@ -48,7 +48,7 @@ use crate::decode::analytic::vertices::{
     solve_topological_vertices, TopologicalVertexSolveDiagnostics,
 };
 
-use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
+use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id, native_surface_namespace};
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
 const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
@@ -1205,6 +1205,90 @@ impl<'a> BrepSourceIndexes<'a> {
     }
 }
 
+struct BrepFaceCandidateIndexes<'a> {
+    loops_by_face: BTreeMap<u32, Vec<&'a crate::topology::Loop>>,
+    candidate_face_ids: BTreeSet<u32>,
+    model_surface_counts: BTreeMap<u32, usize>,
+    legacy_nonvisible_face_reference_count: usize,
+}
+
+impl<'a> BrepFaceCandidateIndexes<'a> {
+    fn from_scan(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scan: &'a ContainerScan<'_>,
+        ir: &CadIr,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
+        for lp in &scan.topology.loops {
+            if let Some(face_id) = lp.face_id {
+                let loops = match loops_by_face.entry(face_id.get()) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo B-rep face-loop index nodes")?;
+                        entry.insert(Vec::new())
+                    }
+                };
+                ctx.try_reserve_items(loops, 1, "creo B-rep face-loop references")?;
+                loops.push(lp);
+            }
+        }
+        let mut topology_face_reference_ids = BTreeSet::new();
+        for face_id in scan
+            .topology
+            .face_components
+            .iter()
+            .flat_map(|component| component.face_ids.iter().copied())
+            .chain(loops_by_face.keys().copied())
+        {
+            if !topology_face_reference_ids.contains(&face_id) {
+                ctx.charge_collection_items(1, "creo B-rep topology face ID nodes")?;
+                topology_face_reference_ids.insert(face_id);
+            }
+        }
+        let legacy_nonvisible_face_reference_count = topology_face_reference_ids
+            .iter()
+            .filter(|face_id| !is_neutral_face_reference(scan, **face_id))
+            .count();
+        loops_by_face.retain(|face_id, _| is_neutral_face_reference(scan, *face_id));
+        let mut candidate_face_ids = BTreeSet::new();
+        for face_id in scan
+            .topology
+            .face_components
+            .iter()
+            .flat_map(|component| component.face_ids.iter().copied())
+            .chain(loops_by_face.keys().copied())
+            .filter(|face_id| is_neutral_face_reference(scan, *face_id))
+        {
+            if !candidate_face_ids.contains(&face_id) {
+                ctx.charge_collection_items(1, "creo B-rep candidate face ID nodes")?;
+                candidate_face_ids.insert(face_id);
+            }
+        }
+        let mut model_surface_counts = BTreeMap::new();
+        for face_id in &candidate_face_ids {
+            let prefix = native_surface_namespace(scan, *face_id).1;
+            let count = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| {
+                    crate::identity::matches_numbered_identity(
+                        surface.id.as_str(), prefix, *face_id,
+                    )
+                })
+                .count();
+            ctx.charge_collection_items(1, "creo B-rep model surface count nodes")?;
+            model_surface_counts.insert(*face_id, count);
+        }
+        Ok(Self {
+            loops_by_face,
+            candidate_face_ids,
+            model_surface_counts,
+            legacy_nonvisible_face_reference_count,
+        })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -1343,45 +1427,12 @@ pub(in super::super) fn transfer_native_brep(
         .copied()
         .filter(|curve_id| model_curve_counts[curve_id] <= 1)
         .collect::<BTreeSet<_>>();
-    let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
-    for lp in &scan.topology.loops {
-        if let Some(face_id) = lp.face_id {
-            loops_by_face.entry(face_id.get()).or_default().push(lp);
-        }
-    }
-    let topology_face_reference_ids = scan
-        .topology
-        .face_components
-        .iter()
-        .flat_map(|component| component.face_ids.iter().copied())
-        .chain(loops_by_face.keys().copied())
-        .collect::<BTreeSet<_>>();
-    let legacy_nonvisible_face_reference_count = topology_face_reference_ids
-        .iter()
-        .filter(|face_id| !is_neutral_face_reference(scan, **face_id))
-        .count();
-    loops_by_face.retain(|face_id, _| is_neutral_face_reference(scan, *face_id));
-    let candidate_face_ids = scan
-        .topology
-        .face_components
-        .iter()
-        .flat_map(|component| component.face_ids.iter().copied())
-        .chain(loops_by_face.keys().copied())
-        .filter(|face_id| is_neutral_face_reference(scan, *face_id))
-        .collect::<BTreeSet<_>>();
-    let model_surface_counts = candidate_face_ids
-        .iter()
-        .map(|face_id| {
-            let id = native_surface_id(scan, *face_id);
-            let count = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == id)
-                .count();
-            (*face_id, count)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let BrepFaceCandidateIndexes {
+        loops_by_face,
+        candidate_face_ids,
+        model_surface_counts,
+        legacy_nonvisible_face_reference_count,
+    } = BrepFaceCandidateIndexes::from_scan(ctx, scan, ir)?;
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ctx, ir, source_carriers)?;
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),

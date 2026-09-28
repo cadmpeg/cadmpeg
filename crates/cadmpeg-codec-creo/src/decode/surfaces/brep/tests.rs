@@ -18,8 +18,84 @@ use super::{
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
     model_typed_nonlinear_curve_ids, push_native_pcurve_candidate, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
-    BrepSourceIndexes, NativePcurveCandidates, NeutralShellSpec,
+    BrepFaceCandidateIndexes, BrepSourceIndexes, NativePcurveCandidates, NeutralShellSpec,
 };
+
+fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.framing.layout = crate::container::Layout::Nd;
+    scan.topology.loops.push(crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: Vec::new(),
+    });
+    scan
+}
+
+fn face_candidate_index_limit_error(limit: u64) -> CodecError {
+    let scan = face_candidate_scan();
+    let ir = CadIr::empty();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &ir)
+        .err()
+        .expect("candidate index allocation refused")
+}
+
+#[test]
+fn brep_face_loop_index_nodes_refuse_collection_limit() {
+    let error = face_candidate_index_limit_error(0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep face-loop index nodes"));
+}
+
+#[test]
+fn brep_face_loop_references_refuse_collection_limit() {
+    let error = face_candidate_index_limit_error(1);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep face-loop references"));
+}
+
+#[test]
+fn brep_topology_face_id_nodes_refuse_collection_limit() {
+    let error = face_candidate_index_limit_error(2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep topology face ID nodes"));
+}
+
+#[test]
+fn brep_candidate_face_id_nodes_refuse_collection_limit() {
+    let error = face_candidate_index_limit_error(3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep candidate face ID nodes"));
+}
+
+#[test]
+fn brep_model_surface_count_nodes_refuse_collection_limit() {
+    let error = face_candidate_index_limit_error(4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep model surface count nodes"));
+}
+
+#[test]
+fn brep_face_candidate_indexes_preserve_service_selection() {
+    let scan = face_candidate_scan();
+    let indexes = crate::decode::with_test_decode_ctx(|ctx| {
+        BrepFaceCandidateIndexes::from_scan(ctx, &scan, &CadIr::empty())
+    })
+    .expect("service face candidates admitted");
+    assert_eq!(indexes.loops_by_face[&5].len(), 1);
+    assert_eq!(indexes.candidate_face_ids, BTreeSet::from([5]));
+    assert_eq!(indexes.model_surface_counts[&5], 0);
+    assert_eq!(indexes.legacy_nonvisible_face_reference_count, 0);
+}
 
 fn source_index_limit_error(kind: &str) -> CodecError {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
