@@ -1079,7 +1079,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     }
 
     let topology_counts = {
-        let mut candidate_ir = ir.clone();
+        let mut candidate_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut candidate_annotations = admitted!(annotations.copy_charged(ctx, "catia_zero_topology_annotations"));
         let topology_budget = ctx.work_budget(
             crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS as u64,
@@ -1104,7 +1104,22 @@ pub(in crate::families) fn try_decode_zero_entity(
                 Some(counts)
             }
             Err(error) => return Some(Err(error)),
-            _ => None,
+            _ => {
+                // Only source carriers precede this transfer. Remove its
+                // speculative topology before the wire fallback uses them.
+                candidate_ir.model.bodies.clear();
+                candidate_ir.model.regions.clear();
+                candidate_ir.model.shells.clear();
+                candidate_ir.model.faces.clear();
+                candidate_ir.model.loops.clear();
+                candidate_ir.model.coedges.clear();
+                candidate_ir.model.edges.clear();
+                candidate_ir.model.vertices.clear();
+                candidate_ir.model.points.clear();
+                candidate_ir.model.pcurves.clear();
+                ir = candidate_ir;
+                None
+            },
         }
     };
     let wire_counts = if topology_counts.is_some() {
