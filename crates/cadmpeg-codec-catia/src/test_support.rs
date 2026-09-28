@@ -79,3 +79,15 @@ pub(crate) fn with_materialized_limit<T>(
         .expect("empty test root fits the materialized limit");
     run(&ctx)
 }
+
+pub(crate) fn with_work_limit<T>(
+    max_work_units: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = max_work_units;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root fits the work limit");
+    run(&ctx)
+}

@@ -10624,28 +10624,44 @@ fn ensure_native_edge_support_surface(
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<SurfaceId, cadmpeg_core::CodecError> {
     let source = cgm_source(admission.context(), "surface", surface_object_id)?;
-    let source_matches = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| surface.source_object.as_ref() == Some(&source))
-        .map(|surface| surface.id.clone())
-        .collect::<HashSet<_>>();
-    let source_matches_empty = source_matches.is_empty();
-    if let [surface_id] = source_matches.into_iter().collect::<Vec<_>>().as_slice() {
-        return Ok(surface_id.clone());
+    let mut source_match = None::<&SurfaceId>;
+    let mut source_ambiguous = false;
+    for surface in &ir.model.surfaces {
+        admission.context().charge_work(1, "catia_native_edge_support_source_scan")?;
+        if surface.source_object.as_ref() == Some(&source) {
+            if source_match.is_some_and(|id| id != &surface.id) {
+                source_ambiguous = true;
+            } else {
+                source_match = Some(&surface.id);
+            }
+        }
+    }
+    let source_matches_empty = source_match.is_none();
+    if !source_ambiguous {
+        if let Some(surface_id) = source_match {
+            return crate::resource::copy_id(admission.context(), surface_id.as_str(),
+                SurfaceId::mint, "catia_native_edge_support_matched_surface_id");
+        }
     }
     if let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) = carrier {
-        let geometry_matches = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.geometry == *geometry)
-            .map(|surface| surface.id.clone())
-            .collect::<HashSet<_>>();
+        let mut geometry_match = None::<&SurfaceId>;
+        let mut geometry_ambiguous = false;
+        for surface in &ir.model.surfaces {
+            admission.context().charge_work(1, "catia_native_edge_support_geometry_scan")?;
+            if surface.geometry == *geometry {
+                if geometry_match.is_some_and(|id| id != &surface.id) {
+                    geometry_ambiguous = true;
+                } else {
+                    geometry_match = Some(&surface.id);
+                }
+            }
+        }
         if source_matches_empty {
-            if let [surface_id] = geometry_matches.into_iter().collect::<Vec<_>>().as_slice() {
-                return Ok(surface_id.clone());
+            if !geometry_ambiguous {
+                if let Some(surface_id) = geometry_match {
+                    return crate::resource::copy_id(admission.context(), surface_id.as_str(),
+                        SurfaceId::mint, "catia_native_edge_support_matched_surface_id");
+                }
             }
         }
     }
