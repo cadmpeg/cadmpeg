@@ -831,12 +831,13 @@ impl NativeModel {
             &parasolid_attribute_definitions,
         )?;
         let parasolid_attribute_field_uses = parasolid_attribute_field_uses(
+            ctx,
             &parasolid_attribute_class_uses,
             &parasolid_attribute_definitions,
             &parasolid_entity_51_numeric_uses,
             &parasolid_entity_51_string_uses,
             &parasolid_entity_51_structured_uses,
-        );
+        )?;
         let parasolid_topology_attribute_list_references =
             parasolid_topology_attribute_list_references(ctx, parsed, &parasolid_entity_51_records)?;
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(

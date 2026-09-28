@@ -4168,27 +4168,74 @@ pub(super) fn parasolid_attribute_class_uses(
 
 /// Assign uniquely resolved attribute values to declared type-80 fields.
 pub(super) fn parasolid_attribute_field_uses(
+    ctx: &DecodeContext<'_>,
     class_uses: &[ParasolidAttributeClassUse],
     definitions: &[ParasolidAttributeDefinition],
     numeric_uses: &[ParasolidEntity51NumericUse],
     string_uses: &[ParasolidEntity51StringUse],
     structured_uses: &[ParasolidEntity51StructuredUse],
-) -> Vec<ParasolidAttributeFieldUse> {
+) -> Result<Vec<ParasolidAttributeFieldUse>, CodecError> {
     let mut classes = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    let mut classes_guard = ctx.reserve_scoped(0, "NX attribute field class index")?;
     for class_use in class_uses {
-        classes
-            .entry(class_use.entity_51_record.as_str())
-            .or_default()
-            .push(class_use);
+        let group = match classes.entry(class_use.entity_51_record.as_str()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX attribute field class index")?;
+                classes_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Vec<&ParasolidAttributeClassUse>)>() * 4,
+                ))?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.charge_collection_items(1, "NX attribute field class members")?;
+        classes_guard.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&ParasolidAttributeClassUse>(),
+        ))?;
+        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field class members", 0, 1))?;
+        group.push(class_use);
     }
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
+    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
     for definition in definitions {
-        definitions_by_id
-            .entry(definition.id.as_str())
-            .or_default()
-            .push(definition);
+        let group = match definitions_by_id.entry(definition.id.as_str()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX attribute field definition index")?;
+                definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Vec<&ParasolidAttributeDefinition>)>() * 4,
+                ))?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.charge_collection_items(1, "NX attribute field definition members")?;
+        definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&ParasolidAttributeDefinition>(),
+        ))?;
+        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field definition members", 0, 1))?;
+        group.push(definition);
     }
     let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
+    let mut candidates_guard = ctx.reserve_scoped(0, "NX attribute field candidates")?;
+    let mut push_candidate = |key, candidate| -> Result<(), CodecError> {
+        let group = match candidates.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX attribute field candidate index")?;
+                candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<((&str, FieldPosition), Vec<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>)>() * 4,
+                ))?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.charge_collection_items(1, "NX attribute field candidate members")?;
+        candidates_guard.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, ParasolidAttributeFieldValueKind, &str, &str, u64)>(),
+        ))?;
+        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field candidate members", 0, 1))?;
+        group.push(candidate);
+        Ok(())
+    };
     for numeric_use in numeric_uses {
         let value_kind = match numeric_use.kind {
             ParasolidEntity51NumericKind::UnsignedIntegers => {
@@ -4196,47 +4243,51 @@ pub(super) fn parasolid_attribute_field_uses(
             }
             ParasolidEntity51NumericKind::Doubles => ParasolidAttributeFieldValueKind::Doubles,
         };
-        candidates
-            .entry((numeric_use.entity_51_record.as_str(), numeric_use.position))
-            .or_default()
-            .push((
+        push_candidate(
+            (numeric_use.entity_51_record.as_str(), numeric_use.position),
+            (
                 numeric_use.stream_ordinal,
                 value_kind,
                 numeric_use.id.as_str(),
                 numeric_use.value_record.as_str(),
                 numeric_use.inflated_offset,
-            ));
+            ),
+        )?;
     }
     for string_use in string_uses {
-        candidates
-            .entry((string_use.entity_51_record.as_str(), string_use.position))
-            .or_default()
-            .push((
+        push_candidate(
+            (string_use.entity_51_record.as_str(), string_use.position),
+            (
                 string_use.stream_ordinal,
                 ParasolidAttributeFieldValueKind::String,
                 string_use.id.as_str(),
                 string_use.string_record.as_str(),
                 string_use.inflated_offset,
-            ));
+            ),
+        )?;
     }
     for structured_use in structured_uses {
-        candidates
-            .entry((
+        push_candidate(
+            (
                 structured_use.entity_51_record.as_str(),
                 structured_use.position,
-            ))
-            .or_default()
-            .push((
+            ),
+            (
                 structured_use.stream_ordinal,
                 structured_use.kind.into(),
                 structured_use.id.as_str(),
                 structured_use.value_record.as_str(),
                 structured_use.inflated_offset,
-            ));
+            ),
+        )?;
     }
-    let mut uses = candidates
-        .into_iter()
-        .filter_map(|((entity_51_record, position), candidates)| {
+    let candidate_count = numeric_uses.len().checked_add(string_uses.len())
+        .and_then(|count| count.checked_add(structured_uses.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field join work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate_count), "NX attribute field join work")?;
+    let mut uses = Vec::new();
+    for ((entity_51_record, position), candidates) in candidates {
+        let matched = (|| {
             let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
                 candidates.as_slice()
             else {
@@ -4258,22 +4309,44 @@ pub(super) fn parasolid_attribute_field_uses(
             let field_code = *definition.field_codes.get(field_ordinal as usize)?;
             (field_code == value_kind.field_code()).then_some(())?;
             let (_, class_key) = class_use.id.rsplit_once('#')?;
-            Some(ParasolidAttributeFieldUse {
-                id: format!("nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}"),
-                stream_ordinal: *stream_ordinal,
-                attribute_class_use: class_use.id.clone(),
-                entity_51_record: entity_51_record.to_string(),
-                attribute_definition: class_use.attribute_definition.clone(),
+            Some((*stream_ordinal, *value_kind, *value_use, *value_record, *inflated_offset, class_use, class_key, field_ordinal))
+        })();
+        let Some((stream_ordinal, value_kind, value_use, value_record, inflated_offset, class_use, class_key, field_ordinal)) = matched else {
+            continue;
+        };
+        let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+        let id_len = "nx:s".len()
+            .checked_add(digits(u64::from(stream_ordinal)))
+            .and_then(|length| length.checked_add(":attribute-field-use#".len()))
+            .and_then(|length| length.checked_add(class_key.len()))
+            .and_then(|length| length.checked_add(1 + digits(u64::from(field_ordinal))))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field use identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX attribute field use identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field use identity", 0, 1))?;
+        write!(&mut id, "nx:s{stream_ordinal}:attribute-field-use#{class_key}-{field_ordinal}")
+            .map_err(|_| ctx.refuse_codec_limit("write NX attribute field use identity", 0, 1))?;
+        ctx.charge_collection_items(1, "NX attribute field uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldUse>()), "NX attribute field use")?;
+        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field uses", 0, 1))?;
+        uses.push(ParasolidAttributeFieldUse {
+                id,
+                stream_ordinal,
+                attribute_class_use: entity_51_use_text(ctx, &class_use.id)?,
+                entity_51_record: entity_51_use_text(ctx, entity_51_record)?,
+                attribute_definition: entity_51_use_text(ctx, &class_use.attribute_definition)?,
                 position,
-                value_kind: *value_kind,
-                value_use: (*value_use).to_string(),
-                value_record: (*value_record).to_string(),
-                inflated_offset: *inflated_offset,
-            })
-        })
-        .collect::<Vec<_>>();
+                value_kind,
+                value_use: entity_51_use_text(ctx, value_use)?,
+                value_record: entity_51_use_text(ctx, value_record)?,
+                inflated_offset,
+            });
+    }
+    let sort_work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field use sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sort_work), "NX attribute field use sort work")?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    Ok(uses)
 }
 
 /// Whether a concrete topology-owned attribute field lacks its exact value relation.
@@ -5671,6 +5744,9 @@ mod tests {
 
     #[test]
     fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
@@ -5727,12 +5803,13 @@ mod tests {
         };
 
         let uses = parasolid_attribute_field_uses(
+            &ctx,
             std::slice::from_ref(&class_use),
             std::slice::from_ref(&definition),
             &[numeric_use.clone(), double_use],
             std::slice::from_ref(&string_use),
             &[],
-        );
+        ).unwrap();
 
         assert_eq!(uses.len(), 3);
         assert_eq!(uses[0].id, "nx:s2:attribute-field-use#class-use-0");
@@ -5771,52 +5848,56 @@ mod tests {
             attribute_definition: "other-definition".into(),
         };
         assert!(parasolid_attribute_field_uses(
+            &ctx,
             &[class_use.clone(), duplicate.clone()],
             std::slice::from_ref(&definition),
             std::slice::from_ref(&numeric_use),
             &[],
             &[],
         )
-        .is_empty());
+        .unwrap().is_empty());
 
         let wrong_stream = ParasolidAttributeClassUse {
             stream_ordinal: 3,
             ..duplicate
         };
         assert!(parasolid_attribute_field_uses(
+            &ctx,
             &[wrong_stream],
             std::slice::from_ref(&definition),
             std::slice::from_ref(&numeric_use),
             &[],
             &[],
         )
-        .is_empty());
+        .unwrap().is_empty());
 
         let mismatched = ParasolidEntity51NumericUse {
             kind: ParasolidEntity51NumericKind::Doubles,
             ..numeric_use.clone()
         };
         assert!(parasolid_attribute_field_uses(
+            &ctx,
             std::slice::from_ref(&class_use),
             std::slice::from_ref(&definition),
             &[mismatched],
             &[],
             &[],
         )
-        .is_empty());
+        .unwrap().is_empty());
 
         let ambiguous_string = ParasolidEntity51StringUse {
             position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             ..string_use
         };
         assert!(parasolid_attribute_field_uses(
+            &ctx,
             std::slice::from_ref(&class_use),
             std::slice::from_ref(&definition),
             std::slice::from_ref(&numeric_use),
             &[ambiguous_string],
             &[],
         )
-        .is_empty());
+        .unwrap().is_empty());
     }
 
     #[test]
@@ -5882,6 +5963,9 @@ mod tests {
 
     #[test]
     fn structured_value_families_match_only_their_declared_field_codes() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let kinds = [
             StructuredValueKind::Points,
             StructuredValueKind::Vectors,
@@ -5942,12 +6026,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let uses = parasolid_attribute_field_uses(
+            &ctx,
             std::slice::from_ref(&class_use),
             std::slice::from_ref(&definition),
             &[],
             &[],
             &structured,
-        );
+        ).unwrap();
         assert_eq!(
             uses.iter().map(|use_| use_.value_kind).collect::<Vec<_>>(),
             kinds.map(ParasolidAttributeFieldValueKind::from)
@@ -5956,7 +6041,7 @@ mod tests {
         let mut mismatched = structured;
         mismatched[0].kind = StructuredValueKind::Vectors;
         let uses =
-            parasolid_attribute_field_uses(&[class_use], &[definition], &[], &[], &mismatched);
+            parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[], &[], &mismatched).unwrap();
         assert_eq!(uses.len(), 5);
         assert!(uses.iter().all(|use_| use_.position.field_ordinal() != 0));
     }
@@ -6187,6 +6272,74 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         super::parasolid_attribute_class_uses(&ctx, &[entity], &[definition])
             .err().expect("attribute class use limit refusal")
+    }
+
+    fn attribute_field_use_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(20).unwrap(),
+            next_definition_xmt: None,
+            identifier_xmt: NonNullXmt::try_from(21).unwrap(),
+            identifier_inflated_offset: 10,
+            name: PrintableString::new("CLASS".to_owned()).unwrap(),
+            type_id: NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
+            field_names_xmt: None,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+            field_codes: vec![AttributeField::Integer],
+            inflated_offset: 20,
+        };
+        let class_use = ParasolidAttributeClassUse {
+            id: "nx:s0:attribute-class-use#class".into(), stream_ordinal: 0,
+            entity_51_record: "entity".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+            inflated_offset: 30,
+        };
+        let numeric_use = ParasolidEntity51NumericUse {
+            id: "numeric".into(), stream_ordinal: 0,
+            entity_51_record: "entity".into(),
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
+            referenced_xmt: NonNullXmt::try_from(40).unwrap(),
+            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+            value_record: "value".into(), inflated_offset: 30,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_attribute_field_uses(&ctx, &[class_use], &[definition], &[numeric_use], &[], &[])
+            .err().expect("attribute field use limit refusal")
+    }
+
+    #[test]
+    fn attribute_field_use_refuses_collection_limit() {
+        let error = attribute_field_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn attribute_field_use_refuses_retained_limit() {
+        let error = attribute_field_use_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn attribute_field_use_refuses_scoped_limit() {
+        let error = attribute_field_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn attribute_field_use_refuses_work_limit() {
+        let error = attribute_field_use_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     fn topology_class_use_limit_error(
