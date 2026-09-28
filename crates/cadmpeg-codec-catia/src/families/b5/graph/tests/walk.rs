@@ -6,8 +6,8 @@ use crate::families::b5::graph::{
     face_loop_owner_counts, face_surface_references_from_frames, framed_records,
     implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
     object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
-    parse_a8_class21_pcurve, parse_edge, parse_extrusion_directrix, parse_extrusion_surface,
-    parse_extrusion_surface_with_context, parse_flat, parse_from_frames, parse_from_records,
+    parse_a8_class21_pcurve, parse_edge, parse_extrusion_surface,
+    parse_flat, parse_from_frames, parse_from_records,
     parse_supported_surface, parse_vertex_incidence_link, records,
     record_from_frame, records_from_frames, records_from_frames_budgeted,
     select_object_stream_population, topology_surface_references,
@@ -24,6 +24,29 @@ use crate::families::b5::graph::{
     B5Surface, B5VertexIncidenceLink, ObjectFrame,
 };
 use std::collections::{BTreeMap, HashMap};
+
+fn parse_extrusion_directrix(
+    record: &B5Record,
+    records: &HashMap<u32, &B5Record>,
+    pcurves: &BTreeMap<u32, super::super::B5ObjectStreamPcurve>,
+) -> Option<B5ExtrusionDirectrix> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_extrusion_directrix(ctx, record, records, pcurves)
+    }).expect("service budget")
+}
+
+fn parse_extrusion_surface_with_context(
+    record: &B5Record,
+    records: &HashMap<u32, &B5Record>,
+    pcurves: &BTreeMap<u32, super::super::B5ObjectStreamPcurve>,
+    offset_constructions: &[B5OffsetSurface],
+    extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
+) -> Option<B5ExtrusionSurface> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_extrusion_surface_with_context(ctx, record, records, pcurves,
+            offset_constructions, extrusion_surfaces)
+    }).expect("service budget")
+}
 
 fn propagate_vertex_points(
     constraints: &[([u32; 2], [usize; 2])],
