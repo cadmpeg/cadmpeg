@@ -267,6 +267,15 @@ impl<'a> DecodeContext<'a> {
         self.budget.charge_retained(bytes, operation)
     }
 
+    /// Checks a later retained-byte request without charging it twice.
+    pub fn preflight_retained(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.budget.preflight_retained(bytes, operation)
+    }
+
     /// Copies bytes into session-retained storage after charging and reserving safely.
     pub fn copy_retained(
         &self,

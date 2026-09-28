@@ -191,6 +191,29 @@ impl DecodeBudget {
         )
     }
 
+    pub(super) fn preflight_retained(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(resource) = self.fuse.get() {
+            return Err(CodecError::ResourceLimit(resource));
+        }
+        let used = self.retained.get();
+        let limit = self.retained_allowance();
+        if used > limit || bytes > limit - used {
+            return Err(self.refuse(
+                ResourceDimension::RetainedBytes,
+                ResourceFailure::BudgetExceeded,
+                limit,
+                used,
+                bytes,
+                operation,
+            ));
+        }
+        Ok(())
+    }
+
     /// Report allocator refusal after a retained charge was already recorded.
     pub(super) fn retained_allocation_failed(
         &self,
