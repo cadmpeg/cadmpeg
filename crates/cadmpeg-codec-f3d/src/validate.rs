@@ -1033,11 +1033,12 @@ fn validate_loaded(
     let mut findings = Vec::new();
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
+        decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    );
+    )?;
     history::bind_face_operand_history_candidates(
         &mut expected_face_operands,
         &native.design_parameter_scopes,
@@ -1480,12 +1481,13 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
     }
 
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+        ctx.decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
-    );
+    )?;
     for scope in &native.design_parameter_scopes {
         let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
             continue;
@@ -5760,11 +5762,12 @@ fn validate_edge_identity_operands<'a>(
     let mut expected_edge_identity_operands =
         reload_native_arena(decode, ctx.ir, "design_edge_identity_operands")?;
     let scope_histories = history::bind_scope_histories(
+        decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    );
+    )?;
     history::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
@@ -6392,11 +6395,12 @@ fn validate_edge_operands<'a>(
     let mut expected_edge_operands =
         reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
     let scope_histories = history::bind_scope_histories(
+        decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    );
+    )?;
     history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
@@ -6524,11 +6528,12 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.persistent_subentity_tags,
     );
     let scope_histories = history::bind_scope_histories(
+        decode,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    );
+    )?;
     history::bind_edge_treatment_vertex_history(
         &mut expected,
         &native.design_parameter_scopes,

@@ -1374,12 +1374,13 @@ fn design_projection_gaps(
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+        Some(ctx),
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
-    );
+    )?;
     for scope in &native.design_parameter_scopes {
         let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
@@ -3078,11 +3079,12 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.spatial_sketch_entities,
             );
         let scope_histories = crate::history::bind_scope_histories(
+            Some(self.ctx),
             &self.native.design_parameter_scopes,
             &self.native.design_body_bindings,
             &self.native.design_body_recipe_operands,
             &self.native.asm_histories,
-        );
+        )?;
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -5344,11 +5346,12 @@ fn extend_related_design_records(
         &native.asm_histories,
     );
     let scope_histories = crate::history::bind_scope_histories(
+        Some(ctx),
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.asm_histories,
-    );
+    )?;
     crate::history::bind_circular_pattern_axes(
         &mut native.design_parameter_scopes,
         &native.asm_histories,

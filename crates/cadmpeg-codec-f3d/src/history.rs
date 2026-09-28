@@ -4328,47 +4328,66 @@ fn bound_history_state_pair<'a>(
     )
 }
 
+fn insert_scope_history_binding(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    resolved: &mut HashMap<String, String>,
+    scope_id: &str,
+    history_id: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !resolved.contains_key(scope_id) {
+        charge_history_item(decode, "index F3D scope history bindings")?;
+        resolved.try_reserve(1).map_err(|_|
+            history_reserve_error(decode, "index F3D scope history bindings"))?;
+    }
+    let scope = match decode {
+        Some(ctx) => copy_history_string(ctx, scope_id, "copy F3D bound scope identity")?,
+        None => scope_id.to_owned(),
+    };
+    let history = match decode {
+        Some(ctx) => copy_history_string(ctx, history_id, "copy F3D bound history identity")?,
+        None => history_id.to_owned(),
+    };
+    resolved.insert(scope, history);
+    Ok(())
+}
+
 pub(crate) fn bind_scope_histories(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) -> HashMap<String, String> {
-    let candidates = scopes
-        .iter()
-        .filter_map(|scope| {
-            let state_id = scope.history_state_id()?;
-            let candidates = if let Some(previous_state_id) = scope.previous_history_state_id() {
-                let direct = histories
-                    .iter()
-                    .filter(|history| {
-                        history_state_pair(history, state_id, previous_state_id, true).is_some()
-                    })
-                    .collect::<Vec<_>>();
-                if direct.is_empty() {
-                    histories
-                        .iter()
-                        .filter(|history| {
-                            history_state_pair(history, state_id, previous_state_id, false)
-                                .is_some()
-                        })
-                        .collect::<Vec<_>>()
-                } else {
-                    direct
-                }
+) -> Result<HashMap<String, String>, cadmpeg_core::CodecError> {
+    let mut candidates = Vec::new();
+    for scope in scopes {
+        let Some(state_id) = scope.history_state_id() else { continue; };
+        let scope_candidates = if let Some(previous_state_id) = scope.previous_history_state_id() {
+            let direct = history_collect(decode, histories.iter().filter(|history|
+                history_state_pair(history, state_id, previous_state_id, true).is_some()),
+                "collect F3D direct scope histories")?;
+            if direct.is_empty() {
+                history_collect(decode, histories.iter().filter(|history|
+                    history_state_pair(history, state_id, previous_state_id, false).is_some()),
+                    "collect F3D reachable scope histories")?
             } else {
-                histories
-                    .iter()
-                    .filter(|history| unique_history_state_in(history, state_id))
-                    .collect::<Vec<_>>()
-            };
-            (!candidates.is_empty()).then_some((scope, candidates))
-        })
-        .collect::<Vec<_>>();
+                direct
+            }
+        } else {
+            history_collect(decode, histories.iter().filter(|history|
+                unique_history_state_in(history, state_id)),
+                "collect F3D matching scope histories")?
+        };
+        if !scope_candidates.is_empty() {
+            charge_history_item(decode, "collect F3D scopes with histories")?;
+            candidates.try_reserve(1).map_err(|_|
+                history_reserve_error(decode, "collect F3D scopes with histories"))?;
+            candidates.push((scope, scope_candidates));
+        }
+    }
     let mut resolved = HashMap::<String, String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
-            resolved.insert(scope.id.clone(), candidates[0].id.clone());
+            insert_scope_history_binding(decode, &mut resolved, &scope.id, &candidates[0].id)?;
             continue;
         }
         let next_scope_record_index = scopes
@@ -4387,16 +4406,13 @@ pub(crate) fn bind_scope_histories(
         });
         if let Some(binding) = output_bindings.next() {
             if output_bindings.next().is_none() {
-                let matching = candidates
-                    .iter()
-                    .filter(|history| {
+                let mut matching = candidates.iter().filter(|history| {
                         historical_brep_source(&history.id).is_some_and(|source| {
                             binding.blob_name().strip_prefix("BREP.") == Some(source)
                         })
-                    })
-                    .collect::<Vec<_>>();
-                if let [history] = matching.as_slice() {
-                    resolved.insert(scope.id.clone(), history.id.clone());
+                    });
+                if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
+                    insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
                     continue;
                 }
             }
@@ -4408,21 +4424,16 @@ pub(crate) fn bind_scope_histories(
                     && operand.scope_record_index == scope.record_index
             })
             .flat_map(super::records::topology::body_recipe::DesignBodyRecipeOperand::references)
-            .flat_map(|reference| &reference.candidate_faces)
-            .collect::<Vec<_>>();
-        if !candidate_faces.is_empty() {
-            let matching = candidates
-                .iter()
-                .filter(|history| {
+            .flat_map(|reference| &reference.candidate_faces);
+        if candidate_faces.clone().next().is_some() {
+            let mut matching = candidates.iter().filter(|history| {
                     historical_brep_source(&history.id).is_some_and(|source| {
-                        candidate_faces
-                            .iter()
+                        candidate_faces.clone()
                             .any(|face| active_brep_face_matches_source(face, source))
                     })
-                })
-                .collect::<Vec<_>>();
-            if let [history] = matching.as_slice() {
-                resolved.insert(scope.id.clone(), history.id.clone());
+                });
+            if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
+                insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
                 continue;
             }
         }
@@ -4449,7 +4460,7 @@ pub(crate) fn bind_scope_histories(
             continue;
         };
         if referenced_histories.all(|candidate| candidate == history_id) {
-            resolved.insert(scope.id.clone(), history_id.to_owned());
+            insert_scope_history_binding(decode, &mut resolved, &scope.id, history_id)?;
         }
     }
     let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
@@ -4460,30 +4471,42 @@ pub(crate) fn bind_scope_histories(
         ) else {
             continue;
         };
-        groups
-            .entry((stream, state_id, scope.previous_history_state_id()))
-            .or_default()
-            .push(index);
+        let key = (stream, state_id, scope.previous_history_state_id());
+        if !groups.contains_key(&key) {
+            charge_history_item(decode, "index F3D scope history groups")?;
+            groups.try_reserve(1).map_err(|_|
+                history_reserve_error(decode, "index F3D scope history groups"))?;
+        }
+        let members = groups.entry(key).or_default();
+        charge_history_item(decode, "collect F3D scope history group members")?;
+        members.try_reserve(1).map_err(|_|
+            history_reserve_error(decode, "collect F3D scope history group members"))?;
+        members.push(index);
     }
     for members in groups.values() {
-        let candidate_histories = members
-            .iter()
-            .flat_map(|index| {
-                candidates[*index]
-                    .1
-                    .iter()
-                    .map(|history| history.id.as_str())
-            })
-            .collect::<HashSet<_>>();
+        let mut candidate_histories = HashSet::new();
+        for index in members {
+            for history in &candidates[*index].1 {
+                history_hash_set_insert(decode, &mut candidate_histories, history.id.as_str(),
+                    "index F3D scope candidate histories")?;
+            }
+        }
         if candidate_histories.len() != members.len() {
             continue;
         }
         loop {
-            let assigned = members
-                .iter()
-                .filter_map(|index| resolved.get(&candidates[*index].0.id))
-                .cloned()
-                .collect::<HashSet<_>>();
+            let mut assigned = HashSet::new();
+            for index in members {
+                if let Some(history_id) = resolved.get(&candidates[*index].0.id) {
+                    let copy = match decode {
+                        Some(ctx) => copy_history_string(ctx, history_id,
+                            "copy F3D assigned history identity")?,
+                        None => history_id.to_owned(),
+                    };
+                    history_hash_set_insert(decode, &mut assigned, copy,
+                        "index F3D assigned scope histories")?;
+                }
+            }
             if assigned.len()
                 != members
                     .iter()
@@ -4498,12 +4521,11 @@ pub(crate) fn bind_scope_histories(
                 if resolved.contains_key(&scope.id) {
                     continue;
                 }
-                let remaining = scope_candidates
+                let mut remaining = scope_candidates
                     .iter()
-                    .filter(|history| !assigned.contains(&history.id))
-                    .collect::<Vec<_>>();
-                if let [history] = remaining.as_slice() {
-                    resolved.insert(scope.id.clone(), history.id.clone());
+                    .filter(|history| !assigned.contains(history.id.as_str()));
+                if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
+                    insert_scope_history_binding(decode, &mut resolved, &scope.id, &history.id)?;
                     progress = true;
                 }
             }
@@ -4512,7 +4534,7 @@ pub(crate) fn bind_scope_histories(
             }
         }
     }
-    resolved
+    Ok(resolved)
 }
 
 fn history_state_reaches(
