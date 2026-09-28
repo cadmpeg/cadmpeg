@@ -2965,9 +2965,10 @@ pub(crate) fn scan_bytes<'a>(
     let feature_definitions =
         feature::definitions::bind_definition_owners(feature_definitions, &feature_geometry_tables);
     let mut feature_definitions = feature::definitions::bind_trimmed_definition_owners(
+        ctx,
         feature_definitions,
         &feature_entity_tables,
-    );
+    )?;
     append_feature_definitions(
         ctx,
         &mut feature_definitions,
@@ -2977,10 +2978,11 @@ pub(crate) fn scan_bytes<'a>(
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = claimed_definition_owners(ctx, &feature_definitions)?;
     let replay_definitions = feature::definitions::bind_replay_definition_owners(
+        ctx,
         positional_replay_definitions(ctx, &sections)?,
         &feature_entity_tables,
         &claimed_definition_owners,
-    );
+    )?;
     append_feature_definitions(
         ctx,
         &mut feature_definitions,
