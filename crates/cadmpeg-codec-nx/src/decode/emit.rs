@@ -1237,7 +1237,7 @@ pub(super) fn emit_topology(
         annotations,
         adaptive_geometry_budget,
     )?;
-    intersection_index.complete_from_stream(ir, intersection_starts);
+    intersection_index.complete_from_stream(ctx, ir, intersection_starts)?;
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
         ir,
         &serialized_branch_pcurves,
@@ -1259,7 +1259,7 @@ pub(super) fn emit_topology(
         completion_transfer_budget,
         completion_geometry_budget,
     )?;
-    intersection_index.complete_new_pcurves_from_stream(ir, intersection_starts.pcurves);
+    intersection_index.complete_new_pcurves_from_stream(ctx, ir, intersection_starts.pcurves)?;
 
     let mut owned_edges: BTreeSet<EdgeId> = BTreeSet::new();
     for coedge in &ir.model.coedges {

@@ -25,8 +25,9 @@ use super::support_uv::{
     parameterization_equivalent_surfaces_with_index, pcurve_requires_completion,
 };
 use crate::framing::node_kind::NodeKind;
+use crate::decode::ids::copy_typed_id;
 use crate::topology::{Graph, Node};
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point_with_budget, curve_second_derivative_with_budget,
@@ -146,21 +147,37 @@ pub(super) struct IntersectionIncidenceIndex {
 }
 
 impl IntersectionIncidenceIndex {
-    fn index_stream(&mut self, ir: &CadIr, starts: IntersectionEntityStarts) -> BTreeSet<CurveId> {
+    fn index_stream(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        starts: IntersectionEntityStarts,
+    ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
         for loop_ in ir.model.loops.iter().skip(starts.loops) {
-            self.loop_faces.insert(loop_.id.clone(), loop_.face.clone());
+            ctx.charge_collection_items(1, "nx incidence loop faces")?;
+            self.loop_faces.insert(
+                copy_typed_id(ctx, loop_.id.as_str(), "nx incidence loop identity")?,
+                copy_typed_id(ctx, loop_.face.as_str(), "nx incidence face identity")?,
+            );
         }
         for face in ir.model.faces.iter().skip(starts.faces) {
-            self.face_surfaces
-                .insert(face.id.clone(), face.surface.clone());
+            ctx.charge_collection_items(1, "nx incidence face surfaces")?;
+            self.face_surfaces.insert(
+                copy_typed_id(ctx, face.id.as_str(), "nx incidence face identity")?,
+                copy_typed_id(ctx, face.surface.as_str(), "nx incidence surface identity")?,
+            );
         }
         for edge in ir.model.edges.iter().skip(starts.edges) {
-            let Some(curve) = edge.curve().cloned() else {
+            let Some(curve) = edge.curve() else {
                 continue;
             };
-            self.edge_curves.insert(edge.id.clone(), curve);
+            ctx.charge_collection_items(1, "nx incidence edge curves")?;
+            self.edge_curves.insert(
+                copy_typed_id(ctx, edge.id.as_str(), "nx incidence edge identity")?,
+                copy_typed_id(ctx, curve.as_str(), "nx incidence curve identity")?,
+            );
         }
-        self.index_new_pcurves(ir, starts.pcurves);
+        self.index_new_pcurves(ctx, ir, starts.pcurves)?;
 
         let mut affected_curves = BTreeSet::new();
         for (index, procedural) in ir
@@ -170,60 +187,72 @@ impl IntersectionIncidenceIndex {
             .enumerate()
             .skip(starts.procedural_curves)
         {
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id).cloned() else {
+            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
-            self.procedural_by_curve
-                .entry(owner.clone())
-                .or_default()
-                .push(index);
-            affected_curves.insert(owner);
+            ctx.charge_collection_items(1, "nx incidence procedural owners")?;
+            let indices = self.procedural_by_curve
+                .entry(copy_typed_id(ctx, owner.as_str(), "nx incidence owner identity")?)
+                .or_default();
+            ctx.charge_collection_items(1, "nx incidence procedural indices")?;
+            indices.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx incidence procedural indices", 0, 1))?;
+            indices.push(index);
+            ctx.charge_collection_items(1, "nx affected incidence curves")?;
+            affected_curves.insert(copy_typed_id(ctx, owner.as_str(), "nx affected curve identity")?);
         }
         for coedge in ir.model.coedges.iter().skip(starts.coedges) {
-            let Some(curve) = self.edge_curves.get(&coedge.edge).cloned() else {
+            let Some(curve) = self.edge_curves.get(&coedge.edge) else {
                 continue;
             };
             let Some(surface) = self
                 .loop_faces
                 .get(&coedge.owner_loop)
                 .and_then(|face| self.face_surfaces.get(face))
-                .cloned()
             else {
                 continue;
             };
-            let surfaces = self.incident_surfaces.entry(curve.clone()).or_default();
+            ctx.charge_collection_items(1, "nx incident surface owners")?;
+            let surfaces = self.incident_surfaces.entry(copy_typed_id(ctx, curve.as_str(), "nx incident curve identity")?).or_default();
             if !surfaces.contains(&surface) {
-                surfaces.push(surface.clone());
+                ctx.charge_collection_items(1, "nx incident surfaces")?;
+                surfaces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx incident surfaces", 0, 1))?;
+                surfaces.push(copy_typed_id(ctx, surface.as_str(), "nx incident surface identity")?);
             }
+            ctx.charge_collection_items(1, "nx incident pcurve owners")?;
             let pcurves = self
                 .incident_pcurves
-                .entry((curve.clone(), surface))
+                .entry((copy_typed_id(ctx, curve.as_str(), "nx pcurve curve identity")?, copy_typed_id(ctx, surface.as_str(), "nx pcurve surface identity")?))
                 .or_default();
             for pcurve in &coedge.pcurves {
                 if !pcurves.contains(&pcurve.pcurve) {
-                    pcurves.push(pcurve.pcurve.clone());
+                    ctx.charge_collection_items(1, "nx incident pcurves")?;
+                    pcurves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx incident pcurves", 0, 1))?;
+                    pcurves.push(copy_typed_id(ctx, pcurve.pcurve.as_str(), "nx incident pcurve identity")?);
                 }
             }
-            affected_curves.insert(curve);
+            ctx.charge_collection_items(1, "nx affected incidence curves")?;
+            affected_curves.insert(copy_typed_id(ctx, curve.as_str(), "nx affected curve identity")?);
         }
-        affected_curves
+        Ok(affected_curves)
     }
 
-    fn index_new_pcurves(&mut self, ir: &CadIr, start: usize) {
+    fn index_new_pcurves(&mut self, ctx: &DecodeContext<'_>, ir: &CadIr, start: usize) -> Result<(), cadmpeg_core::CodecError> {
         for (index, pcurve) in ir.model.pcurves.iter().enumerate().skip(start) {
-            self.pcurves_by_id.entry(pcurve.id.clone()).or_insert(index);
+            ctx.charge_collection_items(1, "nx incidence pcurve index")?;
+            self.pcurves_by_id.entry(copy_typed_id(ctx, pcurve.id.as_str(), "nx incidence pcurve identity")?).or_insert(index);
         }
+        Ok(())
     }
 
-    fn complete_supports(&self, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) {
+    fn complete_supports(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) -> Result<(), cadmpeg_core::CodecError> {
         for curve in affected_curves {
             let Some(incident) = self.incident_surfaces.get(curve) else {
                 continue;
             };
-            let Some(procedural_indices) = self.procedural_by_curve.get(curve).cloned() else {
+            let Some(procedural_indices) = self.procedural_by_curve.get(curve) else {
                 continue;
             };
-            for procedural_index in procedural_indices {
+            for &procedural_index in procedural_indices {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
@@ -240,29 +269,27 @@ impl IntersectionIncidenceIndex {
                 if missing.len() != 1 {
                     continue;
                 }
-                let candidates = incident
-                    .iter()
-                    .filter(|surface| {
-                        !context
-                            .sides()
-                            .iter()
-                            .any(|side| side.surface.as_ref() == Some(surface))
-                    })
-                    .collect::<Vec<_>>();
-                let [surface] = candidates.as_slice() else {
+                let mut candidates = incident.iter().filter(|surface| {
+                    !context.sides().iter().any(|side| side.surface.as_ref() == Some(surface))
+                });
+                let Some(surface) = candidates.next() else {
                     continue;
                 };
-                context.set_surface(missing[0], Some((*surface).clone()));
+                if candidates.next().is_some() {
+                    continue;
+                }
+                context.set_surface(missing[0], Some(copy_typed_id(ctx, surface.as_str(), "nx completed support identity")?));
             }
         }
+        Ok(())
     }
 
-    fn complete_pcurves(&self, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) {
+    fn complete_pcurves(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr, affected_curves: &BTreeSet<CurveId>) -> Result<(), cadmpeg_core::CodecError> {
         for curve in affected_curves {
-            let Some(procedural_indices) = self.procedural_by_curve.get(curve).cloned() else {
+            let Some(procedural_indices) = self.procedural_by_curve.get(curve) else {
                 continue;
             };
-            for procedural_index in procedural_indices {
+            for &procedural_index in procedural_indices {
                 let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
                     continue;
                 };
@@ -280,7 +307,7 @@ impl IntersectionIncidenceIndex {
                     };
                     let Some([pcurve]) = self
                         .incident_pcurves
-                        .get(&(curve.clone(), surface.clone()))
+                        .get(&(copy_typed_id(ctx, curve.as_str(), "nx completion curve lookup")?, copy_typed_id(ctx, surface.as_str(), "nx completion surface lookup")?))
                         .map(Vec::as_slice)
                     else {
                         continue;
@@ -292,58 +319,64 @@ impl IntersectionIncidenceIndex {
                         .model
                         .pcurves
                         .get(*carrier_index)
-                        .map(|carrier| carrier.geometry.clone())
+                        .map(|carrier| carrier.geometry.try_clone_for_decode(ctx, "nx incidence completed pcurve"))
                     else {
                         continue;
                     };
-                    context.set_unmapped_pcurve(index, Some(geometry));
+                    context.set_unmapped_pcurve(index, Some(geometry?));
                 }
             }
         }
+        Ok(())
     }
 
     pub(super) fn complete_from_stream(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         starts: IntersectionEntityStarts,
-    ) {
-        let affected_curves = self.index_stream(ir, starts);
-        self.complete_supports(ir, &affected_curves);
-        self.complete_pcurves(ir, &affected_curves);
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let affected_curves = self.index_stream(ctx, ir, starts)?;
+        self.complete_supports(ctx, ir, &affected_curves)?;
+        self.complete_pcurves(ctx, ir, &affected_curves)
     }
 
     /// Complete incidence relations after every Parasolid stream has contributed
     /// its model entities. Stream-local completion cannot revisit a coedge whose
     /// edge, loop, or face arrived in a later stream.
-    pub(super) fn complete_from_model(&mut self, ir: &mut CadIr) {
+    pub(super) fn complete_from_model(&mut self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
         *self = Self::default();
-        let affected_curves = self.index_stream(ir, IntersectionEntityStarts::default());
-        self.complete_supports(ir, &affected_curves);
-        self.complete_pcurves(ir, &affected_curves);
+        let affected_curves = self.index_stream(ctx, ir, IntersectionEntityStarts::default())?;
+        self.complete_supports(ctx, ir, &affected_curves)?;
+        self.complete_pcurves(ctx, ir, &affected_curves)
     }
 
-    pub(super) fn complete_new_pcurves_from_stream(&mut self, ir: &CadIr, start: usize) {
-        self.index_new_pcurves(ir, start);
+    pub(super) fn complete_new_pcurves_from_stream(&mut self, ctx: &DecodeContext<'_>, ir: &CadIr, start: usize) -> Result<(), cadmpeg_core::CodecError> {
+        self.index_new_pcurves(ctx, ir, start)
     }
 
-    pub(super) fn reindex_pcurves_after_prune(&mut self, ir: &CadIr) {
+    pub(super) fn reindex_pcurves_after_prune(&mut self, ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), cadmpeg_core::CodecError> {
         self.pcurves_by_id.clear();
-        self.index_new_pcurves(ir, 0);
+        self.index_new_pcurves(ctx, ir, 0)
     }
 }
 
 #[cfg(test)]
 pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let mut index = IntersectionIncidenceIndex::default();
-    let affected_curves = index.index_stream(ir, IntersectionEntityStarts::default());
-    index.complete_supports(ir, &affected_curves);
+    let affected_curves = index.index_stream(&ctx, ir, IntersectionEntityStarts::default()).expect("test incidence");
+    index.complete_supports(&ctx, ir, &affected_curves).expect("test support completion");
 }
 
 #[cfg(test)]
 pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let mut index = IntersectionIncidenceIndex::default();
-    let affected_curves = index.index_stream(ir, IntersectionEntityStarts::default());
-    index.complete_pcurves(ir, &affected_curves);
+    let affected_curves = index.index_stream(&ctx, ir, IntersectionEntityStarts::default()).expect("test incidence");
+    index.complete_pcurves(&ctx, ir, &affected_curves).expect("test pcurve completion");
 }
 
 #[cfg(test)]
@@ -4173,6 +4206,29 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense};
 
     #[test]
+    fn intersection_incidence_route_refuses_collection_limit() {
+        let mut ir = CadIr::empty();
+        ir.model.loops.push(Loop {
+            id: LoopId::mint("nx:test:loop#0").expect("identity grammar"),
+            face: FaceId::mint("nx:test:face#0").expect("identity grammar"),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                vertex: VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
+                pcurves: Vec::new(),
+            },
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        let mut index = super::IntersectionIncidenceIndex::default();
+        let error = index
+            .complete_from_stream(&ctx, &mut ir, super::IntersectionEntityStarts::default())
+            .expect_err("incidence collection refusal");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
     fn wide_pcurve_sample_grid_keeps_finite_quarter_points() {
         let range = [-f64::MAX, f64::MAX];
         assert_eq!(finite_parameter_sample(range, 0, 4), -f64::MAX);
@@ -4256,8 +4312,10 @@ mod tests {
             use_curve: None,
         });
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
         let mut index = super::IntersectionIncidenceIndex::default();
-        index.complete_from_stream(&mut ir, super::IntersectionEntityStarts::default());
+        index.complete_from_stream(&ctx, &mut ir, super::IntersectionEntityStarts::default()).expect("first stream incidence");
 
         let later_starts = super::IntersectionEntityStarts {
             loops: ir.model.loops.len(),
@@ -4309,7 +4367,7 @@ mod tests {
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         });
 
-        index.complete_from_stream(&mut ir, later_starts);
+        index.complete_from_stream(&ctx, &mut ir, later_starts).expect("later stream incidence");
         let procedural = &ir.model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
@@ -4318,7 +4376,7 @@ mod tests {
         assert!(context.sides()[1].surface.is_none());
         assert!(context.sides()[1].pcurve.is_none());
 
-        index.complete_from_model(&mut ir);
+        index.complete_from_model(&ctx, &mut ir).expect("model incidence");
         let procedural = &ir.model.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
