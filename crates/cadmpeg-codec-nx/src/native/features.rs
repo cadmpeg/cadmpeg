@@ -8036,13 +8036,10 @@ pub(super) fn feature_block_dimensions(
 pub(super) fn data_block_object_frames(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockObjectFrame>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(blocks
-        .iter()
-        .flat_map(|(data_block, (bytes, source_offset))| {
-            crate::om::data_block_object_frames(bytes)
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, frame)| DataBlockObjectFrame {
+    let mut out = Vec::new();
+    for (data_block, (bytes, source_offset)) in blocks.iter() {
+        for (ordinal, frame) in crate::om::data_block_object_frames(ctx, bytes)?.into_iter().enumerate() {
+            out.push(DataBlockObjectFrame {
                     id: data_block_object_frame_id(data_block, ordinal),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
@@ -8050,10 +8047,10 @@ pub(super) fn data_block_object_frames(ctx: &cadmpeg_core::decode::DecodeContext
                         atom: frame.atom,
                         offset: source_offset + frame.offset as u64,
                     },
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect())
+            });
+        }
+    }
+    Ok(out)
 }
 
 fn data_block_object_frame_id(data_block: &str, ordinal: usize) -> String {

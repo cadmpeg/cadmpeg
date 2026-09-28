@@ -2626,11 +2626,12 @@ pub(crate) fn draft_construction_identity_frames(
 }
 
 /// Decode compact object IDs followed by their complete frame discriminator.
-pub(crate) fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
+pub(crate) fn data_block_object_frames(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<LocatedCompactIndex>, CodecError> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
     ];
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX data-block object frames")?;
     let mut references = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -2643,10 +2644,11 @@ pub(crate) fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex>
             offset += 1;
             continue;
         }
+        reserve_om_retained_item(ctx, &mut references, "NX data-block object frames")?;
         references.push(LocatedCompactIndex { atom, offset });
         offset += width + DISCRIMINATOR.len();
     }
-    references
+    Ok(references)
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
