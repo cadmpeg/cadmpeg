@@ -3,10 +3,11 @@
 //! verbatim from `decode.rs`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::sha256;
 use serde::Serialize;
 
 use crate::curve::{FcCurveCoordinateToken, FcCurveOpaqueSpan};
@@ -449,7 +450,7 @@ pub(super) struct CreoFaceAdmissionRejectionRecord {
     pub(super) vertex_ids: Vec<u32>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub(super) struct CreoExpandedSectionRecord {
     pub(super) id: String,
     pub(super) name: String,
@@ -654,22 +655,48 @@ pub(super) fn reference_ellipse_records(
     Ok(records)
 }
 
-pub(super) fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
-    scan.framing
-        .expanded_sections
-        .iter()
-        .map(|section| CreoExpandedSectionRecord {
-            id: format!(
-                "creo:container:expanded_section#{}:{}",
-                section.name, section.source_offset
-            ),
-            name: section.name.clone(),
+struct HexDigest([u8; 32]);
+
+impl std::fmt::Display for HexDigest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const DIGITS: [char; 16] = [
+            '0', '1', '2', '3', '4', '5', '6', '7',
+            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+        ];
+        for byte in self.0 {
+            formatter.write_char(DIGITS[usize::from(byte >> 4)])?;
+            formatter.write_char(DIGITS[usize::from(byte & 0x0f)])?;
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn expanded_section_records(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<CreoExpandedSectionRecord>, CodecError> {
+    let mut records = Vec::new();
+    for section in &scan.framing.expanded_sections {
+        let id = ctx.format_retained(
+            format_args!("creo:container:expanded_section#{}:{}", section.name, section.source_offset),
+            "creo native expanded section IDs",
+        )?;
+        let name = ctx.copy_retained_text(&section.name, "creo native expanded section names")?;
+        let sha256 = ctx.format_retained(
+            HexDigest(sha256(&section.data)),
+            "creo native expanded section hashes",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native expanded section records")?;
+        records.push(CreoExpandedSectionRecord {
+            id,
+            name,
             source_offset: section.source_offset,
             compressed_length: section.compressed_length,
             expanded_length: section.data.len(),
-            sha256: sha256_hex(&section.data),
-        })
-        .collect()
+            sha256,
+        });
+    }
+    Ok(records)
 }
 
 #[derive(Serialize)]
@@ -2992,12 +3019,77 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 #[cfg(test)]
 mod tests {
     use super::{
-        feature_operation_state_records, feature_reference_name_records, feature_row_records,
+        expanded_section_records, feature_operation_state_records, feature_reference_name_records, feature_row_records,
         reference_circle_records, reference_conic_records, reference_ellipse_records,
         reference_line_records,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
+
+    fn expanded_records_with_limits(
+        max_retained_bytes: u64,
+        max_collection_items: u64,
+    ) -> Result<Vec<super::CreoExpandedSectionRecord>, cadmpeg_core::CodecError> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.framing.expanded_sections.push(crate::container::ExpandedSection {
+            name: "Body".to_string(),
+            source_offset: 0,
+            compressed_length: 3,
+            data: b"abc".to_vec(),
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        expanded_section_records(&ctx, &scan)
+    }
+
+    #[test]
+    fn native_expanded_section_id_refuses_retained_limit() {
+        let id_len = "creo:container:expanded_section#Body:0".len() as u64;
+        let error = expanded_records_with_limits(id_len - 1, 1)
+            .expect_err("expanded-section ID needs full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native expanded section IDs"));
+    }
+
+    #[test]
+    fn native_expanded_section_name_refuses_retained_limit() {
+        let id_len = "creo:container:expanded_section#Body:0".len() as u64;
+        let error = expanded_records_with_limits(id_len + 3, 1)
+            .expect_err("section name needs four retained bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native expanded section names"));
+    }
+
+    #[test]
+    fn native_expanded_section_hash_refuses_retained_limit() {
+        let id_len = "creo:container:expanded_section#Body:0".len() as u64;
+        let error = expanded_records_with_limits(id_len + 4 + 63, 1)
+            .expect_err("SHA-256 hex needs 64 retained bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native expanded section hashes"));
+    }
+
+    #[test]
+    fn native_expanded_section_row_refuses_collection_limit() {
+        let error = expanded_records_with_limits(u64::MAX, 0)
+            .expect_err("one expanded section needs one output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native expanded section records"));
+        let records = expanded_records_with_limits(u64::MAX, 1)
+            .expect("the expanded section is admitted");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, "creo:container:expanded_section#Body:0");
+        assert_eq!(records[0].name, "Body");
+        assert_eq!(records[0].sha256, cadmpeg_ir::hash::sha256_hex(b"abc"));
+    }
 
     fn reference_scan() -> crate::container::ContainerScan<'static> {
         use cadmpeg_ir::features::FinitePoint3;
