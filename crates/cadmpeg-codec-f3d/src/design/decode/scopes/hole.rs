@@ -13,7 +13,8 @@ use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -46,11 +47,13 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignHoleConstruction> {
+) -> Result<Option<DesignHoleConstruction>, CodecError> {
+    (|| {
     if scope.kind() != scope::DesignFeatureKind::Hole {
         return None;
     }
@@ -79,7 +82,8 @@ pub(in crate::design::decode) fn exact_hole_construction(
             else {
                 continue;
             };
-            if let Some(next) = hole_construction_frame_at(
+            let next = match hole_construction_frame_at(
+                ctx,
                 bytes,
                 start,
                 paired_at,
@@ -87,6 +91,10 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 *record_index,
                 *version,
             ) {
+                Ok(next) => next,
+                Err(error) => return Some(Err(error)),
+            };
+            if let Some(next) = next {
                 if candidate.replace(next).is_some() {
                     return None;
                 }
@@ -95,8 +103,9 @@ pub(in crate::design::decode) fn exact_hole_construction(
     }
     candidate.map(|mut candidate| {
         candidate.face_selection = face_selection;
-        candidate
+        Ok(candidate)
     })
+    })().transpose()
 }
 
 fn exact_hole_face_selection(
@@ -168,13 +177,15 @@ fn exact_hole_face_selection(
 }
 
 fn hole_construction_frame_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     payload_at: usize,
     point_record_index: u32,
     version: u32,
-) -> Option<DesignHoleConstruction> {
+) -> Result<Option<DesignHoleConstruction>, CodecError> {
+    (|| {
     let body = bytes.get(..paired_at)?;
     let mut cursor = payload_prologue(body, payload_at, paired_at)?;
     let _bounding_box_index = View::u32_le_at(body, cursor)?;
@@ -221,7 +232,16 @@ fn hole_construction_frame_at(
     if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
         return None;
     }
-    let mut input_records = Vec::with_capacity(input_count);
+    if let Err(error) = ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(input_count),
+        "f3d Hole input records",
+    ) {
+        return Some(Err(error));
+    }
+    let mut input_records = Vec::new();
+    if input_records.try_reserve(input_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d Hole input records allocation", 0, 1)));
+    }
     for _ in 0..input_count {
         let reference_at = cursor;
         let reference = take_reference(body, &mut cursor)?;
@@ -236,7 +256,7 @@ fn hole_construction_frame_at(
     {
         return None;
     }
-    Some(DesignHoleConstruction {
+    Some(Ok(DesignHoleConstruction {
         point_record_index,
         point_record_byte_offset: u64::try_from(start).ok()?,
         position,
@@ -253,7 +273,8 @@ fn hole_construction_frame_at(
         tangent_point_data,
         input_records,
         face_selection: None,
-    })
+    }))
+    })().transpose()
 }
 
 #[cfg(test)]
