@@ -3957,8 +3957,10 @@ pub(super) fn standard_object_evidence_from_streams(
                     }
                     None => None,
                 };
-                graph_carrier
-                    .or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface))
+                (match graph_carrier {
+                    Some(carrier) => Some(carrier),
+                    None => crate::families::b5::transfer::resolved_surface_carrier(ctx, surface)?,
+                })
                     .map(|carrier| match carrier {
                         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
                             geometry,

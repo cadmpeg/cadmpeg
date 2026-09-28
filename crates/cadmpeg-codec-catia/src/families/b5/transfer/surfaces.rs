@@ -49,8 +49,11 @@ pub(super) enum B5ProceduralSurface<'a> {
 }
 
 /// Classify a surface into its direct geometry or procedural construction.
-pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
-    match surface {
+pub(super) fn surface_carrier<'a>(
+    ctx: &DecodeContext<'_>,
+    surface: &'a B5Surface,
+) -> Result<B5SurfaceCarrier<'a>, CodecError> {
+    Ok(match surface {
         B5Surface::Plane { origin, frame, .. } => {
             B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, *frame),
@@ -95,7 +98,11 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             ),
         ))),
         B5Surface::Nurbs(surface) => B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Nurbs(surface.clone()),
+            SolvedSurfaceGeometry::Nurbs(crate::resource::copy_nurbs_surface(
+                ctx,
+                surface,
+                "catia_b5_surface_carrier_nurbs",
+            )?),
         )),
         B5Surface::UnresolvedNurbs { .. } | B5Surface::Unknown { .. } => {
             B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved)
@@ -122,7 +129,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             angular_scale: *angular_scale,
             bounds: [profile_range.endpoints(), angular_range.endpoints()],
         }),
-    }
+    })
 }
 
 pub(super) fn neutral_surface(
@@ -133,7 +140,7 @@ pub(super) fn neutral_surface(
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<SurfacePlan, CodecError> {
-    let carrier = match surface_carrier(surface) {
+    let carrier = match surface_carrier(ctx, surface)? {
         B5SurfaceCarrier::Analytic(geometry) => {
             return Ok(SurfacePlan {
                 geometry,
@@ -145,16 +152,23 @@ pub(super) fn neutral_surface(
     if let Some(extrusion) = super::resolved_extrusion_surface(ctx, graph, surface_id, refusal)? {
         return Ok(SurfacePlan {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.clone()),
+                record: Some(crate::resource::copy_id(ctx, payload.as_str(), UnknownId::mint,
+                    "catia_b5_extrusion_unknown_id")?),
             }),
-            procedure: Some(SurfaceProcedure::Extrusion(Box::new(extrusion))),
+            // The resolved extrusion is retained by the surface plan.
+            procedure: {
+                ctx.charge_retained(std::mem::size_of::<super::ResolvedExtrusionSurface>() as u64,
+                    "catia_b5_extrusion_procedure")?;
+                Some(SurfaceProcedure::Extrusion(Box::new(extrusion)))
+            },
         });
     }
     let mut procedure = None;
     let geometry = match carrier {
         B5ProceduralSurface::Unresolved => {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.clone()),
+                record: Some(crate::resource::copy_id(ctx, payload.as_str(), UnknownId::mint,
+                    "catia_b5_unresolved_unknown_id")?),
             })
         }
         B5ProceduralSurface::RollingBall {
@@ -163,10 +177,11 @@ pub(super) fn neutral_surface(
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
-                definition: definition.clone(),
+                definition: copy_rolling_ball_definition(ctx, definition)?,
             });
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                record: Some(payload.clone()),
+                record: Some(crate::resource::copy_id(ctx, payload.as_str(), UnknownId::mint,
+                    "catia_b5_rolling_ball_unknown_id")?),
             })
         }
         B5ProceduralSurface::Revolution {
@@ -175,7 +190,7 @@ pub(super) fn neutral_surface(
             axis_direction,
             angular_scale,
             bounds,
-        } => revolution_surface(
+        } => match revolution_surface(
             ctx,
             graph.profiles.get(&profile_curve),
             (axis_origin, axis_direction),
@@ -183,24 +198,72 @@ pub(super) fn neutral_surface(
             bounds,
             &format_args!("b5 revolution surface record #{surface_id}"),
             refusal,
-        )?
-        .map_or_else(
-            || {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                    record: Some(payload.clone()),
-                })
-            },
-            |(surface, plan)| {
+        )? {
+            Some((surface, plan)) => {
                 procedure = Some(SurfaceProcedure::Revolution(plan));
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))
-            },
-        ),
+            }
+            None => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+                record: Some(crate::resource::copy_id(ctx, payload.as_str(), UnknownId::mint,
+                    "catia_b5_revolution_unknown_id")?),
+            }),
+        },
     };
 
     Ok(SurfacePlan {
         geometry,
         procedure,
     })
+}
+
+pub(super) fn copy_rolling_ball_definition(
+    ctx: &DecodeContext<'_>,
+    definition: &ProceduralSurfaceDefinition,
+) -> Result<ProceduralSurfaceDefinition, CodecError> {
+    let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition else {
+        return Err(CodecError::malformed("B5 rolling-ball carrier requires a jet definition"));
+    };
+    let stations = crate::resource::copy_retained_slice(ctx, jet.stations(),
+        "catia_b5_rolling_ball_jet_stations")?;
+    Ok(ProceduralSurfaceDefinition::RollingBallJet(
+        cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(jet.degree(), stations)
+            .map_err(CodecError::malformed)?,
+    ))
+}
+
+#[cfg(test)]
+mod carrier_resource_tests {
+    use super::{surface_carrier, B5SurfaceCarrier};
+    use crate::families::b5::graph::B5Surface;
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn nurbs_surface_carrier_refuses_collection_limit_below_copy_need() {
+        let surface = B5Surface::Nurbs(
+            NurbsSurface::from_lanes(
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                NurbsSurfaceLanes::new(
+                    vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2],
+                    None,
+                ),
+                false,
+            )
+            .expect("valid bilinear surface"),
+        );
+        let refused = crate::test_support::with_collection_limit(13, |ctx| {
+            surface_carrier(ctx, &surface)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            surface_carrier(ctx, &surface)
+        })
+        .expect("service profile");
+        assert!(matches!(admitted, B5SurfaceCarrier::Analytic(_)));
+    }
 }
 
 pub(super) fn revolution_surface(
