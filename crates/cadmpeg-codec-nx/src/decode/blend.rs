@@ -2645,8 +2645,8 @@ pub(super) fn closest_pcurve_parameters(
     else {
         return Ok(None);
     };
+    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     let candidates = if degree != 1 || nurbs.weights().is_some() {
-        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
         let Some(candidates) = stationary_rational_distance_candidates(
             &homogeneous,
             search_seed,
@@ -2654,7 +2654,7 @@ pub(super) fn closest_pcurve_parameters(
         )? else {
             return Ok(None);
         };
-        closest_parameter_candidates(candidates, search_seed)
+        closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
     } else {
             let candidates = nurbs
                 .control_points()
@@ -2689,7 +2689,7 @@ pub(super) fn closest_pcurve_parameters(
                     ))
                 })
                 .collect::<Vec<_>>();
-        closest_parameter_candidates(candidates, search_seed)
+        closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
     };
     Ok(candidates.map(|candidates| {
         lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)
@@ -3123,24 +3123,39 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
 fn closest_parameter_candidates(
     candidates: impl IntoIterator<Item = (f64, f64)>,
     seed: Option<f64>,
-) -> Option<Vec<f64>> {
-    let candidates = candidates.into_iter().collect::<Vec<_>>();
-    let minimum_distance = candidates
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+    let mut candidates_copy = Vec::new();
+    for candidate in candidates {
+        let _reservation = geometry_budget.reserve_vec(
+            &mut candidates_copy,
+            1,
+            "nx closest parameter candidates",
+        )?;
+        candidates_copy.push(candidate);
+    }
+    let Some(minimum_distance) = candidates_copy
         .iter()
         .map(|candidate| candidate.1)
-        .min_by(f64::total_cmp)?;
-    let mut nearest = candidates
-        .into_iter()
-        .filter(|candidate| {
-            let scale = candidate
-                .1
-                .abs()
-                .max(minimum_distance.abs())
-                .max(f64::MIN_POSITIVE);
-            (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale
-        })
-        .map(|candidate| candidate.0)
-        .collect::<Vec<_>>();
+        .min_by(f64::total_cmp) else {
+            return Ok(None);
+        };
+    let mut nearest = Vec::new();
+    for candidate in candidates_copy {
+        let scale = candidate
+            .1
+            .abs()
+            .max(minimum_distance.abs())
+            .max(f64::MIN_POSITIVE);
+        if (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale {
+            let _reservation = geometry_budget.reserve_vec(
+                &mut nearest,
+                1,
+                "nx closest parameter minima",
+            )?;
+            nearest.push(candidate.0);
+        }
+    }
     nearest.sort_by(|first, second| {
         seed.map_or_else(
             || first.total_cmp(second),
@@ -3153,7 +3168,7 @@ fn closest_parameter_candidates(
         )
     });
     nearest.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    (!nearest.is_empty()).then_some(nearest)
+    Ok((!nearest.is_empty()).then_some(nearest))
 }
 
 fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64) -> f64 {
@@ -4125,20 +4140,20 @@ pub(super) fn closest_spine_parameter_with_index_and_budget(
             ))
         }
         Some(geometry @ SolvedCurveGeometry::Circle(_)) => {
-            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+            closest_periodic_analytic_curve_parameter_with_budget(
                 geometry,
                 point,
                 seed,
                 geometry_budget,
-            ))
+            )
         }
         Some(geometry @ SolvedCurveGeometry::Ellipse(_)) => {
-            Ok(closest_periodic_analytic_curve_parameter_with_budget(
+            closest_periodic_analytic_curve_parameter_with_budget(
                 geometry,
                 point,
                 seed,
                 geometry_budget,
-            ))
+            )
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             closest_nurbs_curve_parameter_with_budget(nurbs, point, seed, geometry_budget)
@@ -4152,9 +4167,9 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<f64> {
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     if seed.is_some_and(|seed| !seed.is_finite()) {
-        return None;
+        return Ok(None);
     }
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -4169,18 +4184,22 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             let major_direction = ellipse_curve.frame().reference().as_raw();
             (center, *axis, *major_direction, Some(ellipse_curve))
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     let transverse = axis.cross(reference);
     let delta = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
     let phase = delta.dot(transverse).atan2(delta.dot(reference));
-    phase.is_finite().then_some(())?;
+    if !phase.is_finite() {
+        return Ok(None);
+    }
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
-    circle_parameter.is_finite().then_some(())?;
+    if !circle_parameter.is_finite() {
+        return Ok(None);
+    }
     let Some(ellipse_curve) = ellipse else {
-        return Some(circle_parameter);
+        return Ok(Some(circle_parameter));
     };
     let anchor = seed.unwrap_or(phase);
     let major_radius = ellipse_curve.major_radius().get();
@@ -4205,7 +4224,9 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         minor_radius * y,
     ];
     let constant_distance = coefficients.iter().all(|coefficient| *coefficient == 0.0);
-    let roots = real_polynomial_roots(&coefficients)?;
+    let Some(roots) = real_polynomial_roots(&coefficients) else {
+        return Ok(None);
+    };
     let parameters = roots
         .into_iter()
         .map(|root| 2.0 * root.atan())
@@ -4215,18 +4236,23 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
             parameter
                 + ((anchor - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         });
-    let distance = |parameter: f64| {
-        geometry_budget.charge().then_some(())?;
-        Some((major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y))
-    };
-    closest_parameter_candidates(
-        parameters
-            .map(|parameter| Some((parameter, distance(parameter)?)))
-            .collect::<Option<Vec<_>>>()?,
-        Some(anchor),
-    )?
-    .into_iter()
-    .next()
+    let mut candidates = Vec::new();
+    for parameter in parameters {
+        if !geometry_budget.charge() {
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+        }
+        let _reservation = geometry_budget.reserve_vec(
+            &mut candidates,
+            1,
+            "nx analytic inverse candidates",
+        )?;
+        candidates.push((
+            parameter,
+            (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
+        ));
+    }
+    Ok(closest_parameter_candidates(candidates, Some(anchor), geometry_budget)?
+        .and_then(|parameters| parameters.into_iter().next()))
 }
 
 pub(super) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
@@ -4439,7 +4465,7 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
-    let Some(parameters) = closest_parameter_candidates(candidates, search_seed) else {
+    let Some(parameters) = closest_parameter_candidates(candidates, search_seed, geometry_budget)? else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
     Ok(
