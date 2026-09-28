@@ -8,6 +8,8 @@
 
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use crate::math::{
     sum::{fast_dot, ExactSignedSum},
     Point3, Vector3,
@@ -150,6 +152,49 @@ pub enum SolvedSurfaceGeometry {
     },
 }
 
+fn copy_geometry_id<I: TryFrom<String, Error = crate::ids::IdentityError>>(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<I, CodecError> {
+    I::try_from(ctx.copy_retained_text(value, operation)?).map_err(CodecError::malformed)
+}
+
+impl SolvedSurfaceGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Plane(value) => Self::Plane(*value),
+            Self::Cylinder(value) => Self::Cylinder(*value),
+            Self::Cone(value) => Self::Cone(*value),
+            Self::Sphere(value) => Self::Sphere(*value),
+            Self::Torus(value) => Self::Torus(*value),
+            Self::Nurbs(value) => Self::Nurbs(value.copy_admitted(ctx, operation)?),
+            Self::Polygonal(value) => Self::Polygonal(value.copy_admitted(ctx, operation)?),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                let basis = value.basis.copy_admitted(ctx, operation)?;
+                ctx.charge_collection_items(1, operation)?;
+                Self::Transformed(PlacedSurface {
+                    basis: Box::new(basis),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| copy_geometry_id(ctx, id.as_str(), operation))
+                    .transpose()?,
+            },
+        })
+    }
+}
+
 impl SolvedSurfaceGeometry {
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
@@ -271,6 +316,24 @@ pub enum SurfaceGeometry {
 }
 
 impl SurfaceGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural { construction, cache } => Self::Procedural {
+                construction: copy_geometry_id(ctx, construction.as_str(), operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.copy_admitted(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.copy_admitted(ctx, operation)?),
+        })
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
@@ -361,6 +424,61 @@ pub enum SolvedCurveGeometry {
         )]
         record: Option<UnknownId>,
     },
+}
+
+impl SolvedCurveGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Degenerate(value) => Self::Degenerate(*value),
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, segments.len(), operation)?;
+                for segment in segments.iter() {
+                    copy.push(CompositeCurveSegment {
+                        curve: copy_geometry_id(ctx, segment.curve.as_str(), operation)?,
+                        same_sense: segment.same_sense,
+                        transition: segment.transition,
+                    });
+                }
+                Self::Composite {
+                    segments: CompositeCurveSegments::try_from(copy)
+                        .map_err(CodecError::malformed)?,
+                    self_intersect: *self_intersect,
+                }
+            }
+            Self::Nurbs(value) => Self::Nurbs(value.copy_admitted(ctx, operation)?),
+            Self::Polyline(value) => Self::Polyline(value.copy_admitted(ctx, operation)?),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                let basis = value.basis.copy_admitted(ctx, operation)?;
+                ctx.charge_collection_items(1, operation)?;
+                Self::Transformed(PlacedCurve {
+                    basis: Box::new(basis),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown {
+                record: record
+                    .as_ref()
+                    .map(|id| copy_geometry_id(ctx, id.as_str(), operation))
+                    .transpose()?,
+            },
+        })
+    }
 }
 
 impl SolvedCurveGeometry {
@@ -486,6 +604,24 @@ pub enum CurveGeometry {
 }
 
 impl CurveGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural { construction, cache } => Self::Procedural {
+                construction: copy_geometry_id(ctx, construction.as_str(), operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.copy_admitted(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.copy_admitted(ctx, operation)?),
+        })
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralCurveId> {

@@ -62,6 +62,25 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
+    /// Copy admitted vertices and triangle rows through the caller's budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut vertices = Vec::new();
+        ctx.try_reserve_items(&mut vertices, self.vertices.len(), operation)?;
+        vertices.extend_from_slice(&self.vertices);
+        let mut triangles = Vec::new();
+        ctx.try_reserve_items(&mut triangles, self.triangles.len(), operation)?;
+        triangles.extend_from_slice(&self.triangles);
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection: self.chordal_deflection,
+        })
+    }
+
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,
@@ -466,6 +485,38 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
+    /// Copy admitted sample rows through the caller's budget.
+    pub fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let samples = match &self.samples {
+            PolylineSamples::Unparameterized { points } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, points.len(), operation)?;
+                copy.extend_from_slice(points);
+                PolylineSamples::Unparameterized {
+                    points: crate::features::NonEmptyMembers::try_from(copy)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                }
+            }
+            PolylineSamples::Parameterized { vertices } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, vertices.len(), operation)?;
+                copy.extend_from_slice(vertices);
+                PolylineSamples::Parameterized {
+                    vertices: crate::features::NonEmptyMembers::try_from(copy)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                }
+            }
+        };
+        Ok(Self {
+            samples,
+            chordal_deflection: self.chordal_deflection,
+        })
+    }
+
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(
