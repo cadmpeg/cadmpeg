@@ -1600,6 +1600,22 @@ fn sorted_topology_sequences(
     Ok(sequences)
 }
 
+fn sorted_graph_attrs(
+    ctx: &DecodeContext<'_>,
+    attrs: impl ExactSizeIterator<Item = u16>,
+    operation: &'static str,
+) -> Result<Vec<u16>, cadmpeg_core::CodecError> {
+    let count = attrs.len();
+    let work = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)?;
+    let mut sorted = Vec::new();
+    ctx.reserve_collection_vec(&mut sorted, count, operation)?;
+    sorted.extend(attrs);
+    sorted.sort_unstable();
+    Ok(sorted)
+}
+
 fn copy_graph_stream_name(
     ctx: &DecodeContext<'_>,
     stream: &cadmpeg_ir::StreamName,
@@ -1726,6 +1742,7 @@ fn decode_graph(
         for (_loop_attr, ring) in &f.loops {
             let k = ring.len();
             for (i, &ce_attr) in ring.iter().enumerate() {
+                ctx.charge_work(1, "index Parasolid edge incidences")?;
                 let Some(ce) = t.coedges().get(&ce_attr) else {
                     continue;
                 };
@@ -1734,10 +1751,10 @@ fn decode_graph(
                 let next_vuse = t.coedges().get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
-                    edge_incidence
-                        .entry(edge_attr)
-                        .or_default()
-                        .push((ce_attr, start_vuse, next_vuse));
+                    reserve_graph_map_key(ctx, &mut edge_incidence, &edge_attr, "index Parasolid edge incidences")?;
+                    let incidences = edge_incidence.entry(edge_attr).or_default();
+                    ctx.reserve_collection_vec(incidences, 1, "collect Parasolid edge incidences")?;
+                    incidences.push((ce_attr, start_vuse, next_vuse));
                 }
             }
         }
@@ -1750,6 +1767,7 @@ fn decode_graph(
     let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
 
     for (edge_attr, incidences) in edge_incidence {
+        ctx.charge_work(1, "resolve Parasolid edge incidences")?;
         let canonical =
             canonical_coedge_attr(edge_attr, t.edge_uses().get(&edge_attr), t.coedges());
         let Some(canonical) = canonical else {
@@ -1766,6 +1784,7 @@ fn decode_graph(
             .edge_uses()
             .get(&edge_attr)
             .map_or(0, |edge_use| edge_use.references.curve());
+        reserve_graph_map_key(ctx, &mut edge_ends, &edge_attr, "index Parasolid edge endpoints")?;
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
             if vuse == 0 {
@@ -1774,7 +1793,9 @@ fn decode_graph(
             if let Some(vu) = t.vertex_uses().get(&vuse) {
                 let point_attr = vu.refs[4];
                 if t.points().contains_key(&point_attr) {
+                    reserve_graph_set_key(ctx, &mut kept_vertices, &vuse, "track Parasolid vertices")?;
                     kept_vertices.insert(vuse);
+                    reserve_graph_set_key(ctx, &mut kept_points, &point_attr, "track Parasolid points")?;
                     kept_points.insert(point_attr);
                 }
             }
@@ -1782,8 +1803,7 @@ fn decode_graph(
     }
 
     // Points.
-    let mut point_attrs: Vec<u16> = kept_points.iter().copied().collect();
-    point_attrs.sort_unstable();
+    let point_attrs = sorted_graph_attrs(ctx, kept_points.iter().copied(), "order Parasolid points")?;
     for a in point_attrs {
         let rec = &t.points()[&a];
         annotations
@@ -1796,13 +1816,13 @@ fn decode_graph(
         .ok_or(Point::NON_FINITE_POSITION)
         .map_err(cadmpeg_core::CodecError::malformed)?;
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.points, 1, "collect Parasolid points")?;
         out.points
             .push(Point::new(id_point(a), finite_position, None));
     }
 
     // Vertices.
-    let mut vuse_attrs: Vec<u16> = kept_vertices.iter().copied().collect();
-    vuse_attrs.sort_unstable();
+    let vuse_attrs = sorted_graph_attrs(ctx, kept_vertices.iter().copied(), "order Parasolid vertices")?;
     for a in vuse_attrs {
         let rec = &t.vertex_uses()[&a];
         let point_attr = rec.refs[4];
@@ -1810,6 +1830,7 @@ fn decode_graph(
             .note(id_vertex(a), &source_stream, rec.offset as u64)
             .tag("00_12");
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.vertices, 1, "collect Parasolid vertices")?;
         out.vertices.push(Vertex {
             id: id_vertex(a),
             point: id_point(point_attr),
