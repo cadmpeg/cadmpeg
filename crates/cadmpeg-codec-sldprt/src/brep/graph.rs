@@ -4408,7 +4408,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 else {
                     continue;
                 };
-                let resolution = match derive_nurbs_edge_pcurve(surface, curve, parameter_range) {
+                let resolution = match derive_nurbs_edge_pcurve(ctx, surface, curve, parameter_range) {
                     Ok(resolution) => resolution,
                     Err(NurbsPcurveFailure::Carrier(error)) => {
                         lane_refusals.note(
@@ -4898,7 +4898,7 @@ fn resolve_axis_candidates<T, const N: usize>(
 #[derive(Debug)]
 enum NurbsPcurveFailure {
     Carrier(cadmpeg_ir::geometry::nurbs::NurbsError),
-    Resource(cadmpeg_core::decode::ResourceLimit),
+    Resource(cadmpeg_core::CodecError),
 }
 
 impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
@@ -4909,7 +4909,13 @@ impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
 
 impl From<cadmpeg_core::decode::ResourceLimit> for NurbsPcurveFailure {
     fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Resource(limit)
+        Self::Resource(limit.into())
+    }
+}
+
+impl From<cadmpeg_core::CodecError> for NurbsPcurveFailure {
+    fn from(error: cadmpeg_core::CodecError) -> Self {
+        Self::Resource(error)
     }
 }
 
@@ -5284,60 +5290,90 @@ fn nurbs_representation_matches(
 }
 
 fn nurbs_homogeneous_controls(
+    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Option<Vec<[f64; 4]>> {
-    curve
-        .control_points()
-        .iter()
-        .enumerate()
-        .map(|(index, point)| {
-            let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
-            (weight > 0.0).then_some([point.x * weight, point.y * weight, point.z * weight, weight])
-        })
-        .collect()
+) -> Result<Option<Vec<[f64; 4]>>, cadmpeg_core::CodecError> {
+    let mut controls = Vec::new();
+    ctx.reserve_collection_vec(&mut controls, curve.pole_count(), "collect homogeneous NURBS controls")?;
+    for index in 0..curve.pole_count() {
+        let Some(point) = curve.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
+        let weight = match curve.pole_rows().weight_at(index) {
+            Some(value) => value,
+            None => 1.0,
+        };
+        if weight <= 0.0 {
+            return Ok(None);
+        }
+        controls.push([point.x * weight, point.y * weight, point.z * weight, weight]);
+    }
+    Ok(Some(controls))
 }
 
 fn insert_nurbs_homogeneous_knot(
+    ctx: &DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     controls: &[[f64; 4]],
     value: f64,
-) -> Option<(Vec<f64>, Vec<[f64; 4]>)> {
+) -> Result<Option<(Vec<f64>, Vec<[f64; 4]>)>, cadmpeg_core::CodecError> {
+    let Some(expected_knots) = controls.len().checked_add(degree).and_then(|count| count.checked_add(1)) else {
+        return Ok(None);
+    };
     if degree == 0
         || controls.is_empty()
-        || knots.len() != controls.len().checked_add(degree)?.checked_add(1)?
+        || knots.len() != expected_knots
         || !value.is_finite()
         || knots.iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(knots)
     {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(1, "insert homogeneous NURBS knot")?;
     let n = controls.len() - 1;
-    let domain = [*knots.get(degree)?, *knots.get(n + 1)?];
+    let (Some(&start), Some(&end)) = (knots.get(degree), knots.get(n + 1)) else {
+        return Ok(None);
+    };
+    let domain = [start, end];
     if value < domain[0] || value > domain[1] {
-        return None;
+        return Ok(None);
     }
     let span = if value == domain[1] {
         n
     } else {
-        (degree..=n).find(|index| knots[*index] <= value && value < knots[*index + 1])?
+        let Some(span) = (degree..=n).find(|index| knots[*index] <= value && value < knots[*index + 1]) else {
+            return Ok(None);
+        };
+        span
     };
     let multiplicity = knots.iter().filter(|knot| **knot == value).count();
     if multiplicity > degree {
-        return None;
+        return Ok(None);
     }
-    let mut inserted_knots = Vec::with_capacity(knots.len() + 1);
+    let Some(knot_count) = knots.len().checked_add(1) else {
+        return Ok(None);
+    };
+    let mut inserted_knots = Vec::new();
+    ctx.reserve_collection_vec(&mut inserted_knots, knot_count, "insert homogeneous NURBS knot lane")?;
     inserted_knots.extend_from_slice(&knots[..=span]);
     inserted_knots.push(value);
     inserted_knots.extend_from_slice(&knots[span + 1..]);
 
-    let mut inserted_controls = vec![[0.0; 4]; controls.len() + 1];
+    let Some(control_count) = controls.len().checked_add(1) else {
+        return Ok(None);
+    };
+    let mut inserted_controls = Vec::new();
+    ctx.reserve_collection_vec(&mut inserted_controls, control_count, "insert homogeneous NURBS control lane")?;
+    inserted_controls.resize(control_count, [0.0; 4]);
     let prefix_end = span - degree + 1;
     inserted_controls[..prefix_end].copy_from_slice(&controls[..prefix_end]);
     // The knot span never precedes the multiplicity of the inserted value: a
     // refused subtraction states that, where a saturating one would alias an
     // impossible span with span 0 and copy the wrong control run.
-    let middle_end = span.checked_sub(multiplicity)?;
+    let Some(middle_end) = span.checked_sub(multiplicity) else {
+        return Ok(None);
+    };
     let suffix_start = middle_end;
     inserted_controls[(suffix_start + 1)..].copy_from_slice(&controls[suffix_start..]);
     let middle_start = prefix_end;
@@ -5345,7 +5381,7 @@ fn insert_nurbs_homogeneous_knot(
         for index in middle_start..=middle_end {
             let denominator = knots[index + degree] - knots[index];
             if !denominator.is_finite() || denominator <= 0.0 {
-                return None;
+                return Ok(None);
             }
             let alpha = (value - knots[index]) / denominator;
             inserted_controls[index] = std::array::from_fn(|axis| {
@@ -5353,7 +5389,7 @@ fn insert_nurbs_homogeneous_knot(
             });
         }
     }
-    Some((inserted_knots, inserted_controls))
+    Ok(Some((inserted_knots, inserted_controls)))
 }
 
 /// The knots, control points and weights of one clamped NURBS segment, before
@@ -5364,50 +5400,86 @@ type ClampedCurveLanes = (Vec<f64>, Vec<cadmpeg_ir::math::Point3>, Option<Vec<f6
 /// does not clamp to the domain at all; the lanes themselves are minted by the
 /// caller.
 fn clamp_nurbs_curve_to_domain_lanes(
+    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Option<ClampedCurveLanes> {
+) -> Result<Option<ClampedCurveLanes>, cadmpeg_core::CodecError> {
     if curve.periodic()
         || !domain[0].is_finite()
         || !domain[1].is_finite()
         || domain[0] >= domain[1]
     {
-        return None;
+        return Ok(None);
     }
-    let degree = usize::try_from(curve.degree()).ok()?;
-    let original_domain = nurbs_curve_parameter_domain(curve)?.endpoints();
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(None);
+    };
+    let Some(original_domain) = nurbs_curve_parameter_domain(curve) else {
+        return Ok(None);
+    };
+    let original_domain = original_domain.endpoints();
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
-        return None;
+        return Ok(None);
     }
-    let mut knots = curve.knots().to_vec();
-    let mut controls = nurbs_homogeneous_controls(curve)?;
-    let full_multiplicity = degree.checked_add(1)?;
+    let mut knots = Vec::new();
+    ctx.reserve_collection_vec(&mut knots, curve.knots().len(), "copy NURBS knots for clamping")?;
+    knots.extend_from_slice(curve.knots());
+    let Some(mut controls) = nurbs_homogeneous_controls(ctx, curve)? else {
+        return Ok(None);
+    };
+    let Some(full_multiplicity) = degree.checked_add(1) else {
+        return Ok(None);
+    };
     for value in domain {
         let multiplicity = knots.iter().filter(|knot| **knot == value).count();
         if multiplicity > full_multiplicity {
-            return None;
+            return Ok(None);
         }
         for _ in multiplicity..full_multiplicity {
-            (knots, controls) = insert_nurbs_homogeneous_knot(degree, &knots, &controls, value)?;
+            let Some(inserted) = insert_nurbs_homogeneous_knot(ctx, degree, &knots, &controls, value)? else {
+                return Ok(None);
+            };
+            (knots, controls) = inserted;
         }
     }
-    let start = knots.iter().position(|knot| *knot == domain[0])?;
-    let end = knots.iter().position(|knot| *knot == domain[1])?;
-    let end_last = knots.iter().rposition(|knot| *knot == domain[1])?;
+    let (Some(start), Some(end), Some(end_last)) = (
+        knots.iter().position(|knot| *knot == domain[0]),
+        knots.iter().position(|knot| *knot == domain[1]),
+        knots.iter().rposition(|knot| *knot == domain[1]),
+    ) else {
+        return Ok(None);
+    };
     if end <= start || end_last < end || end - start == 0 {
-        return None;
+        return Ok(None);
     }
-    let segment_controls = controls.get(start..end)?.to_vec();
-    let segment_knots = knots.get(start..=end_last)?.to_vec();
-    if segment_knots.len() != segment_controls.len().checked_add(degree)?.checked_add(1)? {
-        return None;
+    let (Some(control_slice), Some(knot_slice)) = (
+        controls.get(start..end),
+        knots.get(start..=end_last),
+    ) else {
+        return Ok(None);
+    };
+    let Some(expected_knots) = control_slice.len().checked_add(degree).and_then(|count| count.checked_add(1)) else {
+        return Ok(None);
+    };
+    if knot_slice.len() != expected_knots {
+        return Ok(None);
     }
-    let rational = curve.weights().is_some();
-    let mut control_points = Vec::with_capacity(segment_controls.len());
-    let mut weights = rational.then(Vec::new);
-    for [x, y, z, weight] in segment_controls {
+    let mut segment_knots = Vec::new();
+    ctx.reserve_collection_vec(&mut segment_knots, knot_slice.len(), "copy clamped NURBS knots")?;
+    segment_knots.extend_from_slice(knot_slice);
+    let rational = matches!(curve.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. });
+    let mut control_points = Vec::new();
+    ctx.reserve_collection_vec(&mut control_points, control_slice.len(), "collect clamped NURBS controls")?;
+    let mut weights = if rational {
+        let mut weights = Vec::new();
+        ctx.reserve_collection_vec(&mut weights, control_slice.len(), "collect clamped NURBS weights")?;
+        Some(weights)
+    } else {
+        None
+    };
+    for &[x, y, z, weight] in control_slice {
         if !weight.is_finite() || weight <= 0.0 {
-            return None;
+            return Ok(None);
         }
         control_points.push(cadmpeg_ir::math::Point3::new(
             x / weight,
@@ -5418,16 +5490,17 @@ fn clamp_nurbs_curve_to_domain_lanes(
             weights.push(weight);
         }
     }
-    Some((segment_knots, control_points, weights))
+    Ok(Some((segment_knots, control_points, weights)))
 }
 
 fn clamp_nurbs_curve_to_domain(
+    ctx: &DecodeContext<'_>,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     domain: [f64; 2],
-) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, cadmpeg_ir::geometry::nurbs::NurbsError>
+) -> Result<Option<cadmpeg_ir::geometry::nurbs::NurbsCurve>, NurbsPcurveFailure>
 {
     let Some((segment_knots, control_points, weights)) =
-        clamp_nurbs_curve_to_domain_lanes(curve, domain)
+        clamp_nurbs_curve_to_domain_lanes(ctx, curve, domain)?
     else {
         return Ok(None);
     };
@@ -5441,6 +5514,7 @@ fn clamp_nurbs_curve_to_domain(
 }
 
 fn extended_nurbs_isocurve_axis_candidate(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
@@ -5555,7 +5629,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     let clamped = if unique_fixed_values.is_empty() {
         None
     } else {
-        clamp_nurbs_curve_to_domain(curve, varying_domain)?
+        clamp_nurbs_curve_to_domain(ctx, curve, varying_domain)?
     };
     let Some(clamped) = clamped else {
         return Ok(InverseResolution::NoMatch);
@@ -5597,21 +5671,23 @@ fn extended_nurbs_isocurve_axis_candidate(
 }
 
 fn extended_nurbs_isocurve_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
     Ok(resolve_axis_candidates([
-        extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::U)?,
-        extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::V)?,
+        extended_nurbs_isocurve_axis_candidate(ctx, surface, curve, SurfaceParameterAxis::U)?,
+        extended_nurbs_isocurve_axis_candidate(ctx, surface, curve, SurfaceParameterAxis::V)?,
     ]))
 }
 
 fn nurbs_isocurve_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
     match nurbs_strict_isocurve_pcurve(surface, curve)? {
-        InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(surface, curve),
+        InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(ctx, surface, curve),
         other => Ok(other),
     }
 }
@@ -5863,6 +5939,7 @@ fn nurbs_edge_parameter_range(
 }
 
 fn derive_nurbs_edge_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
@@ -5873,7 +5950,7 @@ fn derive_nurbs_edge_pcurve(
     if nurbs_curve_surface_deviation(surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::NoMatch);
     }
-    Ok(match nurbs_isocurve_pcurve(surface, curve)? {
+    Ok(match nurbs_isocurve_pcurve(ctx, surface, curve)? {
         InverseResolution::Unique(geometry) => NurbsPcurveResolution::Exact(geometry),
         InverseResolution::Ambiguous => NurbsPcurveResolution::Ambiguous,
         InverseResolution::NoMatch => match nurbs_degree_one_cache_pcurve(surface, curve, range)? {
@@ -7896,6 +7973,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             2,
             1,
@@ -7924,7 +8005,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             Some(vec![1.0, 2.0, 1.0]),
         );
         let geometry =
-            match super::nurbs_isocurve_pcurve(&surface, &curve).expect("isocurve lanes pair") {
+            match super::nurbs_isocurve_pcurve(&ctx, &surface, &curve).expect("isocurve lanes pair") {
                 super::InverseResolution::Unique(geometry) => geometry,
                 super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
                 super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
@@ -7942,6 +8023,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn extended_nurbs_isocurve_clamps_the_carrier_before_matching() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             1,
             1,
@@ -7966,7 +8051,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8])
+        let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
             .expect("isocurve lanes pair");
         let super::NurbsPcurveResolution::Exact(
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve),
@@ -7980,7 +8065,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
         assert!(origin.v.abs() < 1e-12);
         assert!(direction.u.abs() < 1e-12);
         assert!((direction.v - 1.0).abs() < 1e-12);
-        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -7995,6 +8080,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn extended_quadratic_isocurve_preserves_the_inserted_homogeneous_segment() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             1,
             2,
@@ -8022,7 +8111,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.1, 0.9])
+        let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.1, 0.9])
             .expect("isocurve lanes pair");
         assert!(
             matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -8036,7 +8125,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped quadratic segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -8051,6 +8140,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn extended_rational_isocurve_compares_weights_after_homogeneous_clamping() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             1,
             1,
@@ -8075,7 +8168,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             Some(vec![0.8, 1.4]),
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.2, 0.8])
+        let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.2, 0.8])
             .expect("isocurve lanes pair");
         assert!(
             matches!(resolution, super::NurbsPcurveResolution::Exact(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
@@ -8089,7 +8182,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
                                 && (direction.v - 1.0).abs() <= f64::EPSILON * 64.0
                         })
         );
-        let clamped = super::clamp_nurbs_curve_to_domain(&curve, [0.0, 1.0])
+        let clamped = super::clamp_nurbs_curve_to_domain(&ctx, &curve, [0.0, 1.0])
             .expect("the clamped lanes are a curve")
             .expect("clamped rational segment");
         let expected = cadmpeg_ir::eval::nurbs_surface_isocurve(
@@ -8104,6 +8197,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn degree_one_nurbs_cache_pcurve_keeps_measured_chordal_error() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             2,
             1,
@@ -8130,7 +8227,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ],
             None,
         );
-        let resolution = super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0])
+        let resolution = super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
             .expect("isocurve lanes pair");
         let super::NurbsPcurveResolution::Cache {
             geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs },
@@ -8150,6 +8247,10 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
     #[test]
     fn off_surface_nurbs_edge_is_classified_before_cache_inversion() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         let surface = test_nurbs_surface(
             1,
             1,
@@ -8175,7 +8276,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             None,
         );
         assert!(matches!(
-            super::derive_nurbs_edge_pcurve(&surface, &curve, [0.0, 1.0])
+            super::derive_nurbs_edge_pcurve(&ctx, &surface, &curve, [0.0, 1.0])
                 .expect("isocurve lanes pair"),
             super::NurbsPcurveResolution::OffSurface
         ));
