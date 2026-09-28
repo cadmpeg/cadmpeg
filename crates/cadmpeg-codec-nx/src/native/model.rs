@@ -1328,7 +1328,7 @@ impl NativeModel {
         let data_block_control_index_values = data_block_control_index_values(ctx, container)?;
         let data_block_control_references = data_block_control_references(ctx, container)?;
         let data_block_control_handle_pairs =
-            data_block_control_handle_pairs(&data_block_control_references);
+            data_block_control_handle_pairs(ctx, &data_block_control_references)?;
         let data_block_references =
             data_block_references(ctx, container, &object_records, &expression_declarations)?;
         let data_block_counted_index_lanes = data_block_counted_index_lanes(ctx, container)?;

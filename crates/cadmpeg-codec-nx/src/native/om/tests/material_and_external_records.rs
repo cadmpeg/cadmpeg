@@ -309,13 +309,64 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
         reference(3, 35),
         reference(4, 40),
     ];
-    let pairs = super::super::data_block_control_handle_pairs(&references);
+    let pairs = crate::test_support::with_decode_context(|ctx| {
+        super::super::data_block_control_handle_pairs(ctx, &references)
+    }).unwrap();
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].id, "nx:om-data-block-control:handle-pair#10");
     assert_eq!(pairs[0].first_reference, "reference#0");
     assert_eq!(pairs[0].second_reference, "reference#1");
     assert_eq!(pairs[0].first_handle, 100);
     assert_eq!(pairs[0].second_handle, 101);
+}
+
+fn control_handle_pair_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = |ordinal: u32, source_offset: u64| super::super::DataBlockControlReference {
+        id: format!("reference#{ordinal}"),
+        data_block: "block#0".into(),
+        ordinal,
+        reference: DirectReference::PersistentHandle(ordinal + 100),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::data_block_control_handle_pairs(&ctx, &references).unwrap_err()
+}
+
+#[test]
+fn control_handle_pair_route_refuses_collection_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "NX control handle pair blocks"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_scoped_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "NX control handle pair index"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_retained_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain NX control handle pair id"));
+}
+
+#[test]
+fn control_handle_pair_route_refuses_work_limit() {
+    let error = control_handle_pair_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index NX control handle pair references"));
 }
 
 #[test]
