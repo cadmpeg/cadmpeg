@@ -693,7 +693,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid CircleCurve fixture"),
     ));
     assert!(
-        matches!(planar_curve_pcurve(&plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new()), Some(PcurveGeometry::Circle(circle_pcurve))
+        matches!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &circle, &"circle fixture", &mut crate::lane_refusal::LaneRefusals::new())), Some(PcurveGeometry::Circle(circle_pcurve))
                 if {
                     let center = circle_pcurve.center();
         let x_axis = circle_pcurve.x_axis();
@@ -717,7 +717,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         .expect("valid planar NURBS"),
     ));
     assert!(matches!(
-        planar_curve_pcurve(&plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new()),
+        crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(ctx, &plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new())),
         Some(PcurveGeometry::Nurbs { nurbs })
             if nurbs.degree() == 1
                 && nurbs.knots().as_slice() == [2.0, 2.0, 5.0, 5.0]
@@ -734,12 +734,12 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         )
         .expect("valid LineCurve fixture"),
     ));
-    assert!(planar_curve_pcurve(
-        &plane(),
+    assert!(crate::decode::with_test_decode_ctx(|ctx| planar_curve_pcurve(
+        ctx, &plane(),
         &off_plane,
         &"off-plane fixture",
         &mut crate::lane_refusal::LaneRefusals::new()
-    )
+    ))
     .is_none());
 }
 

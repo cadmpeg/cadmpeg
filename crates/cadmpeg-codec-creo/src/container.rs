@@ -3098,8 +3098,8 @@ pub(crate) fn scan_bytes<'a>(
             prototype_count: surface_prototype_count,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
-            prototype_field_refusals: prototype_refusals.take_records(),
-            nonvisible_prototype_field_refusals: nonvisible_prototype_refusals.take_records(),
+            prototype_field_refusals: prototype_refusals.take_records_checked()?,
+            nonvisible_prototype_field_refusals: nonvisible_prototype_refusals.take_records_checked()?,
             legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {

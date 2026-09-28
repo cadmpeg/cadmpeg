@@ -119,8 +119,8 @@ fn nurbs_surface_boundaries(
         ) {
             Ok(curve) => curve,
             Err(error) => {
-                refusal.note(
-                    format!("creo VisibGeom surface row {surface_id} boundary curve record"),
+                refusal.note_checked(ctx,
+                    format_args!("creo VisibGeom surface row {surface_id} boundary curve record"),
                     &error,
                 );
                 return Ok(None);
@@ -899,8 +899,8 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         ) {
             Ok(curve) => curve,
             Err(error) => {
-                refusal.note(
-                    format!(
+                refusal.note_checked(ctx,
+                    format_args!(
                         "creo VisibGeom surface row {surface_id} cubic-extrusion plane generator \
                          curve"
                     ),
@@ -913,7 +913,10 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
     }
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let recognized = recognize(ctx, nurbs, surface_id, plane, &mut refusal).transpose();
-    let refused = refusal.take_records();
+    let refused = match refusal.take_records_checked() {
+        Ok(records) => records,
+        Err(error) => return Err(error),
+    };
     if refused.is_empty() {
         return recognized;
     }

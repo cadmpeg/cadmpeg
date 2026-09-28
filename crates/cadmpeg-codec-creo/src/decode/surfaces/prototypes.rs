@@ -467,7 +467,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             SupportedPrototype::Spline(_) => {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
                 let nurbs = prototype_spline_nurbs(ctx, record, &mut refusal)?;
-                let refused = refusal.take_records();
+                let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
                         losses.push(
@@ -624,7 +624,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             ),
             &mut refusal,
         )?;
-        let refused = refusal.take_records();
+        let refused = refusal.take_records_checked()?;
         let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
             if !refused.is_empty() {
                 losses.push(
@@ -782,7 +782,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                     ),
                     &mut refusal,
                 )?;
-                let refused = refusal.take_records();
+                let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
                         losses.push(

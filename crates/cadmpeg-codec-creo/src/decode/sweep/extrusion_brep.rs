@@ -171,27 +171,28 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let reversed = entity.reversed();
                 let start = entity.start();
                 let end = entity.end();
-                let record =
-                    format!("extrusion feature {feature_id} profile entity {entity_index}");
-
                 geometry
                     .to_sketch()
                     .and_then(|sketch_geometry| {
-                        let mut diagnostics =
-                            crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                         extrusion_brep_side_surface(
+                            ctx,
                             transform,
                             &sketch_geometry,
                             reversed,
                             start,
                             end,
                             span,
-                            &mut diagnostics,
+                            &mut crate::lane_refusal::LaneRefusalContext::new(
+                                &format_args!(
+                                    "extrusion feature {feature_id} profile entity {entity_index}"
+                                ),
+                                &mut refusal,
+                            ),
                         )
                     })
                     .is_none()
             });
-        let records = refusal.take_records();
+        let records = refusal.take_records_checked()?;
         if !records.is_empty() {
             // The probe states every side before the first record of this body
             // reaches the model, so a refused lane leaves no partial body and
@@ -648,7 +649,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             &record,
                             &mut refusal,
                         )?;
-                        let records = refusal.take_records();
+                        let records = refusal.take_records_checked()?;
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
@@ -726,7 +727,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             &record,
                             &mut refusal,
                         )?;
-                        let records = refusal.take_records();
+                        let records = refusal.take_records_checked()?;
                         if !records.is_empty() {
                             // The shell of this body already declares this cap
                             // face, so the model cannot omit the pcurve.
@@ -785,11 +786,16 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         .colon(index)
                 );
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
-                let record =
-                    format!("extrusion feature {feature_id} profile {profile_index} side {index}");
+                let (record, _record_reservation) = ctx.format_scoped(
+                    format_args!(
+                        "extrusion feature {feature_id} profile {profile_index} side {index}"
+                    ),
+                    "creo extrusion side record text",
+                )?;
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let surface_geometry = extrusion_brep_side_surface(
+                    ctx,
                     transform,
                     &sketch_geometry,
                     profile[index].reversed(),
@@ -798,7 +804,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     span,
                     &mut diagnostics,
                 );
-                let records = refusal.take_records();
+                let records = refusal.take_records_checked()?;
                 if !records.is_empty() {
                     // The shell of this body already declares this side face,
                     // so the model cannot omit the surface.

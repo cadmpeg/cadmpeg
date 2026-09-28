@@ -359,7 +359,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ),
                 &mut refusal,
             )?;
-            let refused = refusal.take_records();
+            let refused = refusal.take_records_checked()?;
             let Some(surface) = surface.filter(|_| refused.is_empty()) else {
                 for record in &refused {
                     losses.push(

@@ -124,7 +124,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         }
         let surface_geometries = complete.then_some(surfaces);
         let Some(surface_geometries) = surface_geometries else {
-            let records = refusal.take_records();
+            let records = refusal.take_records_checked()?;
             losses.push(
                 crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
                     format!(
@@ -193,7 +193,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         }
         let boundaries = complete.then_some(boundary_rows);
         let Some(boundaries) = boundaries else {
-            let records = refusal.take_records();
+            let records = refusal.take_records_checked()?;
             losses.push(
                 crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
                     format!(
@@ -229,7 +229,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         }
         let face_senses = complete.then_some(face_senses);
         let Some(face_senses) = face_senses else {
-            let records = refusal.take_records();
+            let records = refusal.take_records_checked()?;
             losses.push(
                 crate::loss::CreoLossCode::BrepTransferIncomplete.note(if records.is_empty() {
                     format!(
