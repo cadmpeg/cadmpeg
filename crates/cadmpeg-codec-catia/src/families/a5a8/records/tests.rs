@@ -26,6 +26,19 @@ use crate::test_support::test_a5a8::{
     inner_no_directory_a8_catpart,
 };
 use crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain;
+
+#[test]
+fn surface_tail_scans_continuation_without_materializing_a_lane() {
+    let mut short = a5_surface_short_tail();
+    assert_eq!(super::parse_surface_tail(&short, 0, short.len()), Some(short.len()));
+    short[71..79].copy_from_slice(&1.0f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&short, 0, short.len()), None);
+    let mut long = a5_surface_tail();
+    long[71..79].copy_from_slice(&1.0f64.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&long, 0, long.len()), Some(long.len()));
+    long[71..79].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(super::parse_surface_tail(&long, 0, long.len()), None);
+}
 use crate::test_support::test_bytes::le_f64;
 use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;

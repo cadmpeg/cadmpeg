@@ -7534,7 +7534,7 @@ mod consolidated_cylinder_limit_tests {
 mod consolidated_analytic_limit_tests {
     use super::{consolidated_circles, consolidated_cones, consolidated_revolutions,
         consolidated_spheres, consolidated_tori, consolidated_parameter_points,
-        consolidated_line_profiles};
+        consolidated_line_profiles, consolidated_reference_lists};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -7604,6 +7604,22 @@ mod consolidated_analytic_limit_tests {
         });
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_line_profile_id"));
+    }
+
+    #[test]
+    fn native_reference_lists_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_reference_list_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(27, |ctx| {
+            consolidated_reference_lists(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_reference_lists"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_reference_lists(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_reference_list_id"));
     }
 }
 
@@ -7702,18 +7718,22 @@ fn consolidated_plane_carriers(
 }
 
 fn consolidated_reference_lists(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedReferenceList> {
-    crate::families::b2::records::b2_reference_lists_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, list)| CatiaConsolidatedReferenceList {
-            id: format!("catia:consolidated:reference-list#{index}"),
+) -> Result<Vec<CatiaConsolidatedReferenceList>, CodecError> {
+    let mut lists = Vec::new();
+    for (index, list) in crate::families::b2::records::b2_reference_lists_from_records(ctx, bytes, records)?.into_iter().enumerate() {
+        let value = CatiaConsolidatedReferenceList {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:reference-list#", index, 0,
+                "catia_native_reference_list_id")?,
             byte_offset: list.pos as u64,
             references: list.references,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut lists, value,
+            "catia_native_reference_lists")?;
+    }
+    Ok(lists)
 }
 
 fn consolidated_pcurves(
@@ -9320,7 +9340,7 @@ impl CatiaNative {
         let consolidated_pcurves = consolidated_pcurves(ctx, bytes, consolidated_records)?;
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =
-            consolidated_reference_lists(bytes, consolidated_records);
+            consolidated_reference_lists(ctx, bytes, consolidated_records)?;
         let consolidated_revolutions =
             consolidated_revolutions(ctx, bytes, consolidated_records, &consolidated_circles)?;
         let consolidated_spheres = consolidated_spheres(ctx, bytes, consolidated_records)?;

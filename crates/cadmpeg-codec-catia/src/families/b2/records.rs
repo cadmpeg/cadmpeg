@@ -802,34 +802,44 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
 #[cfg(test)]
 fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
     let records = consolidated_records(data);
-    b2_reference_lists_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_reference_lists_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_reference_lists_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2ReferenceList> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x37)
-        .into_iter()
-        .filter_map(|frame| {
-            if frame.header_token != 5
-                || !matches!(frame.end - frame.payload, 0x22 | 0x24 | 0x26)
-                || f64_le(data, frame.end.checked_sub(8)?)? != FiniteReal::ONE
-            {
-                return None;
-            }
-            let refs_end = frame.end - 8;
-            let mut at = frame.payload;
-            let mut references = Vec::new();
-            while at < refs_end {
-                references.push(compact_int(data, &mut at)?);
-            }
-            (at == refs_end).then_some(B2ReferenceList {
+) -> Result<Vec<B2ReferenceList>, CodecError> {
+    let mut lists = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x37) {
+        if frame.header_token != 5
+            || !matches!(frame.end - frame.payload, 0x22 | 0x24 | 0x26)
+            || frame.end.checked_sub(8).and_then(|at| f64_le(data, at)) != Some(FiniteReal::ONE)
+        {
+            continue;
+        }
+        let refs_end = frame.end - 8;
+        let mut at = frame.payload;
+        let mut references = Vec::new();
+        let mut valid = true;
+        while at < refs_end {
+            let Some(reference) = compact_int(data, &mut at) else {
+                valid = false;
+                break;
+            };
+            crate::resource::push(ctx, &mut references, reference,
+                "catia_b2_reference_list_entries")?;
+        }
+        if valid && at == refs_end {
+            crate::resource::push(ctx, &mut lists, B2ReferenceList {
                 pos: frame.pos,
                 references,
-            })
-        })
-        .collect()
+            }, "catia_b2_reference_lists")?;
+        }
+    }
+    Ok(lists)
 }
 
 /// Decode class-`0x62` owner packets whose leading count fixes the persistent

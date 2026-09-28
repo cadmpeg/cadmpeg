@@ -217,6 +217,22 @@ fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
 }
 
 #[test]
+fn b2_reference_list_entries_and_records_refuse_collection_limits() {
+    let bytes = b2_reference_list_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(25, |ctx| {
+        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_reference_list_entries"));
+    let limited = crate::test_support::with_collection_limit(26, |ctx| {
+        crate::families::b2::records::b2_reference_lists_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_reference_lists"));
+}
+
+#[test]
 fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     use crate::{
         families::b2::records::{B2OwnerIdentityEncoding, B2OwnerReferenceEncoding},
