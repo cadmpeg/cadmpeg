@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fallible collection admission for FreeCAD decoding.
+//! Fallible collection admission for `FreeCAD` decoding.
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation};
+use cadmpeg_core::decode::{
+    DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
+};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::hash::Hash;
 use std::fmt::{self, Write};
+use std::hash::Hash;
 
 pub(crate) fn retained_format(
     ctx: &DecodeContext<'_>,
@@ -24,9 +26,11 @@ pub(crate) fn retained_format(
         .map_err(|_| retained_allocation_failed(ctx, u64::MAX, operation))?;
     ctx.charge_retained(count.0 as u64, operation)?;
     let mut output = String::new();
-    output.try_reserve_exact(count.0)
+    output
+        .try_reserve_exact(count.0)
         .map_err(|_| retained_allocation_failed(ctx, count.0 as u64, operation))?;
-    output.write_fmt(arguments)
+    output
+        .write_fmt(arguments)
         .map_err(|_| CodecError::Malformed("FreeCAD diagnostic formatting failed".into()))?;
     Ok(output)
 }
@@ -64,7 +68,10 @@ pub(crate) fn named_entries_charged<V>(
     for (name, value) in entries {
         let Some(key) = NonBlankString::new(name) else {
             return Err(CodecError::Malformed(retained_join(
-                ctx, &[record, " states a property with a blank key"], "", operation,
+                ctx,
+                &[record, " states a property with a blank key"],
+                "",
+                operation,
             )?));
         };
         ctx.charge_collection_items(1, operation)?;
@@ -82,7 +89,9 @@ pub(crate) fn insert_hash_map<K: Eq + Hash, V>(
 ) -> Result<Option<V>, CodecError> {
     if !items.contains_key(&key) {
         ctx.charge_collection_items(1, operation)?;
-        items.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
+        items
+            .try_reserve(1)
+            .map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
     }
     Ok(items.insert(key, value))
 }
@@ -146,7 +155,9 @@ pub(crate) fn reserve_charged_vec_items<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     if let Some(ctx) = ctx {
-        items.try_reserve(count).map_err(|_| collection_allocation_failed(ctx, count as u64, operation))?;
+        items
+            .try_reserve(count)
+            .map_err(|_| collection_allocation_failed(ctx, count as u64, operation))?;
     }
     Ok(())
 }
@@ -253,16 +264,23 @@ pub(crate) fn retained_join<S: AsRef<str>>(
 ) -> Result<String, CodecError> {
     let mut count = 0_usize;
     for part in parts {
-        count = count.checked_add(part.as_ref().len())
+        count = count
+            .checked_add(part.as_ref().len())
             .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?;
     }
     let gaps = if parts.is_empty() { 0 } else { parts.len() - 1 };
-    count = count.checked_add(separator.len().checked_mul(gaps)
-        .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?)
+    count = count
+        .checked_add(
+            separator
+                .len()
+                .checked_mul(gaps)
+                .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?,
+        )
         .ok_or_else(|| retained_allocation_failed(ctx, u64::MAX, operation))?;
     ctx.charge_retained(count as u64, operation)?;
     let mut output = String::new();
-    output.try_reserve_exact(count)
+    output
+        .try_reserve_exact(count)
         .map_err(|_| retained_allocation_failed(ctx, count as u64, operation))?;
     for (index, part) in parts.iter().enumerate() {
         if index != 0 {
@@ -304,7 +322,8 @@ pub(crate) fn materialized_vec<'a, T>(
         .ok_or_else(|| materialized_allocation_failed(ctx, u64::MAX, operation))?;
     let reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut items = Vec::new();
-    items.try_reserve_exact(count)
+    items
+        .try_reserve_exact(count)
         .map_err(|_| materialized_allocation_failed(ctx, bytes, operation))?;
     Ok((items, reservation))
 }
@@ -349,7 +368,9 @@ pub(crate) fn insert_hash_set<T: Eq + Hash>(
         return Ok(false);
     }
     ctx.charge_collection_items(1, operation)?;
-    items.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
+    items
+        .try_reserve(1)
+        .map_err(|_| collection_allocation_failed(ctx, 1, operation))?;
     Ok(items.insert(value))
 }
 
@@ -380,8 +401,10 @@ mod tests {
             .expect("empty root is within policy");
         let result: Result<cadmpeg_ir::ids::BodyId, _> =
             super::copied_identity(&ctx, id, "test identity copy");
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test identity copy"));
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test identity copy")
+        );
     }
 
     #[test]
@@ -392,15 +415,24 @@ mod tests {
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert_eq!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
-            "test formatted diagnostic").expect("format fits"), expected);
+        assert_eq!(
+            super::retained_format(
+                &ctx,
+                format_args!("invalid {text}: {}", 12),
+                "test formatted diagnostic"
+            )
+            .expect("format fits"),
+            expected
+        );
         let mut policy = policy;
         policy.limits.max_retained_bytes = expected.len() as u64 - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert!(matches!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
+        assert!(
+            matches!(super::retained_format(&ctx, format_args!("invalid {text}: {}", 12),
             "test formatted diagnostic"), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "test formatted diagnostic"));
+                if limit.operation == "test formatted diagnostic")
+        );
     }
 
     #[test]
@@ -411,9 +443,11 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         let entries = std::collections::BTreeMap::from([("role".to_owned(), 1_u8)]);
-        assert!(matches!(super::named_entries_charged(&ctx, "owner", entries, "test keyed entries"),
+        assert!(
+            matches!(super::named_entries_charged(&ctx, "owner", entries, "test keyed entries"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "test keyed entries"));
+                if limit.operation == "test keyed entries")
+        );
     }
 
     #[test]
@@ -424,8 +458,10 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         let mut index = std::collections::HashMap::new();
-        assert!(matches!(super::insert_hash_map(&ctx, &mut index, "key", 1_u8, "fcstd test index"),
+        assert!(
+            matches!(super::insert_hash_map(&ctx, &mut index, "key", 1_u8, "fcstd test index"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd test index"));
+                if limit.operation == "fcstd test index")
+        );
     }
 }

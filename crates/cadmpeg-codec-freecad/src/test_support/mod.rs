@@ -17,8 +17,11 @@ pub(crate) fn assert_retained_refusal_at<T>(
             .expect("test input is within the root limit");
         match decode(&ctx) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes => {
-                let threshold = limit.used.checked_add(limit.additional)
+                if limit.dimension == ResourceDimension::RetainedBytes =>
+            {
+                let threshold = limit
+                    .used
+                    .checked_add(limit.additional)
                     .expect("retained admission fits u64");
                 assert!(threshold > policy.limits.max_retained_bytes);
                 if limit.operation == operation {
@@ -55,8 +58,11 @@ pub(crate) fn assert_collection_refusal_at<T>(
             .expect("test input is within the root limit");
         match decode(&ctx) {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems => {
-                let threshold = limit.used.checked_add(limit.additional)
+                if limit.dimension == ResourceDimension::CollectionItems =>
+            {
+                let threshold = limit
+                    .used
+                    .checked_add(limit.additional)
                     .expect("collection admission fits u64");
                 assert!(threshold > policy.limits.max_collection_items);
                 if limit.operation == operation {
@@ -79,7 +85,9 @@ pub(crate) fn assert_collection_refusal_at<T>(
     panic!("{operation} was not reached within 4096 collection admissions");
 }
 
-pub(crate) fn validate_native(ir: &cadmpeg_ir::document::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+pub(crate) fn validate_native(
+    ir: &cadmpeg_ir::document::CadIr,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)

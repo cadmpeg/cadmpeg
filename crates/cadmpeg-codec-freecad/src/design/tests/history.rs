@@ -17,7 +17,7 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
         type_name: "Spreadsheet::Sheet".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -33,17 +33,22 @@ fn spreadsheet_cells_refuse_at_caller_limit() {
         body: crate::native::PropertyBody::Transient,
         order: 0,
         xml: crate::native::RetainedXml::from_text(
-            "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\"/></Cells></Property>".into(), 0,
-        ).expect("valid XML span"),
+            "<Property><Cells Count=\"1\"><Cell address=\"A1\" content=\"5\"/></Cells></Property>"
+                .into(),
+            0,
+        )
+        .expect("valid XML span"),
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::super::append_spreadsheet(&ctx, &mut Vec::new(), &object, &[&property]),
+    assert!(
+        matches!(super::super::append_spreadsheet(&ctx, &mut Vec::new(), &object, &[&property]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD spreadsheet cells"));
+            if limit.operation == "FreeCAD spreadsheet cells")
+    );
 }
 
 #[test]
@@ -140,7 +145,8 @@ fn distinguishes_stored_base_and_application_owned_features() {
                     .expect("identity grammar"),
             },
         ));
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new()).expect("resource allocation did not fail")
+    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("source feature")));

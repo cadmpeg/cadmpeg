@@ -24,10 +24,19 @@ fn design_census_identity_refuses_at_retained_limit() {
 <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
 <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let result = FcstdCodec.decode(&mut Cursor::new(archive(document)), &DecodeOptions::default())
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
         .expect("design fixture");
-    let objects = result.ir().native.namespace("fcstd").expect("native namespace")
-        .arena_as::<crate::native::ObjectRecord>("objects").expect("objects");
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
     crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
         super::super::census(ctx, &objects, &result.ir().model.features)
     });

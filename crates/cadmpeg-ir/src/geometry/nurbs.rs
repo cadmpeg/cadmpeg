@@ -79,7 +79,9 @@ fn try_copy_lane<T: Copy>(source: &[T]) -> Result<Vec<T>, std::collections::TryR
     Ok(copy)
 }
 
-fn try_copy_rows<T: Copy>(source: &[Vec<T>]) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
+fn try_copy_rows<T: Copy>(
+    source: &[Vec<T>],
+) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
     let mut rows = Vec::new();
     rows.try_reserve_exact(source.len())?;
     for row in source {

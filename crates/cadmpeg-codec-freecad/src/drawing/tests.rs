@@ -12,13 +12,12 @@ use std::io::Cursor;
 
 #[test]
 fn drawing_diagnostic_refuses_at_matching_retained_limit() {
-    crate::test_support::assert_retained_refusal_at(
-        &[], "fcstd drawing diagnostic", |ctx| {
-            Err::<(), _>(super::drawing_malformed(
-                ctx, format_args!("drawing property {} has invalid XML", "Caption"),
-            ))
-        },
-    );
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd drawing diagnostic", |ctx| {
+        Err::<(), _>(super::drawing_malformed(
+            ctx,
+            format_args!("drawing property {} has invalid XML", "Caption"),
+        ))
+    });
 }
 
 #[test]
@@ -29,7 +28,7 @@ fn drawing_record_collection_refuses_at_caller_limit() {
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -55,8 +54,8 @@ fn resource_drawing_record() -> crate::native::DrawingRecord {
             template: None,
         },
         sources: Vec::new(),
-        relationships: Default::default(),
-        parameters: Default::default(),
+        relationships: std::collections::BTreeMap::default(),
+        parameters: std::collections::BTreeMap::default(),
         side_entries: Vec::new(),
     }
 }
@@ -69,7 +68,7 @@ fn drawing_native_identity_refuses_at_retained_limit() {
         type_name: "TechDraw::DrawPage".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -77,7 +76,8 @@ fn drawing_native_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::native::native_id("drawing", &object.name).len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        crate::native::native_id("drawing", &object.name).len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::transfer(&ctx, &[object], &[]),
@@ -90,13 +90,15 @@ fn drawing_model_identity_refuses_at_retained_limit() {
     let record = resource_drawing_record();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::native::model_id(
-        "drawing", &record.object, "entity").len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        crate::native::model_id("drawing", &record.object, "entity").len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity"));
+            if limit.operation == "FreeCAD model identity")
+    );
 }
 
 #[test]
@@ -105,13 +107,17 @@ fn drawing_asset_identity_refuses_at_retained_limit() {
     record.side_entries.push("page.svg".into());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = (crate::native::model_id("drawing", &record.object, "entity").len()
-        + crate::native::native_id("entry", "page.svg").len()) as u64 - 1;
+    policy.limits.max_retained_bytes =
+        (crate::native::model_id("drawing", &record.object, "entity").len()
+            + crate::native::native_id("entry", "page.svg").len()) as u64
+            - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native identity"));
+            if limit.operation == "FreeCAD native identity")
+    );
 }
 
 #[test]
@@ -123,9 +129,11 @@ fn drawing_neutral_identity_copy_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = (id_len * 2) as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd drawing neutral identity"));
+            if limit.operation == "fcstd drawing neutral identity")
+    );
 }
 
 #[test]
@@ -139,18 +147,23 @@ fn drawing_template_identity_copy_refuses_at_retained_limit() {
         "document_attribute": null,
         "object": template.object,
         "subelements": [],
-    })).expect("local template link");
-    page.relationships.insert("Template".into(), vec![Some(link)]);
+    }))
+    .expect("local template link");
+    page.relationships
+        .insert("Template".into(), vec![Some(link)]);
     let page_id = crate::native::model_id("drawing", &page.object, "entity");
     let template_id = crate::native::model_id("drawing", &template.object, "entity");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = (page_id.len() + template_id.len() * 3 + "Template".len()) as u64 - 1;
+    policy.limits.max_retained_bytes =
+        (page_id.len() + template_id.len() * 3 + "Template".len()) as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[page, template], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[page, template], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd drawing template identity"));
+            if limit.operation == "fcstd drawing template identity")
+    );
 }
 
 #[test]
@@ -162,9 +175,11 @@ fn drawing_keyed_relationships_refuse_at_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd drawing keyed relationships"));
+            if limit.operation == "fcstd drawing keyed relationships")
+    );
 }
 
 #[test]
@@ -176,9 +191,11 @@ fn drawing_keyed_parameters_refuse_at_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd drawing keyed parameters"));
+            if limit.operation == "fcstd drawing keyed parameters")
+    );
 }
 
 #[test]

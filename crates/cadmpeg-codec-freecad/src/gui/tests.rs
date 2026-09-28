@@ -53,7 +53,8 @@ fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle
                 17,
             ),
         },
-    ).expect("primitive appearance transfer");
+    )
+    .expect("primitive appearance transfer");
     assert_eq!(plan.appearances.len(), 1);
     assert!(plan.appearances[0].properties.is_empty());
     assert!(!plan.bindings.is_empty());
@@ -155,7 +156,8 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
                     17,
                 ),
             },
-        ).expect("primitive appearance transfer");
+        )
+        .expect("primitive appearance transfer");
     }
     assert_eq!(plan.appearances.len(), 2);
     assert!(plan

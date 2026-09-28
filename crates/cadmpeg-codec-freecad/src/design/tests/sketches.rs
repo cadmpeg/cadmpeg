@@ -14,7 +14,8 @@ const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 fn counted_sketch_records_refuse_at_caller_limit() {
     let xml = roxmltree::Document::parse(
         "<Property><GeometryList count=\"1\"><Geometry/></GeometryList></Property>",
-    ).expect("valid geometry XML");
+    )
+    .expect("valid geometry XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -35,23 +36,26 @@ fn external_geometry_reference_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::super::external_geometry_metadata(&ctx, xml.root_element(), 3),
+    assert!(
+        matches!(super::super::external_geometry_metadata(&ctx, xml.root_element(), 3),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd external geometry reference"));
+            if limit.operation == "fcstd external geometry reference")
+    );
 }
 
 #[test]
 fn sketch_carrier_attributes_refuse_at_caller_limit() {
-    let xml = roxmltree::Document::parse("<Line StartX=\"1\"/>")
-        .expect("valid sketch carrier XML");
+    let xml = roxmltree::Document::parse("<Line StartX=\"1\"/>").expect("valid sketch carrier XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::super::sketch_attributes(&ctx, Some(xml.root_element())),
+    assert!(
+        matches!(super::super::sketch_attributes(&ctx, Some(xml.root_element())),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd sketch carrier attributes"));
+            if limit.operation == "fcstd sketch carrier attributes")
+    );
 }
 
 #[test]
@@ -68,16 +72,18 @@ fn constraint_integer_list_refuses_at_caller_limit() {
 
 #[test]
 fn constraint_attribute_refuses_at_retained_limit() {
-    let xml = roxmltree::Document::parse("<Constraint Name=\"width\"/>")
-        .expect("valid constraint XML");
+    let xml =
+        roxmltree::Document::parse("<Constraint Name=\"width\"/>").expect("valid constraint XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::super::nonempty_attr(&ctx, xml.root_element(), "Name"),
+    assert!(
+        matches!(super::super::nonempty_attr(&ctx, xml.root_element(), "Name"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd constraint attribute"));
+            if limit.operation == "fcstd constraint attribute")
+    );
 }
 
 #[test]
@@ -108,7 +114,8 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     );
 
     attributes.insert("CenterX".to_owned(), "NaN".to_owned());
-    let native = super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("native arc");
+    let native =
+        super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("native arc");
     assert!(matches!(
         native.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
@@ -118,8 +125,14 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
 #[test]
 fn native_sketch_geometry_refuses_at_retained_limit() {
     crate::test_support::assert_retained_refusal_at(
-        &[], "fcstd native sketch geometry kind", |ctx| {
-            super::super::sketch_geometry(ctx, "UnknownGeometry", &Default::default())
+        &[],
+        "fcstd native sketch geometry kind",
+        |ctx| {
+            super::super::sketch_geometry(
+                ctx,
+                "UnknownGeometry",
+                &std::collections::BTreeMap::default(),
+            )
         },
     );
 }
@@ -225,17 +238,42 @@ fn x64_profile_construction_refuses_exhausted_work_on_decode() {
         .expect("service profile admits the sketch");
 
     let mut options = DecodeOptions::default();
-    // The one-entry ZIP preflight charges its end record and central header.
-    options.policy.limits.max_work_units = 2 * document.len() as u64 + 2;
-    let error = FcstdCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("profile construction must charge work");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
-                && limit.operation.starts_with("FCStd profile ")
-    ));
+    options.policy.limits.max_work_units = 0;
+    for _ in 0..4096 {
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(&bytes), &options)
+            .expect_err("profile construction must charge work");
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
+        else {
+            panic!("expected work refusal: {error:?}")
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits
+        );
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("work threshold fits");
+        if limit.operation.starts_with("FCStd profile ") {
+            options.policy.limits.max_work_units = threshold - 1;
+            let exact = FcstdCodec
+                .decode(&mut Cursor::new(&bytes), &options)
+                .expect_err("one below profile work must refuse");
+            assert!(
+                matches!(exact,
+                cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(ref found))
+                    if found.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                        && found.operation == limit.operation
+                        && found.used + found.additional == threshold),
+                "{exact:?}"
+            );
+            return;
+        }
+        options.policy.limits.max_work_units = threshold;
+    }
+    panic!("profile work admission was not reached");
 }
 
 #[test]

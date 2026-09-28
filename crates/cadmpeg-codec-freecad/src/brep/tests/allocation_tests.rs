@@ -34,10 +34,7 @@ fn pcurve_pair_continuity_refuses_at_matching_retained_limit() {
 
 #[test]
 fn edge_regularity_continuity_refuses_at_matching_retained_limit() {
-    let counts = BTreeMap::from([
-        ("Surfaces".to_owned(), 1),
-        ("Locations".to_owned(), 0),
-    ]);
+    let counts = BTreeMap::from([("Surfaces".to_owned(), 1), ("Locations".to_owned(), 0)]);
     assert_retained_refusal_at(&[], "FreeCAD B-rep edge continuity", |ctx| {
         let tokens = ["CONTINUITY", "1", "0", "1", "0"];
         let mut cursor = TokenCursor::new(ctx, &tokens);
@@ -63,22 +60,26 @@ fn tshape_flags_diagnostic_refuses_at_matching_retained_limit() {
 #[test]
 fn text_brep_token_index_refuses_at_materialized_limit() {
     let bytes = b"CASCADE Topology V1, (c) Matra-Datavision Locations 0 Curve2ds 0 Curves 0 Polygon3D 0 PolygonOnTriangulations 0 Surfaces 0 Triangulations 0 TShapes 0 *";
-    let token_count = bytes.split(|byte| byte.is_ascii_whitespace())
-        .filter(|token| !token.is_empty()).count();
+    let token_count = bytes
+        .split(u8::is_ascii_whitespace)
+        .filter(|token| !token.is_empty())
+        .count();
     let required = u64::try_from(token_count * std::mem::size_of::<&str>())
         .expect("test token index size fits u64");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_materialized_bytes = required - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(parse_text(&ctx, bytes), Err(CodecError::ResourceLimit(limit))
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(parse_text(&ctx, bytes), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "FreeCAD text B-rep tokens"
-            && limit.additional == required));
+            && limit.additional == required)
+    );
     policy.limits.max_materialized_bytes = required;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(parse_text(&ctx, bytes).is_ok());
 }
 
@@ -95,8 +96,14 @@ enum BinaryLane {
 }
 
 fn binary_lane(lane: BinaryLane) -> Vec<u8> {
-    let version = if matches!(lane, BinaryLane::TriangulationNormals) { 4 } else { 3 };
-    let mut bytes = format!("\nOpen CASCADE Topology V{version} (c)\nLocations 0\nCurve2ds 0\nCurves 0\n").into_bytes();
+    let version = if matches!(lane, BinaryLane::TriangulationNormals) {
+        4
+    } else {
+        3
+    };
+    let mut bytes =
+        format!("\nOpen CASCADE Topology V{version} (c)\nLocations 0\nCurve2ds 0\nCurves 0\n")
+            .into_bytes();
     match lane {
         BinaryLane::PolygonNodes | BinaryLane::PolygonParameters => {
             bytes.extend_from_slice(b"Polygon3D 1\n");
@@ -115,13 +122,18 @@ fn binary_lane(lane: BinaryLane) -> Vec<u8> {
             bytes.extend_from_slice(&1_i32.to_le_bytes());
             bytes.extend_from_slice(&1_i32.to_le_bytes());
             bytes.extend_from_slice(&0.1_f64.to_le_bytes());
-            bytes.push(u8::from(matches!(lane, BinaryLane::IndexedPolygonParameters)));
+            bytes.push(u8::from(matches!(
+                lane,
+                BinaryLane::IndexedPolygonParameters
+            )));
             if matches!(lane, BinaryLane::IndexedPolygonParameters) {
                 bytes.extend_from_slice(&0.2_f64.to_le_bytes());
             }
         }
         _ => {
-            bytes.extend_from_slice(b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n");
+            bytes.extend_from_slice(
+                b"Polygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n",
+            );
             bytes.extend_from_slice(&1_i32.to_le_bytes());
             let has_triangle = matches!(lane, BinaryLane::TriangulationTriangles);
             bytes.extend_from_slice(&i32::from(has_triangle).to_le_bytes());
@@ -158,13 +170,15 @@ fn assert_binary_lane_refusal(lane: BinaryLane, admitted_items: u64, operation: 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = admitted_items;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(parse_binary_prefix(&ctx, &bytes), Err(CodecError::ResourceLimit(limit))
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(parse_binary_prefix(&ctx, &bytes), Err(CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == operation
             && limit.used == admitted_items
-            && limit.additional == 1));
+            && limit.additional == 1)
+    );
 }
 
 #[test]
@@ -174,37 +188,65 @@ fn binary_polygon_nodes_refuse_at_collection_limit() {
 
 #[test]
 fn binary_polygon_parameters_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::PolygonParameters, 2, "FreeCAD binary polygon parameters");
+    assert_binary_lane_refusal(
+        BinaryLane::PolygonParameters,
+        2,
+        "FreeCAD binary polygon parameters",
+    );
 }
 
 #[test]
 fn binary_indexed_polygon_nodes_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::IndexedPolygonNodes, 1, "FreeCAD binary indexed polygon nodes");
+    assert_binary_lane_refusal(
+        BinaryLane::IndexedPolygonNodes,
+        1,
+        "FreeCAD binary indexed polygon nodes",
+    );
 }
 
 #[test]
 fn binary_indexed_polygon_parameters_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::IndexedPolygonParameters, 2, "FreeCAD binary indexed polygon parameters");
+    assert_binary_lane_refusal(
+        BinaryLane::IndexedPolygonParameters,
+        2,
+        "FreeCAD binary indexed polygon parameters",
+    );
 }
 
 #[test]
 fn binary_triangulation_nodes_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::TriangulationNodes, 1, "FreeCAD binary triangulation nodes");
+    assert_binary_lane_refusal(
+        BinaryLane::TriangulationNodes,
+        1,
+        "FreeCAD binary triangulation nodes",
+    );
 }
 
 #[test]
 fn binary_triangulation_uv_refuses_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::TriangulationUv, 2, "FreeCAD binary triangulation UV nodes");
+    assert_binary_lane_refusal(
+        BinaryLane::TriangulationUv,
+        2,
+        "FreeCAD binary triangulation UV nodes",
+    );
 }
 
 #[test]
 fn binary_triangulation_triangles_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::TriangulationTriangles, 2, "FreeCAD binary triangulation triangles");
+    assert_binary_lane_refusal(
+        BinaryLane::TriangulationTriangles,
+        2,
+        "FreeCAD binary triangulation triangles",
+    );
 }
 
 #[test]
 fn binary_triangulation_normals_refuse_at_collection_limit() {
-    assert_binary_lane_refusal(BinaryLane::TriangulationNormals, 2, "FreeCAD binary triangulation normals");
+    assert_binary_lane_refusal(
+        BinaryLane::TriangulationNormals,
+        2,
+        "FreeCAD binary triangulation normals",
+    );
 }
 
 fn shape_property(xml: &str) -> PropertyRecord {
@@ -225,7 +267,7 @@ fn shape_property(xml: &str) -> PropertyRecord {
 fn missing_shape_entry_diagnostic_refuses_at_retained_limit() {
     let property = shape_property("<Property><Part file=\"missing.brp\"/></Property>");
     assert_retained_refusal_at(&[], "FreeCAD missing shape entry", |ctx| {
-        super::super::parse_payloads(ctx, &[property.clone()], &[])
+        super::super::parse_payloads(ctx, std::slice::from_ref(&property), &[])
     });
 }
 
@@ -247,7 +289,8 @@ fn shape_property_root_diagnostic_refuses_at_retained_limit() {
 
 #[test]
 fn shape_property_carrier_diagnostic_refuses_at_retained_limit() {
-    let property = shape_property("<Property><Part file=\"a.brp\"/><Part file=\"b.brp\"/></Property>");
+    let property =
+        shape_property("<Property><Part file=\"a.brp\"/><Part file=\"b.brp\"/></Property>");
     assert_retained_refusal_at(&[], "FreeCAD shape property carrier diagnostic", |ctx| {
         super::super::direct_shape_entry(ctx, &property)
     });
@@ -265,11 +308,13 @@ fn uppercase_binary_shape_extension_selects_binary_reader() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let error = super::super::parse_payloads(&ctx, &[property], &[entry])
         .expect_err("malformed binary payload");
-    assert!(error.to_string().contains("unsupported binary B-rep header"));
+    assert!(error
+        .to_string()
+        .contains("unsupported binary B-rep header"));
 }
 
 #[test]
@@ -410,7 +455,13 @@ fn assert_curve_identity_refusal(curve: &TextCurve, operation: &str) {
     let id = CurveId::mint("fcstd:model:curve#Payload:1").expect("curve identity");
     let association = source_association();
     assert_retained_refusal_at(&[], operation, |ctx| {
-        append_text_curve(ctx, curve, id.clone(), &association, &mut CurveTransfer::default())
+        append_text_curve(
+            ctx,
+            curve,
+            id.clone(),
+            &association,
+            &mut CurveTransfer::default(),
+        )
     });
 }
 
@@ -419,8 +470,12 @@ fn assert_surface_identity_refusal(surface: &TextSurface, operation: &str) {
     let association = source_association();
     assert_retained_refusal_at(&[], operation, |ctx| {
         append_text_surface(
-            ctx, surface, id.clone(), &association,
-            &mut CurveTransfer::default(), &mut SurfaceTransfer::default(),
+            ctx,
+            surface,
+            id.clone(),
+            &association,
+            &mut CurveTransfer::default(),
+            &mut SurfaceTransfer::default(),
         )
     });
 }
@@ -429,7 +484,7 @@ fn assert_surface_identity_refusal(surface: &TextSurface, operation: &str) {
 fn transferred_curve_identity_refuses_at_retained_limit() {
     let payload = shape_payload();
     assert_retained_refusal_at(&[], "FreeCAD transferred curve identity", |ctx| {
-        transfer_text_curves(ctx, &[payload.clone()], &[])
+        transfer_text_curves(ctx, std::slice::from_ref(&payload), &[])
     });
 }
 
@@ -437,7 +492,12 @@ fn transferred_curve_identity_refuses_at_retained_limit() {
 fn transferred_surface_identity_refuses_at_retained_limit() {
     let payload = shape_payload();
     assert_retained_refusal_at(&[], "FreeCAD transferred surface identity", |ctx| {
-        transfer_text_surfaces(ctx, &[payload.clone()], &[], &mut CurveTransfer::default())
+        transfer_text_surfaces(
+            ctx,
+            std::slice::from_ref(&payload),
+            &[],
+            &mut CurveTransfer::default(),
+        )
     });
 }
 
@@ -450,14 +510,46 @@ macro_rules! curve_identity_test {
     };
 }
 
-curve_identity_test!(trimmed_curve_basis_identity_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve basis identity");
-curve_identity_test!(trimmed_curve_basis_copy_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve basis identity copy");
-curve_identity_test!(trimmed_curve_procedural_copy_refuses_at_retained_limit, trimmed_curve(), "FreeCAD procedural curve identity copy");
-curve_identity_test!(trimmed_curve_construction_identity_refuses_at_retained_limit, trimmed_curve(), "FreeCAD curve construction identity");
-curve_identity_test!(offset_curve_basis_identity_refuses_at_retained_limit, offset_curve(), "FreeCAD curve basis identity");
-curve_identity_test!(offset_curve_basis_copy_refuses_at_retained_limit, offset_curve(), "FreeCAD curve basis identity copy");
-curve_identity_test!(offset_curve_procedural_copy_refuses_at_retained_limit, offset_curve(), "FreeCAD procedural curve identity copy");
-curve_identity_test!(offset_curve_construction_identity_refuses_at_retained_limit, offset_curve(), "FreeCAD curve construction identity");
+curve_identity_test!(
+    trimmed_curve_basis_identity_refuses_at_retained_limit,
+    trimmed_curve(),
+    "FreeCAD curve basis identity"
+);
+curve_identity_test!(
+    trimmed_curve_basis_copy_refuses_at_retained_limit,
+    trimmed_curve(),
+    "FreeCAD curve basis identity copy"
+);
+curve_identity_test!(
+    trimmed_curve_procedural_copy_refuses_at_retained_limit,
+    trimmed_curve(),
+    "FreeCAD procedural curve identity copy"
+);
+curve_identity_test!(
+    trimmed_curve_construction_identity_refuses_at_retained_limit,
+    trimmed_curve(),
+    "FreeCAD curve construction identity"
+);
+curve_identity_test!(
+    offset_curve_basis_identity_refuses_at_retained_limit,
+    offset_curve(),
+    "FreeCAD curve basis identity"
+);
+curve_identity_test!(
+    offset_curve_basis_copy_refuses_at_retained_limit,
+    offset_curve(),
+    "FreeCAD curve basis identity copy"
+);
+curve_identity_test!(
+    offset_curve_procedural_copy_refuses_at_retained_limit,
+    offset_curve(),
+    "FreeCAD procedural curve identity copy"
+);
+curve_identity_test!(
+    offset_curve_construction_identity_refuses_at_retained_limit,
+    offset_curve(),
+    "FreeCAD curve construction identity"
+);
 
 macro_rules! surface_identity_test {
     ($name:ident, $surface:expr, $operation:literal) => {
@@ -468,19 +560,83 @@ macro_rules! surface_identity_test {
     };
 }
 
-surface_identity_test!(extrusion_directrix_identity_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface directrix identity");
-surface_identity_test!(extrusion_directrix_copy_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface directrix identity copy");
-surface_identity_test!(extrusion_procedural_copy_refuses_at_retained_limit, extrusion_surface(), "FreeCAD procedural surface identity copy");
-surface_identity_test!(extrusion_construction_identity_refuses_at_retained_limit, extrusion_surface(), "FreeCAD surface construction identity");
-surface_identity_test!(revolution_directrix_identity_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface directrix identity");
-surface_identity_test!(revolution_directrix_copy_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface directrix identity copy");
-surface_identity_test!(revolution_procedural_copy_refuses_at_retained_limit, revolution_surface(), "FreeCAD procedural surface identity copy");
-surface_identity_test!(revolution_construction_identity_refuses_at_retained_limit, revolution_surface(), "FreeCAD surface construction identity");
-surface_identity_test!(trimmed_surface_basis_identity_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface basis identity");
-surface_identity_test!(trimmed_surface_basis_copy_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface basis identity copy");
-surface_identity_test!(trimmed_surface_procedural_copy_refuses_at_retained_limit, trimmed_surface(), "FreeCAD procedural surface identity copy");
-surface_identity_test!(trimmed_surface_construction_identity_refuses_at_retained_limit, trimmed_surface(), "FreeCAD surface construction identity");
-surface_identity_test!(offset_surface_basis_identity_refuses_at_retained_limit, offset_surface(), "FreeCAD surface basis identity");
-surface_identity_test!(offset_surface_basis_copy_refuses_at_retained_limit, offset_surface(), "FreeCAD surface basis identity copy");
-surface_identity_test!(offset_surface_procedural_copy_refuses_at_retained_limit, offset_surface(), "FreeCAD procedural surface identity copy");
-surface_identity_test!(offset_surface_construction_identity_refuses_at_retained_limit, offset_surface(), "FreeCAD surface construction identity");
+surface_identity_test!(
+    extrusion_directrix_identity_refuses_at_retained_limit,
+    extrusion_surface(),
+    "FreeCAD surface directrix identity"
+);
+surface_identity_test!(
+    extrusion_directrix_copy_refuses_at_retained_limit,
+    extrusion_surface(),
+    "FreeCAD surface directrix identity copy"
+);
+surface_identity_test!(
+    extrusion_procedural_copy_refuses_at_retained_limit,
+    extrusion_surface(),
+    "FreeCAD procedural surface identity copy"
+);
+surface_identity_test!(
+    extrusion_construction_identity_refuses_at_retained_limit,
+    extrusion_surface(),
+    "FreeCAD surface construction identity"
+);
+surface_identity_test!(
+    revolution_directrix_identity_refuses_at_retained_limit,
+    revolution_surface(),
+    "FreeCAD surface directrix identity"
+);
+surface_identity_test!(
+    revolution_directrix_copy_refuses_at_retained_limit,
+    revolution_surface(),
+    "FreeCAD surface directrix identity copy"
+);
+surface_identity_test!(
+    revolution_procedural_copy_refuses_at_retained_limit,
+    revolution_surface(),
+    "FreeCAD procedural surface identity copy"
+);
+surface_identity_test!(
+    revolution_construction_identity_refuses_at_retained_limit,
+    revolution_surface(),
+    "FreeCAD surface construction identity"
+);
+surface_identity_test!(
+    trimmed_surface_basis_identity_refuses_at_retained_limit,
+    trimmed_surface(),
+    "FreeCAD surface basis identity"
+);
+surface_identity_test!(
+    trimmed_surface_basis_copy_refuses_at_retained_limit,
+    trimmed_surface(),
+    "FreeCAD surface basis identity copy"
+);
+surface_identity_test!(
+    trimmed_surface_procedural_copy_refuses_at_retained_limit,
+    trimmed_surface(),
+    "FreeCAD procedural surface identity copy"
+);
+surface_identity_test!(
+    trimmed_surface_construction_identity_refuses_at_retained_limit,
+    trimmed_surface(),
+    "FreeCAD surface construction identity"
+);
+surface_identity_test!(
+    offset_surface_basis_identity_refuses_at_retained_limit,
+    offset_surface(),
+    "FreeCAD surface basis identity"
+);
+surface_identity_test!(
+    offset_surface_basis_copy_refuses_at_retained_limit,
+    offset_surface(),
+    "FreeCAD surface basis identity copy"
+);
+surface_identity_test!(
+    offset_surface_procedural_copy_refuses_at_retained_limit,
+    offset_surface(),
+    "FreeCAD procedural surface identity copy"
+);
+surface_identity_test!(
+    offset_surface_construction_identity_refuses_at_retained_limit,
+    offset_surface(),
+    "FreeCAD surface construction identity"
+);

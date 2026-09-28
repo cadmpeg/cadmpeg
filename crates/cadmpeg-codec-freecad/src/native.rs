@@ -32,7 +32,8 @@ pub(crate) fn native_id_charged(
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "FreeCAD native identity";
     let encoded_len = encoded_segment_len(ctx, key, OPERATION)?;
-    let len = "fcstd:native:".len()
+    let len = "fcstd:native:"
+        .len()
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(encoded_len))
@@ -71,7 +72,8 @@ pub(crate) fn native_child_id_charged(
     const OPERATION: &str = "FreeCAD native child identity";
     let parent_key = id_key(parent);
     let child_len = encoded_segment_len(ctx, child, OPERATION)?;
-    let len = "fcstd:native:".len()
+    let len = "fcstd:native:"
+        .len()
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(parent_key.len()))
@@ -108,8 +110,13 @@ pub(crate) fn model_id_charged_at(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let parent_key = id_key(parent);
-    let child_len = if child.is_empty() { 0 } else { encoded_segment_len(ctx, child, operation)? };
-    let len = "fcstd:model:".len()
+    let child_len = if child.is_empty() {
+        0
+    } else {
+        encoded_segment_len(ctx, child, operation)?
+    };
+    let len = "fcstd:model:"
+        .len()
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(parent_key.len()))
@@ -139,10 +146,17 @@ fn encoded_segment_len(
     if key.is_empty() {
         return Ok(6);
     }
-    key.bytes().try_fold(0_usize, |len, byte| {
-        len.checked_add(if byte.is_ascii_alphanumeric()
-            || matches!(byte, b'.' | b'_' | b'-' | b'/') { 1 } else { 3 })
-    }).ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))
+    key.bytes()
+        .try_fold(0_usize, |len, byte| {
+            len.checked_add(
+                if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/') {
+                    1
+                } else {
+                    3
+                },
+            )
+        })
+        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))
 }
 
 fn push_encoded_segment(output: &mut String, key: &str) {
@@ -201,21 +215,26 @@ mod tests {
             status: None,
             body: super::PropertyBody::Transient,
             order: 0,
-            xml: super::RetainedXml::from_text("<Property/>".into(), 0)
-                .expect("valid XML span"),
+            xml: super::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
         };
         crate::test_support::assert_retained_refusal_at(
             &[],
             "FreeCAD duplicate property diagnostic",
-            |ctx| super::sole_named_property(ctx, "product", &[&property, &property], &property.name),
+            |ctx| {
+                super::sole_named_property(ctx, "product", &[&property, &property], &property.name)
+            },
         );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        let error = super::sole_named_property(&ctx, "product", &[&property, &property], &property.name)
-            .expect_err("duplicate property");
-        assert_eq!(error.to_string(), "malformed container: product property LongProperty occurs more than once");
+        let error =
+            super::sole_named_property(&ctx, "product", &[&property, &property], &property.name)
+                .expect_err("duplicate property");
+        assert_eq!(
+            error.to_string(),
+            "malformed container: product property LongProperty occurs more than once"
+        );
     }
 
     #[test]
@@ -244,8 +263,10 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         for key in ["", "Body", "A B#%", "Å"] {
-            assert_eq!(super::native_id_charged(&ctx, "entry", key).expect("ID fits policy"),
-                native_id("entry", key));
+            assert_eq!(
+                super::native_id_charged(&ctx, "entry", key).expect("ID fits policy"),
+                native_id("entry", key)
+            );
         }
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = native_id("entry", "A B#%").len() as u64 - 1;
@@ -265,14 +286,19 @@ mod tests {
         policy.limits.max_retained_bytes = expected.len() as u64 - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert!(matches!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å"),
+        assert!(
+            matches!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD native child identity"));
+                if limit.operation == "FreeCAD native child identity")
+        );
         let policy = cadmpeg_core::decode::DecodePolicy::default();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert_eq!(super::native_child_id_charged(&ctx, "property", &parent, "S # Å")
-            .expect("ID fits policy"), expected);
+        assert_eq!(
+            super::native_child_id_charged(&ctx, "property", &parent, "S # Å")
+                .expect("ID fits policy"),
+            expected
+        );
     }
 
     #[test]
@@ -283,16 +309,22 @@ mod tests {
             let expected = model_id("body", &parent, child);
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
             policy.limits.max_retained_bytes = expected.len() as u64 - 1;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root is within policy");
-            assert!(matches!(super::model_id_charged(&ctx, "body", &parent, child),
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is within policy");
+            assert!(
+                matches!(super::model_id_charged(&ctx, "body", &parent, child),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                    if limit.operation == "FreeCAD model identity"));
+                    if limit.operation == "FreeCAD model identity")
+            );
             let policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root is within policy");
-            assert_eq!(super::model_id_charged(&ctx, "body", &parent, child)
-                .expect("ID fits policy"), expected);
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is within policy");
+            assert_eq!(
+                super::model_id_charged(&ctx, "body", &parent, child).expect("ID fits policy"),
+                expected
+            );
         }
     }
 
@@ -2850,8 +2882,11 @@ pub(crate) enum ExternalDocument {
 impl ExternalDocument {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let value = NonBlankString::new(crate::resource::retained_string(
-            ctx, self.as_str(), "FreeCAD external document copy",
-        )?).ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
+            ctx,
+            self.as_str(),
+            "FreeCAD external document copy",
+        )?)
+        .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
         Ok(match self {
             Self::File(_) => Self::File(value),
             Self::Name(_) => Self::Name(value),
@@ -2908,16 +2943,40 @@ pub(crate) struct LinkTarget {
 
 impl LinkTarget {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let document = self.document.as_ref().map(|document| document.clone_with_context(ctx)).transpose()?;
-        let object = self.object.as_ref().map(|value| {
-            NonBlankString::new(crate::resource::retained_string(ctx, value.as_str(), "FreeCAD link object copy")?)
+        let document = self
+            .document
+            .as_ref()
+            .map(|document| document.clone_with_context(ctx))
+            .transpose()?;
+        let object = self
+            .object
+            .as_ref()
+            .map(|value| {
+                NonBlankString::new(crate::resource::retained_string(
+                    ctx,
+                    value.as_str(),
+                    "FreeCAD link object copy",
+                )?)
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
-        }).transpose()?;
-        let mut subelements = crate::resource::collection_vec(ctx, self.subelements.len(), "FreeCAD link subelement copies")?;
+            })
+            .transpose()?;
+        let mut subelements = crate::resource::collection_vec(
+            ctx,
+            self.subelements.len(),
+            "FreeCAD link subelement copies",
+        )?;
         for subelement in &self.subelements {
-            subelements.push(crate::resource::retained_string(ctx, subelement, "FreeCAD link subelement text")?);
+            subelements.push(crate::resource::retained_string(
+                ctx,
+                subelement,
+                "FreeCAD link subelement text",
+            )?);
         }
-        Ok(Self { document, object, subelements })
+        Ok(Self {
+            document,
+            object,
+            subelements,
+        })
     }
 
     /// Admits a target from a parsed link element, or absence when the element

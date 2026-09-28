@@ -33,13 +33,15 @@ fn local_copy_on_change_target_identity_refuses_at_retained_limit() {
     });
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let target = super::neutral_link_target(&ctx, &target)
         .expect("admitted target")
         .expect("local reference");
-    assert!(matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
-        if definition.as_str() == "fcstd:model:product_definition#Gear:definition"));
+    assert!(
+        matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
+        if definition.as_str() == "fcstd:model:product_definition#Gear:definition")
+    );
 }
 
 #[test]
@@ -50,7 +52,7 @@ fn product_record_collection_refuses_at_caller_limit() {
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -59,11 +61,13 @@ fn product_record_collection_refuses_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer(&ctx, &[object], &[], &Default::default()),
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "fcstd product records"));
+            if limit.operation == "fcstd product records")
+    );
 }
 
 #[test]
@@ -74,7 +78,7 @@ fn product_native_identity_refuses_at_retained_limit() {
         type_name: "App::Part".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -83,11 +87,13 @@ fn product_native_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = native::native_id("product", &object.name).len() as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer(&ctx, &[object], &[], &Default::default()),
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer(&ctx, &[object], &[], &std::collections::BTreeMap::default()),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native identity"));
+            if limit.operation == "FreeCAD native identity")
+    );
 }
 
 fn resource_product_container() -> native::ProductNodeRecord {
@@ -107,13 +113,15 @@ fn product_definition_identity_refuses_at_retained_limit() {
     let record = resource_product_container();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = native::model_id(
-        "product_definition", &record.object, "definition").len() as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+    policy.limits.max_retained_bytes =
+        native::model_id("product_definition", &record.object, "definition").len() as u64 - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity"));
+            if limit.operation == "FreeCAD model identity")
+    );
 }
 
 #[test]
@@ -123,12 +131,15 @@ fn product_container_identity_refuses_at_retained_limit() {
     let container_len = native::model_id("occurrence", &record.object, "container").len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = (definition_len + record.object.len() + container_len) as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+    policy.limits.max_retained_bytes =
+        (definition_len + record.object.len() + container_len) as u64 - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity"));
+            if limit.operation == "FreeCAD model identity")
+    );
 }
 
 #[test]
@@ -154,13 +165,15 @@ fn product_element_identity_refuses_at_retained_limit() {
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = native::model_id(
-        "occurrence", &record.object, "instance").len() as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
+    policy.limits.max_retained_bytes =
+        native::model_id("occurrence", &record.object, "instance").len() as u64 - 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[record], &[], &[], &[], &[], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity"));
+            if limit.operation == "FreeCAD model identity")
+    );
 }
 
 #[test]
@@ -174,8 +187,7 @@ fn product_body_prefix_refuses_at_retained_limit() {
         status: None,
         body: native::PropertyBody::Transient,
         order: 0,
-        xml: native::RetainedXml::from_text("<Property/>".into(), 0)
-            .expect("valid XML span"),
+        xml: native::RetainedXml::from_text("<Property/>".into(), 0).expect("valid XML span"),
     };
     let payload = crate::brep::ShapePayloadRecord {
         id: "fcstd:native:shape-payload#Part:Shape".into(),
@@ -186,11 +198,13 @@ fn product_body_prefix_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = native::model_id("body", &payload.id, "").len() as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(
+        matches!(super::transfer_neutral(&ctx, &[], &[], &[], &[property], &[payload], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD model identity"));
+            if limit.operation == "FreeCAD model identity")
+    );
 }
 
 #[test]
@@ -383,7 +397,8 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
             .expect("identity grammar"),
     };
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new()).expect("resource allocation did not fail")
+    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
@@ -1043,8 +1058,8 @@ fn product_record_identity_rejects_duplicates() {
     let records = [node("A", &[]), node("A", &[])];
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(matches!(
         product_record_index(&ctx, &records),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -1057,8 +1072,8 @@ fn product_record_index_refuses_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(matches!(product_record_index(&ctx, &records),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "fcstd product record index"));
@@ -1471,9 +1486,11 @@ fn reconvergent_product_graph_is_not_a_cycle() {
         .collect();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert!(product_cycle_nodes(&ctx, &nodes).expect("cycle analysis").is_empty());
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert!(product_cycle_nodes(&ctx, &nodes)
+        .expect("cycle analysis")
+        .is_empty());
 }
 
 #[test]
@@ -1485,20 +1502,26 @@ fn product_cycle_marks_only_the_strongly_connected_component() {
         .collect();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert_eq!(product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"), HashSet::from(["B", "C"]));
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert_eq!(
+        product_cycle_nodes(&ctx, &nodes).expect("cycle analysis"),
+        HashSet::from(["B", "C"])
+    );
 }
 
 #[test]
 fn product_cycle_graph_refuses_at_caller_limit() {
     let records = [node("A", &["B"]), node("B", &[])];
-    let nodes = records.iter().map(|record| (record.object.as_str(), record)).collect();
+    let nodes = records
+        .iter()
+        .map(|record| (record.object.as_str(), record))
+        .collect();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     assert!(matches!(product_cycle_nodes(&ctx, &nodes),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "fcstd product reverse graph"));
@@ -1578,9 +1601,14 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
     );
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
-    assert_eq!(super::occurrence_count(&ctx, occurrence).expect("count").get(), 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
+    assert_eq!(
+        super::occurrence_count(&ctx, occurrence)
+            .expect("count")
+            .get(),
+        1
+    );
 
     // A stated zero with a populated carrier is an inconsistent link array.
     let populated = r#"<Document SchemaVersion="4" FileVersion="1">

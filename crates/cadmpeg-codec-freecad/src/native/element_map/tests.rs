@@ -261,9 +261,15 @@ fn topology_binding_preserves_empty_indexed_name_slots() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
-    nodes.bind_root_topology(&ctx, "Edge", 1, "edge-first-placement").expect("first topology binding");
-    nodes.bind_root_topology(&ctx, "Edge", 2, "unmapped-edge").expect("unmapped topology binding");
-    nodes.bind_root_topology(&ctx, "Edge", 1, "edge-second-placement").expect("second topology binding");
+    nodes
+        .bind_root_topology(&ctx, "Edge", 1, "edge-first-placement")
+        .expect("first topology binding");
+    nodes
+        .bind_root_topology(&ctx, "Edge", 2, "unmapped-edge")
+        .expect("unmapped topology binding");
+    nodes
+        .bind_root_topology(&ctx, "Edge", 1, "edge-second-placement")
+        .expect("second topology binding");
     let group = &nodes.root().groups[0];
 
     assert_eq!(
@@ -277,23 +283,29 @@ fn topology_binding_refuses_on_collection_limit() {
     let group = ElementMapGroup {
         indexed_name: "Edge".into(),
         children: Vec::new(),
-        names: vec![Vec::new(), vec![ElementMappedName {
-            encoded: ";stable.0".into(),
-            resolved: Some("stable".into()),
-            string_ids: Vec::new(),
-            topology_ids: Vec::new(),
-        }]],
+        names: vec![
+            Vec::new(),
+            vec![ElementMappedName {
+                encoded: ";stable.0".into(),
+                resolved: Some("stable".into()),
+                string_ids: Vec::new(),
+                topology_ids: Vec::new(),
+            }],
+        ],
     };
     let mut nodes = ElementMapNodes::try_from(vec![ElementMapNode {
         map_id: 0,
         groups: vec![group],
-    }]).expect("valid name group");
+    }])
+    .expect("valid name group");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input policy");
-    assert!(matches!(nodes.bind_root_topology(&ctx, "Edge", 1, "edge-one"),
+    assert!(
+        matches!(nodes.bind_root_topology(&ctx, "Edge", 1, "edge-one"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD element topology bindings"));
+            if limit.operation == "FreeCAD element topology bindings")
+    );
 }

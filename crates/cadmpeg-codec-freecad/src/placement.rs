@@ -45,7 +45,9 @@ impl std::fmt::Display for PlacementIssue {
             Self::Position(name) => write!(formatter, "has an invalid {name} component"),
             Self::Axis(name) => write!(formatter, "has an invalid {name} axis component"),
             Self::Angle => formatter.write_str("has an invalid A angle component"),
-            Self::Quaternion(name) => write!(formatter, "has an invalid {name} quaternion component"),
+            Self::Quaternion(name) => {
+                write!(formatter, "has an invalid {name} quaternion component")
+            }
             Self::Rotation => formatter.write_str("has an invalid rotation"),
         }
     }
@@ -69,15 +71,12 @@ fn placement_matrix_value(property: &PropertyRecord) -> Result<FiniteFrame, Plac
             .and_then(|value| value.parse().ok())
             .and_then(FiniteReal::new)
     };
-    let position = ["Px", "Py", "Pz"].map(|name| {
-        number(name).ok_or(PlacementIssue::Position(name))
-    });
+    let position =
+        ["Px", "Py", "Pz"].map(|name| number(name).ok_or(PlacementIssue::Position(name)));
     let [px, py, pz] = position;
     let position = [px?, py?, pz?];
     let quaternion = if value.attributes.contains_key("A") {
-        let axis = ["Ox", "Oy", "Oz"].map(|name| {
-            number(name).ok_or(PlacementIssue::Axis(name))
-        });
+        let axis = ["Ox", "Oy", "Oz"].map(|name| number(name).ok_or(PlacementIssue::Axis(name)));
         let [ox, oy, oz] = axis;
         let [ox, oy, oz] = [ox?, oy?, oz?];
         let angle = number("A").ok_or(PlacementIssue::Angle)?;
@@ -93,9 +92,8 @@ fn placement_matrix_value(property: &PropertyRecord) -> Result<FiniteFrame, Plac
         };
         [q0, q1, q2, q3]
     } else {
-        let components = ["Q0", "Q1", "Q2", "Q3"].map(|name| {
-            number(name).ok_or(PlacementIssue::Quaternion(name))
-        });
+        let components = ["Q0", "Q1", "Q2", "Q3"]
+            .map(|name| number(name).ok_or(PlacementIssue::Quaternion(name)));
         let [q0, q1, q2, q3] = components;
         [q0?, q1?, q2?, q3?]
     };
@@ -176,7 +174,10 @@ mod tests {
         ValueRecord {
             tag: tag.into(),
             order: 0,
-            attributes: attributes.iter().map(|(key, value)| ((*key).into(), (*value).into())).collect(),
+            attributes: attributes
+                .iter()
+                .map(|(key, value)| ((*key).into(), (*value).into()))
+                .collect(),
             text: None,
             raw_xml: String::new(),
         }
@@ -191,7 +192,8 @@ mod tests {
 
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).expect("message length fits");
+        policy.limits.max_retained_bytes =
+            u64::try_from(expected.len() - 1).expect("message length fits");
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(matches!(super::placement_matrix(&ctx, property),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == "FreeCAD placement error"));
@@ -200,54 +202,109 @@ mod tests {
 
     #[test]
     fn placement_runtime_type_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyString", Vec::new()),
-            "placement property source-property has a non-placement runtime type");
+        assert_placement_issue(
+            &property("App::PropertyString", Vec::new()),
+            "placement property source-property has a non-placement runtime type",
+        );
     }
 
     #[test]
     fn placement_value_count_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", Vec::new()),
-            "placement property source-property requires one placement value");
+        assert_placement_issue(
+            &property("App::PropertyPlacement", Vec::new()),
+            "placement property source-property requires one placement value",
+        );
     }
 
     #[test]
     fn placement_value_tag_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("Other", &[])]),
-            "placement property source-property requires one PropertyPlacement value");
+        assert_placement_issue(
+            &property("App::PropertyPlacement", vec![value("Other", &[])]),
+            "placement property source-property requires one PropertyPlacement value",
+        );
     }
 
     #[test]
     fn placement_position_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("PropertyPlacement", &[])]),
-            "placement property source-property has an invalid Px component");
+        assert_placement_issue(
+            &property(
+                "App::PropertyPlacement",
+                vec![value("PropertyPlacement", &[])],
+            ),
+            "placement property source-property has an invalid Px component",
+        );
     }
 
     #[test]
     fn placement_axis_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("PropertyPlacement", &[
-            ("Px", "0"), ("Py", "0"), ("Pz", "0"), ("A", "1")])]),
-            "placement property source-property has an invalid Ox axis component");
+        assert_placement_issue(
+            &property(
+                "App::PropertyPlacement",
+                vec![value(
+                    "PropertyPlacement",
+                    &[("Px", "0"), ("Py", "0"), ("Pz", "0"), ("A", "1")],
+                )],
+            ),
+            "placement property source-property has an invalid Ox axis component",
+        );
     }
 
     #[test]
     fn placement_angle_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("PropertyPlacement", &[
-            ("Px", "0"), ("Py", "0"), ("Pz", "0"), ("Ox", "0"), ("Oy", "0"), ("Oz", "1"), ("A", "bad")])]),
-            "placement property source-property has an invalid A angle component");
+        assert_placement_issue(
+            &property(
+                "App::PropertyPlacement",
+                vec![value(
+                    "PropertyPlacement",
+                    &[
+                        ("Px", "0"),
+                        ("Py", "0"),
+                        ("Pz", "0"),
+                        ("Ox", "0"),
+                        ("Oy", "0"),
+                        ("Oz", "1"),
+                        ("A", "bad"),
+                    ],
+                )],
+            ),
+            "placement property source-property has an invalid A angle component",
+        );
     }
 
     #[test]
     fn placement_quaternion_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("PropertyPlacement", &[
-            ("Px", "0"), ("Py", "0"), ("Pz", "0")])]),
-            "placement property source-property has an invalid Q0 quaternion component");
+        assert_placement_issue(
+            &property(
+                "App::PropertyPlacement",
+                vec![value(
+                    "PropertyPlacement",
+                    &[("Px", "0"), ("Py", "0"), ("Pz", "0")],
+                )],
+            ),
+            "placement property source-property has an invalid Q0 quaternion component",
+        );
     }
 
     #[test]
     fn placement_rotation_error_refuses_at_retained_limit() {
-        assert_placement_issue(&property("App::PropertyPlacement", vec![value("PropertyPlacement", &[
-            ("Px", "0"), ("Py", "0"), ("Pz", "0"), ("Q0", "0"), ("Q1", "0"), ("Q2", "0"), ("Q3", "0")])]),
-            "placement property source-property has an invalid rotation");
+        assert_placement_issue(
+            &property(
+                "App::PropertyPlacement",
+                vec![value(
+                    "PropertyPlacement",
+                    &[
+                        ("Px", "0"),
+                        ("Py", "0"),
+                        ("Pz", "0"),
+                        ("Q0", "0"),
+                        ("Q1", "0"),
+                        ("Q2", "0"),
+                        ("Q3", "0"),
+                    ],
+                )],
+            ),
+            "placement property source-property has an invalid rotation",
+        );
     }
 
     #[test]

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource admission for product graph diagnostics.
 
-use super::super::{linked_prototype_transform, occurrence_count, product_record_index, transfer_neutral};
+use super::super::{
+    linked_prototype_transform, occurrence_count, product_record_index, transfer_neutral,
+};
 use crate::native::{self, ProductNodeRecord};
 use crate::test_support::assert_retained_refusal_at;
 use std::collections::HashMap;
@@ -16,8 +18,14 @@ fn occurrence(object: &str, count: Option<u64>) -> ProductNodeRecord {
             external_document: None,
             local_transform: None,
             placement_property: None,
-            array: native::LinkArray::try_new(count, Vec::new(), Vec::new(), Vec::new(), Vec::new())
-                .expect("empty array carriers"),
+            array: native::LinkArray::try_new(
+                count,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )
+            .expect("empty array carriers"),
             link_transform: Some(true),
             linked_subelements: Vec::new(),
             claim_child: None,
@@ -49,7 +57,13 @@ fn nested_product_cycle_refuses_before_diagnostic_allocation() {
     let records = HashMap::from([(record.object.as_str(), &record)]);
     let placements = HashMap::new();
     assert_retained_refusal_at(&[], "fcstd nested product cycle", |ctx| {
-        linked_prototype_transform(ctx, &record, &records, &placements, &mut vec![record.object.clone()])
+        linked_prototype_transform(
+            ctx,
+            &record,
+            &records,
+            &placements,
+            &mut vec![record.object.clone()],
+        )
     });
 }
 
