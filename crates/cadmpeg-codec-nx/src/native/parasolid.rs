@@ -2990,35 +2990,61 @@ impl From<ParasolidTopologyAttributeClassUse> for ParasolidTopologyAttributeClas
 
 /// Retain named attribute-class declarations from all Parasolid streams.
 pub(super) fn parasolid_attribute_definitions(
+    ctx: &DecodeContext<'_>,
     streams: &[Stream],
-) -> Vec<ParasolidAttributeDefinition> {
-    streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind().is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::attribute_definitions(&stream.inflated)
-                .into_iter()
-                .map(move |definition| ParasolidAttributeDefinition {
-                    id: format!(
-                        "nx:s{stream_ordinal}:attribute-definition#{}",
-                        u32::from(definition.xmt)
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: definition.xmt,
-                    next_definition_xmt: definition.next_definition_xmt,
-                    identifier_xmt: definition.identifier_xmt,
-                    identifier_inflated_offset: definition.identifier_offset as u64,
-                    name: definition.name.into_owned(),
-                    type_id: definition.type_id,
-                    action_codes: definition.action_codes,
-                    field_names_xmt: definition.field_names_xmt,
-                    legal_owner_flags: definition.legal_owner_flags,
-                    field_codes: definition.field_codes,
-                    inflated_offset: definition.offset as u64,
-                })
-        })
-        .collect()
+) -> Result<Vec<ParasolidAttributeDefinition>, CodecError> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind().is_parasolid() {
+            continue;
+        }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX attribute definition stream ordinal", 0, 1))?;
+        for definition in crate::parasolid::attribute_definitions(&stream.inflated) {
+            ctx.charge_collection_items(1, "NX attribute definitions")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeDefinition>()),
+                "retain NX attribute definitions",
+            )?;
+            records.try_reserve_exact(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX attribute definitions", 0, 1)
+            })?;
+            let name_len = definition.name.as_str().len();
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(name_len),
+                "retain NX attribute definition name",
+            )?;
+            let mut name = String::new();
+            name.try_reserve_exact(name_len).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX attribute definition name", 0, 1)
+            })?;
+            name.push_str(definition.name.as_str());
+            let name = crate::printable_string::PrintableString::new(name)
+                .map_err(|message| CodecError::Malformed(message.into()))?;
+            let id = parasolid_record_id(
+                ctx,
+                stream_ordinal,
+                "attribute-definition",
+                u32::from(definition.xmt),
+            )?;
+            records.push(ParasolidAttributeDefinition {
+                id,
+                stream_ordinal: ordinal,
+                xmt: definition.xmt,
+                next_definition_xmt: definition.next_definition_xmt,
+                identifier_xmt: definition.identifier_xmt,
+                identifier_inflated_offset: cadmpeg_core::decode::u64_from_index(definition.identifier_offset),
+                name,
+                type_id: definition.type_id,
+                action_codes: definition.action_codes,
+                field_names_xmt: definition.field_names_xmt,
+                legal_owner_flags: definition.legal_owner_flags,
+                field_codes: definition.field_codes,
+                inflated_offset: cadmpeg_core::decode::u64_from_index(definition.offset),
+            });
+        }
+    }
+    Ok(records)
 }
 
 /// Decode every counted type-99 attribute field-name record.
@@ -4065,6 +4091,39 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "NX Parasolid scanned records"
+        ));
+    }
+
+    #[test]
+    fn parasolid_attribute_definitions_refuse_collection_at_caller_limit() {
+        let bytes = crate::test_support::test_prt::prt_with_partition(
+            &crate::test_support::test_streams::parasolid_entity_records_stream(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        assert!(!super::parasolid_attribute_definitions(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty());
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        let error = super::parasolid_attribute_definitions(&limited_ctx, &scan.streams)
+            .err()
+            .expect("attribute definition collection refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX attribute definitions"
         ));
     }
     #[test]
