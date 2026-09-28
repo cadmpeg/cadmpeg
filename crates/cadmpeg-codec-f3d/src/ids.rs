@@ -580,6 +580,48 @@ pub(crate) fn neutral_spatial_sketch_id(
     )
 }
 
+struct EncodedSketchKey<'a> {
+    stream: &'a str,
+    suffix: u64,
+}
+
+impl std::fmt::Display for EncodedSketchKey<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write_escaped_identity_component(formatter, self.stream)?;
+        write!(formatter, "@{}", self.suffix)
+    }
+}
+
+fn neutral_sketch_key_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    stream: &str,
+    suffix: u64,
+    kind: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    escaped_scope_len(ctx, stream, "retain F3D neutral sketch annotation ID")?;
+    native_scoped_id_charged(ctx, "model", kind, EncodedSketchKey { stream, suffix })
+}
+
+/// Compose a planar sketch annotation identity under the caller's budget.
+pub(crate) fn neutral_sketch_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    placement: &DesignSketchPlacement,
+) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
+    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    let id = neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "sketch")?;
+    cadmpeg_ir::sketches::SketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+/// Compose a spatial sketch annotation identity under the caller's budget.
+pub(crate) fn neutral_spatial_sketch_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    placement: &DesignSketchPlacement,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
+    let stream = native_stream(&placement.id).unwrap_or(DEFAULT_STREAM);
+    let id = neutral_sketch_key_charged(ctx, stream, placement.entity_id.suffix(), "spatial-sketch")?;
+    cadmpeg_ir::sketches::SpatialSketchId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
+}
+
 /// The shared body of a sketch or spatial-sketch placement key: the placement's
 /// stream, escaped, joined to its entity suffix by `@`.
 fn sketch_placement_key(placement: &DesignSketchPlacement) -> cadmpeg_ir::ids::IdentityKey {
@@ -750,6 +792,17 @@ pub(crate) fn neutral_sketch_constraint_id(
             .then(record_index)
             .with_prefix(&stream),
     )
+}
+
+/// Compose a sketch constraint annotation identity under the caller's budget.
+pub(crate) fn neutral_sketch_constraint_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    native_ref: &str,
+    record_index: u32,
+) -> Result<cadmpeg_ir::sketches::SketchConstraintId, cadmpeg_core::CodecError> {
+    let stream = native_stream(native_ref).unwrap_or(DEFAULT_STREAM);
+    let id = neutral_sketch_key_charged(ctx, stream, u64::from(record_index), "sketch-constraint")?;
+    cadmpeg_ir::sketches::SketchConstraintId::mint(id).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// The neutral dimension-constraint key derived from a `parameter` key and a
