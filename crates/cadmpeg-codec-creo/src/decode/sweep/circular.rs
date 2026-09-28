@@ -605,8 +605,9 @@ mod tests {
         let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
             cadmpeg_ir::scalar::PositiveReal::new(25.4),
         );
-        carriers
+        crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_sketch_entities(
+                ctx,
                 &mut ir,
                 vec![SketchEntity::new(
                     entity_id,
@@ -617,7 +618,7 @@ mod tests {
                     })
                     .expect("source circle"),
                 )],
-            )
+            ))
             .expect("millimeter admission");
         let scan = crate::container::scan_bytes_ok(Vec::new());
         let transform = crate::placement::FeatureSectionTransform::new(

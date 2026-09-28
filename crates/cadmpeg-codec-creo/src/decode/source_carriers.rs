@@ -153,17 +153,27 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_sketch_entities(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         entities: Vec<SketchEntity>,
     ) -> Result<(), CodecError> {
         for mut entity in entities {
+            if !self.sketch_entities.contains_key(entity.id()) {
+                ctx.charge_collection_items(1, "creo source sketch entity nodes")?;
+            }
+            let source_id = SketchEntityId::mint(ctx.copy_retained_text(
+                entity.id().as_str(),
+                "creo source sketch entity IDs",
+            )?)
+            .map_err(CodecError::malformed)?;
             let source_geometry = entity.geometry.clone();
             if let Some(scale) = self.length_scale_mm {
                 crate::decode::build::units::scale_sketch_geometry(&mut entity.geometry, scale)
                     .map_err(Self::unrepresentable_length)?;
             }
             self.sketch_entities
-                .insert(entity.id().clone(), source_geometry);
+                .insert(source_id, source_geometry);
+            ctx.try_reserve_items(&mut ir.model.sketch_entities, 1, "creo model sketch entities")?;
             ir.model.sketch_entities.push(entity);
         }
         Ok(())
@@ -975,8 +985,8 @@ mod tests {
         crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_sketch(ctx, &mut ir, source_sketch(Point3::new(1.0, 0.0, 0.0))))
             .expect("sketch admission");
-        carriers
-            .admit_sketch_entities(&mut ir, vec![source_sketch_line(1.0)])
+        crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(1.0)]))
             .expect("entity admission");
         crate::decode::with_test_decode_ctx(|ctx| carriers
             .admit_sketch_constraints(ctx, &mut ir, vec![source_distance_constraint(2.0)]))
@@ -1026,11 +1036,45 @@ mod tests {
     fn sketch_entity_overflow_refuses_before_admission() {
         let mut ir = CadIr::empty();
         let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = carriers
-            .admit_sketch_entities(&mut ir, vec![source_sketch_line(f64::MAX)])
+        let error = crate::decode::with_test_decode_ctx(|ctx| carriers
+            .admit_sketch_entities(ctx, &mut ir, vec![source_sketch_line(f64::MAX)]))
             .expect_err("millimeter line cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
+    fn sketch_entity_admission_refuses_each_source_and_model_boundary() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        for (limit, operation) in [
+            (0, "creo source sketch entity nodes"),
+            (1, "creo model sketch entities"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let mut ir = CadIr::empty();
+            let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+            let error = carriers
+                .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
+                .expect_err("one sketch entity exceeds its collection limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = carriers
+            .admit_sketch_entities(&ctx, &mut ir, vec![source_sketch_line(1.0)])
+            .expect_err("source identity copy exceeds retained-byte limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo source sketch entity IDs"), "{error:?}");
     }
 
     #[test]

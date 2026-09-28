@@ -86,8 +86,9 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
     let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    carriers
+    crate::decode::with_test_decode_ctx(|ctx| carriers
         .admit_sketch_entities(
+            ctx,
             &mut ir,
             vec![SketchEntity::new(
                 entity_id,
@@ -98,7 +99,7 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
                 })
                 .expect("source circle"),
             )],
-        )
+        ))
         .expect("entity admission");
     let SketchGeometryDefinition::Circle { center, radius } =
         ir.model.sketch_entities[0].geometry.definition()
