@@ -11,6 +11,16 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::{
+    analytic::LineCurve, CompositeCurveSegment, CompositeCurveTransition,
+    Curve, CurveGeometry, SolvedCurveGeometry,
+};
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::CadIr;
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
 const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -288,6 +298,52 @@ fn bounded_plane_accepts_a_simple_composite_line_boundary() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
+    let child = CurveId::mint("test:model:curve#child").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: child.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        )),
+        source_object: None,
+    });
+    let geometry = SolvedCurveGeometry::Composite {
+        segments: vec![CompositeCurveSegment {
+            curve: child,
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        }].try_into().unwrap(),
+        self_intersect: Some(false),
+    };
+    let index = ModelIndex::new(&ir);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let context = super::super::PlaneBoundarySimplicity {
+        index: &index,
+        plane: (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+        resolution: 0.001,
+        transform: Transform::identity(),
+        ctx: &ctx,
+    };
+    let result = super::super::bounded_plane_curve_is_simple(
+        &geometry, context, false, None, &mut BTreeSet::new(),
+    );
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "iges plane boundary child curve ID"));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let context = super::super::PlaneBoundarySimplicity { ctx: &ctx, ..context };
+    assert!(!super::super::bounded_plane_curve_is_simple(
+        &geometry, context, false, None, &mut BTreeSet::new(),
+    ).unwrap());
 }
 
 #[test]
