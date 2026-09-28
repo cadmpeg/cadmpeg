@@ -9,10 +9,6 @@ pub(super) struct A8KnotLane {
 }
 
 impl A8KnotLane {
-    pub(super) fn distinct(&self) -> &[FiniteReal] {
-        &self.distinct
-    }
-
     /// Multiplicity of each distinct knot.
     #[cfg(test)]
     pub(super) fn multiplicities(&self) -> &[u32] {
