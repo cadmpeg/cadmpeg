@@ -14,13 +14,16 @@ use crate::layout::assembly_variable_reference_operand_path_locator as variable_
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_assembly_operand_paths(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<[DesignAssemblyOperandPath; 2]> {
+) -> Result<Option<[DesignAssemblyOperandPath; 2]>, CodecError> {
+    (|| {
     let scope_at = usize::try_from(scope.byte_offset()).ok()?;
     let search_start = usize::try_from(scope.paired_byte_offset())
         .ok()?
@@ -36,30 +39,37 @@ pub(super) fn exact_assembly_operand_paths(
     if View::u32_le_at(bytes, count_at)? != 2 {
         return None;
     }
-    let paths = locator_offsets.map(|relative_offset| {
+    let mut paths = [None, None];
+    for (ordinal, relative_offset) in locator_offsets.into_iter().enumerate() {
         let locator_reference_at = scope_at.checked_add(relative_offset)?;
         let (locator_record_index, locator_reference_offset) =
             exact_same_segment_record_reference(bytes, locator_reference_at)?;
-        let mut candidates = records
+        let candidates = records
             .offsets(locator_record_index)
             .iter()
             .copied()
-            .filter(|locator_at| *locator_at >= search_start)
-            .filter_map(|locator_at| {
-                exact_assembly_operand_path_envelope(
+            .filter(|locator_at| *locator_at >= search_start);
+        let mut candidate = None;
+        for locator_at in candidates {
+            let parsed = match exact_assembly_operand_path_envelope(
+                    ctx,
                     bytes,
                     scope,
                     locator_record_index,
                     locator_reference_offset,
                     locator_at,
-                )
-            });
-        let candidate = candidates.next()?;
-        if candidates.next().is_some() {
-            return None;
+                ) {
+                    Ok(parsed) => parsed,
+                    Err(error) => return Some(Err(error)),
+                };
+            if let Some(parsed) = parsed {
+                if candidate.replace(parsed).is_some() {
+                    return None;
+                }
+            }
         }
-        Some(candidate)
-    });
+        paths[ordinal] = Some(candidate?);
+    }
     let [Some(first), Some(second)] = paths else {
         return None;
     };
@@ -82,16 +92,19 @@ pub(super) fn exact_assembly_operand_paths(
     {
         return None;
     }
-    Some([first, second])
+    Some(Ok([first, second]))
+    })().transpose()
 }
 
 fn exact_assembly_operand_path_envelope(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_reference_offset: u64,
     locator_at: usize,
-) -> Option<DesignAssemblyOperandPath> {
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    (|| {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
     let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
         scope.class_tag.as_str(),
@@ -169,7 +182,21 @@ fn exact_assembly_operand_path_envelope(
     if next_indexed_record_offset(bytes, locator_at.checked_add(1)?)? != path_at {
         return None;
     }
+    let span_count = usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
+    let span_count_u64 = match u64::try_from(span_count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d assembly path span count", 0, 1))),
+    };
+    if let Err(error) = ctx.charge_collection_items(
+        span_count_u64,
+        "f3d assembly path spans",
+    ) {
+        return Some(Err(error));
+    }
     let mut path_spans = Vec::new();
+    if path_spans.try_reserve(span_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d assembly path spans allocation", 0, 1)));
+    }
     let mut record_index = path_record_index;
     let mut record_at = path_at;
     let wrapper_at = loop {
@@ -243,29 +270,44 @@ fn exact_assembly_operand_path_envelope(
         path_reference_offset,
     };
     let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-        exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
+        exact_assembly_operand_path(ctx, bytes, start, record_index, limit, link.clone())
     });
-    let mut path = paths.next()??;
+    let mut path = match paths.next()? {
+        Ok(Some(path)) => path,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if variable_reference && path.class_tag().as_str() != "330" {
         return None;
     }
     for continuation in paths {
-        let continuation = continuation?;
+        let continuation = match continuation {
+            Ok(Some(path)) => path,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         if !variable_reference || continuation.class_tag().as_str() != "330" {
             return None;
         }
-        path = path.try_append(continuation).ok()?;
+        path = match path.try_append(continuation, ctx) {
+            Ok(Some(path)) => path,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
     }
-    Some(path)
+    Some(Ok(path))
+    })().transpose()
 }
 
 fn exact_assembly_operand_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
     limit: usize,
     link: DesignAssemblyOperandPathLink,
-) -> Option<DesignAssemblyOperandPath> {
+) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 1..=8, u8::is_ascii_digit)?;
     if View::u64_le_at(bytes, after_tag)? != u64::from(record_index) {
         return None;
@@ -324,6 +366,16 @@ fn exact_assembly_operand_path(
             if !(1..=64).contains(&count) {
                 return None;
             }
+            let count_u64 = match u64::try_from(count) {
+                Ok(count) => count,
+                Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d assembly path occurrence count", 0, 1))),
+            };
+            if let Err(error) = ctx.charge_collection_items(count_u64, "f3d assembly path occurrences") {
+                return Some(Err(error));
+            }
+            if occurrence_guids.try_reserve(count).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d assembly path occurrences allocation", 0, 1)));
+            }
             let mut position = after_tag + 18;
             for _ in 0..count {
                 let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
@@ -379,4 +431,9 @@ fn exact_assembly_operand_path(
         identity_guids,
     )
     .ok()
+    .map(Ok)
+    })().transpose()
 }
+
+#[cfg(test)]
+mod tests;

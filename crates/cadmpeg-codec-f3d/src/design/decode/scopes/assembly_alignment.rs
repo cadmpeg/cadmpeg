@@ -73,7 +73,7 @@ pub(super) fn exact_assembly_alignment(
         ctx.refuse_codec_limit("f3d assembly alignment lanes allocation", 0, 1)
     })?;
     lanes.extend(parameter_owners.iter().filter(matching));
-    Ok((|| {
+    (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
     lanes.sort_by_key(|owner| owner.local_ordinal());
     if lanes
         .iter()
@@ -123,7 +123,8 @@ pub(super) fn exact_assembly_alignment(
             exact.owners,
             Some(form),
         )
-        .ok();
+        .ok()
+        .map(Ok);
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length(), 671 | 744 | 748)
@@ -230,7 +231,11 @@ pub(super) fn exact_assembly_alignment(
         (angle, offset, owners)
     };
     let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
-        exact_assembly_operand_paths(bytes, records, scope)
+        let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
+            Ok(paths) => paths,
+            Err(error) => return Some(Err(error)),
+        };
+        paths
             .map(|paths| {
                 DesignAssemblyAlignmentForm::try_from(AsBuiltAlignmentDraft {
                     frames: exact_as_built_operand_frames(bytes, &paths),
@@ -240,7 +245,7 @@ pub(super) fn exact_assembly_alignment(
             .transpose()
             .ok()?
     } else {
-        exact_assembly_operand_frames(bytes, scope).map(|frames| {
+        if let Some(frames) = exact_assembly_operand_frames(bytes, scope) {
             let qualifiers = if legacy_class_383 {
                 exact_legacy_class_383_operand_paths(bytes, records, scope, &frames).map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
@@ -253,27 +258,39 @@ pub(super) fn exact_assembly_alignment(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             ) {
-                super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
+                let direct = super::assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
                     bytes, records, scope, &frames,
-                )
-                .or_else(|| {
-                    exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
+                );
+                if direct.is_some() {
+                    direct
+                } else {
+                    let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
+                        Ok(paths) => paths,
+                        Err(error) => return Some(Err(error)),
+                    };
+                    paths.map(|paths| {
                         paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                     })
-                })
+                }
             } else {
-                exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
+                let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
+                    Ok(paths) => paths,
+                    Err(error) => return Some(Err(error)),
+                };
+                paths.map(|paths| {
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
             };
-            match qualifiers {
+            Some(match qualifiers {
                 Some(qualifiers) => DesignAssemblyAlignmentForm::qualified(frames, qualifiers),
                 None => DesignAssemblyAlignmentForm::Frames { frames },
-            }
-        })
+            })
+        } else {
+            None
+        }
     };
-    DesignAssemblyAlignment::try_new(angle, offset, owners, form).ok()
-    })())
+    DesignAssemblyAlignment::try_new(angle, offset, owners, form).ok().map(Ok)
+    })().transpose()
 }
 
 #[cfg(test)]

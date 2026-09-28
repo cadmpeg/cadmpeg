@@ -9,6 +9,8 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
@@ -1350,22 +1352,44 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn identity_guids(&self) -> &[Located<DesignRelaxedGuidText>] {
         &self.identity_guids
     }
-    pub(crate) fn try_append(self, continuation: Self) -> Result<Self, String> {
+    pub(crate) fn try_append(
+        self,
+        continuation: Self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<Self>, CodecError> {
         if self.class_tag.as_str() != "330" || continuation.class_tag.as_str() != "330" {
-            return Err("assembly path continuations require class_tag 330".into());
+            return Ok(None);
         }
         let mut occurrences = self.occurrence_guids;
+        let occurrence_count = continuation.occurrence_guids.len();
+        ctx.charge_collection_items(
+            u64::try_from(occurrence_count)
+                .map_err(|_| ctx.refuse_codec_limit("f3d assembly path occurrence count", 0, 1))?,
+            "f3d assembly path appended occurrences",
+        )?;
+        occurrences.try_reserve(occurrence_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d assembly path appended occurrences allocation", 0, 1)
+        })?;
         occurrences.extend(continuation.occurrence_guids);
         let mut identities = self.identity_guids;
+        let identity_count = continuation.identity_guids.len();
+        ctx.charge_collection_items(
+            u64::try_from(identity_count)
+                .map_err(|_| ctx.refuse_codec_limit("f3d assembly path identity count", 0, 1))?,
+            "f3d assembly path appended identities",
+        )?;
+        identities.try_reserve(identity_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d assembly path appended identities allocation", 0, 1)
+        })?;
         identities.extend(continuation.identity_guids);
-        Self::try_new(
+        Ok(Self::try_new(
             self.link,
             self.record_index,
             self.class_tag,
             self.byte_offset,
             occurrences,
             identities,
-        )
+        ).ok())
     }
 }
 
