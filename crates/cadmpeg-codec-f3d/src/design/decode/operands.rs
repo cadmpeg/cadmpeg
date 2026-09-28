@@ -1554,44 +1554,42 @@ pub(crate) fn bind_sketch_profiles(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let candidates = scope
-            .reference_members()
-            .values()
-            .copied()
-            .enumerate()
-            .filter_map(|(ordinal, record_index)| {
-                let ordinal = u32::try_from(ordinal).ok()?;
-                let header = headers.get(&(stream, record_index))?;
-                parse_sketch_profile(bytes, stream, ordinal, header, entities)
-            })
-            .collect::<Vec<_>>();
-        if let [profile] = candidates.as_slice() {
-            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
-                {
-                    let value = Some(profile.clone());
-                    if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
-                        scope.payload_mut()
-                    {
-                        slot.get_or_insert_with(Default::default)
-                            .base_flange_profile = value;
-                    }
-                }
-            } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
-                {
-                    let value = Some(profile.clone());
-                    if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
-                        scope.payload_mut()
-                    {
-                        slot.get_or_insert_with(Default::default).sweep_profile = value;
-                    }
-                }
-            } else if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+        let mut unique = None;
+        let mut multiple = false;
+        for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            let (Ok(ordinal), Some(header)) =
+                (u32::try_from(ordinal), headers.get(&(stream, record_index)))
+            else {
+                continue;
+            };
+            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities) else {
+                continue;
+            };
+            if unique.is_some() {
+                multiple = true;
+            } else {
+                unique = Some(profile);
+            }
+        }
+        let Some(profile) = unique.filter(|_| !multiple) else { continue; };
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
+            if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
                 scope.payload_mut()
             {
-                slot.get_or_insert_with(Default::default).extrude_profile = Some(profile.clone());
+                slot.get_or_insert_with(Default::default).base_flange_profile = Some(profile);
             }
+        } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
+            if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(slot) =
+                scope.payload_mut()
+            {
+                slot.get_or_insert_with(Default::default).sweep_profile = Some(profile);
+            }
+        } else if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+            scope.payload_mut()
+        {
+            slot.get_or_insert_with(Default::default).extrude_profile = Some(profile);
         }
     }
     Ok(())
