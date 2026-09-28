@@ -1289,6 +1289,10 @@ fn typed_entity_parameter_candidate(
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
+    let name = resource::copy_retained_str(ctx, &parameter.name.value,
+        "catia_formula_typed_parameter_name")?;
+    let native_ref = resource::copy_retained_str(ctx, &entity.id,
+        "catia_formula_typed_parameter_native_ref")?;
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
@@ -1301,7 +1305,7 @@ fn typed_entity_parameter_candidate(
             id,
             owner: None,
             ordinal: 0,
-            name: parameter.name.value.clone(),
+            name,
             expression,
             display: None,
             value,
@@ -1312,7 +1316,7 @@ fn typed_entity_parameter_candidate(
                 Some(parameter.binding.value.as_str()),
             )?,
             pmi: None,
-            native_ref: Some(entity.id.clone()),
+            native_ref: Some(native_ref),
         },
         parameter_type,
         role: FormulaParameterRole::Input,

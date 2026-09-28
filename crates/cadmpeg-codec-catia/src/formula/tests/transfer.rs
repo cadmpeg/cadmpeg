@@ -1165,6 +1165,36 @@ fn typed_parameter_history_id_refuses_retained_limit() {
 }
 
 #[test]
+fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4, false, &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH", Some(33.0), "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native.entity_records.iter().find(|entity|
+        entity.parameter_value().is_some()).expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    }).expect("service profile admits typed candidate")
+        .expect("typed candidate");
+    let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
+    for (cap, operation) in [
+        (before_name as u64, "catia_formula_typed_parameter_name"),
+        ((before_name + value.name.value.len()) as u64,
+            "catia_formula_typed_parameter_native_ref"),
+    ] {
+        let refused = crate::test_support::with_retained_limit(cap, |ctx| {
+            super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == operation), "missing refusal at {operation}");
+    }
+    assert_eq!(admitted.parameter.name, value.name.value);
+    assert_eq!(admitted.parameter.native_ref.as_deref(), Some(entity.id.as_str()));
+}
+
+#[test]
 fn formula_relation_program_output_limit_refuses_before_candidate_creation() {
     let bytes = standard_catpart_with_formula_relation(0x63, false);
     let mut native = crate::native::CatiaNative::decode(&bytes);
