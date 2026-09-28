@@ -898,7 +898,7 @@ fn camera_state_value(
     let CameraSettings {
         position,
         orientation,
-    } = parse_camera_settings(settings)?;
+    } = parse_camera_settings(ctx, settings)?;
     let position = position
         .map(|value| {
             cadmpeg_ir::units::FiniteVector::new(value)
@@ -925,7 +925,7 @@ fn camera_state_value(
     })
 }
 
-fn parse_camera_settings(settings: &str) -> Result<CameraSettings, CodecError> {
+fn parse_camera_settings(ctx: &DecodeContext<'_>, settings: &str) -> Result<CameraSettings, CodecError> {
     if settings.trim().is_empty() {
         return Ok(CameraSettings {
             position: None,
@@ -933,7 +933,8 @@ fn parse_camera_settings(settings: &str) -> Result<CameraSettings, CodecError> {
         });
     }
 
-    let tokens = settings.split_whitespace().collect::<Vec<_>>();
+    let mut tokens = collection_vec(ctx, settings.split_whitespace().count(), "FCStd GUI camera tokens")?;
+    tokens.extend(settings.split_whitespace());
     let valid_shape = tokens.len() >= 3
         && tokens[1] == "{"
         && tokens.last() == Some(&"}")
@@ -986,24 +987,18 @@ fn camera_field<const N: usize>(
     let end_index = start.checked_add(N).ok_or_else(|| {
         CodecError::malformed(format_args!("GUI camera {field} field offset overflows"))
     })?;
-    let values = tokens
-        .get(start..end_index)
+    let values = tokens.get(start..end_index)
         .filter(|values| values.len() == N && end_index <= end)
         .ok_or_else(|| {
             CodecError::malformed(format_args!("GUI camera {field} field is incomplete"))
-        })?
-        .iter()
-        .map(|value| {
-            value.parse::<f64>().map_err(|_| {
-                CodecError::malformed(format_args!("GUI camera {field} field is not numeric"))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    values.try_into().map_err(|_| {
-        CodecError::malformed(format_args!(
-            "GUI camera {field} field has the wrong cardinality"
-        ))
-    })
+        })?;
+    let mut parsed = [0.0; N];
+    for (index, value) in values.iter().enumerate() {
+        parsed[index] = value.parse::<f64>().map_err(|_| {
+            CodecError::malformed(format_args!("GUI camera {field} field is not numeric"))
+        })?;
+    }
+    Ok(parsed)
 }
 
 #[derive(Clone, Copy)]
