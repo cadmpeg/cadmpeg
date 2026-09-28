@@ -1727,7 +1727,15 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
     let mut features = vec![model_hole()];
     let surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("hole axis fixture fits service policy");
     project_hole_axes(
+        &ctx,
         &mut features,
         &[],
         &HoleTopology {
@@ -1741,7 +1749,8 @@ fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
         },
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
+    )
+    .expect("hole axis projection fits service policy");
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
     else {

@@ -313,7 +313,7 @@ pub(crate) fn project_compact_sketch_profiles(
         .collect::<HashMap<_, _>>();
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut objects = native_features
             .values()
             .filter(|feature| !metadata_ids.contains(&feature.id))
@@ -824,12 +824,13 @@ fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInp
 }
 
 pub(crate) fn project_marker_backed_sketches(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
     let metadata_ids = history_metadata_ids(histories);
@@ -844,7 +845,7 @@ pub(crate) fn project_marker_backed_sketches(
         .flat_map(|lane| &lane.sketch_entities)
         .filter_map(|marker| marker.feature_ref.as_deref())
         .collect::<HashSet<_>>();
-    let feature_frames = sketch_feature_frames(features, histories, lanes);
+    let feature_frames = sketch_feature_frames(ctx, features, histories, lanes)?;
     project_detached_legacy_config_sketches(
         features,
         sketches,
@@ -855,7 +856,7 @@ pub(crate) fn project_marker_backed_sketches(
     );
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let markers_by_id = lane
             .sketch_entities
             .iter()
@@ -1883,6 +1884,7 @@ pub(crate) fn project_marker_backed_sketches(
                 });
         }
     }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -3232,13 +3234,22 @@ mod detached_legacy_sketch_tests {
         let mut sketches = Vec::new();
         let mut sketch_entities = Vec::new();
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("profile fixture fits service policy");
         project_marker_backed_sketches(
+            &ctx,
             &mut features,
             &mut sketches,
             &mut sketch_entities,
             &[history],
             &[lane],
-        );
+        )
+        .expect("marker profile projection fits service policy");
 
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].id, expected_sketch);
@@ -3322,13 +3333,22 @@ mod detached_legacy_sketch_tests {
         let mut sketches = Vec::new();
         let mut sketch_entities = Vec::new();
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("profile fixture fits service policy");
         project_marker_backed_sketches(
+            &ctx,
             &mut features,
             &mut sketches,
             &mut sketch_entities,
             &[history],
             &[lane],
-        );
+        )
+        .expect("marker profile projection fits service policy");
 
         assert!(sketches.is_empty());
         assert!(matches!(

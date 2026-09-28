@@ -1,6 +1,7 @@
 //! Compact reference plane record index.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9: f64 = 1e-9;
@@ -18,47 +19,67 @@ pub(super) struct CompactReferencePlaneIndex {
 }
 
 impl CompactReferencePlaneIndex {
-    pub(super) fn new(payload: &[u8]) -> Self {
-        Self {
-            payload_len: payload.len(),
-            class_offsets: payload
-                .iter()
-                .enumerate()
-                .filter_map(|(offset, byte)| {
-                    (*byte == COMPACT_REFERENCE_PLANE_CLASS[0]
-                        && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
-                            == Some(COMPACT_REFERENCE_PLANE_CLASS))
-                    .then_some(offset)
-                })
-                .collect(),
-            declared: payload
-                .iter()
-                .enumerate()
-                .filter_map(|(end, byte)| {
-                    if *byte != 0x3f {
-                        return None;
+    pub(super) fn new(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Self, CodecError> {
+        let scan_len = u64::try_from(payload.len()).map_err(|_| {
+            ctx.refuse_codec_limit("index compact reference planes", u64::MAX - 1, u64::MAX)
+        })?;
+        let work = scan_len.checked_mul(3).ok_or_else(|| {
+            ctx.refuse_codec_limit("index compact reference planes", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(work, "index compact reference planes")?;
+        let mut class_offsets = Vec::new();
+        let mut declared = Vec::new();
+        let mut components = Vec::new();
+        for (offset, byte) in payload.iter().enumerate() {
+            if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
+                && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
+                    == Some(COMPACT_REFERENCE_PLANE_CLASS)
+            {
+                ctx.reserve_collection_vec(
+                    &mut class_offsets,
+                    1,
+                    "collect compact reference plane classes",
+                )?;
+                class_offsets.push(offset);
+            }
+            if *byte == 0x3f {
+                if let Some(start) = offset.checked_sub(46) {
+                    if let Some(bytes) = payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN) {
+                        if let Some(source) = compact_declared_reference_plane_record(bytes) {
+                            ctx.reserve_collection_vec(
+                                &mut declared,
+                                1,
+                                "collect declared compact reference planes",
+                            )?;
+                            declared.push((start, source));
+                        }
                     }
-                    let offset = end.checked_sub(46)?;
-                    let bytes = payload.get(offset..offset + COMPACT_REFERENCE_PLANE_RECORD_LEN)?;
-                    compact_declared_reference_plane_record(bytes).map(|source| (offset, source))
-                })
-                .collect(),
-            components: payload
-                .iter()
-                .enumerate()
-                .filter_map(|(anchor, byte)| {
-                    if *byte != 4
-                        || payload.get(anchor..anchor + 8)
-                            != Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
-                    {
-                        return None;
+                }
+            }
+            if *byte == 4
+                && payload.get(offset..offset + 8)
+                    == Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
+            {
+                if let Some(start) = offset.checked_sub(122) {
+                    if let Some(bytes) = payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN) {
+                        if let Some(source) = compact_component_reference_plane_record(bytes) {
+                            ctx.reserve_collection_vec(
+                                &mut components,
+                                1,
+                                "collect component compact reference planes",
+                            )?;
+                            components.push((start, source));
+                        }
                     }
-                    let offset = anchor.checked_sub(122)?;
-                    let bytes = payload.get(offset..offset + COMPACT_COMPONENT_PLANE_RECORD_LEN)?;
-                    compact_component_reference_plane_record(bytes).map(|source| (offset, source))
-                })
-                .collect(),
+                }
+            }
         }
+        Ok(Self {
+            payload_len: payload.len(),
+            class_offsets,
+            declared,
+            components,
+        })
     }
 
     fn declared_source(&self, start: usize, end: usize) -> Option<u32> {
@@ -193,7 +214,15 @@ fn compact_declared_reference_plane_record(bytes: &[u8]) -> Option<u32> {
 
 #[cfg(test)]
 fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
-    CompactReferencePlaneIndex::new(payload).reference_source(0, payload.len())
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    ).ok()?;
+    CompactReferencePlaneIndex::new(&ctx, payload)
+        .ok()?
+        .reference_source(0, payload.len())
 }
 
 fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {

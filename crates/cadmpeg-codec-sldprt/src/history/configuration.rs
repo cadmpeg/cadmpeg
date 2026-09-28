@@ -586,12 +586,13 @@ pub(crate) fn project_configuration_sketch_states(
             &mut losses,
         )?;
         crate::resolved_features::profiles::project_marker_backed_sketches(
+            ctx,
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::profiles::project_sketch_block_profiles(
             &mut features,
             &mut ir.model.sketches,
@@ -711,6 +712,7 @@ pub(crate) fn project_configuration_sketch_states(
             },
         )?;
         crate::resolved_features::holes::project_hole_axes(
+            ctx,
             &mut features,
             &ir.model.sketch_entities,
             &crate::resolved_features::holes::HoleTopology {
@@ -724,7 +726,7 @@ pub(crate) fn project_configuration_sketch_states(
             },
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::relation_geometry::project_relation_bindings(
             &mut ir.model.sketch_constraints,
             &ir.model.sketches,

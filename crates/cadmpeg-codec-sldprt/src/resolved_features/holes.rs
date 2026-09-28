@@ -17,7 +17,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -2935,12 +2936,13 @@ fn direct_hole_position_feature<'a>(
 }
 
 pub(crate) fn project_hole_axes(
+    ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
     topology: &HoleTopology<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let surfaces = topology.surfaces;
     let native_features = histories
         .iter()
@@ -2991,7 +2993,7 @@ pub(crate) fn project_hole_axes(
             continue;
         };
         let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         for feature in native_features
             .values()
             .filter(|feature| position_features.contains(feature.id.as_str()))
@@ -3155,6 +3157,7 @@ pub(crate) fn project_hole_axes(
         }
         feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn cylindrical_bore_axes(
@@ -4265,10 +4268,11 @@ fn coplanar_plane_frames(
 }
 
 pub(super) fn sketch_feature_frames(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, (Point3, Vector3, Vector3)> {
+) -> Result<HashMap<String, (Point3, Vector3, Vector3)>, CodecError> {
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -4278,7 +4282,7 @@ pub(super) fn sketch_feature_frames(
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         for feature in &native_features {
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
@@ -4299,7 +4303,7 @@ pub(super) fn sketch_feature_frames(
                 .push(frame);
         }
     }
-    candidates
+    Ok(candidates
         .into_iter()
         .filter_map(|(feature, mut frames)| {
             frames.sort_by_key(reference_plane_frame_key);
@@ -4309,7 +4313,7 @@ pub(super) fn sketch_feature_frames(
             };
             Some((feature, *frame))
         })
-        .collect()
+        .collect())
 }
 
 fn compact_position_relations(

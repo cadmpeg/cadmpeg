@@ -10,6 +10,44 @@ use cadmpeg_ir::math::{Point3, Vector3};
 const EPS_PRINCIPAL_SKETCH_FRAME_ORTHONORMAL: f64 = 1.0e-12;
 
 #[test]
+fn compact_reference_plane_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"moCompRefPlane_c";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
+    let error = CompactReferencePlaneIndex::new(&ctx, payload)
+        .err()
+        .expect("class offset exceeds collection limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect compact reference plane classes"
+    ));
+}
+
+#[test]
+fn compact_reference_plane_index_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let payload = b"moCompRefPlane_c";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = u64::try_from(payload.len()).expect("fixture length") * 3 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root");
+    let error = CompactReferencePlaneIndex::new(&ctx, payload)
+        .err()
+        .expect("index scan exceeds work limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "index compact reference planes"
+    ));
+}
+
+#[test]
 fn every_principal_plane_has_a_sketch_frame() {
     for plane in [
         PrincipalPlane::Front,
@@ -106,7 +144,15 @@ fn compact_profile_uses_a_unique_lane_scoped_reference_plane() {
     payload.extend(component);
     let profile_start = payload.len();
     payload.extend([0xaa; 64]);
-    let plane_index = CompactReferencePlaneIndex::new(&payload);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("reference plane fixture fits service policy");
+    let plane_index = CompactReferencePlaneIndex::new(&ctx, &payload)
+        .expect("reference plane index fits service policy");
 
     assert_eq!(
         plane_index.profile_source(profile_start, profile_start, payload.len(),),

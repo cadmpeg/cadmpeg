@@ -23,6 +23,14 @@ use crate::resolved_features::holes::hole_axis_key;
 use crate::resolved_features::holes::partition_seeded_hole_axes;
 use crate::resolved_features::holes::plane_owned_bore_placements;
 use crate::resolved_features::holes::project_generated_hole_axes;
+
+fn plane_index(payload: &[u8]) -> CompactReferencePlaneIndex {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
+        .expect("reference plane fixture fits service policy");
+    CompactReferencePlaneIndex::new(&ctx, payload)
+        .expect("reference plane index fits service policy")
+}
 use crate::resolved_features::holes::project_hole_topology_axes;
 use crate::resolved_features::holes::project_topological_hole_constructions;
 use crate::resolved_features::holes::seeded_drilled_bore_candidates;
@@ -41,7 +49,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let frames = HashMap::from([(2, plane_frame)]);
 
     let with_component = profile_reference_plane_payload(true);
-    let index = CompactReferencePlaneIndex::new(&with_component);
+    let index = plane_index(&with_component);
     assert_eq!(
         feature_input_sketch_frame(&with_component, &frames, &index, 0, 0, with_component.len(),),
         Some((
@@ -52,7 +60,7 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     );
 
     let without_component = profile_reference_plane_payload(false);
-    let index = CompactReferencePlaneIndex::new(&without_component);
+    let index = plane_index(&without_component);
     assert_eq!(
         feature_input_sketch_frame(
             &without_component,
