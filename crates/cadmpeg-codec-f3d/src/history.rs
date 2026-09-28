@@ -3298,30 +3298,30 @@ fn bind_entity_selection_path(
 }
 
 pub(crate) fn project_feature_input_topologies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
-) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
+) -> Result<Vec<cadmpeg_ir::features::FeatureInputTopology>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FeatureInputTopology;
 
-    features
-        .iter()
-        .filter_map(|feature| {
-            let native_ref = feature.native_ref.as_deref()?;
+    let mut projected = Vec::new();
+    for feature in features {
+            let Some(native_ref) = feature.native_ref.as_deref() else { continue; };
             let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-            let scope = matching_scopes.next()?;
+            let Some(scope) = matching_scopes.next() else { continue; };
             if matching_scopes.next().is_some() {
-                return None;
+                continue;
             }
-            let previous_state_id = scope
+            let Some(previous_state_id) = scope
                 .previous_history_state_id()
                 .or_else(|| {
                     crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
                 })
                 .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
-                .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
-            let state = scope
+                .or_else(|| effective_scope_previous_history_state_id(scope, histories)) else { continue; };
+            let Some(state) = scope
                 .history_state_id()
                 .and_then(|state_id| {
                     unique_history_state_pair(histories, state_id, previous_state_id)
@@ -3329,47 +3329,53 @@ pub(crate) fn project_feature_input_topologies(
                 })
                 .or_else(|| {
                     unique_history_state(histories, previous_state_id).map(|(_, state)| state)
-                })?;
-            let topology = state.topology()?;
-            let prefix = feature_input_prefix(&feature.id, previous_state_id);
-            Some(FeatureInputTopology {
-                id: crate::design::edge_resolve::feature_input_topology_id(
-                    &feature.id,
-                    previous_state_id,
-                ),
-                input_of: feature.id.clone(),
-                bodies: (topology
-                    .bodies
-                    .iter()
-                    .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-                    .collect::<Vec<_>>())
-                .try_into()
-                .ok()?,
-                faces: (topology
-                    .faces
-                    .iter()
-                    .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
-                    .collect::<Vec<_>>())
-                .try_into()
-                .ok()?,
-                edges: (topology
-                    .edges
-                    .iter()
-                    .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
-                    .collect::<Vec<_>>())
-                .try_into()
-                .ok()?,
-                vertices: (topology
-                    .vertices
-                    .iter()
-                    .map(|slot| crate::ids::history_input_vertex_id(&prefix, slot))
-                    .collect::<Vec<_>>())
-                .try_into()
-                .ok()?,
-                native_ref: Some(state.id.clone()),
-            })
-        })
-        .collect()
+                }) else { continue; };
+            let Some(topology) = state.topology() else { continue; };
+            let Some(bodies) = project_input_members(ctx, &topology.bodies,
+                "collect F3D input bodies", |slot| crate::ids::history_input_body_id_charged(
+                    ctx, &feature.id, previous_state_id, slot))? else { continue; };
+            let Some(faces) = project_input_members(ctx, &topology.faces,
+                "collect F3D input faces", |slot| crate::ids::history_input_face_id_charged(
+                    ctx, &feature.id, previous_state_id, slot))? else { continue; };
+            let Some(edges) = project_input_members(ctx, &topology.edges,
+                "collect F3D input edges", |slot| crate::ids::history_input_edge_id_charged(
+                    ctx, &feature.id, previous_state_id, slot))? else { continue; };
+            let Some(vertices) = project_input_members(ctx, &topology.vertices,
+                "collect F3D input vertices", |slot| crate::ids::history_input_vertex_id_charged(
+                    ctx, &feature.id, previous_state_id, slot))? else { continue; };
+            let id = crate::ids::history_input_state_id_charged(ctx, &feature.id, previous_state_id)?;
+            let input_of = cadmpeg_ir::features::FeatureId::mint(copy_history_string(
+                ctx, feature.id.as_str(), "copy F3D input feature identity",
+            )?).map_err(cadmpeg_core::CodecError::malformed)?;
+            let native_ref = copy_history_string(ctx, &state.id, "copy F3D input state reference")?;
+            ctx.charge_collection_items(1, "collect F3D input topologies")?;
+            projected.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect F3D input topologies", 0, 1)
+            })?;
+            projected.push(FeatureInputTopology {
+                id, input_of, bodies, faces, edges, vertices, native_ref: Some(native_ref),
+            });
+    }
+    Ok(projected)
+}
+
+fn project_input_members<T: Eq + std::hash::Hash>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    slots: &[i64],
+    operation: &'static str,
+    mut id: impl FnMut(i64) -> Result<T, cadmpeg_core::CodecError>,
+) -> Result<Option<cadmpeg_ir::features::DistinctMembers<T>>, cadmpeg_core::CodecError> {
+    let count = u64::try_from(slots.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    let mut members = Vec::new();
+    members.try_reserve(slots.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    for &slot in slots {
+        members.push(id(slot)?);
+    }
+    ctx.charge_collection_items(count, "validate F3D input topology members")?;
+    Ok(members.try_into().ok())
 }
 
 /// Resolve persistent vertex recipes in the last history-bearing feature state

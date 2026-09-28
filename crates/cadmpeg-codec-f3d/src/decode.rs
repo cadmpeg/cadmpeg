@@ -2906,11 +2906,12 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.parameters,
         );
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
+            ctx,
             &self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
             &self.native.design_edge_operands,
-        );
+        )?;
         crate::history::bind_feature_outputs(
             ctx,
             &mut self.ir.model.features,
