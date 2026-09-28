@@ -15,6 +15,50 @@ fn camera_tokens_refuse_at_matching_collection_limit() {
     );
 }
 
+#[test]
+fn gui_geom_format_fields_refuse_at_matching_collection_limit() {
+    let xml = roxmltree::Document::parse("<GeomFormat><GeomIndex/></GeomFormat>")
+        .expect("valid record XML");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "FCStd GUI GeomFormat fields", |ctx| {
+            super::super::validate_gui_geom_format_record(ctx, xml.root_element(), "format")
+        },
+    );
+}
+
+#[test]
+fn gui_center_line_fields_refuse_at_matching_collection_limit() {
+    let xml = roxmltree::Document::parse("<CenterLine><Start/></CenterLine>")
+        .expect("valid record XML");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "FCStd GUI CenterLine fields", |ctx| {
+            super::super::validate_gui_center_line_record(ctx, xml.root_element(), "line")
+        },
+    );
+}
+
+#[test]
+fn gui_cosmetic_edge_fields_refuse_at_matching_collection_limit() {
+    let xml = roxmltree::Document::parse("<CosmeticEdge><Style/></CosmeticEdge>")
+        .expect("valid record XML");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "FCStd GUI CosmeticEdge fields", |ctx| {
+            super::super::validate_gui_cosmetic_edge_record(ctx, xml.root_element(), "edge")
+        },
+    );
+}
+
+#[test]
+fn gui_cosmetic_vertex_fields_refuse_at_matching_collection_limit() {
+    let xml = roxmltree::Document::parse("<CosmeticVertex><Point/></CosmeticVertex>")
+        .expect("valid record XML");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "FCStd GUI CosmeticVertex fields", |ctx| {
+            super::super::validate_gui_cosmetic_vertex_record(ctx, xml.root_element(), "vertex")
+        },
+    );
+}
+
 fn populated_appearance_plan() -> super::super::AppearancePlan {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
