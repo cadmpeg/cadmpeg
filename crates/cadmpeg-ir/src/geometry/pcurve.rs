@@ -2086,6 +2086,32 @@ impl PcurveNurbs {
         self.poles.points()
     }
 
+    /// Replace every admitted pole position when the supplied lane has the same cardinality.
+    ///
+    /// The check precedes mutation. Pole weights and knots stay in place.
+    pub fn replace_admitted_control_points(&mut self, positions: &[FinitePoint2]) -> bool {
+        let count = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => points.len(),
+            PcurveNurbsPoles::Rational { points } => points.len(),
+        };
+        if positions.len() != count {
+            return false;
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for (point, position) in points.iter_mut().zip(positions) {
+                    *point = *position;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for (pole, position) in points.iter_mut().zip(positions) {
+                    pole.point = *position;
+                }
+            }
+        }
+        true
+    }
+
     /// Atomically edit pole positions and preserve finite coordinates.
     ///
     /// The closure states its own refusal, which discards the whole edit.

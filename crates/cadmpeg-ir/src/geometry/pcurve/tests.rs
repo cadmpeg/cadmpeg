@@ -33,6 +33,26 @@ fn admitted_pcurve_parts_keep_rational_pole_storage() {
 }
 
 #[test]
+fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let prior = curve.clone();
+    assert!(!curve.replace_admitted_control_points(&[]));
+    assert_eq!(curve, prior);
+    let mut positions = Vec::new();
+    let mut index = 0;
+    while curve.pole_rows().point_at(index).is_some() {
+        positions.push(FinitePoint2::new(Point2::new(index as f64, 2.0)).unwrap());
+        index += 1;
+    }
+    let weights = curve.weights();
+    assert!(curve.replace_admitted_control_points(&positions));
+    assert_eq!(curve.control_points(), positions);
+    assert_eq!(curve.weights(), weights);
+}
+
+#[test]
 fn pcurve_copy_refuses_knot_and_pole_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

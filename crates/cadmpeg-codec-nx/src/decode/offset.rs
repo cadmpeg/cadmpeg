@@ -2556,38 +2556,38 @@ fn surface_parameters_solved(surface: &SolvedSurfaceGeometry, uv: [f64; 2]) -> O
 }
 
 pub(super) fn normalize_pcurve_parameters(
+    ctx: &DecodeContext<'_>,
     pcurve: &mut PcurveGeometry,
     surface: &SurfaceGeometry,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
-            let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
-            let converted_end = surface_parameters(surface, [end.u, end.v])?;
-            *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::new(
-                converted_origin,
-                cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
+            let Some(converted_origin) = surface_parameters(surface, [origin.u, origin.v]) else { return Ok(None); };
+            let Some(converted_end) = surface_parameters(surface, [end.u, end.v]) else { return Ok(None); };
+            let Some(converted_direction) = cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
                     converted_end.u - converted_origin.u,
                     converted_end.v - converted_origin.v,
-                ))?,
-            );
+                )) else { return Ok(None); };
+            *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::new(converted_origin, converted_direction);
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            let converted = nurbs
-                .control_points()
-                .iter()
-                .map(|point| surface_parameters(surface, [point.u, point.v]))
-                .collect::<Option<Vec<_>>>()?;
-            let mut converted = converted.into_iter();
-            nurbs
-                .map_control_points(|point| Ok(converted.next().unwrap_or(point)))
-                .ok()?;
+            let mut converted = Vec::new();
+            let mut ordinal = 0_usize;
+            while let Some(point) = nurbs.pole_rows().point_at(ordinal) {
+                let Some(position) = surface_parameters(surface, [point.u, point.v]) else { return Ok(None); };
+                ctx.charge_collection_items(1, "nx normalized pcurve controls")?;
+                converted.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx normalized pcurve controls", 0, 1))?;
+                converted.push(position);
+                ordinal = ordinal.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("nx normalized pcurve controls", 0, u64::MAX))?;
+            }
+            if !nurbs.replace_admitted_control_points(&converted) { return Ok(None); }
         }
         _ => {}
     }
-    Some(())
+    Ok(Some(()))
 }
 
 #[cfg(test)]
