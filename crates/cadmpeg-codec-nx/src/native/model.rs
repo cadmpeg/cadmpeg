@@ -1411,11 +1411,12 @@ impl NativeModel {
         let material_texture_catalog_entries =
             material_texture_catalog_entries(container, &material_texture_assets);
         let persistent_handles = persistent_handles(
+            ctx,
             &object_references,
             &data_block_control_references,
             &external_reference_records,
             &external_reference_tail_reference_pairs,
-        );
+        )?;
         let (
             fast_load_component_prototypes,
             fast_load_component_uuids,
