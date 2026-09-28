@@ -1295,6 +1295,45 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
 }
 
 #[test]
+fn feature_name_index_refuses_caller_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut ir = CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:id#named-feature").expect("identity grammar"),
+        ordinal: 0,
+        name: Some("Named feature".into()),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::History,
+                children: cadmpeg_ir::features::TreeChildren::default(),
+            }),
+        ),
+        native_ref: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let mut report = super::empty_report(true);
+    let error = append_design_losses(&ctx, &ir, &mut report)
+        .expect_err("feature identity and name require retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "index SLDPRT feature names"
+    ));
+}
+
+#[test]
 fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
