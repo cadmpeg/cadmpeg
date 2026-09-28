@@ -29,8 +29,8 @@ use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
     entity_suffix_value, entity_value_schema_selections, external_reference_views,
-    object_production, preview_views, range_interval, reference_signature,
-    resolved_payload_references, resolved_storage_link, semantic_entity_indices, store_projection,
+    object_production, payload_references, preview_views, range_interval, reference_signature,
+    semantic_entity_indices, store_projection,
     terminal_null_entity_id, validate_alias_surface_tags, validate_owner_chart_support_aliases,
     value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog, CatiaCatalogEntry,
     CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
@@ -330,16 +330,6 @@ impl CatiaNative {
                     graph.id
                 )));
             }
-            let record_ids = graph
-                .records
-                .iter()
-                .map(|record| record.id.clone())
-                .collect::<Vec<_>>();
-            let record_design_objects = graph
-                .records
-                .iter()
-                .map(|record| record.design_object.clone())
-                .collect::<Vec<_>>();
             let record_indices = graph
                 .records
                 .iter()
@@ -366,12 +356,23 @@ impl CatiaNative {
                     .owner_entity_id()
                     .map(|owner| design_object_id(graph.byte_offset, owner));
                 let paired_entity = graph_entities.get(ordinal).copied();
-                let expected_storage = resolved_storage_link(
-                    record.storage_ref(),
-                    &record_ids,
-                    &record_design_objects,
-                    &record_indices,
-                );
+                let expected_storage = record.storage_ref()
+                    .and_then(|identity| record_indices.get(&identity))
+                    .and_then(|index| graph.records.get(*index));
+                let expected_reference_count = payload_references(&record.payload).count();
+                let references_match = expected_reference_count == record.references.len()
+                    && record.references.iter().zip(payload_references(&record.payload))
+                        .all(|(actual, (entity_id, payload_offset, source))| {
+                            let target = record_indices.get(&entity_id)
+                                .and_then(|index| graph.records.get(*index));
+                            actual.entity_id() == entity_id
+                                && actual.payload_offset() == payload_offset as u64
+                                && actual.source() == &source
+                                && actual.is_null() == (Some(entity_id) == terminal_null_entity_id)
+                                && actual.target() == target.map(|target| target.id.as_str())
+                                && actual.design_object() == target
+                                    .and_then(|target| target.design_object.as_deref())
+                        });
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.owner != expected_owner
                     || (record.class_ref(), record.storage_ref())
@@ -384,7 +385,8 @@ impl CatiaNative {
                     || record.entity_id() != paired_entity.map(|entity| entity.entity_id)
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
                     || (record.storage_record(), record.storage_design_object())
-                        != (expected_storage.0.as_deref(), expected_storage.1.as_deref())
+                        != (expected_storage.map(|target| target.id.as_str()),
+                            expected_storage.and_then(|target| target.design_object.as_deref()))
                     || record.inline_body.as_ref().is_some_and(|body| {
                         (graph_entities.is_empty() && !object_graph::is_inline_body(body))
                             || body.first() != Some(&record.lead)
@@ -396,14 +398,7 @@ impl CatiaNative {
                             || !record.payload.fields.is_empty()
                     })
                     || record.inline_body.is_none() && record.head.is_empty()
-                    || record.references
-                        != resolved_payload_references(
-                            &record.payload,
-                            &record_ids,
-                            &record_design_objects,
-                            &record_indices,
-                            terminal_null_entity_id,
-                        )
+                    || !references_match
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "object graph `{}` has an invalid record sequence",

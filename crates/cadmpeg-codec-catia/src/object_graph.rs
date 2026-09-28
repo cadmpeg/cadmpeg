@@ -230,6 +230,33 @@ pub(crate) struct ObjectPayload {
     pub(crate) fields: Vec<PayloadField>,
 }
 
+impl ObjectPayload {
+    pub(crate) fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut fields = Vec::new();
+        for field in &self.fields {
+            let copy = match field {
+                PayloadField::Blob { bytes, offset } => PayloadField::Blob {
+                    bytes: crate::resource::copy_retained_slice(ctx, bytes, "catia_native_payload_blob")?,
+                    offset: *offset,
+                },
+                PayloadField::BulkTable { count, rows, offset } => PayloadField::BulkTable {
+                    count: *count,
+                    rows: crate::resource::copy_retained_slice(ctx, rows, "catia_native_payload_bulk_rows")?,
+                    offset: *offset,
+                },
+                PayloadField::List { declared_count, items, offset } => PayloadField::List {
+                    declared_count: *declared_count,
+                    items: crate::resource::copy_retained_slice(ctx, items, "catia_native_payload_list_items")?,
+                    offset: *offset,
+                },
+                other => other.clone(),
+            };
+            crate::resource::push(ctx, &mut fields, copy, "catia_native_payload_fields")?;
+        }
+        Ok(Self { size: self.size, fields })
+    }
+}
+
 /// One counted reference suffix whose reference prefix is serialized twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct RepeatedReferenceSuffix {

@@ -24,6 +24,33 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn native_graph_projection_refuses_caller_limits() {
+    use cadmpeg_core::CodecError;
+
+    let bytes = object_graph_stream();
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::parse(ctx, &bytes)
+    })
+    .expect("service profile admits object graph parsing")
+    .expect("fixture has an object graph");
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
+    });
+    assert!(matches!(retained, Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_graph_id"));
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::native_object_graph(ctx, parsed.clone(), Vec::new(), None, None)
+    });
+    assert!(matches!(collection, Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::native_object_graph(ctx, parsed, Vec::new(), None, None)
+    })
+    .expect("service profile admits native graph projection");
+    assert!(!admitted.0.records.is_empty());
+}
+
+#[test]
 fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
     let mut bytes = object_graph_stream();
     bytes.extend(catalog_stream(&[
