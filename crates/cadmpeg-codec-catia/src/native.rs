@@ -2025,7 +2025,7 @@ impl CatiaRelationExpression {
         relation_type_signature(placeholder, &self.type_signature.value)
     }
 
-    fn signature_charged(
+    pub(crate) fn signature_charged(
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {

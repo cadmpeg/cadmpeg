@@ -148,7 +148,7 @@ pub(crate) fn transfer_parameters(
         let Some(expression) = expression_entity.relation_expression() else {
             continue;
         };
-        let Some(signature) = expression.signature() else {
+        let Some(signature) = expression.signature_charged(ctx)? else {
             continue;
         };
         let mut transferred = Vec::with_capacity(formula.parameter_dependencies.len() + 1);
@@ -1371,7 +1371,7 @@ fn relation_program_output_candidate(
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
 ) -> Result<Option<(FormulaProgramCandidate, FormulaParameterCandidate)>, cadmpeg_core::CodecError>
 {
-    let Some(signature) = expression.signature() else {
+    let Some(signature) = expression.signature_charged(ctx)? else {
         return Ok(None);
     };
     if inputs.len() != signature.inputs.len()
