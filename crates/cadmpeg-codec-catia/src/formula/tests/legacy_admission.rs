@@ -124,3 +124,46 @@ fn formula_legacy_candidates_transfer_under_service_profile() {
     .expect("service profile admits three legacy candidates");
     assert_eq!(ir.model.parameters.len(), 3);
 }
+
+#[test]
+fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
+    let native = legacy_values();
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..=256 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped)
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => {}
+            Err(error) => panic!("unexpected legacy transfer error: {error}"),
+        }
+    }
+    for operation in [
+        "catia_legacy_parameter_candidates",
+        "catia_legacy_parameter_entity_index",
+        "catia_legacy_parameter_entity_members",
+        "catia_legacy_parameter_name_index",
+        "catia_legacy_parameter_name_members",
+        "catia_legacy_relation_index",
+        "catia_legacy_relation_members",
+    ] {
+        assert!(refused.contains(operation), "no low-limit refusal at {operation}");
+    }
+}
+
+#[test]
+fn formula_legacy_parameter_identity_refuses_retained_limit() {
+    let native = legacy_values();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+            &mut cadmpeg_ir::Annotations::default(),
+            &crate::decode::ModelingGraphScope::Unscoped)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_legacy_parameter_id"));
+}
