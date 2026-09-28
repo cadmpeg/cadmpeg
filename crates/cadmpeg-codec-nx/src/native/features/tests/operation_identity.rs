@@ -55,7 +55,10 @@ fn operation_header_identity_witness_survives_reordering() {
         label(1, [None; 4]),
         label(2, [Some(61), None, None, None]),
     ];
-    assign_operation_header_identities(&mut original, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut original, &block_identities)
+    })
+    .unwrap();
     let identity = original[0]
         .stable_identity
         .clone()
@@ -74,7 +77,10 @@ fn operation_header_identity_witness_survives_reordering() {
     for label in &mut reordered {
         label.stable_identity = None;
     }
-    assign_operation_header_identities(&mut reordered, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut reordered, &block_identities)
+    })
+    .unwrap();
     assert_eq!(
         reordered[1].stable_identity.as_deref(),
         Some(identity.as_str())
@@ -137,7 +143,10 @@ fn operation_header_identity_rejects_duplicate_tuples() {
         label(0, [Some(55), Some(56), None, None]),
         label(1, [Some(55), Some(56), None, None]),
     ];
-    assign_operation_header_identities(&mut labels, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+    })
+    .unwrap();
     assert!(labels.iter().all(|label| label.stable_identity.is_none()));
 }
 
@@ -205,8 +214,31 @@ fn operation_header_identity_survives_offset_store_insertion() {
 fn operation_header_identity_requires_unique_resolved_blocks() {
     let block_identities = BTreeMap::from([(55, None), (56, Some("block-56".to_string()))]);
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
-    assign_operation_header_identities(&mut labels, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+    })
+    .unwrap();
     assert!(labels[0].stable_identity.is_none());
+}
+
+#[test]
+fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
+    let block_identities = BTreeMap::from([(55, Some("block-55".to_string()))]);
+    let mut labels = vec![label(0, [Some(55), None, None, None])];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = assign_operation_header_identities(&ctx, &mut labels, &block_identities)
+        .err()
+        .expect("scoped key refusal");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "reserve NX operation header keys"
+    ));
 }
 
 #[test]
