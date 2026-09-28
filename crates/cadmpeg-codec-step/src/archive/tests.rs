@@ -524,7 +524,8 @@ fn caller_composition_resolves_forwarded_zip_target_without_root_import() {
         member,
         query,
         fragment,
-    } = resolve_uri_for_test(&ctx, ROOT_NAME, resource_uri).expect("resolve forwarded ZIP resource")
+    } = resolve_uri_for_test(&ctx, ROOT_NAME, resource_uri)
+        .expect("resolve forwarded ZIP resource")
     else {
         panic!("forwarded ZIP resource became external");
     };

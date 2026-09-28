@@ -14,20 +14,19 @@ const VALIDATION_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('
 const VALIDATION_COLLECTION_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=CARTESIAN_POINT('point',(1.,2.,3.));#5=ITEM(#4);ENDSEC;END-ISO-10303-21;";
 const VALIDATION_UNSUPPORTED_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=ITEM();ENDSEC;END-ISO-10303-21;";
 
-fn validation_resource_refuses(source: &[u8], operation: &str, dimension: cadmpeg_core::decode::ResourceDimension) {
+fn validation_resource_refuses(
+    source: &[u8],
+    operation: &str,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) = crate::parse::parse(source)
-        .expect("valid validation collection source");
+    let (exchange, _) = crate::parse::parse(source).expect("valid validation collection source");
     let setup_arena = DecodeArena::new();
     let setup_policy = DecodePolicy::service();
-    let (setup_ctx, _) = DecodeContext::from_root_bytes(
-        source,
-        &setup_arena,
-        &setup_policy,
-    )
-    .expect("root fits setup policy");
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy)
+        .expect("root fits setup policy");
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup decodes");
@@ -65,13 +64,34 @@ macro_rules! validation_collection_test {
     };
 }
 
-validation_collection_test!(validation_representation_items_refuse_collection_limit, "step_validation_representation_items");
-validation_collection_test!(validation_representations_refuse_collection_limit, "step_validation_representations");
-validation_collection_test!(validation_used_representations_refuse_collection_limit, "step_validation_used_representations");
-validation_collection_test!(validation_points_refuse_collection_limit, "step_validation_points");
-validation_collection_test!(validation_claims_refuse_collection_limit, "step_validation_claims");
-validation_collection_test!(validation_referenced_points_refuse_collection_limit, "step_validation_referenced_points");
-validation_collection_test!(validation_notes_refuse_collection_limit, "step_validation_notes");
+validation_collection_test!(
+    validation_representation_items_refuse_collection_limit,
+    "step_validation_representation_items"
+);
+validation_collection_test!(
+    validation_representations_refuse_collection_limit,
+    "step_validation_representations"
+);
+validation_collection_test!(
+    validation_used_representations_refuse_collection_limit,
+    "step_validation_used_representations"
+);
+validation_collection_test!(
+    validation_points_refuse_collection_limit,
+    "step_validation_points"
+);
+validation_collection_test!(
+    validation_claims_refuse_collection_limit,
+    "step_validation_claims"
+);
+validation_collection_test!(
+    validation_referenced_points_refuse_collection_limit,
+    "step_validation_referenced_points"
+);
+validation_collection_test!(
+    validation_notes_refuse_collection_limit,
+    "step_validation_notes"
+);
 
 #[test]
 fn validation_note_text_refuses_retained_limit() {
@@ -97,8 +117,8 @@ fn validation_limit_result(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let (exchange, _) = crate::parse::parse(VALIDATION_LIMIT_SOURCE)
-        .expect("valid validation-property exchange");
+    let (exchange, _) =
+        crate::parse::parse(VALIDATION_LIMIT_SOURCE).expect("valid validation-property exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     if let Some(limit) = retained_limit {
@@ -107,10 +127,14 @@ fn validation_limit_result(
     if let Some(limit) = collection_limit {
         policy.limits.max_collection_items = limit;
     }
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry_policy = DecodePolicy::service();
+    let (geometry_ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &geometry_policy)
+            .expect("root fits geometry policy");
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &geometry_ctx)?;
     let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy)
         .expect("root fits selected policy");
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
     super::decode(&exchange, &geometry.value, &mut ir, &ctx)?;
     Ok(())
 }
@@ -188,8 +212,8 @@ fn validation_mesh_triangles_refuse_work_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits work policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits work policy");
     assert!(matches!(
         super::mesh_properties(result.ir(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -223,7 +247,8 @@ fn complex_validation_measure_carrier_is_decoded() {
         loss.message
             .contains("geometric validation property #41 has an unsupported value")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

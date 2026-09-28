@@ -71,7 +71,10 @@ fn drawing_retained_refuses_with_typed(records: &str, operation: &str, typed: &[
 
 #[test]
 fn drawing_candidates_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_candidates");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_candidates",
+    );
 }
 
 #[test]
@@ -81,12 +84,18 @@ fn drawing_discovery_losses_refuse_collection_limit() {
 
 #[test]
 fn drawing_ids_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_ids");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_ids",
+    );
 }
 
 #[test]
 fn hidden_drawing_ids_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');#2=INVISIBILITY((#1));", "step_hidden_drawing_ids");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');#2=INVISIBILITY((#1));",
+        "step_hidden_drawing_ids",
+    );
 }
 
 #[test]
@@ -94,8 +103,8 @@ fn drawing_reference_walk_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits depth policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     let value = crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]);
     assert!(matches!(
         super::super::visit_drawing_references(&value, &ctx, &mut |_| Ok(())),
@@ -107,12 +116,18 @@ fn drawing_reference_walk_refuses_depth_limit() {
 
 #[test]
 fn drawing_target_groups_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_target_groups");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_target_groups",
+    );
 }
 
 #[test]
 fn drawing_target_members_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_target_members");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_target_members",
+    );
 }
 
 #[test]
@@ -123,22 +138,34 @@ fn drawing_external_documents_refuse_collection_limit() {
 
 #[test]
 fn drawing_stored_parameters_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_stored_parameters");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_stored_parameters",
+    );
 }
 
 #[test]
 fn drawing_entries_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_entries");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_entries",
+    );
 }
 
 #[test]
 fn drawing_typed_claims_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_typed_claims");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_typed_claims",
+    );
 }
 
 #[test]
 fn drawing_ir_items_refuse_collection_limit() {
-    drawing_refuses("#1=DRAWING_DEFINITION('Main','detail');", "step_drawing_ir_items");
+    drawing_refuses(
+        "#1=DRAWING_DEFINITION('Main','detail');",
+        "step_drawing_ir_items",
+    );
 }
 
 #[test]
@@ -149,7 +176,8 @@ fn drawing_referenced_targets_refuse_collection_limit() {
     );
 }
 
-const TYPED_TARGET_SOURCE: &str = "#1=REPRESENTATION_CONTEXT('','');#2=PRESENTATION_VIEW('Front',(#3),#1);#3=ITEM('opaque');";
+const TYPED_TARGET_SOURCE: &str =
+    "#1=REPRESENTATION_CONTEXT('','');#2=PRESENTATION_VIEW('Front',(#3),#1);#3=ITEM('opaque');";
 
 #[test]
 fn drawing_source_type_text_refuses_retained_limit() {
@@ -180,7 +208,11 @@ fn drawing_native_target_groups_refuse_collection_limit() {
 #[test]
 fn drawing_native_target_members_refuse_collection_limit() {
     let source = format!("{HEADER}{TYPED_TARGET_SOURCE}{TAIL}");
-    drawing_refuses_source_with_typed(source.as_bytes(), "step_drawing_native_target_members", &[3]);
+    drawing_refuses_source_with_typed(
+        source.as_bytes(),
+        "step_drawing_native_target_members",
+        &[3],
+    );
 }
 
 #[test]
@@ -343,7 +375,12 @@ fn drawing_wrapper_identity_text_refuses_retained_limit() {
 fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
-    let targets = BTreeMap::from([(1, ["first".to_owned(), "second".to_owned()].into_iter().collect())]);
+    let targets = BTreeMap::from([(
+        1,
+        ["first".to_owned(), "second".to_owned()]
+            .into_iter()
+            .collect(),
+    )]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -361,7 +398,12 @@ fn drawing_ambiguous_identity_copy_refuses_collection_limit() {
 fn drawing_ambiguous_identity_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid target exchange");
-    let targets = BTreeMap::from([(1, ["first".to_owned(), "second".to_owned()].into_iter().collect())]);
+    let targets = BTreeMap::from([(
+        1,
+        ["first".to_owned(), "second".to_owned()]
+            .into_iter()
+            .collect(),
+    )]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
@@ -442,7 +484,10 @@ fn drawing_untyped_relationship_loss_refuses_collection_limit() {
                     && refusal.operation == "step_drawing_losses"
         )
     });
-    assert!(refused, "no collection limit refused the drawing relationship loss");
+    assert!(
+        refused,
+        "no collection limit refused the drawing relationship loss"
+    );
 }
 
 fn decoded_drawings(
@@ -451,16 +496,25 @@ fn decoded_drawings(
 ) -> BTreeMap<u64, cadmpeg_ir::drawings::Drawing> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits default policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits default policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     super::super::decode(exchange, &mut ir, &HashSet::new(), &BTreeMap::new(), &ctx)
         .expect("valid drawing graph");
-    ir.model.drawings.into_iter().map(|drawing| {
-        let id = drawing.native_ref.rsplit_once('#')
-            .expect("drawing source identity").1.parse().expect("numeric source identity");
-        (id, drawing)
-    }).collect()
+    ir.model
+        .drawings
+        .into_iter()
+        .map(|drawing| {
+            let id = drawing
+                .native_ref
+                .rsplit_once('#')
+                .expect("drawing source identity")
+                .1
+                .parse()
+                .expect("numeric source identity");
+            (id, drawing)
+        })
+        .collect()
 }
 
 fn sheet_usage_loss_refuses(typed_id: u64) {

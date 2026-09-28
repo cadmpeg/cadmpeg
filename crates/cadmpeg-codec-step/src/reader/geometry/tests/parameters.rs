@@ -21,9 +21,11 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_curve_refusal(collection_limit: u64, depth_limit: Option<u64>) -> cadmpeg_core::CodecError {
+fn source_curve_refusal(
+    collection_limit: u64,
+    depth_limit: Option<u64>,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("valid source curve exchange");
     let scales = super::super::UnitScales {
@@ -38,8 +40,8 @@ fn source_curve_refusal(collection_limit: u64, depth_limit: Option<u64>) -> cadm
     if let Some(limit) = depth_limit {
         policy.limits.max_recursion_depth = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
         .expect_err("source curve admission exceeds the limit")
 }
@@ -97,8 +99,8 @@ fn parameter_inference_point_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty input fits the policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
     assert!(matches!(
         super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -165,8 +167,8 @@ fn assert_parameter_inference_refusal(
     if let Some(limit) = retained_limit {
         policy.limits.max_retained_bytes = limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty input fits the policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
     assert!(matches!(
         super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -395,15 +397,18 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let start_point = nurbs_curve_point_at(&nurbs, 0.0).expect("start point");
     let end_point = nurbs_curve_point_at(&nurbs, 1.0).expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
-    let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed).expect("resource allocation did not fail")
+    let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
+        .expect("resource allocation did not fail")
         .expect("start witness")
         .get();
-    let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start).expect("resource allocation did not fail")
+    let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start)
+        .expect("resource allocation did not fail")
         .expect("unanchored end witness")
         .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
-    let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed).expect("resource allocation did not fail")
+    let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed)
+        .expect("resource allocation did not fail")
         .expect("end witness")
         .get();
 
@@ -416,8 +421,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
 
     let ir = CadIr::empty();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -462,7 +467,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             0.25,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([10.0, 10.0])
     );
     assert_eq!(
@@ -474,7 +480,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             0.25,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -486,7 +493,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             0.25,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([0.25, 0.25])
     );
     assert_eq!(
@@ -498,7 +506,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             0.25,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -510,7 +519,8 @@ fn surface_parameter_units_follow_the_surface_chart() {
             0.25,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         None
     );
 }
@@ -520,8 +530,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
 
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
@@ -593,7 +603,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             angle_scale,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([length_scale, 1.0])
     );
     assert_eq!(
@@ -605,7 +616,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             angle_scale,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([angle_scale, length_scale])
     );
 }
@@ -615,8 +627,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
 
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
@@ -656,7 +668,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
             0.001,
             angle_scale,
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
@@ -665,7 +678,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
             0.001,
             angle_scale,
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
@@ -674,7 +688,8 @@ fn directrix_parameter_units_follow_step_curve_equations() {
             0.001,
             angle_scale,
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
 }
@@ -684,8 +699,8 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
 
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
@@ -741,7 +756,8 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         None
     );
 }
@@ -751,8 +767,8 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
 
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
@@ -799,7 +815,8 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
             &ctx,
-        ).expect("scale evaluation"),
+        )
+        .expect("scale evaluation"),
         Some([std::f64::consts::PI / 180.0, 10.0])
     );
 }
@@ -918,12 +935,16 @@ ENDSEC;END-ISO-10303-21;",
     .expect("parse plane-angle units");
     let mut active = BTreeSet::new();
     assert_eq!(
-        unit_scale_radians(1, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
+        unit_scale_radians(1, &exchange, &mut active, None)
+            .expect("unit scale evaluation")
+            .map(PositiveReal::get),
         Some(1.0e-3)
     );
     assert!(active.is_empty());
     assert_eq!(
-        unit_scale_radians(2, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
+        unit_scale_radians(2, &exchange, &mut active, None)
+            .expect("unit scale evaluation")
+            .map(PositiveReal::get),
         Some(1.0)
     );
     assert!(active.is_empty());
@@ -944,12 +965,16 @@ ENDSEC;END-ISO-10303-21;",
     .expect("parse conversion-based plane-angle units");
     let mut active = BTreeSet::new();
     assert_eq!(
-        unit_scale_radians(3, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
+        unit_scale_radians(3, &exchange, &mut active, None)
+            .expect("unit scale evaluation")
+            .map(PositiveReal::get),
         Some(2.0e-3)
     );
     assert!(active.is_empty());
     assert_eq!(
-        unit_scale_radians(6, &exchange, &mut active, None).expect("unit scale evaluation").map(PositiveReal::get),
+        unit_scale_radians(6, &exchange, &mut active, None)
+            .expect("unit scale evaluation")
+            .map(PositiveReal::get),
         Some(2.0)
     );
     assert!(active.is_empty());
@@ -957,6 +982,8 @@ ENDSEC;END-ISO-10303-21;",
 
 #[test]
 fn recursive_unit_and_pcurve_failures_release_active_ids() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     let (exchange, _) = crate::parse::parse(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=CONVERSION_BASED_UNIT('',#2);\
@@ -970,16 +997,19 @@ ENDSEC;END-ISO-10303-21;",
     )
     .expect("parse recursive failure graph");
     let mut active = BTreeSet::new();
-    assert!(unit_scale_mm(1, &exchange, &mut active, None).expect("unit scale evaluation").is_none());
+    assert!(unit_scale_mm(1, &exchange, &mut active, None)
+        .expect("unit scale evaluation")
+        .is_none());
     assert!(active.is_empty());
-    assert!(unit_scale_radians(1, &exchange, &mut active, None).expect("unit scale evaluation").is_none());
+    assert!(unit_scale_radians(1, &exchange, &mut active, None)
+        .expect("unit scale evaluation")
+        .is_none());
     assert!(active.is_empty());
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,

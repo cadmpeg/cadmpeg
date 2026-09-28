@@ -460,8 +460,14 @@ impl PmiDimension {
         let compatible = matches!(
             (self.tolerance.as_ref(), &tolerance),
             (None, _)
-                | (Some(DimensionTolerance::PlusMinus { .. }), DimensionTolerance::Fit { .. })
-                | (Some(DimensionTolerance::Fit { .. }), DimensionTolerance::PlusMinus { .. })
+                | (
+                    Some(DimensionTolerance::PlusMinus { .. }),
+                    DimensionTolerance::Fit { .. }
+                )
+                | (
+                    Some(DimensionTolerance::Fit { .. }),
+                    DimensionTolerance::PlusMinus { .. }
+                )
         );
         if !compatible {
             return Ok(false);
@@ -644,8 +650,8 @@ mod tests {
 
     use super::{
         DatumReference, DatumReferences, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-        LimitsAndFits,
-        PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
+        LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity,
+        PmiTarget, PmiValue,
     };
     use crate::document::CadIr;
     use crate::ids::PmiId;
@@ -686,7 +692,9 @@ mod tests {
         });
         ir.finalize();
 
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 
     #[test]
@@ -857,8 +865,7 @@ mod tests {
             grade: "IT7".into(),
             source: "ISO 286".into(),
         };
-        let mut dimension = PmiDimension::new(DimensionKind::Size, None, None)
-            .expect("dimension");
+        let mut dimension = PmiDimension::new(DimensionKind::Size, None, None).expect("dimension");
         assert!(dimension
             .merge_tolerance(DimensionTolerance::Fit { fit: fit.clone() })
             .expect("fit"));
@@ -926,7 +933,9 @@ mod tests {
         });
         ir.finalize();
 
-        assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 
     #[test]
@@ -1004,7 +1013,9 @@ mod tests {
             },
         });
 
-        let findings = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").findings;
+        let findings = validate_neutral(&ir, Vec::new())
+            .expect("resource allocation did not fail")
+            .findings;
         assert!(
             findings
                 .iter()

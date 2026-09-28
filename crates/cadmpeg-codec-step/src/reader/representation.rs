@@ -61,6 +61,9 @@ mod tests {
                 .as_slice()
             )
         );
-        assert_eq!(items(&record).map(Iterator::collect::<Vec<_>>), Some(vec![2, 3]));
+        assert_eq!(
+            items(&record).map(Iterator::collect::<Vec<_>>),
+            Some(vec![2, 3])
+        );
     }
 }

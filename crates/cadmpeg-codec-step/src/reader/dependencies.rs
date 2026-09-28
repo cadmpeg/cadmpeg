@@ -56,7 +56,14 @@ pub(super) fn decode(
                 .flatten()
                 .unwrap_or_default();
             ctx.charge_collection_items(1, "step_dependency_documents")?;
-            documents.insert(id, (identifier, name, parameters.get(3).and_then(ValueExt::reference)));
+            documents.insert(
+                id,
+                (
+                    identifier,
+                    name,
+                    parameters.get(3).and_then(ValueExt::reference),
+                ),
+            );
         }
         if let Some(partial) = record.partial("EXTERNAL_SOURCE") {
             let parameters = partial.parameters.as_slice();
@@ -98,7 +105,11 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            insert_note(&mut notes, document_note(identifier, name, &source, ctx)?, ctx)?;
+            insert_note(
+                &mut notes,
+                document_note(identifier, name, &source, ctx)?,
+                ctx,
+            )?;
             insert_claim(&mut typed, id, ctx)?;
             insert_claim(&mut typed, document_id, ctx)?;
             if let Some(kind) = kind {
@@ -132,7 +143,11 @@ pub(super) fn decode(
     ctx.charge_collection_items(u64_from_index(notes.len()), "step_dependency_note_vector")?;
     let mut ordered_notes = Vec::new();
     ordered_notes.try_reserve_exact(notes.len()).map_err(|_| {
-        ctx.refuse_codec_limit("step_dependency_note_vector", 0, u64_from_index(notes.len()))
+        ctx.refuse_codec_limit(
+            "step_dependency_note_vector",
+            0,
+            u64_from_index(notes.len()),
+        )
     })?;
     ordered_notes.extend(notes);
     Ok(StageOutcome {
@@ -230,7 +245,9 @@ fn document_note(
 
 fn charged_note(parts: &[&str], ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     let operation = "step_dependency_note_text";
-    let len = parts.iter().try_fold(0usize, |sum, part| sum.checked_add(part.len()));
+    let len = parts
+        .iter()
+        .try_fold(0usize, |sum, part| sum.checked_add(part.len()));
     let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     ctx.charge_retained(u64_from_index(len), operation)?;
     let mut note = String::new();

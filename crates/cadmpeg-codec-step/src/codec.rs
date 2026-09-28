@@ -190,25 +190,43 @@ fn inspect_parsed_exchange(
         opaque_offsets,
     } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
     let mut entries = Vec::new();
-    push_entry(ctx, &mut entries, ContainerEntry {
-        name: "HEADER".into(),
-        role: ContainerRole::Metadata,
-        storage: EntryStorage::unreported(VerbatimLabel::None),
-        attributes: BTreeMap::default(),
-    })?;
+    push_entry(
+        ctx,
+        &mut entries,
+        ContainerEntry {
+            name: "HEADER".into(),
+            role: ContainerRole::Metadata,
+            storage: EntryStorage::unreported(VerbatimLabel::None),
+            attributes: BTreeMap::default(),
+        },
+    )?;
     if !exchange.anchors().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        insert_attribute(ctx, &mut attributes, "anchor_count", exchange.anchors().len().to_string())?;
-        push_entry(ctx, &mut entries, ContainerEntry {
-            name: "ANCHOR".into(),
-            role: ContainerRole::InFileAnchors,
-            storage: EntryStorage::unreported(VerbatimLabel::None),
-            attributes,
-        })?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "anchor_count",
+            exchange.anchors().len().to_string(),
+        )?;
+        push_entry(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: "ANCHOR".into(),
+                role: ContainerRole::InFileAnchors,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+        )?;
     }
     if !exchange.references().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
-        insert_attribute(ctx, &mut attributes, "external_count", exchange.references().len().to_string())?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "external_count",
+            exchange.references().len().to_string(),
+        )?;
         insert_attribute(
             ctx,
             &mut attributes,
@@ -220,12 +238,16 @@ fn inspect_parsed_exchange(
                 ",",
             )?,
         )?;
-        push_entry(ctx, &mut entries, ContainerEntry {
-            name: "REFERENCE".into(),
-            role: ContainerRole::ExternalReferences,
-            storage: EntryStorage::unreported(VerbatimLabel::None),
-            attributes,
-        })?;
+        push_entry(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: "REFERENCE".into(),
+                role: ContainerRole::ExternalReferences,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+        )?;
     }
     for (index, section) in exchange.data().iter().enumerate() {
         let mut counts = BTreeMap::<&str, usize>::new();
@@ -246,30 +268,42 @@ fn inspect_parsed_exchange(
         let unknown = crate::decode_alloc::charged_join(
             ctx,
             "step_inspect_unknown_entities",
-            counts.iter().map(|(&name, &count)| CountItem { name, count }),
+            counts
+                .iter()
+                .map(|(&name, &count)| CountItem { name, count }),
             ",",
         )?;
         let mut attributes = std::collections::BTreeMap::new();
-        insert_attribute(ctx, &mut attributes, "entity_count", section.records.len().to_string())?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "entity_count",
+            section.records.len().to_string(),
+        )?;
         insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
-        push_entry(ctx, &mut entries, ContainerEntry {
-            name: format!("DATA[{index}]"),
-            role: ContainerRole::EntityRecords,
-            storage: EntryStorage::unreported(VerbatimLabel::None),
-            attributes,
-        })?;
+        push_entry(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: format!("DATA[{index}]"),
+                role: ContainerRole::EntityRecords,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+        )?;
     }
-    let external_dependencies = decoded
-        .body
-        .notes
-        .iter()
-        .filter(|note| {
-            note.starts_with("external document ") || note.starts_with("external source ")
-        });
+    let external_dependencies = decoded.body.notes.iter().filter(|note| {
+        note.starts_with("external document ") || note.starts_with("external source ")
+    });
     let dependency_count = external_dependencies.clone().count();
     if dependency_count > 0 {
         let mut attributes = std::collections::BTreeMap::new();
-        insert_attribute(ctx, &mut attributes, "dependency_count", dependency_count.to_string())?;
+        insert_attribute(
+            ctx,
+            &mut attributes,
+            "dependency_count",
+            dependency_count.to_string(),
+        )?;
         insert_attribute(
             ctx,
             &mut attributes,
@@ -281,24 +315,32 @@ fn inspect_parsed_exchange(
                 ",",
             )?,
         )?;
-        push_entry(ctx, &mut entries, ContainerEntry {
-            name: "EXTERNAL_DEPENDENCIES".into(),
-            role: ContainerRole::ExternalReferences,
-            storage: EntryStorage::unreported(VerbatimLabel::None),
-            attributes,
-        })?;
+        push_entry(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: "EXTERNAL_DEPENDENCIES".into(),
+                role: ContainerRole::ExternalReferences,
+                storage: EntryStorage::unreported(VerbatimLabel::None),
+                attributes,
+            },
+        )?;
     }
     for (index, signature) in exchange.signatures().iter().enumerate() {
-        push_entry(ctx, &mut entries, ContainerEntry {
-            name: if index == 0 {
-                "SIGNATURE".into()
-            } else {
-                format!("SIGNATURE[{index}]")
+        push_entry(
+            ctx,
+            &mut entries,
+            ContainerEntry {
+                name: if index == 0 {
+                    "SIGNATURE".into()
+                } else {
+                    format!("SIGNATURE[{index}]")
+                },
+                role: ContainerRole::Signature,
+                storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
+                attributes: BTreeMap::default(),
             },
-            role: ContainerRole::Signature,
-            storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
-            attributes: BTreeMap::default(),
-        })?;
+        )?;
     }
     let identifiers = exchange.joined_schema_identifiers(Some(ctx))?;
     let schema = if identifiers.is_empty() {
@@ -405,13 +447,22 @@ fn inspect_zip(
         .iter_mut()
         .find(|entry| entry.name == archive::ROOT_NAME)
     {
-        insert_attribute(ctx, &mut root_entry.attributes, "logical_sections", logical_entries)?;
+        insert_attribute(
+            ctx,
+            &mut root_entry.attributes,
+            "logical_sections",
+            logical_entries,
+        )?;
     }
     let mut notes = Vec::new();
-    append_notes(ctx, &mut notes, [
-        format!("root {}", archive::ROOT_NAME),
-        format!("archive entries={entry_count}; root data offset={root_data_offset}"),
-    ])?;
+    append_notes(
+        ctx,
+        &mut notes,
+        [
+            format!("root {}", archive::ROOT_NAME),
+            format!("archive entries={entry_count}; root data offset={root_data_offset}"),
+        ],
+    )?;
     append_notes(ctx, &mut notes, std::mem::take(&mut inspected.notes))?;
     let losses = std::mem::take(&mut inspected.losses);
     append_notes(ctx, &mut notes, resource_notes)?;
@@ -449,10 +500,14 @@ fn decode_zip(
             root_data_offset,
         },
     )?;
-    append_notes(ctx, &mut decoded.body.notes, [format!(
-        "container root {}; archive entries={entry_count}",
-        archive::ROOT_NAME
-    )])?;
+    append_notes(
+        ctx,
+        &mut decoded.body.notes,
+        [format!(
+            "container root {}; archive entries={entry_count}",
+            archive::ROOT_NAME
+        )],
+    )?;
     append_notes(ctx, &mut decoded.body.notes, resource_notes)?;
     Ok(decoded)
 }
@@ -674,7 +729,9 @@ const BO_MODEL_NAMESPACES: [&[u8]; 2] = [
 mod tests {
     use std::io::Cursor;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension};
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+    };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
@@ -738,8 +795,8 @@ mod tests {
     fn inspect_text_refuses(source: &[u8], operation: &str) {
         let mut limit = 0u64;
         for _ in 0..512 {
-            let (mut exchange, diagnostics) = crate::parse::parse(source)
-                .expect("valid inspect source");
+            let (mut exchange, diagnostics) =
+                crate::parse::parse(source).expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = limit;
@@ -804,8 +861,8 @@ mod tests {
         const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
         let mut limit = 0u64;
         for _ in 0..512 {
-            let (mut exchange, diagnostics) = crate::parse::parse(SOURCE)
-                .expect("valid inspect source");
+            let (mut exchange, diagnostics) =
+                crate::parse::parse(SOURCE).expect("valid inspect source");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;
@@ -837,7 +894,7 @@ mod tests {
 
     #[test]
     fn inspect_zip_logical_sections_refuse_retained_limit() {
-        use std::io::Write as _;
+        use std::io::Write;
 
         const ROOT: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));

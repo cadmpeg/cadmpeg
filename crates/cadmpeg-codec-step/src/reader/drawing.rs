@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId};
@@ -65,7 +65,9 @@ impl<'a> DrawingParameters<'a> {
     fn get(self, index: usize) -> Option<&'a Value> {
         match self.inherited_name {
             Some(name) if index == 0 => Some(name),
-            Some(_) => index.checked_sub(1).and_then(|index| self.direct.get(index)),
+            Some(_) => index
+                .checked_sub(1)
+                .and_then(|index| self.direct.get(index)),
             None => self.direct.get(index),
         }
     }
@@ -143,9 +145,9 @@ fn ensure_drawing_relationship_group(
     role: NonBlankString,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    if !relationships.contains_key(&role) {
+    if let std::collections::btree_map::Entry::Vacant(entry) = relationships.entry(role) {
         ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
-        relationships.insert(role, Vec::new());
+        entry.insert(Vec::new());
     }
     Ok(())
 }
@@ -185,10 +187,13 @@ fn push_drawing_relationship(
     target: ReferenceSelection,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    ensure_drawing_relationship_group(relationships, role.clone(), ctx)?;
-    let targets = relationships.get_mut(&role).ok_or_else(|| {
-        ctx.refuse_codec_limit("step_drawing_relationship_groups", 0, 1)
-    })?;
+    let targets = match relationships.entry(role) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
+            entry.insert(Vec::new())
+        }
+    };
     reserve_drawing_items(targets, 1, ctx, "step_drawing_relationship_members")?;
     targets.push(target);
     Ok(())
@@ -290,7 +295,8 @@ pub(super) fn decode(
         })?;
     }
 
-    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
+    let mut target_identities =
+        record_targets(ir, |record_id| known_typed.contains(&record_id), ctx)?;
     for candidate in &candidates {
         charge_drawing_map_key(
             &target_identities,
@@ -430,7 +436,13 @@ pub(super) fn decode(
         );
     }
 
-    add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses, Some(ctx))?;
+    add_sheet_revision_usages(
+        exchange,
+        &mut drawings,
+        &target_context,
+        &mut losses,
+        Some(ctx),
+    )?;
     let mut association_ids = HashSet::new();
     add_draughting_model_associations(
         exchange,
@@ -509,7 +521,12 @@ fn referenced_target_ids(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
-                insert_drawing_set(&mut ids, placeholder_id, ctx, "step_drawing_referenced_targets")?;
+                insert_drawing_set(
+                    &mut ids,
+                    placeholder_id,
+                    ctx,
+                    "step_drawing_referenced_targets",
+                )?;
             }
         }
     }
@@ -820,16 +837,21 @@ fn add_sheet_revision_usages(
                     )));
                 }
             }
-            if let Some(sequence) = parameters.get(2).map(|value| {
-                value_text(
-                    target_context.exchange,
-                    value,
-                    losses,
-                    usage_id,
-                    "drawing sheet revision usage sequence",
-                    ctx,
-                )
-            }).transpose()?.flatten() {
+            if let Some(sequence) = parameters
+                .get(2)
+                .map(|value| {
+                    value_text(
+                        target_context.exchange,
+                        value,
+                        losses,
+                        usage_id,
+                        "drawing sheet revision usage sequence",
+                        ctx,
+                    )
+                })
+                .transpose()?
+                .flatten()
+            {
                 let key = cadmpeg_core::nonblank_literal!("usage_{usage_id}_sequence");
                 charge_drawing_map_key(
                     &sheet.parameters,
@@ -837,10 +859,7 @@ fn add_sheet_revision_usages(
                     target_context.ctx,
                     "step_drawing_usage_sequences",
                 )?;
-                sheet.parameters.insert(
-                    key,
-                    sequence,
-                );
+                sheet.parameters.insert(key, sequence);
             }
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
@@ -957,7 +976,12 @@ fn add_draughting_model_associations(
                         complete = false;
                     }
                     TargetResolution::Unresolved => {
-                        reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
+                        reserve_drawing_items(
+                            losses,
+                            1,
+                            target_context.ctx,
+                            "step_drawing_losses",
+                        )?;
                         losses.push(StepLossCode::DraughtingAssociatedItemUntyped.note(
                             format!(
                                 "STEP draughting model #{model_id} association #{association_id} references source-typed item #{item_id} without a neutral identity; the raw source parameter is retained"
@@ -994,7 +1018,12 @@ fn add_draughting_model_associations(
                         None
                     }
                     TargetResolution::Unresolved => {
-                        reserve_drawing_items(losses, 1, target_context.ctx, "step_drawing_losses")?;
+                        reserve_drawing_items(
+                            losses,
+                            1,
+                            target_context.ctx,
+                            "step_drawing_losses",
+                        )?;
                         losses.push(StepLossCode::DrawingRelationshipUntypedTarget.note(format!(
                             "STEP draughting model #{model_id} association #{association_id} relationship annotation_placeholder references source-typed record #{placeholder_id} without a neutral identity"
                         )));
@@ -1238,15 +1267,17 @@ fn value_text(
         Value::Integer(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Real(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Enumeration(value) => format_value_text(ctx, format_args!(".{value}."))?,
-        Value::String(_) => return decode_text_charged(
-            exchange,
-            value,
-            losses,
-            record_id,
-            field,
-            StepLossCode::MetadataStringInvalid,
-            ctx,
-        ),
+        Value::String(_) => {
+            return decode_text_charged(
+                exchange,
+                value,
+                losses,
+                record_id,
+                field,
+                StepLossCode::MetadataStringInvalid,
+                ctx,
+            )
+        }
         Value::Binary(value) => {
             const HEX: &[u8; 16] = b"0123456789ABCDEF";
             let mut text = format_value_text(ctx, format_args!("binary:{}:", value.bit_len()))?;
@@ -1256,7 +1287,9 @@ fn value_text(
                 }
                 text.try_reserve(2).map_err(|_| match ctx {
                     Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, 2),
-                    None => cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, 2),
+                    None => {
+                        cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, 2)
+                    }
                 })?;
                 text.push(char::from(HEX[usize::from(byte >> 4)]));
                 text.push(char::from(HEX[usize::from(byte & 0x0f)]));
@@ -1309,8 +1342,14 @@ fn append_value_text(
         ctx.charge_retained(u64_from_index(text.len()), "step_drawing_value_text")?;
     }
     output.try_reserve(text.len()).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, u64_from_index(text.len())),
-        None => cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, u64_from_index(text.len())),
+        Some(ctx) => {
+            ctx.refuse_codec_limit("step_drawing_value_text", 0, u64_from_index(text.len()))
+        }
+        None => cadmpeg_core::decode::refuse_local_limit(
+            "step_drawing_value_text",
+            0,
+            u64_from_index(text.len()),
+        ),
     })?;
     output.push_str(text);
     Ok(())

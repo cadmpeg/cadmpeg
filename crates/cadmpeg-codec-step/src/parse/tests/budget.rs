@@ -21,8 +21,8 @@ fn nested_value_copy_refuses_inner_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::try_clone_value(&value, Some(&ctx), "step_test_value_copy"),
         Err(CodecError::ResourceLimit(refusal))
@@ -37,8 +37,8 @@ fn typed_value_copy_refuses_nested_slot_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::try_clone_value(&value, Some(&ctx), "step_test_typed_copy"),
         Err(CodecError::ResourceLimit(refusal))
@@ -54,8 +54,8 @@ fn header_string_validation_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
     assert!(matches!(
         super::super::validate_header(exchange.header(), Some(&ctx)),
         Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
@@ -80,7 +80,10 @@ fn header_string_refusal_reaches_parse_caller() {
                     && refusal.operation == "step_string_text"
         )
     });
-    assert!(refused, "header text must refuse through parse_with_context");
+    assert!(
+        refused,
+        "header text must refuse through parse_with_context"
+    );
 }
 
 #[test]
@@ -90,8 +93,8 @@ fn section_language_string_validation_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
     assert!(matches!(
         super::super::validate_header_sections(
             super::super::ImplementationLevel::Edition3Class2,
@@ -137,7 +140,10 @@ fn validation_refuses(
     operation: &str,
     dimension: ResourceDimension,
     source: &[u8],
-    run: impl Fn(&crate::parse::Exchange, &DecodeContext<'_>) -> Result<(), super::super::ValidationError>,
+    run: impl Fn(
+        &crate::parse::Exchange,
+        &DecodeContext<'_>,
+    ) -> Result<(), super::super::ValidationError>,
 ) {
     let (exchange, _) = crate::parse::parse(source).expect("valid header source");
     let refused = (0..=1024).any(|limit| {
@@ -203,15 +209,51 @@ macro_rules! section_limit_test {
     };
 }
 
-header_limit_test!(schema_identifier_normalization_refuses_retained_limit, "step_schema_identifier_normalized", ResourceDimension::RetainedBytes);
-header_limit_test!(schema_identifier_name_set_refuses_collection_limit, "step_schema_identifier_names", ResourceDimension::CollectionItems);
-header_limit_test!(admitted_schema_identifier_vec_refuses_collection_limit, "step_schema_identifiers", ResourceDimension::CollectionItems);
-section_limit_test!(file_population_sections_refuse_collection_limit, "step_file_population_sections", ResourceDimension::CollectionItems);
-section_limit_test!(header_data_references_refuse_collection_limit, "step_header_data_references", ResourceDimension::CollectionItems);
-section_limit_test!(section_language_names_refuse_collection_limit, "step_section_language_names", ResourceDimension::CollectionItems);
-section_limit_test!(section_context_names_refuse_collection_limit, "step_section_context_names", ResourceDimension::CollectionItems);
-section_limit_test!(section_language_name_copy_refuses_retained_limit, "step_section_language_name_copy", ResourceDimension::RetainedBytes);
-section_limit_test!(section_context_name_copy_refuses_retained_limit, "step_section_context_name_copy", ResourceDimension::RetainedBytes);
+header_limit_test!(
+    schema_identifier_normalization_refuses_retained_limit,
+    "step_schema_identifier_normalized",
+    ResourceDimension::RetainedBytes
+);
+header_limit_test!(
+    schema_identifier_name_set_refuses_collection_limit,
+    "step_schema_identifier_names",
+    ResourceDimension::CollectionItems
+);
+header_limit_test!(
+    admitted_schema_identifier_vec_refuses_collection_limit,
+    "step_schema_identifiers",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    file_population_sections_refuse_collection_limit,
+    "step_file_population_sections",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    header_data_references_refuse_collection_limit,
+    "step_header_data_references",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_language_names_refuse_collection_limit,
+    "step_section_language_names",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_context_names_refuse_collection_limit,
+    "step_section_context_names",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_language_name_copy_refuses_retained_limit,
+    "step_section_language_name_copy",
+    ResourceDimension::RetainedBytes
+);
+section_limit_test!(
+    section_context_name_copy_refuses_retained_limit,
+    "step_section_context_name_copy",
+    ResourceDimension::RetainedBytes
+);
 
 #[test]
 fn implementation_level_diagnostic_text_refuses_retained_limit() {
@@ -334,7 +376,10 @@ fn header_record_vector_refuses_collection_limit() {
                     && refusal.operation == "step_parse_header_records"
         )
     });
-    assert!(refusal_at_header, "one limit must refuse the header allocation");
+    assert!(
+        refusal_at_header,
+        "one limit must refuse the header allocation"
+    );
 }
 
 fn collection_refusal_reaches_parser(source: &[u8], operation: &str) {
@@ -490,7 +535,10 @@ fn complex_partial_diagnostic_text_refuses_retained_limit() {
                     && refusal.operation == "step_parse_complex_partial_diagnostic_text"
         )
     });
-    assert!(refused, "complex partial diagnostic text must reach the parser caller");
+    assert!(
+        refused,
+        "complex partial diagnostic text must reach the parser caller"
+    );
 }
 parser_vector_limit_test!(
     omitted_name_diagnostic_vector_refuses_collection_limit,
@@ -632,7 +680,10 @@ fn cyclic_anchor_error_text_refuses_retained_limit() {
                     && refusal.operation == "step_cyclic_anchor_error_text"
         )
     });
-    assert!(refused, "cyclic anchor error text must reach the resolver caller");
+    assert!(
+        refused,
+        "cyclic anchor error text must reach the resolver caller"
+    );
 }
 
 #[test]
@@ -721,8 +772,7 @@ fn reference_stack_refuses_retained_limit() {
     }];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        super::super::btree_node_storage::<ReferenceName, &str>();
+    policy.limits.max_retained_bytes = super::super::btree_node_storage::<ReferenceName, &str>();
     let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
         .expect("root fits selected profile");
     let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))

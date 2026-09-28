@@ -20,36 +20,42 @@ fn explicit_knot_expansion_retains_admitted_bits_and_refusal() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
     let values = Value::List(vec![Value::Real(-0.0), Value::Real(0.5)]);
     let knots: cadmpeg_ir::geometry::nurbs::KnotVector =
-        super::super::expand_knots(&counts, &values, 3, &ctx).expect("no resource refusal").expect("finite ordered knots");
+        super::super::expand_knots(&counts, &values, 3, &ctx)
+            .expect("no resource refusal")
+            .expect("finite ordered knots");
     assert_eq!(knots.as_slice().len(), 3);
     assert_eq!(knots.as_slice()[0].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(knots.as_slice()[1].to_bits(), (-0.0_f64).to_bits());
     assert_eq!(knots.as_slice()[2].to_bits(), 0.5_f64.to_bits());
 
     let non_finite = Value::List(vec![Value::Real(0.0), Value::Real(f64::NAN)]);
-    assert!(super::super::expand_knots(&counts, &non_finite, 3, &ctx).expect("no resource refusal").is_none());
+    assert!(super::super::expand_knots(&counts, &non_finite, 3, &ctx)
+        .expect("no resource refusal")
+        .is_none());
     let decreasing = Value::List(vec![Value::Real(1.0), Value::Real(0.5)]);
-    assert!(super::super::expand_knots(&counts, &decreasing, 3, &ctx).expect("no resource refusal").is_none());
+    assert!(super::super::expand_knots(&counts, &decreasing, 3, &ctx)
+        .expect("no resource refusal")
+        .is_none());
 }
 
 #[test]
 fn explicit_knot_expansion_refuses_caller_collection_limit() {
+    use crate::parse::Value;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
-    use crate::parse::Value;
 
     let counts = Value::List(vec![Value::Integer(2), Value::Integer(1)]);
     let values = Value::List(vec![Value::Real(0.0), Value::Real(0.5)]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::expand_knots(&counts, &values, 3, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -101,7 +107,8 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let rational = nurbs("step:data:curve#7");
     assert_eq!(rational.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(rational.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -159,7 +166,8 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
         nurbs("step:data:surface#12").v_knots().as_slice(),
         [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -193,7 +201,8 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
         nurbs.pole_grid().weights().map(|rows| rows.concat()),
         Some(vec![1.0, 0.5, 1.0, 0.5, 1.0, 1.0])
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -268,7 +277,8 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#7"));
     assert_eq!(result.ir().model.bodies.len(), 1);
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

@@ -3,7 +3,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use std::fmt::Write as _;
+use std::fmt::Write;
 use std::path::Path;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
@@ -90,9 +90,9 @@ fn resolve_uri<'a>(
     if has_uri_scheme(uri) || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
-    let (uri, fragment) = uri.split_once('#').map_or((uri, None), |(uri, fragment)| {
-        (uri, Some(fragment))
-    });
+    let (uri, fragment) = uri
+        .split_once('#')
+        .map_or((uri, None), |(uri, fragment)| (uri, Some(fragment)));
     if fragment.is_some_and(|fragment| fragment.contains('#')) {
         return Err(CodecError::malformed(format_args!(
             "invalid STEP ZIP URI fragment {uri:?}"
@@ -149,15 +149,18 @@ fn resolve_uri<'a>(
             "STEP ZIP URI resolves to no member: {uri:?}"
         )));
     }
-    let member_len = components.iter().try_fold(0_usize, |total, component| {
-        total.checked_add(component.len())
-    }).and_then(|total| total.checked_add(components.len() - 1))
+    let member_len = components
+        .iter()
+        .try_fold(0_usize, |total, component| {
+            total.checked_add(component.len())
+        })
+        .and_then(|total| total.checked_add(components.len() - 1))
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
     member_bytes.grow(u64_from_index(member_len))?;
     let mut member = String::new();
-    member.try_reserve_exact(member_len).map_err(|_| {
-        ctx.refuse_codec_limit("step_zip_uri_member", 0, 1)
-    })?;
+    member
+        .try_reserve_exact(member_len)
+        .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
     for (index, component) in components.iter().enumerate() {
         if index != 0 {
             member.push('/');
@@ -179,7 +182,8 @@ fn push_component<'a>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_zip_uri_components")?;
     bytes.grow(u64_from_index(std::mem::size_of::<&str>()))?;
-    components.try_reserve(1)
+    components
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("step_zip_uri_components", 0, 1))?;
     components.push(component);
     Ok(())
@@ -260,7 +264,8 @@ fn push_reference_note(
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
     ctx.charge_collection_items(1, "step_zip_reference_notes")?;
     ctx.charge_retained(u64_from_index(len), "step_zip_reference_note")?;
-    notes.try_reserve(1)
+    notes
+        .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit("step_zip_reference_notes", 0, 1))?;
     let mut note = String::new();
     note.try_reserve_exact(len)

@@ -448,7 +448,8 @@ pub(crate) fn decode_conical_apex_and_context_plane_angle_units() {
             radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < EPS_CONE_ANGLE
         })
     ));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(
         validation
             .findings
@@ -496,8 +497,8 @@ fn uncertainty_name_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert!(matches!(
         super::super::decode(&exchange, &mut ir, &ctx),
@@ -720,14 +721,8 @@ fn resolve_unit_scales_for_test(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default())
         .expect("empty root fits policy");
-    super::super::resolve_unit_scales(
-        exchange,
-        PositiveReal::ONE,
-        PositiveReal::ONE,
-        losses,
-        &ctx,
-    )
-    .expect("unit scales fit policy")
+    super::super::resolve_unit_scales(exchange, PositiveReal::ONE, PositiveReal::ONE, losses, &ctx)
+        .expect("unit scales fit policy")
 }
 
 #[test]

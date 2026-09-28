@@ -36,7 +36,8 @@ impl CarrierIndex {
         for (index, curve) in ir.model.curves.iter().enumerate() {
             if let Some(id) = step_instance_id(curve.id.as_str()) {
                 ctx.charge_collection_items(1, "step_carrier_curve_index")?;
-                curves.try_reserve(1)
+                curves
+                    .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("step_carrier_curve_index", 0, 1))?;
                 curves.insert(id, CurveIndex(index));
             }
@@ -45,7 +46,8 @@ impl CarrierIndex {
         for (index, point) in ir.model.points.iter().enumerate() {
             if let Some(id) = step_instance_id(point.id.as_str()) {
                 ctx.charge_collection_items(1, "step_carrier_point_index")?;
-                points.try_reserve(1)
+                points
+                    .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("step_carrier_point_index", 0, 1))?;
                 points.insert(
                     id,
@@ -60,7 +62,8 @@ impl CarrierIndex {
         for (index, surface) in ir.model.surfaces.iter().enumerate() {
             if let Some(id) = step_instance_id(surface.id.as_str()) {
                 ctx.charge_collection_items(1, "step_carrier_surface_index")?;
-                surfaces.try_reserve(1)
+                surfaces
+                    .try_reserve(1)
                     .map_err(|_| ctx.refuse_codec_limit("step_carrier_surface_index", 0, 1))?;
                 surfaces.insert(id, SurfaceIndex(index));
             }
@@ -86,8 +89,8 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{
-        analytic::{LineCurve, PlaneSurface}, Curve, CurveGeometry, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+        analytic::{LineCurve, PlaneSurface},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};

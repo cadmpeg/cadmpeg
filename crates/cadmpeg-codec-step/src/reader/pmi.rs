@@ -5,8 +5,8 @@ use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
+use super::reference::{first_matching, references};
 use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
-use super::reference::{first_matching as first_matching_reference, references};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -29,7 +29,7 @@ use super::StageOutcome;
 
 mod annotations;
 
-use annotations::{AnnotationIndex, Annotations};
+use annotations::{AnnotationDraft, AnnotationIndex, Annotations};
 
 struct MeasureContext<'a> {
     length_scale: f64,
@@ -191,7 +191,8 @@ pub(super) fn decode(
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let graph_limit = super::record_graph_limit(ctx);
-    let characteristic_values = characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
+    let characteristic_values =
+        characteristic_values(exchange, geometry, &mut losses, graph_limit, ctx)?;
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
             .map(|value| {
@@ -212,20 +213,25 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).map(|value| {
-                decode_text_charged(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "datum name",
-                    StepLossCode::MetadataStringInvalid,
-                    ctx,
-                )
-            }).transpose()?.flatten(),
-            targets([id], ctx)?,
-            None,
-            PmiDefinition::Datum { identification },
+            AnnotationDraft {
+                name: shape_aspect_parameter(record, 0)
+                    .map(|value| {
+                        decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "datum name",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )
+                    })
+                    .transpose()?
+                    .flatten(),
+                targets: targets([id], ctx)?,
+                visible: None,
+                definition: PmiDefinition::Datum { identification },
+            },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
     }
@@ -268,23 +274,28 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).map(|value| {
-                decode_text_charged(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "datum target name",
-                    StepLossCode::MetadataStringInvalid,
-                    ctx,
-                )
-            }).transpose()?.flatten(),
-            targets([id], ctx)?,
-            None,
-            PmiDefinition::DatumTarget {
-                form: datum_target_form(&form, ctx)?,
-                identification,
-                basis: Vec::new(),
+            AnnotationDraft {
+                name: shape_aspect_parameter(record, 0)
+                    .map(|value| {
+                        decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "datum target name",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )
+                    })
+                    .transpose()?
+                    .flatten(),
+                targets: targets([id], ctx)?,
+                visible: None,
+                definition: PmiDefinition::DatumTarget {
+                    form: datum_target_form(&form, ctx)?,
+                    identification,
+                    basis: Vec::new(),
+                },
             },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
@@ -301,8 +312,7 @@ pub(super) fn decode(
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
         let mut datum_references = Vec::new();
         for (index, constituent) in constituents.iter().enumerate() {
-            let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new)
-            else {
+            let Some(precedence) = u32::try_from(index + 1).ok().and_then(NonZeroU32::new) else {
                 continue;
             };
             for reference in datum_references_for_compartment(
@@ -340,28 +350,33 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            shape_aspect_parameter(record, 0).map(|value| {
-                decode_text_charged(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "datum system name",
-                    StepLossCode::MetadataStringInvalid,
+            AnnotationDraft {
+                name: shape_aspect_parameter(record, 0)
+                    .map(|value| {
+                        decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "datum system name",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )
+                    })
+                    .transpose()?
+                    .flatten(),
+                targets: targets(
+                    record
+                        .parameters()
+                        .iter()
+                        .flat_map(references)
+                        .filter(|id| base_aspects.contains(id)),
                     ctx,
-                )
-            }).transpose()?.flatten(),
-            targets(
-                record
-                    .parameters()
-                    .iter()
-                    .flat_map(references)
-                    .filter(|id| base_aspects.contains(id)),
-                ctx,
-            )?,
-            None,
-            PmiDefinition::DatumSystem {
-                references: datum_references,
+                )?,
+                visible: None,
+                definition: PmiDefinition::DatumSystem {
+                    references: datum_references,
+                },
             },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
@@ -376,7 +391,11 @@ pub(super) fn decode(
             continue;
         };
         let mut name = None;
-        for value in record.partials.iter().flat_map(|partial| &partial.parameters) {
+        for value in record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+        {
             if let Some(text) = decode_text_charged(
                 exchange,
                 value,
@@ -439,20 +458,19 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            name,
-            targets(aspect_ids, ctx)?,
-            None,
-            PmiDefinition::Dimension(definition),
+            AnnotationDraft {
+                name,
+                targets: targets(aspect_ids, ctx)?,
+                visible: None,
+                definition: PmiDefinition::Dimension(definition),
+            },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
-        let refs = collect_pmi_references(
-            record.parameters(),
-            ctx,
-            "step_pmi_plus_minus_references",
-        )?;
+        let refs =
+            collect_pmi_references(record.parameters(), ctx, "step_pmi_plus_minus_references")?;
         let dimension = refs
             .iter()
             .find_map(|reference| annotations.get(*reference));
@@ -462,80 +480,85 @@ pub(super) fn decode(
                 .get(reference)
                 .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
         });
-        let fit = refs.iter().find_map(|reference| {
-            let record = exchange.records().get(reference)?;
-            (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| -> Result<_, CodecError> {
-                Ok((
-                    *reference,
-                    LimitsAndFits {
-                    form_variance: record
-                        .parameter(0)
-                        .map(|value| {
-                            decode_text_charged(
-                                exchange,
-                                value,
-                                &mut losses,
-                                *reference,
-                                "limits-and-fits form variance",
-                                StepLossCode::MetadataStringInvalid,
-                                ctx,
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .unwrap_or_default(),
-                    zone_variance: record
-                        .parameter(1)
-                        .map(|value| {
-                            decode_text_charged(
-                                exchange,
-                                value,
-                                &mut losses,
-                                *reference,
-                                "limits-and-fits zone variance",
-                                StepLossCode::MetadataStringInvalid,
-                                ctx,
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .unwrap_or_default(),
-                    grade: record
-                        .parameter(2)
-                        .map(|value| {
-                            decode_text_charged(
-                                exchange,
-                                value,
-                                &mut losses,
-                                *reference,
-                                "limits-and-fits grade",
-                                StepLossCode::MetadataStringInvalid,
-                                ctx,
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .unwrap_or_default(),
-                    source: record
-                        .parameter(3)
-                        .map(|value| {
-                            decode_text_charged(
-                                exchange,
-                                value,
-                                &mut losses,
-                                *reference,
-                                "limits-and-fits source",
-                                StepLossCode::MetadataStringInvalid,
-                                ctx,
-                            )
-                        })
-                        .transpose()?
-                        .flatten()
-                        .unwrap_or_default(),
+        let fit = refs
+            .iter()
+            .find_map(|reference| {
+                let record = exchange.records().get(reference)?;
+                (record.simple_name() == Some("LIMITS_AND_FITS")).then(
+                    || -> Result<_, CodecError> {
+                        Ok((
+                            *reference,
+                            LimitsAndFits {
+                                form_variance: record
+                                    .parameter(0)
+                                    .map(|value| {
+                                        decode_text_charged(
+                                            exchange,
+                                            value,
+                                            &mut losses,
+                                            *reference,
+                                            "limits-and-fits form variance",
+                                            StepLossCode::MetadataStringInvalid,
+                                            ctx,
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten()
+                                    .unwrap_or_default(),
+                                zone_variance: record
+                                    .parameter(1)
+                                    .map(|value| {
+                                        decode_text_charged(
+                                            exchange,
+                                            value,
+                                            &mut losses,
+                                            *reference,
+                                            "limits-and-fits zone variance",
+                                            StepLossCode::MetadataStringInvalid,
+                                            ctx,
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten()
+                                    .unwrap_or_default(),
+                                grade: record
+                                    .parameter(2)
+                                    .map(|value| {
+                                        decode_text_charged(
+                                            exchange,
+                                            value,
+                                            &mut losses,
+                                            *reference,
+                                            "limits-and-fits grade",
+                                            StepLossCode::MetadataStringInvalid,
+                                            ctx,
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten()
+                                    .unwrap_or_default(),
+                                source: record
+                                    .parameter(3)
+                                    .map(|value| {
+                                        decode_text_charged(
+                                            exchange,
+                                            value,
+                                            &mut losses,
+                                            *reference,
+                                            "limits-and-fits source",
+                                            StepLossCode::MetadataStringInvalid,
+                                            ctx,
+                                        )
+                                    })
+                                    .transpose()?
+                                    .flatten()
+                                    .unwrap_or_default(),
+                            },
+                        ))
                     },
-                ))
+                )
             })
-        }).transpose()?;
+            .transpose()?;
         if let (Some(index), Some(limits)) = (dimension, limits) {
             let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
             let lower = limits
@@ -561,14 +584,24 @@ pub(super) fn decode(
                     claim_pmi_typed(&mut typed, id, ctx)?;
                     claim_pmi_typed_many(&mut typed, refs, ctx)?;
                 } else {
-                    push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
+                    push_pmi_vec(
+                        &mut losses,
+                        StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )), ctx, "step_pmi_losses")?;
+                    )),
+                        ctx,
+                        "step_pmi_losses",
+                    )?;
                 }
             } else {
-                push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
-                    "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
-                )), ctx, "step_pmi_losses")?;
+                push_pmi_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
+                    )),
+                    ctx,
+                    "step_pmi_losses",
+                )?;
             }
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
@@ -580,14 +613,24 @@ pub(super) fn decode(
             })? {
                 claim_pmi_typed_many(&mut typed, [id, fit_id], ctx)?;
             } else {
-                push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
-                    "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                )), ctx, "step_pmi_losses")?;
+                push_pmi_vec(
+                    &mut losses,
+                    StepLossCode::DecodeWarning.note(format!(
+                        "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
+                    )),
+                    ctx,
+                    "step_pmi_losses",
+                )?;
             }
         } else {
-            push_pmi_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
-                "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
-            )), ctx, "step_pmi_losses")?;
+            push_pmi_vec(
+                &mut losses,
+                StepLossCode::DecodeWarning.note(format!(
+                    "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
+                )),
+                ctx,
+                "step_pmi_losses",
+            )?;
         }
     }
 
@@ -623,12 +666,17 @@ pub(super) fn decode(
             "step_pmi_geometric_tolerance_references",
         )?;
         let mut measurements = measure_context(geometry, id, &mut losses, graph_limit);
-        let magnitude = first_measure(record
-            .partials
-            .iter()
-            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
-            .into_iter()
-            .flat_map(|partial| partial.parameters.iter()), exchange, &mut measurements, ctx)?;
+        let magnitude = first_measure(
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+                .into_iter()
+                .flat_map(|partial| partial.parameters.iter()),
+            exchange,
+            &mut measurements,
+            ctx,
+        )?;
         let magnitude = match magnitude {
             Some(magnitude) => Some(magnitude),
             None => first_measure(
@@ -712,41 +760,51 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
-                .or_else(|| record.parameter(0))
-                .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "geometric tolerance name",
-                        StepLossCode::MetadataStringInvalid,
-                        ctx,
-                    )
-                })
-                .transpose()?
-                .flatten(),
-            targets(refs.iter().copied().filter(|id| base_aspects.contains(id)), ctx)?,
-            None,
-            PmiDefinition::GeometricTolerance {
-                tolerance,
-                magnitude,
-                defined_unit,
-                defined_area_unit,
-                defined_area_second_unit,
-                datum_system,
-                modifiers: tolerance_modifiers(record, ctx)?,
+            AnnotationDraft {
+                name: named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
+                    .or_else(|| record.parameter(0))
+                    .map(|value| {
+                        decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "geometric tolerance name",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )
+                    })
+                    .transpose()?
+                    .flatten(),
+                targets: targets(
+                    refs.iter().copied().filter(|id| base_aspects.contains(id)),
+                    ctx,
+                )?,
+                visible: None,
+                definition: PmiDefinition::GeometricTolerance {
+                    tolerance,
+                    magnitude,
+                    defined_unit,
+                    defined_area_unit,
+                    defined_area_second_unit,
+                    datum_system,
+                    modifiers: tolerance_modifiers(record, ctx)?,
+                },
             },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
-        claim_pmi_typed_many(&mut typed, refs.iter().copied().filter(|reference| {
-            exchange
-                .records()
-                .get(reference)
-                .is_some_and(is_measure_record)
-        }), ctx)?;
-        claim_pmi_typed_many(&mut typed,
+        claim_pmi_typed_many(
+            &mut typed,
+            refs.iter().copied().filter(|reference| {
+                exchange
+                    .records()
+                    .get(reference)
+                    .is_some_and(is_measure_record)
+            }),
+            ctx,
+        )?;
+        claim_pmi_typed_many(
+            &mut typed,
             record
                 .partials
                 .iter()
@@ -856,30 +914,32 @@ pub(super) fn decode(
             ctx,
             ir,
             id,
-            named_parameter(record, name, 0)
-                .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
-                .or_else(|| record.parameter(0))
-                .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "presentation annotation name",
-                        StepLossCode::MetadataStringInvalid,
-                        ctx,
-                    )
-                })
-                .transpose()?
-                .flatten(),
-            Vec::new(),
-            hidden_presentation_annotations
-                .contains(&id)
-                .then_some(false),
-            PmiDefinition::Presentation {
-                text,
-                placement,
-                semantics,
+            AnnotationDraft {
+                name: named_parameter(record, name, 0)
+                    .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
+                    .or_else(|| record.parameter(0))
+                    .map(|value| {
+                        decode_text_charged(
+                            exchange,
+                            value,
+                            &mut losses,
+                            id,
+                            "presentation annotation name",
+                            StepLossCode::MetadataStringInvalid,
+                            ctx,
+                        )
+                    })
+                    .transpose()?
+                    .flatten(),
+                targets: Vec::new(),
+                visible: hidden_presentation_annotations
+                    .contains(&id)
+                    .then_some(false),
+                definition: PmiDefinition::Presentation {
+                    text,
+                    placement,
+                    semantics,
+                },
             },
         )?;
         claim_pmi_typed(&mut typed, id, ctx)?;
@@ -902,8 +962,7 @@ pub(super) fn decode(
         exchange,
         topology,
         geometry_sources,
-        &shape_aspects,
-        &annotations,
+        (&shape_aspects, &annotations),
         ir,
         &mut typed,
         ctx,
@@ -954,7 +1013,7 @@ fn mark_characteristic_representations(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let Some(_) = first_matching_reference(record_values(record), |reference| {
+        let Some(_) = first_matching(record_values(record), |reference| {
             annotations.get(reference).is_some()
         }) else {
             continue;
@@ -1025,8 +1084,7 @@ fn resolve_geometric_item_usages(
     exchange: &Exchange,
     topology: &TopologyData,
     geometry_sources: GeometrySources<'_>,
-    shape_aspects: &BTreeSet<u64>,
-    annotations: &Annotations,
+    (shape_aspects, annotations): (&BTreeSet<u64>, &Annotations),
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
     ctx: Option<&DecodeContext<'_>>,
@@ -1158,15 +1216,30 @@ fn topology_targets(
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
         let body = copy_pmi_identity(body.as_str(), ctx, "step_pmi_topology_identity")?;
-        push_target(&mut targets, PmiTarget::Body { body }, ctx, "step_pmi_topology_targets")?;
+        push_target(
+            &mut targets,
+            PmiTarget::Body { body },
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
         let face = copy_pmi_identity(face.as_str(), ctx, "step_pmi_topology_identity")?;
-        push_target(&mut targets, PmiTarget::Face { face }, ctx, "step_pmi_topology_targets")?;
+        push_target(
+            &mut targets,
+            PmiTarget::Face { face },
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
         let edge = copy_pmi_identity(edge.as_str(), ctx, "step_pmi_topology_identity")?;
-        push_target(&mut targets, PmiTarget::Edge { edge }, ctx, "step_pmi_topology_targets")?;
+        push_target(
+            &mut targets,
+            PmiTarget::Edge { edge },
+            ctx,
+            "step_pmi_topology_targets",
+        )?;
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
         let vertex = copy_pmi_identity(vertex.as_str(), ctx, "step_pmi_topology_identity")?;
@@ -1211,7 +1284,7 @@ fn push_target(
 }
 
 fn first_reference(value: &Value) -> Option<u64> {
-    first_matching_reference(std::iter::once(value), |_| true)
+    first_matching(std::iter::once(value), |_| true)
 }
 
 fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
@@ -1362,12 +1435,7 @@ fn datum_references_for_compartment(
                 .flatten()
             {
                 if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
-                    push_pmi_vec(
-                        &mut modifiers,
-                        text,
-                        ctx,
-                        "step_pmi_datum_modifier_items",
-                    )?;
+                    push_pmi_vec(&mut modifiers, text, ctx, "step_pmi_datum_modifier_items")?;
                 }
             }
             claim_pmi_typed_many(typed, [element_id, datum], ctx)?;
@@ -1394,9 +1462,9 @@ fn datum_references_for_compartment(
             push_pmi_vec(
                 &mut output,
                 DatumReference {
-                datum: pmi_id(datum),
-                precedence,
-                common_group: None,
+                    datum: pmi_id(datum),
+                    precedence,
+                    common_group: None,
                     modifiers: clone_pmi_modifiers(&compartment_modifiers, ctx)?,
                 },
                 ctx,
@@ -1427,9 +1495,15 @@ fn admit_datum_reference_maps(
         return Ok(());
     };
     for (index, reference) in references.iter().enumerate() {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index), "step_pmi_datum_map_scan")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(index),
+            "step_pmi_datum_map_scan",
+        )?;
         let prior = &references[..index];
-        if !prior.iter().any(|other| other.precedence == reference.precedence) {
+        if !prior
+            .iter()
+            .any(|other| other.precedence == reference.precedence)
+        {
             ctx.charge_collection_items(1, "step_pmi_datum_compartments")?;
         }
         if let Some(group) = reference.common_group {
@@ -1511,9 +1585,7 @@ fn modifier_text(
             else {
                 return Ok(None);
             };
-            let parameters = parameters
-                .parameters
-                .as_slice();
+            let parameters = parameters.parameters.as_slice();
             claim_pmi_typed(typed, *id, ctx)?;
             let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
                 return Ok(None);
@@ -1521,12 +1593,11 @@ fn modifier_text(
             let Some(measure_id) = parameters.get(1).and_then(ValueExt::reference) else {
                 return Ok(None);
             };
-            let Some(value) = measure(&Value::Reference(measure_id), exchange, measurements, ctx)? else {
+            let Some(value) = measure(&Value::Reference(measure_id), exchange, measurements, ctx)?
+            else {
                 return Ok(None);
             };
-            let value = value
-                .value
-                .get();
+            let value = value.value.get();
             claim_pmi_typed(typed, measure_id, ctx)?;
             let mut text = match ctx {
                 Some(ctx) => crate::decode_alloc::charged_format(
@@ -1708,7 +1779,15 @@ fn collect_annotation_text(
         }
     }
     for reference in record_values(record).flat_map(references) {
-        collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1, ctx)?;
+        collect_annotation_text(
+            reference,
+            exchange,
+            visited,
+            candidates,
+            losses,
+            depth + 1,
+            ctx,
+        )?;
     }
     Ok(())
 }
@@ -1734,13 +1813,7 @@ fn collect_placement_candidates(
     let _nested = ctx
         .map(|ctx| ctx.enter_nested("step_pmi_placement_walk"))
         .transpose()?;
-    insert_pmi_map(
-        visited,
-        id,
-        depth,
-        ctx,
-        "step_pmi_placement_visited",
-    )?;
+    insert_pmi_map(visited, id, depth, ctx, "step_pmi_placement_visited")?;
     if let Some(record) = exchange.records().get(&id) {
         collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
     }
@@ -2177,23 +2250,24 @@ fn characteristic_values(
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses, graph_limit);
-        let Some(characteristic) = first_matching_reference(record_values(record), |id| {
-            exchange
-                .records()
-                .get(&id)
-                .is_some_and(|record| record.partials.iter().any(|partial| is_dimension_name(&partial.name)))
-        })
-        else {
+        let Some(characteristic) = first_matching(record_values(record), |id| {
+            exchange.records().get(&id).is_some_and(|record| {
+                record
+                    .partials
+                    .iter()
+                    .any(|partial| is_dimension_name(&partial.name))
+            })
+        }) else {
             continue;
         };
-        let representation = first_matching_reference(record_values(record), |id| {
-                exchange.records().get(&id).is_some_and(|record| {
-                    record
-                        .partials
-                        .iter()
-                        .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
-                })
-            });
+        let representation = first_matching(record_values(record), |id| {
+            exchange.records().get(&id).is_some_and(|record| {
+                record
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+            })
+        });
         let representation_items = representation
             .and_then(|id| exchange.records().get(&id))
             .and_then(|record| {
@@ -2204,15 +2278,16 @@ fn characteristic_values(
                     .and_then(|partial| partial.parameters.get(1))
                     .and_then(ValueExt::list)
             });
-        let parameters = representation_items.map_or(
-            MeasureParameters::Record(record),
-            MeasureParameters::Items,
-        );
-        let values = characteristic_measure_values(parameters, exchange, &mut measurements, ctx)?;
+        let parameters = representation_items
+            .map_or(MeasureParameters::Record(record), MeasureParameters::Items);
+        let values = characteristic_measure_values(&parameters, exchange, &mut measurements, ctx)?;
         let mut named_count = 0usize;
         let mut named_first = None;
         for (name, value) in &values {
-            if name.as_deref().is_some_and(|name| name.eq_ignore_ascii_case("nominal value")) {
+            if name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
+            {
                 named_count += 1;
                 if named_count == 1 {
                     named_first = Some(*value);
@@ -2223,8 +2298,7 @@ fn characteristic_values(
             named_first
         } else if named_count > 1 {
             push_pmi_vec(losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
-                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
-                named_count
+                "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {named_count} nominal value measures; the nominal is ambiguous"
                 )), ctx, "step_pmi_losses")?;
             None
         } else if values.len() == 1 {
@@ -2277,7 +2351,7 @@ impl MeasureParameters<'_> {
 }
 
 fn characteristic_measure_values(
-    parameters: MeasureParameters<'_>,
+    parameters: &MeasureParameters<'_>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
     ctx: Option<&DecodeContext<'_>>,
@@ -2321,7 +2395,9 @@ fn characteristic_measure_values(
                 }
                 values.try_reserve(1).map_err(|_| match ctx {
                     Some(ctx) => ctx.refuse_codec_limit("step_pmi_measure_values", 0, 1),
-                    None => cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1),
+                    None => {
+                        cadmpeg_core::decode::refuse_local_limit("step_pmi_measure_values", 0, 1)
+                    }
                 })?;
                 values.push((None, value));
             }
@@ -2375,11 +2451,27 @@ fn collect_measure_ids(
         }
         Value::List(values) => {
             for value in values {
-                collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids, ctx)?;
+                collect_measure_ids(
+                    value,
+                    exchange,
+                    active,
+                    depth + 1,
+                    graph_limit,
+                    measure_ids,
+                    ctx,
+                )?;
             }
         }
         Value::Typed(_, value) => {
-            collect_measure_ids(value, exchange, active, depth + 1, graph_limit, measure_ids, ctx)?;
+            collect_measure_ids(
+                value,
+                exchange,
+                active,
+                depth + 1,
+                graph_limit,
+                measure_ids,
+                ctx,
+            )?;
         }
         _ => {}
     }
@@ -2503,16 +2595,28 @@ fn measure_inner(
                 return Ok(None);
             };
             let mut quantity = None;
-            for parameter in record.partials.iter().flat_map(|partial| &partial.parameters) {
+            for parameter in record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+            {
                 quantity = measure_quantity(parameter, ctx)?;
                 if quantity.is_some() {
                     break;
                 }
             }
             let quantity = quantity.unwrap_or_else(|| {
-                if record.partials.iter().any(|partial| partial.name.contains("LENGTH")) {
+                if record
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name.contains("LENGTH"))
+                {
                     PmiQuantity::Length
-                } else if record.partials.iter().any(|partial| partial.name.contains("ANGLE")) {
+                } else if record
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name.contains("ANGLE"))
+                {
                     PmiQuantity::Angle
                 } else {
                     PmiQuantity::Ratio
@@ -2533,7 +2637,12 @@ fn measure_inner(
             let scale = match quantity {
                 PmiQuantity::Length => {
                     let resolved = match unit {
-                        Some(unit) => super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new(), ctx)?,
+                        Some(unit) => super::geometry::unit_scale_mm(
+                            unit,
+                            exchange,
+                            &mut BTreeSet::new(),
+                            ctx,
+                        )?,
                         None => None,
                     };
                     if let Some(scale) = resolved {
@@ -2552,7 +2661,12 @@ fn measure_inner(
                 }
                 PmiQuantity::Angle => {
                     let resolved = match unit {
-                        Some(unit) => super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new(), ctx)?,
+                        Some(unit) => super::geometry::unit_scale_radians(
+                            unit,
+                            exchange,
+                            &mut BTreeSet::new(),
+                            ctx,
+                        )?,
                         None => None,
                     };
                     if let Some(scale) = resolved {
@@ -2572,18 +2686,16 @@ fn measure_inner(
                 PmiQuantity::Ratio => 1.0,
             };
             let mut result = None;
-            for parameter in record.partials.iter().flat_map(|partial| &partial.parameters) {
+            for parameter in record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+            {
                 result = ValueExt::typed_number(parameter)
                     .and_then(|number| PmiValue::new(number * scale, quantity));
                 if result.is_none() {
-                    result = measure_inner(
-                        parameter,
-                        exchange,
-                        active,
-                        depth + 1,
-                        measurements,
-                        ctx,
-                    )?;
+                    result =
+                        measure_inner(parameter, exchange, active, depth + 1, measurements, ctx)?;
                 }
                 if result.is_some() {
                     break;

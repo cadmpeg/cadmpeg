@@ -12,7 +12,12 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 const LENGTH: &str = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));";
 const ANGLE: &str = "#1=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));";
 
-fn unit_refusal(records: &str, angle: bool, collection_limit: u64, depth_limit: Option<u64>) -> CodecError {
+fn unit_refusal(
+    records: &str,
+    angle: bool,
+    collection_limit: u64,
+    depth_limit: Option<u64>,
+) -> CodecError {
     let source = format!("{HEADER}{records}{TAIL}");
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid unit exchange");
     let arena = DecodeArena::new();
@@ -82,17 +87,21 @@ fn document_refusal(records: &str, collection_limit: u64, with_context: bool) ->
         .expect("source fits policy");
     let result = super::super::document_unit_scale(
         &exchange,
-        "LENGTH_UNIT",
-        super::super::unit_scale_mm,
+        super::super::UnitScaleKind::Length,
         &ctx,
     );
-    assert_eq!(with_context, records.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT"));
+    assert_eq!(
+        with_context,
+        records.contains("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+    );
     result.expect_err("document unit collection exceeds the limit")
 }
 
 #[test]
 fn document_unit_ids_refuse_collection_limit() {
-    let records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));");
+    let records = format!(
+        "{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
+    );
     assert!(matches!(
         document_refusal(&records, 0, true),
         CodecError::ResourceLimit(refusal)
@@ -103,7 +112,9 @@ fn document_unit_ids_refuse_collection_limit() {
 
 #[test]
 fn document_unit_scales_refuse_collection_limit() {
-    let records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));");
+    let records = format!(
+        "{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
+    );
     assert!(matches!(
         document_refusal(&records, 2, true),
         CodecError::ResourceLimit(refusal)
@@ -114,7 +125,9 @@ fn document_unit_scales_refuse_collection_limit() {
 
 #[test]
 fn document_context_scales_refuse_collection_limit() {
-    let records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));");
+    let records = format!(
+        "{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
+    );
     assert!(matches!(
         document_refusal(&records, 3, true),
         CodecError::ResourceLimit(refusal)
@@ -135,7 +148,9 @@ fn document_fallback_scales_refuse_collection_limit() {
 
 #[test]
 fn context_length_scales_refuse_collection_limit() {
-    let records = format!("{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));");
+    let records = format!(
+        "{LENGTH}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
+    );
     let source = format!("{HEADER}{records}{TAIL}");
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid context units");
     let arena = DecodeArena::new();
@@ -153,7 +168,9 @@ fn context_length_scales_refuse_collection_limit() {
 
 #[test]
 fn context_angle_scales_refuse_collection_limit() {
-    let records = format!("{ANGLE}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));");
+    let records = format!(
+        "{ANGLE}#2=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));"
+    );
     let source = format!("{HEADER}{records}{TAIL}");
     let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid context units");
     let arena = DecodeArena::new();
@@ -173,15 +190,25 @@ fn candidate_refusal(angle: bool, limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let (group, value) = if angle {
         ("step_angle_candidate_groups", "step_angle_candidate_values")
     } else {
-        ("step_length_candidate_groups", "step_length_candidate_values")
+        (
+            "step_length_candidate_groups",
+            "step_length_candidate_values",
+        )
     };
-    super::super::add_unit_candidate(&mut BTreeMap::new(), 1, PositiveReal::ONE, &ctx, group, value)
-        .expect_err("candidate exceeds the limit")
+    super::super::add_unit_candidate(
+        &mut BTreeMap::new(),
+        1,
+        PositiveReal::ONE,
+        &ctx,
+        group,
+        value,
+    )
+    .expect_err("candidate exceeds the limit")
 }
 
 #[test]
@@ -254,11 +281,21 @@ fn unit_scope_members_refuse_collection_limit() {
 }
 
 #[test]
+fn unit_scope_pending_refuses_collection_limit() {
+    assert!(matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 2, None),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_unit_scope_pending"));
+}
+
+#[test]
 fn unit_scope_walk_refuses_depth_limit() {
-    assert!(matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 10, Some(1)),
+    assert!(
+        matches!(scope_refusal("#1=ITEM(#2);#2=ITEM();", 10, Some(1)),
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_unit_scope_walk"));
+                && refusal.operation == "step_unit_scope_walk")
+    );
 }
 
 #[test]
@@ -266,8 +303,8 @@ fn unit_selected_scales_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE])]);
     let default = PositiveReal::new(2.0).expect("positive default");
     assert!(matches!(
@@ -283,9 +320,15 @@ fn conflicting_unit_loss_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
-    let candidates = BTreeMap::from([(1, vec![PositiveReal::ONE, PositiveReal::new(2.0).expect("positive scale")])]);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let candidates = BTreeMap::from([(
+        1,
+        vec![
+            PositiveReal::ONE,
+            PositiveReal::new(2.0).expect("positive scale"),
+        ],
+    )]);
     assert!(matches!(
         super::super::finalize_unit_candidates(candidates, PositiveReal::ONE, "length", &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))

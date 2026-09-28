@@ -10,26 +10,35 @@ fn relationship_refusal(collection_limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     super::super::push_topology_group(
-        &mut BTreeMap::new(), 1u64, 2u64, &ctx,
-        "step_shape_relationship_groups", "step_shape_relationship_members",
-    ).expect_err("relationship exceeds collection limit")
+        &mut BTreeMap::new(),
+        1u64,
+        2u64,
+        &ctx,
+        "step_shape_relationship_groups",
+        "step_shape_relationship_members",
+    )
+    .expect_err("relationship exceeds collection limit")
 }
 
 #[test]
 fn shape_relationship_groups_refuse_collection_limit() {
-    assert!(matches!(relationship_refusal(0), CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(relationship_refusal(0), CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_shape_relationship_groups"));
+            && refusal.operation == "step_shape_relationship_groups")
+    );
 }
 
 #[test]
 fn shape_relationship_members_refuse_collection_limit() {
-    assert!(matches!(relationship_refusal(1), CodecError::ResourceLimit(refusal)
+    assert!(
+        matches!(relationship_refusal(1), CodecError::ResourceLimit(refusal)
         if refusal.dimension == ResourceDimension::CollectionItems
-            && refusal.operation == "step_shape_relationship_members"));
+            && refusal.operation == "step_shape_relationship_members")
+    );
 }
 
 #[test]
@@ -38,8 +47,8 @@ fn shape_relationship_graph_preserves_bidirectional_edges() {
     let (exchange, _) = crate::parse::parse(source).expect("valid relationship graph");
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let graph = super::super::shape_representation_relationships(&exchange, &ctx)
         .expect("relationship graph fits policy");
     assert_eq!(graph.get(&1).map(Vec::as_slice), Some(&[2][..]));
@@ -51,8 +60,8 @@ fn topology_losses_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let note = crate::loss::StepLossCode::DecodeWarning.note("invalid topology");
     assert!(matches!(
         super::super::push_topology_vec(&mut Vec::new(), note, &ctx, "step_topology_losses"),
@@ -67,8 +76,8 @@ fn topology_loss_merge_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::append_topology_vec(&mut Vec::new(), &mut vec![1u64], &ctx, "step_topology_loss_merge"),
         Err(CodecError::ResourceLimit(refusal))
@@ -82,8 +91,8 @@ fn topology_commit_error_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let error = cadmpeg_ir::draft::DraftError::IdentityCollision("step:data:body#1".into());
     assert!(matches!(
         super::super::topology_commit_error("topology root", &error, &ctx),
@@ -98,8 +107,8 @@ fn decoded_topology_pcurves_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_set(&mut std::collections::BTreeSet::new(), 1u64, &ctx, "step_decoded_topology_pcurves"),
         Err(CodecError::ResourceLimit(refusal))
@@ -115,8 +124,8 @@ fn associated_pcurves_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
         super::super::associated_pcurves(1, 3, &exchange, &std::collections::BTreeSet::from([2]), &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -130,8 +139,8 @@ fn topology_claims_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_hash_set(&mut std::collections::HashSet::new(), 1u64, &ctx, "step_topology_claims"),
         Err(CodecError::ResourceLimit(refusal))
@@ -145,8 +154,8 @@ fn built_wire_model_set_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_set(&mut std::collections::BTreeSet::new(), 1u64, &ctx, "step_built_wire_models"),
         Err(CodecError::ResourceLimit(refusal))
@@ -164,8 +173,8 @@ fn topology_body_id_copy_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::copy_topology_body_id(&body_id(), &ctx, "step_topology_root_bodies"),
         Err(CodecError::ResourceLimit(refusal))
@@ -179,8 +188,8 @@ fn topology_root_group_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::push_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_root_groups", "step_topology_root_bodies"),
         Err(CodecError::ResourceLimit(refusal))
@@ -194,8 +203,8 @@ fn topology_root_bodies_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::push_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_root_groups", "step_topology_root_bodies"),
         Err(CodecError::ResourceLimit(refusal))
@@ -209,8 +218,8 @@ fn topology_shell_group_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_shell_groups", "step_topology_shell_bodies"),
         Err(CodecError::ResourceLimit(refusal))
@@ -224,8 +233,8 @@ fn topology_shell_bodies_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_body_group(&mut BTreeMap::new(), 1, &body_id(), &ctx, "step_topology_shell_groups", "step_topology_shell_bodies"),
         Err(CodecError::ResourceLimit(refusal))
@@ -239,8 +248,8 @@ fn topology_built_roots_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::insert_topology_map(&mut BTreeMap::new(), 1u64, 2u64, &ctx, "step_topology_built_roots"),
         Err(CodecError::ResourceLimit(refusal))
@@ -259,11 +268,15 @@ fn source_index_refusal<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityErro
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     super::super::push_topology_id_group::<T>(
-        &mut BTreeMap::new(), 1, "step:data:body#1", &ctx,
-        group_operation, member_operation,
+        &mut BTreeMap::new(),
+        1,
+        "step:data:body#1",
+        &ctx,
+        group_operation,
+        member_operation,
     )
     .expect_err("source index exceeds limit")
 }
@@ -338,8 +351,8 @@ fn topology_admissions_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::append_topology_vec(&mut Vec::new(), &mut vec![1u64], &ctx, "step_topology_admissions"),
         Err(CodecError::ResourceLimit(refusal))
@@ -355,8 +368,8 @@ fn geometric_set_omissions_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
     assert!(matches!(
@@ -372,8 +385,8 @@ fn geometric_set_omission_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         super::super::geometric_set_omission_message("GEOMETRIC_SET", 1, &[2, 3], &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -387,8 +400,8 @@ fn built_outcome_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut outcome = super::super::BuildOutcome::Built(Vec::new());
     let built = super::super::Built {
         typed: std::collections::HashSet::new(),
@@ -412,8 +425,8 @@ fn connected_wire_typed_claims_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
     assert!(matches!(
@@ -431,8 +444,8 @@ fn shell_wire_typed_claims_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
     assert!(matches!(
@@ -450,8 +463,8 @@ fn subset_parent_loss_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
         super::super::validate_subset_parent(1, exchange.records().get(&1).expect("subset"), "CONNECTED_EDGE_SUB_SET", &exchange, &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -467,8 +480,8 @@ fn curve_less_wire_edge_loss_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let edge = super::super::EdgeDef::Bare { start: 1, end: 2 };
     assert!(matches!(
         super::super::edge_curve_id_reported(1, &edge, &exchange, &mut Vec::new(), &ctx),
@@ -485,8 +498,8 @@ fn vertex_definitions_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
         super::super::vertex_defs(&exchange, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -502,8 +515,8 @@ fn oriented_edge_definitions_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(
         super::super::oriented_defs(&exchange, &ctx),
         Err(CodecError::ResourceLimit(refusal))
@@ -512,7 +525,11 @@ fn oriented_edge_definitions_refuse_collection_limit() {
     ));
 }
 
-fn edge_definition_refusal(collection_limit: u64, retained_limit: u64, depth_limit: u64) -> CodecError {
+fn edge_definition_refusal(
+    collection_limit: u64,
+    retained_limit: u64,
+    depth_limit: u64,
+) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DUMMY();#2=DUMMY();#3=EDGE('',#1,#2);ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("valid edge reference");
     let arena = DecodeArena::new();
@@ -520,8 +537,8 @@ fn edge_definition_refusal(collection_limit: u64, retained_limit: u64, depth_lim
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
     policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::edge_defs(&exchange, &ctx)
         .err()
         .expect("edge definitions exceed limit")
@@ -566,8 +583,8 @@ fn edge_definition_recursion_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     assert!(matches!(super::super::edge_defs(&exchange, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
@@ -580,8 +597,8 @@ fn shell_definition_refusal(collection_limit: u64) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::shell_defs(&exchange, &ctx)
         .err()
         .expect("shell definitions exceed limit")
@@ -616,8 +633,8 @@ fn shell_definition_typed_copy_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
@@ -634,18 +651,20 @@ fn shell_definition_claims_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let definition = super::super::ShellDef {
         base: 1,
         forward: true,
         typed: std::collections::HashSet::from([2]),
     };
     let shells = BTreeMap::from([(1, definition)]);
-    assert!(matches!(super::super::shell_def_for(1, &shells, &mut std::collections::HashSet::new(), &ctx),
+    assert!(
+        matches!(super::super::shell_def_for(1, &shells, &mut std::collections::HashSet::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
-                && refusal.operation == "step_shell_definition_claims"));
+                && refusal.operation == "step_shell_definition_claims")
+    );
 }
 
 #[test]
@@ -655,12 +674,14 @@ fn shell_definition_recursion_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
-    assert!(matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &ctx),
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    assert!(
+        matches!(super::super::shell_def_cached(2, &exchange, &mut std::collections::BTreeSet::new(), &mut BTreeMap::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_shell_definition_recursion"));
+                && refusal.operation == "step_shell_definition_recursion")
+    );
 }
 
 fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> CodecError {
@@ -669,18 +690,21 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let root = exchange.records().get(&2).expect("shell model");
-    let shells = BTreeMap::from([(1, super::super::ShellDef {
-        base: 1,
-        forward: true,
-        typed: std::collections::HashSet::new(),
-    })]);
+    let shells = BTreeMap::from([(
+        1,
+        super::super::ShellDef {
+            base: 1,
+            forward: true,
+            typed: std::collections::HashSet::new(),
+        },
+    )]);
     let key = super::super::root_key(root, &exchange, &shells, &ctx)
         .and_then(|key| key.ok_or_else(|| CodecError::malformed("missing root key")));
     if !include_distinct {
-        return key.err().expect("root key exceeds limit");
+        return key.expect_err("root key exceeds limit");
     }
     let mut distinct = std::collections::BTreeSet::new();
     super::super::insert_topology_set(
@@ -689,8 +713,7 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
         &ctx,
         "step_distinct_topology_roots",
     )
-    .err()
-    .expect("distinct root set exceeds limit")
+    .expect_err("distinct root set exceeds limit")
 }
 
 #[test]
@@ -723,12 +746,15 @@ fn geometric_set_refusal(collection_limit: u64, has_surface: bool) -> CodecError
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
-    let mut carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
-        .expect("empty carrier index fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    let mut carriers =
+        crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+            .expect("empty carrier index fits policy");
     if has_surface {
-        carriers.surfaces.insert(4, crate::reader::index::SurfaceIndex(0));
+        carriers
+            .surfaces
+            .insert(4, crate::reader::index::SurfaceIndex(0));
     }
     super::super::build_geometric_set(
         1,
@@ -775,11 +801,11 @@ fn staged_topology_refusal(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let body_id = body_id();
-    let region_id = cadmpeg_ir::ids::RegionId::mint("step:data:region#1")
-        .expect("valid region identity");
+    let region_id =
+        cadmpeg_ir::ids::RegionId::mint("step:data:region#1").expect("valid region identity");
     let surfaces = (0..surface_count)
         .map(|index| cadmpeg_ir::geometry::Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("step:data:surface#{index}"))
@@ -792,7 +818,13 @@ fn staged_topology_refusal(
         .collect();
     super::super::staged_topology(
         std::collections::HashSet::new(),
-        Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), surfaces, Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        surfaces,
+        Vec::new(),
         cadmpeg_ir::topology::Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -859,26 +891,40 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
-    let shells = BTreeMap::from([(1, super::super::ShellDef {
-        base: 1,
-        forward: true,
-        typed: std::collections::HashSet::new(),
-    })]);
-    let region = cadmpeg_ir::ids::RegionId::mint("step:data:region#3")
-        .expect("valid region identity");
+    let shells = BTreeMap::from([(
+        1,
+        super::super::ShellDef {
+            base: 1,
+            forward: true,
+            typed: std::collections::HashSet::new(),
+        },
+    )]);
+    let region =
+        cadmpeg_ir::ids::RegionId::mint("step:data:region#3").expect("valid region identity");
     super::super::build_one(
         3,
         exchange.records().get(&3).expect("model"),
         &exchange,
         &cadmpeg_ir::CadIr::empty(),
-        &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new(), &shells,
-        &std::collections::BTreeSet::new(), &carriers, &[1],
-        body_id(), &region, false, false, false,
-        &mut Vec::new(), &mut None, &ctx,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &shells,
+        &std::collections::BTreeSet::new(),
+        &carriers,
+        &[1],
+        body_id(),
+        &region,
+        false,
+        false,
+        false,
+        &mut Vec::new(),
+        &mut None,
+        &ctx,
     )
     .err()
     .expect("builder exceeds limit")
@@ -923,8 +969,8 @@ fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64)
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
     policy.limits.max_recursion_depth = depth_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     super::super::face_attributes(
         face_id,
         exchange.records().get(&face_id).expect("face record"),
@@ -992,8 +1038,8 @@ fn implicit_face_refusal(collection_limit: u64, plane: bool) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let result = if plane {
         super::super::implicit_face_plane(&[1], &exchange, &BTreeMap::new(), &carriers, &ctx)
             .map(|_| ())
@@ -1001,7 +1047,7 @@ fn implicit_face_refusal(collection_limit: u64, plane: bool) -> CodecError {
         super::super::implicit_face_points(&[1], &exchange, &BTreeMap::new(), &carriers, &ctx)
             .map(|_| ())
     };
-    result.err().expect("implicit face exceeds collection limit")
+    result.expect_err("implicit face exceeds collection limit")
 }
 
 #[test]
@@ -1049,8 +1095,8 @@ fn implicit_face_loop_normals_refuse_collection_limit() {
 fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
     let ir = cadmpeg_ir::CadIr::empty();
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-    let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1")
-        .expect("valid surface identity");
+    let surface_id =
+        cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1").expect("valid surface identity");
     let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
         cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
     );
@@ -1058,9 +1104,11 @@ fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 0.5, 1.0, 1.0],
-            vec![cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                 cadmpeg_ir::math::Point2::new(0.5, 0.0),
-                 cadmpeg_ir::math::Point2::new(1.0, 0.0)],
+            vec![
+                cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                cadmpeg_ir::math::Point2::new(0.5, 0.0),
+                cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            ],
             None,
             false,
         )
@@ -1069,16 +1117,14 @@ fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     if break_only {
         super::super::pcurve_parameter_break_fractions(&pcurve, [0.0, 1.0], &mut Vec::new(), &ctx)
-            .err()
-            .expect("break fractions exceed limit")
+            .expect_err("break fractions exceed limit")
     } else {
         super::super::pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface, &ctx)
-            .err()
-            .expect("selection seeds exceed limit")
+            .expect_err("selection seeds exceed limit")
     }
 }
 
@@ -1110,12 +1156,12 @@ fn selected_pcurve_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
-    let candidate = cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1")
-        .expect("valid pcurve identity");
+    let candidate =
+        cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1").expect("valid pcurve identity");
     assert!(matches!(super::super::select_associated_pcurve(
         &cadmpeg_ir::CadIr::empty(), &exchange, 1,
         &super::super::EdgeDef::Bare { start: 1, end: 2 },

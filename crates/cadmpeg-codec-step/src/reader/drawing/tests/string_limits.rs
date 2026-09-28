@@ -35,12 +35,20 @@ fn value_refusal(value: &Value, limit: u64, operation: &str) {
 
 #[test]
 fn drawing_string_value_refuses_retained_limit() {
-    value_refusal(&Value::String(b"drawing text".to_vec()), 1, "step_string_text");
+    value_refusal(
+        &Value::String(b"drawing text".to_vec()),
+        1,
+        "step_string_text",
+    );
 }
 
 #[test]
 fn drawing_constant_value_refuses_retained_limit() {
-    value_refusal(&Value::ConstantEntity("long-name".into()), 1, "step_drawing_value_text");
+    value_refusal(
+        &Value::ConstantEntity("long-name".into()),
+        1,
+        "step_drawing_value_text",
+    );
 }
 
 #[test]
@@ -55,7 +63,10 @@ fn drawing_list_text_refuses_retained_limit() {
 #[test]
 fn drawing_binary_text_refuses_retained_limit() {
     let (source, exchange) = exchange("#1=ITEM(\"0FF\");");
-    let value = exchange.records().get(&1).and_then(|record| record.parameter(0))
+    let value = exchange
+        .records()
+        .get(&1)
+        .and_then(|record| record.parameter(0))
         .expect("binary parameter");
     let Value::Binary(binary) = value else {
         panic!("expected binary parameter");
@@ -118,5 +129,8 @@ fn drawing_sheet_usage_sequence_propagates_string_refusal() {
                     && refusal.operation == "step_string_text"
         )
     });
-    assert!(refused, "no retained limit refused the drawing sequence string");
+    assert!(
+        refused,
+        "no retained limit refused the drawing sequence string"
+    );
 }

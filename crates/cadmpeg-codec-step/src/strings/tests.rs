@@ -75,8 +75,7 @@ fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
 #[test]
 fn wide_escape_streams_surrogate_pairs_and_rejects_isolated_surrogates() {
     assert_eq!(
-        crate::strings::decode(b"\\X2\\D83DDE42\\X0\\")
-            .expect("valid UTF-16 surrogate pair"),
+        crate::strings::decode(b"\\X2\\D83DDE42\\X0\\").expect("valid UTF-16 surrogate pair"),
         "🙂"
     );
     assert_eq!(
@@ -101,8 +100,8 @@ fn decoded_string_text_refuses_retained_limit_before_output_allocation() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         crate::strings::decode_with_context(
             b"\xE9",

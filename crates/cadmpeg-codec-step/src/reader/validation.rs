@@ -3,8 +3,8 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -49,7 +49,12 @@ pub(super) fn decode(
         };
         let mut items = BTreeSet::new();
         for item in representation_items {
-            insert_tree(&mut items, item, ctx, "step_validation_representation_items")?;
+            insert_tree(
+                &mut items,
+                item,
+                ctx,
+                "step_validation_representation_items",
+            )?;
         }
         if !items.is_empty() {
             ctx.charge_collection_items(1, "step_validation_representations")?;
@@ -61,7 +66,9 @@ pub(super) fn decode(
         let Some(property) = record.partial("PROPERTY_DEFINITION") else {
             continue;
         };
-        let name = property.parameters.first()
+        let name = property
+            .parameters
+            .first()
             .map(|value| {
                 decode_text_charged(
                     exchange,
@@ -79,7 +86,9 @@ pub(super) fn decode(
             continue;
         };
         if name.eq_ignore_ascii_case("geometric validation property") {
-            let description = property.parameters.get(1)
+            let description = property
+                .parameters
+                .get(1)
                 .map(|value| {
                     decode_text_charged(
                         exchange,
@@ -186,7 +195,9 @@ pub(super) fn decode(
             } else {
                 push_validation_note(
                     &mut notes,
-                    format_args!("geometric validation {kind} {description}: expected {expected_text}"),
+                    format_args!(
+                        "geometric validation {kind} {description}: expected {expected_text}"
+                    ),
                     ctx,
                 )?;
             }
@@ -242,11 +253,9 @@ fn expected_value(
         if values.len() != 3 {
             return Ok(None);
         }
-        let [Some(x), Some(y), Some(z)] = [
-            values[0].number(),
-            values[1].number(),
-            values[2].number(),
-        ] else {
+        let [Some(x), Some(y), Some(z)] =
+            [values[0].number(), values[1].number(), values[2].number()]
+        else {
             return Ok(None);
         };
         return Ok(Some(Expected::Centroid(Point3::new(
@@ -262,9 +271,10 @@ fn expected_value(
         .partials
         .iter()
         .flat_map(|partial| partial.parameters.iter())
-        .find_map(area_or_volume_measure) else {
-            return Ok(None);
-        };
+        .find_map(area_or_volume_measure)
+    else {
+        return Ok(None);
+    };
     let scale = measure_scale(id, record, exchange, scale, kind, losses, ctx)?;
     Ok(Some(match kind {
         "AREA_MEASURE" => Expected::Area(value * scale),
@@ -292,13 +302,18 @@ fn measure_scale(
             let fields = (|| {
                 let element = exchange.records().get(&element.reference()?)?;
                 let element = element.partial("DERIVED_UNIT_ELEMENT")?;
-                Some((element.parameters.first()?.reference()?, element.parameters.get(1)?.number()?))
+                Some((
+                    element.parameters.first()?.reference()?,
+                    element.parameters.get(1)?.number()?,
+                ))
             })();
             let Some((base, exponent)) = fields else {
                 scale = None;
                 break;
             };
-            let Some(base) = super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), Some(ctx))? else {
+            let Some(base) =
+                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), Some(ctx))?
+            else {
                 scale = None;
                 break;
             };
@@ -432,7 +447,10 @@ impl MeshProperties {
     }
 }
 
-fn mesh_properties(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Option<MeshProperties>, CodecError> {
+fn mesh_properties(
+    ir: &CadIr,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<MeshProperties>, CodecError> {
     let Some(body) = (ir.model.bodies.len() == 1).then(|| &ir.model.bodies[0].id) else {
         return Ok(None);
     };
@@ -630,9 +648,9 @@ fn insert_hash(
 ) -> Result<(), CodecError> {
     if !values.contains(&id) {
         ctx.charge_collection_items(1, operation)?;
-        values.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len() + 1))
-        })?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len() + 1)))?;
         values.insert(id);
     }
     Ok(())

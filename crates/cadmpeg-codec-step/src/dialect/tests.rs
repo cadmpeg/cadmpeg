@@ -11,8 +11,8 @@ use super::{
 };
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;
-use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 
@@ -64,10 +64,7 @@ fn exchange(identifiers: &[&str], level: &str) -> crate::parse::Exchange {
         .0
 }
 
-fn limited_context<'a>(
-    arena: &'a DecodeArena,
-    policy: &'a DecodePolicy,
-) -> DecodeContext<'a> {
+fn limited_context<'a>(arena: &'a DecodeArena, policy: &'a DecodePolicy) -> DecodeContext<'a> {
     DecodeContext::from_root_bytes(b"", arena, policy)
         .expect("empty root fits selected policy")
         .0
@@ -139,8 +136,8 @@ fn schema_identifier_list_refuses_retained_limit() {
 #[test]
 fn unverified_dialect_loss_text_refuses_retained_limit() {
     let exchange = exchange(&["UNKNOWN_SCHEMA"], "2;1");
-    let matched = StepDialect::classify(&exchange, None)
-        .expect("classification fits local storage");
+    let matched =
+        StepDialect::classify(&exchange, None).expect("classification fits local storage");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -351,10 +348,10 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
     // the edition unspecified. The reader's single Part 21 grammar is that
     // row's declared strategy and the edition axis is undeclared rather than
     // substituted, so this is a verified read: `DecodeMode::Strict` accepts it.
-    let matched = StepDialect::classify(&exchange(
-        &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"],
-        "2;1",
-    ), None)
+    let matched = StepDialect::classify(
+        &exchange(&["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"], "2;1"),
+        None,
+    )
     .expect("classification fits local storage");
 
     assert_eq!(matched.dialect().as_str(), "step:ap242");

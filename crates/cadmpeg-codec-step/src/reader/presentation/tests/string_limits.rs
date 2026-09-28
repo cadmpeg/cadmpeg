@@ -20,7 +20,13 @@ fn layer_result(retained_limit: u64) -> Result<(), CodecError> {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
-    super::super::decode(&exchange, &topology.value, &mut ir, &BTreeMap::new(), Some(&ctx))?;
+    super::super::decode(
+        &exchange,
+        &topology.value,
+        &mut ir,
+        &BTreeMap::new(),
+        Some(&ctx),
+    )?;
     Ok(())
 }
 
@@ -49,8 +55,8 @@ fn color_result(source: &[u8], retained_limit: u64) -> Result<Option<ColorResolu
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained_limit;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
     find_color(
         1,
         &exchange,

@@ -622,15 +622,14 @@ fn tessellation_mesh_list_charges_before_push() {
 
 #[test]
 fn tessellation_mesh_body_refuses_retained_limit_before_copy() {
-    let body = cadmpeg_ir::ids::BodyId::mint("step:data:body#1")
-        .expect("valid body identity");
+    let body = cadmpeg_ir::ids::BodyId::mint("step:data:body#1").expect("valid body identity");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64_from_index(body.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits selected policy");
-    let error = super::admitted_mesh_body(Some(&body), &ctx)
-        .expect_err("body copy exceeds retained limit");
+    let error =
+        super::admitted_mesh_body(Some(&body), &ctx).expect_err("body copy exceeds retained limit");
     assert!(matches!(
         error,
         CodecError::ResourceLimit(limit)
@@ -1026,7 +1025,8 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
     assert!(!result.report().losses.iter().any(|loss| loss
         .message
         .contains("does not match transferred tessellation")));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1062,7 +1062,8 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
             .map(|source| source.object_id.as_str()),
         Some("#7")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1099,7 +1100,8 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1415,7 +1417,8 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
                 .any(|record| record.id.as_str() == "step:data:axis2_placement_3d#99"));
         }
         let validation =
-            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+            cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+                .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -1981,7 +1984,8 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#7")
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:surface#79")

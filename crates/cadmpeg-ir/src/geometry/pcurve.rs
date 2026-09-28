@@ -119,7 +119,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -1690,7 +1692,9 @@ impl PolarPcurveNurbs {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
-        let knots = self.knots.try_clone()
+        let knots = self
+            .knots
+            .try_clone()
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
         let poles = match &self.poles {
             PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
@@ -1700,7 +1704,12 @@ impl PolarPcurveNurbs {
                 poles: super::copy_decode_slice(poles, ctx, operation)?,
             },
         };
-        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Build a polar NURBS from its pole rows.
@@ -1887,13 +1896,17 @@ impl PcurveNurbs {
         match &mut poles {
             PcurveNurbsPoles::Polynomial { points } => {
                 for point in points {
-                    let Some(next) = scaled(*point) else { return Ok(false); };
+                    let Some(next) = scaled(*point) else {
+                        return Ok(false);
+                    };
                     *point = next;
                 }
             }
             PcurveNurbsPoles::Rational { points } => {
                 for pole in points {
-                    let Some(next) = scaled(pole.point) else { return Ok(false); };
+                    let Some(next) = scaled(pole.point) else {
+                        return Ok(false);
+                    };
                     pole.point = next;
                 }
             }
@@ -1909,7 +1922,9 @@ impl PcurveNurbs {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
-        let knots = self.knots.try_clone()
+        let knots = self
+            .knots
+            .try_clone()
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
         let poles = match &self.poles {
             PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
@@ -1919,7 +1934,12 @@ impl PcurveNurbs {
                 points: super::copy_decode_slice(points, ctx, operation)?,
             },
         };
-        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Build a parameter-space NURBS with consistent cardinalities.
@@ -2197,14 +2217,15 @@ impl PcurveGeometry {
         operation: &'static str,
     ) -> Result<bool, CodecError> {
         match self {
-            Self::Nurbs { nurbs } => nurbs.try_scale_control_points_for_decode(scales, ctx, operation),
+            Self::Nurbs { nurbs } => {
+                nurbs.try_scale_control_points_for_decode(scales, ctx, operation)
+            }
             Self::Trimmed(trimmed) => {
                 let mut basis = trimmed.basis.try_clone_for_decode(ctx, operation)?;
                 if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
                     return Ok(false);
                 }
-                ctx.charge_collection_items(1, operation)?;
-                trimmed.basis = Box::new(basis);
+                *trimmed.basis = basis;
                 Ok(true)
             }
             Self::Offset(offset) => {
@@ -2218,26 +2239,30 @@ impl PcurveGeometry {
                 if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
                     return Ok(false);
                 }
-                ctx.charge_collection_items(1, operation)?;
-                offset.basis = Box::new(basis);
+                *offset.basis = basis;
                 offset.distance = distance;
                 Ok(true)
             }
             Self::Transformed(placed) => {
-                let Some(u_scale) = NonZeroReal::new(scales[0]) else { return Ok(false); };
-                let Some(v_scale) = NonZeroReal::new(scales[1]) else { return Ok(false); };
+                let Some(u_scale) = NonZeroReal::new(scales[0]) else {
+                    return Ok(false);
+                };
+                let Some(v_scale) = NonZeroReal::new(scales[1]) else {
+                    return Ok(false);
+                };
                 let mut rows = placed.transform.affine_rows();
                 rows[0][1] *= u_scale.get() / v_scale.get();
                 rows[0][2] *= u_scale.get();
                 rows[1][0] *= v_scale.get() / u_scale.get();
                 rows[1][2] *= v_scale.get();
-                let Some(transform) = Transform2::affine(rows) else { return Ok(false); };
+                let Some(transform) = Transform2::affine(rows) else {
+                    return Ok(false);
+                };
                 let mut basis = placed.basis.try_clone_for_decode(ctx, operation)?;
                 if !basis.try_scale_coordinates_for_decode(scales, ctx, operation)? {
                     return Ok(false);
                 }
-                ctx.charge_collection_items(1, operation)?;
-                placed.basis = Box::new(basis);
+                *placed.basis = basis;
                 placed.transform = transform;
                 Ok(true)
             }

@@ -102,9 +102,9 @@ pub(super) fn decode(
             ctx,
             candidates.len(),
             "step_tessellation_body_candidates",
-            candidates.iter().map(|body| {
-                clone_body_id(body, ctx, "step_tessellation_body_candidates")
-            }),
+            candidates
+                .iter()
+                .map(|body| clone_body_id(body, ctx, "step_tessellation_body_candidates")),
         )?;
         let mut associator = TessellationItemAssociator {
             bodies: &body_candidates,
@@ -472,7 +472,9 @@ pub(super) fn decode(
                     ctx,
                     triangles.len(),
                     "step_tessellation_pn_triangles",
-                    triangles.iter().map(|triangle| triangle.map(|index| index - 1)),
+                    triangles
+                        .iter()
+                        .map(|triangle| triangle.map(|index| index - 1)),
                 )?,
                 CoordinateAddressing::PnIndex,
                 local_vertex_bytes,
@@ -574,11 +576,11 @@ pub(super) fn decode(
                         .into_iter()
                         .map(|vertex| placement.apply_point(vertex.get())),
                 )?
-                    .ok_or_else(|| {
-                        CodecError::malformed(format!(
-                            "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
-                        ))
-                    })?;
+                .ok_or_else(|| {
+                    CodecError::malformed(format!(
+                        "{kind} #{id} placed tessellation vertex contains a non-finite coordinate"
+                    ))
+                })?;
                 if let Some(source_normals) = normals.take() {
                     _placed_normal_bytes = Some(temporary_collection::<FiniteVector3>(
                         ctx,
@@ -591,10 +593,11 @@ pub(super) fn decode(
                         normal_count,
                         "step_tessellation_placed_normals",
                         source_normals.into_iter().map(|normal| {
-                            placement.apply_normal(normal.get()).map(FiniteVector3::from)
+                            placement
+                                .apply_normal(normal.get())
+                                .map(FiniteVector3::from)
                         }),
-                    )?
-                    {
+                    )? {
                         Some(transformed) => normals = Some(transformed),
                         None => {
                             push_loss(
@@ -753,9 +756,10 @@ pub(super) fn decode(
         } else {
             None
         };
-        ir.model.tessellations.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("step_tessellation_mesh_list", 0, 1)
-        })?;
+        ir.model
+            .tessellations
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("step_tessellation_mesh_list", 0, 1))?;
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
@@ -1288,9 +1292,9 @@ fn product_linked_representations<'a>(
                     ctx,
                     "step_tessellation_product_pending",
                 )?)?;
-                pending
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("step_tessellation_product_pending", 0, 1))?;
+                pending.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("step_tessellation_product_pending", 0, 1)
+                })?;
                 pending.push(related);
             }
         }
@@ -1409,7 +1413,9 @@ fn index_list<'a>(
         ctx,
         values.len(),
         "step_tessellation_pnindex",
-        values.iter().map(|value| u32::try_from(value.integer()?).ok()),
+        values
+            .iter()
+            .map(|value| u32::try_from(value.integer()?).ok()),
     )?
     .map(|indices| (indices, bytes)))
 }
@@ -1586,9 +1592,8 @@ fn clone_body_id(
     operation: &'static str,
 ) -> Result<BodyId, CodecError> {
     let mut text = String::new();
-    text.try_reserve_exact(body.as_str().len()).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64_from_index(body.as_str().len()))
-    })?;
+    text.try_reserve_exact(body.as_str().len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(body.as_str().len())))?;
     text.push_str(body.as_str());
     BodyId::mint(text).map_err(|_| CodecError::malformed("invalid admitted STEP body identity"))
 }
@@ -1659,12 +1664,10 @@ fn push_loss(
         ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
     })?;
     let mut text = String::new();
-    text.try_reserve_exact(message_len).map_err(|_| {
-        ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes)
-    })?;
-    std::fmt::write(&mut text, message).map_err(|_| {
-        ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes)
-    })?;
+    text.try_reserve_exact(message_len)
+        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes))?;
+    std::fmt::write(&mut text, message)
+        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes))?;
     losses.push(code.note(text));
     Ok(())
 }
@@ -1684,9 +1687,9 @@ fn checked_vec<T>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, u64_from_index(count))
-    })?;
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
     Ok(values)
 }
 

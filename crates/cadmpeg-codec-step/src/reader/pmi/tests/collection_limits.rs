@@ -21,8 +21,8 @@ fn pmi_refuses(records: &str, operation: &str) {
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup");
-    let index = crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx)
-        .expect("carrier setup");
+    let index =
+        crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
     let topology = crate::reader::topology::decode(&exchange, &mut setup_ir, &index, &setup_ctx)
         .expect("topology setup");
     let refused = (0..=32).any(|limit| {
@@ -57,8 +57,8 @@ fn pmi_retained_refuses(records: &str, operation: &str) {
     let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
     let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
         .expect("geometry setup");
-    let index = crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx)
-        .expect("carrier setup");
+    let index =
+        crate::reader::index::CarrierIndex::from_ir(&setup_ir, &setup_ctx).expect("carrier setup");
     let topology = crate::reader::topology::decode(&exchange, &mut setup_ir, &index, &setup_ctx)
         .expect("topology setup");
     let refused = (0..=256).any(|limit| {
@@ -161,7 +161,11 @@ fn pmi_target_items_refuse_collection_limit() {
     ));
 }
 
-fn source_index_refusal(limit: u64, group_operation: &'static str, item_operation: &'static str) -> CodecError {
+fn source_index_refusal(
+    limit: u64,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -186,12 +190,8 @@ fn source_identity_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_retained_bytes = u64::try_from(id.as_str().len() - 1).expect("ID fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
-    super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(
-        id.as_str(),
-        Some(&ctx),
-        operation,
-    )
-    .expect_err("source identity copy exceeds retained limit")
+    super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(id.as_str(), Some(&ctx), operation)
+        .expect_err("source identity copy exceeds retained limit")
 }
 
 #[test]
@@ -408,8 +408,8 @@ fn pmi_modifier_walk_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits depth policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     let value = crate::parse::Value::List(vec![crate::parse::Value::Enumeration("ABC".into())]);
     assert!(matches!(
         super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
@@ -424,8 +424,8 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits depth policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     let value = crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]);
     assert!(matches!(
         super::super::visit_datum_ids(&value, Some(&ctx), &mut |_| Ok(())),
@@ -491,11 +491,13 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             None,
             &mut ir,
             2,
-            None,
-            Vec::new(),
-            None,
-            cadmpeg_ir::pmi::PmiDefinition::Datum {
-                identification: "A".into(),
+            super::super::annotations::AnnotationDraft {
+                name: None,
+                targets: Vec::new(),
+                visible: None,
+                definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
+                    identification: "A".into(),
+                },
             },
         )
         .expect("datum annotation setup");
@@ -580,8 +582,8 @@ fn placement_refuses(operation: &str) {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("setup root fits policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx)
-        .expect("geometry setup");
+    let geometry =
+        crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
     let refused = (0..=32).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -625,13 +627,13 @@ fn pmi_placement_walk_refuses_depth_limit() {
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
             .expect("setup root fits policy");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx)
-        .expect("geometry setup");
+    let geometry =
+        crate::reader::geometry::decode(&exchange, &mut ir, &setup_ctx).expect("geometry setup");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits depth policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     assert!(matches!(
         super::super::collect_placement_candidates(
             1,
@@ -648,7 +650,11 @@ fn pmi_placement_walk_refuses_depth_limit() {
     ));
 }
 
-fn nested_set_refusal(limit: u64, group_operation: &'static str, item_operation: &'static str) -> CodecError {
+fn nested_set_refusal(
+    limit: u64,
+    group_operation: &'static str,
+    item_operation: &'static str,
+) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -781,8 +787,8 @@ fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     if let Some(depth_limit) = depth_limit {
         policy.limits.max_recursion_depth = depth_limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     super::super::collect_measure_ids(
         &crate::parse::Value::Reference(1),
         &exchange,
@@ -834,8 +840,8 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
     if let Some(depth_limit) = depth_limit {
         policy.limits.max_recursion_depth = depth_limit;
     }
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut losses = Vec::new();
     let mut measurements = super::super::MeasureContext {
         length_scale: 1.0,

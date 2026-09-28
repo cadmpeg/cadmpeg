@@ -384,7 +384,12 @@ impl<'a> ArchiveSnapshot<'a> {
             name.push_str(&entry.name);
 
             let mut attributes = BTreeMap::new();
-            insert_summary_attribute(ctx, &mut attributes, "crc32", format!("{:08x}", entry.crc32))?;
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                "crc32",
+                format!("{:08x}", entry.crc32),
+            )?;
             insert_summary_attribute(
                 ctx,
                 &mut attributes,
@@ -1089,11 +1094,7 @@ mod tests {
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
 
-    fn summary_refuses(
-        dimension: ResourceDimension,
-        limit: u64,
-        operation: &str,
-    ) {
+    fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         writer
             .start_file(
@@ -1133,12 +1134,20 @@ mod tests {
 
     #[test]
     fn zip_summary_attributes_refuse_collection_limit() {
-        summary_refuses(ResourceDimension::CollectionItems, 1, "ZIP summary attributes");
+        summary_refuses(
+            ResourceDimension::CollectionItems,
+            1,
+            "ZIP summary attributes",
+        );
     }
 
     #[test]
     fn zip_summary_name_refuses_retained_limit() {
-        summary_refuses(ResourceDimension::RetainedBytes, 3, "ZIP summary entry name");
+        summary_refuses(
+            ResourceDimension::RetainedBytes,
+            3,
+            "ZIP summary entry name",
+        );
     }
 
     #[test]

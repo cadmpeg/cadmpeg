@@ -23,7 +23,8 @@ fn copy_decode_grid<T: Copy>(
 ) -> Result<Vec<Vec<T>>, CodecError> {
     ctx.charge_collection_items(u64_from_index(rows.len()), operation)?;
     let mut copied = Vec::new();
-    copied.try_reserve_exact(rows.len())
+    copied
+        .try_reserve_exact(rows.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(rows.len())))?;
     for row in rows {
         copied.push(super::copy_decode_slice(row, ctx, operation)?);
@@ -1023,11 +1024,13 @@ impl NurbsSurface {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(u64_from_index(self.u_knots.len()), operation)?;
-        let u_knots = self.u_knots.try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len())))?;
+        let u_knots = self.u_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len()))
+        })?;
         ctx.charge_collection_items(u64_from_index(self.v_knots.len()), operation)?;
-        let v_knots = self.v_knots.try_clone()
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len())))?;
+        let v_knots = self.v_knots.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len()))
+        })?;
         let poles = match &self.poles {
             NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
                 rows: copy_decode_grid(rows, ctx, operation)?,
@@ -1391,7 +1394,9 @@ impl NurbsCurve {
         operation: &'static str,
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
-        let knots = self.knots.try_clone()
+        let knots = self
+            .knots
+            .try_clone()
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
         let poles = match &self.poles {
             NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
@@ -1401,7 +1406,12 @@ impl NurbsCurve {
                 points: super::copy_decode_slice(points, ctx, operation)?,
             },
         };
-        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.

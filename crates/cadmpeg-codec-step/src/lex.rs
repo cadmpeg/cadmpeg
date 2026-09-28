@@ -93,12 +93,21 @@ impl BinaryValue {
         let mut data = Vec::new();
         data.try_reserve_exact(self.data.len()).map_err(|_| {
             ctx.map_or_else(
-                || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(self.data.len())),
+                || {
+                    cadmpeg_core::decode::refuse_local_limit(
+                        operation,
+                        0,
+                        u64_from_index(self.data.len()),
+                    )
+                },
                 |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.data.len())),
             )
         })?;
         data.extend_from_slice(&self.data);
-        Ok(Self { unused_bits: self.unused_bits, data: data.into_boxed_slice() })
+        Ok(Self {
+            unused_bits: self.unused_bits,
+            data: data.into_boxed_slice(),
+        })
     }
 
     pub(crate) fn bit_len(&self) -> usize {
@@ -135,6 +144,7 @@ impl LexError {
 }
 
 /// Tokenize one complete clear-text exchange structure.
+#[cfg(test)]
 pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
@@ -582,7 +592,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             let mut index = 0;
             while index < raw.len() {
                 if raw.as_bytes()[index] == b'D' {
-                    raw.replace_range(index..index + 1, "E");
+                    raw.replace_range(index..=index, "E");
                 }
                 index += 1;
             }
@@ -925,11 +935,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     fn allocation_refusal(&self, operation: &'static str, requested: usize) -> CodecError {
         match self.budget {
             Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
-            None => cadmpeg_core::decode::refuse_local_limit(
-                operation,
-                0,
-                u64_from_index(requested),
-            ),
+            None => {
+                cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested))
+            }
         }
     }
 

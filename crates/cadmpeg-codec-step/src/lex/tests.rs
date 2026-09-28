@@ -16,8 +16,8 @@ fn binary_value_copy_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
         value.try_clone_for_decode(Some(&ctx), "step_binary_value_copy"),
         Err(CodecError::ResourceLimit(refusal))
