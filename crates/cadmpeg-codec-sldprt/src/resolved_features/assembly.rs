@@ -125,7 +125,7 @@ fn feature_input_lane(
     );
     Ok(FeatureInputLane {
         id: parent,
-        configuration: configuration(section),
+        configuration: configuration(ctx, section)?,
         native_payload: ctx.copy_retained(payload, "retain SLDPRT feature input payload")?,
         classes,
         names,
@@ -154,7 +154,7 @@ fn legacy_feature_input_section(section: &str) -> bool {
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
+pub(super) fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
     text.as_bytes()
         .windows(needle.len())
         .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
