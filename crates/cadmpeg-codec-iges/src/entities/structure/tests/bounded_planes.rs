@@ -50,6 +50,28 @@ fn bounded_plane_refuses_boundary_edge_slot_before_draft() {
 }
 
 #[test]
+fn bounded_plane_identity_copies_refuse_before_retaining_text() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges structure identity copy" {
+                    decode(bytes);
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected bounded-plane identity refusal: {other:?}"),
+        }
+    }
+    panic!("bounded-plane identity copy was not reached");
+}
+
+#[test]
 fn plane_nurbs_boundary_points_refuse_collection_limit() {
     let nurbs = NurbsCurve::from_lanes(
         1,

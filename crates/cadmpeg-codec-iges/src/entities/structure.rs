@@ -19,7 +19,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    nurbs::NurbsCurve, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
@@ -1480,14 +1480,14 @@ fn linear_nurbs_is_simple_closed(
     Ok(!planar_polyline_has_self_intersection(&projected))
 }
 
-fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f64; 2]) -> bool {
+fn analytic_curve_is_simple_closed(geometry: &SolvedCurveGeometry, parameter_range: [f64; 2]) -> bool {
     let period = parameter_range[1] - parameter_range[0];
     if !period.is_finite() || period <= 0.0 || !angularly_equal(period, std::f64::consts::TAU) {
         return false;
     }
     matches!(
         geometry,
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)
     )
 }
 
@@ -1564,7 +1564,7 @@ fn bounded_plane_curve_is_simple(
         }
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => Ok(parameter_range
             .is_some_and(|range| {
-                analytic_curve_is_simple_closed(&CurveGeometry::Solved(geometry.clone()), range)
+                analytic_curve_is_simple_closed(geometry, range)
             })),
         SolvedCurveGeometry::Nurbs(nurbs) => {
             if source_is_certified_simple {
@@ -1765,7 +1765,7 @@ fn plane_face_draft(
     let mut candidate = ModelDraft::new();
     let mut loop_ids = reserve_vec(ctx, boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
-        let edge_id = edge.id.clone();
+        let edge_id = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.id, "iges structure identity copy")?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges legacy plane edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().edges.push(edge);
@@ -1774,10 +1774,10 @@ fn plane_face_draft(
         reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges legacy plane coedge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges structure identity copy")?,
+            owner_loop: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: coedge_id.clone(),
+            radial_next: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
@@ -1792,8 +1792,8 @@ fn plane_face_draft(
         reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges legacy plane loop slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
-            id: loop_id.clone(),
-            face: face_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges structure identity copy")?,
+            face: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges structure identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
@@ -1807,8 +1807,8 @@ fn plane_face_draft(
     reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges legacy plane face slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
-        id: face_id.clone(),
-        shell: shell_id.clone(),
+        id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges structure identity copy")?,
+        shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges structure identity copy")?,
         surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
         sense: Sense::Forward,
         loops: face_loops,
@@ -1818,7 +1818,7 @@ fn plane_face_draft(
     });
     let mut shell_faces = reserve_vec(ctx, 1, "iges legacy plane shell faces")?;
     shell_faces.push(face_id);
-    let shell = Shell::new(shell_id.clone(), region_id.clone(), shell_faces, Vec::new(), Vec::new())
+    let shell = Shell::new(crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges structure identity copy")?, crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges structure identity copy")?, shell_faces, Vec::new(), Vec::new())
         .map_err(|_| LegacyPlaneError::Invalid("legacy plane shell is empty"))?;
     reserve_vec_growth(ctx, &mut candidate.model_mut().shells, 1, "iges legacy plane shell slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
@@ -1828,8 +1828,8 @@ fn plane_face_draft(
     reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges legacy plane region slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
+        id: crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges structure identity copy")?,
+        body: crate::decode_resource::clone_optional_identity(Some(ctx), &body_id, "iges structure identity copy")?,
         shells: region_shells,
     });
     let mut body_regions = reserve_vec(ctx, 1, "iges legacy plane body regions")?;
@@ -1961,8 +1961,8 @@ fn legacy_single_parent_face(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
         );
-        edge.id = edge_id.clone();
-        edge.end = edge.start.clone();
+        edge.id = crate::decode_resource::clone_optional_identity(Some(ctx), &edge_id, "iges structure identity copy")?;
+        edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
         boundary_edges.push(edge);
     }
     let stem =
@@ -2851,7 +2851,7 @@ pub(super) fn project(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     ));
-                    edge.end = edge.start.clone();
+                    edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
