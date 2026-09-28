@@ -2,8 +2,6 @@
 //! Compact hole and circular-sweep geometry.
 
 use crate::vecmath::normalize;
-use std::collections::BTreeSet;
-
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, LinearTermination, ProfileRef,
@@ -16,6 +14,7 @@ use crate::container::ContainerScan;
 use super::super::sweep::planes::{
     feature_outline_plane, feature_outline_planes, FeatureOutlinePlane,
 };
+use super::super::uniqueness::exactly_one;
 use super::placement::{
     cap_square_center_radius, cylinder_from_single_cap_outline, hole_cylinder_from_cap_outlines,
     hole_placement, plane_envelope_corners, CapOutline, ExtrusionSpan, SimpleHoleGeometry,
@@ -33,15 +32,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     let cap_rows = feature_outline_planes(scan, feature_id)?
         .into_iter()
         .map(|(id, origin, normal)| {
-            let envelopes = scan
-                .planes
-                .envelopes
-                .iter()
-                .filter(|envelope| envelope.surface_id == id)
-                .collect::<Vec<_>>();
-            let [envelope] = envelopes.as_slice() else {
-                return None;
-            };
+            let envelope = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == id))?;
             Some(CapOutline {
                 surface_id: id,
                 origin,
@@ -53,15 +44,9 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     let [first, second] = cap_rows.as_slice() else {
         return None;
     };
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+    }))?;
     let [entry_plane, termination_plane, first_cylinder, second_cylinder] = table.entries.as_slice()
     else {
         return None;
@@ -69,14 +54,12 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
     if entry_plane.entity_id != first.surface_id || termination_plane.entity_id != second.surface_id {
         return None;
     }
-    let cylinder_rows = [first_cylinder.entity_id, second_cylinder.entity_id]
-        .into_iter()
-        .map(|id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
+    let cylinder_row = |id| {
+        crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-        .collect::<Option<Vec<_>>>()?;
+    };
+    let cylinder_rows = vec![cylinder_row(first_cylinder.entity_id)?, cylinder_row(second_cylinder.entity_id)?];
     let (_, _, extent) =
         hole_placement([*first, *second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
     Some(SimpleHoleGeometry {
@@ -89,13 +72,18 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
 
 fn has_exact_materialized_surface_roster(
     table: &crate::feature::entity::FeatureEntityTable,
-    expected_ids: impl IntoIterator<Item = u32>,
+    expected_ids: impl IntoIterator<Item = u32> + Clone,
 ) -> bool {
-    let expected_ids = expected_ids.into_iter().collect::<Vec<_>>();
-    let expected_set = expected_ids.iter().copied().collect::<BTreeSet<_>>();
-    expected_ids.len() == expected_set.len()
-        && table.surface_ids_iter().count() == expected_set.len()
-        && table.unique_surface_ids() == &expected_set
+    let expected_count = expected_ids.clone().into_iter().count();
+    if table.surface_ids_iter().count() != expected_count
+        || table.unique_surface_ids().len() != expected_count
+    {
+        return false;
+    }
+    expected_ids.clone().into_iter().enumerate().all(|(index, id)| {
+        table.unique_surface_ids().contains(&id)
+            && !expected_ids.clone().into_iter().take(index).any(|previous| previous == id)
+    })
 }
 
 pub(in crate::decode) fn compact_simple_hole_cylinder_id(
@@ -103,7 +91,8 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> Option<u32> {
-    let candidates = tables
+    exactly_one(
+        tables
         .iter()
         .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
         .filter_map(|table| {
@@ -118,7 +107,7 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                         && class_204.source_entity_id().is_none()
                         && class_203.source_entity_id().is_none())
                     .then_some(())?;
-                    let planes = pair
+                    let mut planes = pair
                         .iter()
                         .filter(|candidate| {
                             table.contains_surface_id(candidate.entity_id)
@@ -132,11 +121,10 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                                         && row.feature_id == feature_id
                                         && row.kind == crate::surface::SurfaceKind::Plane
                                 })
-                        })
-                        .collect::<Vec<_>>();
-                    let plane = match planes.as_slice() {
-                        [] if table.entries.len() == 4 => None,
-                        [plane] => Some(plane.entity_id),
+                        });
+                    let plane = match (planes.next(), planes.next()) {
+                        (None, None) if table.entries.len() == 4 => None,
+                        (Some(plane), None) => Some(plane.entity_id),
                         _ => return None,
                     };
                     pair.iter()
@@ -146,11 +134,8 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                                 && !rows.iter().any(|row| row.id == candidate.entity_id)
                         })
                         .then_some((index, plane))
-                })
-                .collect::<Vec<_>>();
-            let [(topology_index, plane)] = topology_candidates.as_slice() else {
-                return None;
-            };
+                });
+            let (topology_index, plane) = exactly_one(topology_candidates)?;
             let bottoms = table
                 .entries
                 .iter()
@@ -159,11 +144,8 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                     candidate.source_entity_id() == Some(0)
                         && !table.contains_surface_id(candidate.entity_id)
                         && !rows.iter().any(|row| row.id == candidate.entity_id)
-                })
-                .collect::<Vec<_>>();
-            let [(bottom_index, _)] = bottoms.as_slice() else {
-                return None;
-            };
+                });
+            let (bottom_index, _) = exactly_one(bottoms)?;
             let sides = table
                 .entries
                 .iter()
@@ -182,23 +164,20 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
                                 && row.feature_id == feature_id
                                 && row.kind == crate::surface::SurfaceKind::Cylinder
                         })
-                })
-                .collect::<Vec<_>>();
-            let [(side_index, side)] = sides.as_slice() else {
-                return None;
+                });
+            let (side_index, side) = exactly_one(sides)?;
+            let roster_matches = match plane {
+                Some(plane_id) if plane_id != side.entity_id => {
+                    has_exact_materialized_surface_roster(table, [side.entity_id, plane_id])
+                }
+                _ => has_exact_materialized_surface_roster(table, [side.entity_id]),
             };
-            let mut expected_materialized = BTreeSet::from([side.entity_id]);
-            expected_materialized.extend(*plane);
-            (has_exact_materialized_surface_roster(table, expected_materialized.iter().copied())
+            (roster_matches
                 && topology_index < bottom_index
                 && bottom_index < side_index)
                 .then_some(side.entity_id)
-        })
-        .collect::<Vec<_>>();
-    let [cylinder_id] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*cylinder_id)
+        }),
+    )
 }
 
 pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
@@ -239,17 +218,16 @@ pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(
     let radial = aligned_axis
         .complement()
         .map(crate::decode::axis::Axis::index);
-    let circles = outlines
+    let mut circles = outlines
         .into_iter()
-        .filter_map(|cap| cap_square_center_radius(cap.corners, aligned_axis))
-        .collect::<Vec<_>>();
-    let (center, radius) = circles.first().copied()?;
+        .filter_map(|cap| cap_square_center_radius(cap.corners, aligned_axis));
+    let (center, radius) = circles.next()?;
     let scale = center
         .iter()
         .chain(std::iter::once(&radius))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    if circles.iter().skip(1).any(|(other_center, other_radius)| {
+    if circles.any(|(other_center, other_radius)| {
         radial.iter().any(|index| {
             (center[*index] - other_center[*index]).abs() > EPS_CENTER_AGREEMENT * scale
         }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
@@ -280,15 +258,9 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<CircularSweepGeometry<'a>> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+    }))?;
     let [first_cap, second_cap, profile_id, cylinder_id] = table.entries.as_slice() else {
         return None;
     };
@@ -324,30 +296,14 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
             |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
         )?;
     let plane = feature_outline_plane(scan, feature_id, cap_id.entity_id)?;
-    let envelopes = scan
-        .planes
-        .envelopes
-        .iter()
-        .filter(|envelope| envelope.surface_id == cap_id.entity_id)
-        .collect::<Vec<_>>();
-    let [envelope] = envelopes.as_slice() else {
-        return None;
-    };
+    let envelope = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == cap_id.entity_id))?;
     let cap = CapOutline {
         surface_id: plane.0,
         origin: plane.1,
         normal: plane.2,
         corners: plane_envelope_corners(&envelope.envelope)?,
     };
-    let transforms = scan
-        .features
-        .section_transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let [transform] = transforms.as_slice() else {
-        return None;
-    };
+    let transform = exactly_one(scan.features.section_transforms.iter().filter(|transform| transform.feature_id == Some(feature_id)))?;
     let (extent, direction) = extrusion_extent_and_direction(
         transform.origin(),
         transform.normal(),
@@ -401,15 +357,9 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
 ) -> Option<CircularSweepGeometry<'a>> {
-    let tables = scan
-        .features
-        .entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id && table.surface_ids_iter().next().is_some())
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+    }))?;
     let [first_plane_entry, second_plane_entry, profile_entry, cylinder_entry] =
         table.entries.as_slice()
     else {
@@ -441,16 +391,8 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
     let first = feature_outline_plane(scan, feature_id, first_plane_entry.entity_id)?;
     let second = feature_outline_plane(scan, feature_id, second_plane_entry.entity_id)?;
     let cap = |plane: FeatureOutlinePlane| {
-        let envelopes = scan
-            .planes
-            .envelopes
-            .iter()
-            .filter(|envelope| envelope.surface_id == plane.0)
-            .collect::<Vec<_>>();
-        let corners = match envelopes.as_slice() {
-            [envelope] => plane_envelope_corners(&envelope.envelope),
-            _ => None,
-        };
+        let corners = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == plane.0))
+            .and_then(|envelope| plane_envelope_corners(&envelope.envelope));
         Some(CapOutline {
             surface_id: plane.0,
             origin: plane.1,

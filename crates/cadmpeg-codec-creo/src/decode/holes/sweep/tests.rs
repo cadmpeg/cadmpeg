@@ -75,6 +75,10 @@ fn circular_sweep_requires_an_exact_materialized_surface_roster() {
         &table,
         [46, 51]
     ));
+    assert!(!super::has_exact_materialized_surface_roster(
+        &table,
+        [46, 46]
+    ));
 
     let mut duplicate = table.clone();
     duplicate
