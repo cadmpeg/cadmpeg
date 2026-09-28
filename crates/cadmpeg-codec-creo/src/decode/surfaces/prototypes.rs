@@ -607,7 +607,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         };
         let cache = crate::scalar::ScalarCache::from_section_checked(ctx, payload)?;
         let Some(replay) =
-            crate::surface::decode_positional_spline_replay(&parameter.body, &prototype, &cache)
+            crate::surface::decode_positional_spline_replay(ctx, &parameter.body, &prototype, &cache)?
         else {
             continue;
         };

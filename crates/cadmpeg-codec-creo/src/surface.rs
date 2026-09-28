@@ -539,99 +539,111 @@ pub(crate) fn positional_spline_replay_prototype(
 }
 
 fn take_spline_scalars(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: &mut usize,
     count: usize,
     name: &str,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<f64>> {
-    (count <= body.len().saturating_sub(*cursor)).then_some(())?;
+) -> Result<Option<Vec<f64>>, CodecError> {
+    if count > body.len().saturating_sub(*cursor) {
+        return Ok(None);
+    }
     let mut values = Vec::new();
     for _ in 0..count {
-        let (value, next) = named_spline_scalar_slot(
+        let Some((value, next)) = named_spline_scalar_slot(
             &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
             name,
             body,
             *cursor,
             cache,
-        )?;
-        let value = value?;
-        (next > *cursor).then_some(())?;
+        ) else {
+            return Ok(None);
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        if next <= *cursor {
+            return Ok(None);
+        }
+        ctx.try_reserve_items(&mut values, 1, "creo spline replay scalar values")?;
         values.push(value);
         *cursor = next;
     }
-    Some(values)
+    Ok(Some(values))
 }
 
-fn spline_vectors(values: &[f64]) -> Option<Vec<[f64; 3]>> {
+fn spline_vectors(ctx: &DecodeContext<'_>, values: &[f64]) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    if values.len() % 3 != 0 {
+        return Ok(None);
+    }
     let mut vectors = Vec::new();
-    let mut chunks = values.chunks_exact(3);
-    for chunk in &mut chunks {
+    ctx.try_reserve_items(&mut vectors, values.len() / 3, "creo spline replay vectors")?;
+    for chunk in values.chunks_exact(3) {
         vectors.push([chunk[0], chunk[1], chunk[2]]);
     }
-    chunks.remainder().is_empty().then_some(vectors)
+    Ok(Some(vectors))
+}
+
+fn take_spline_vectors(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cursor: &mut usize,
+    count: usize,
+    name: &str,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+    let Some(scalars) = take_spline_scalars(ctx, body, cursor, count, name, cache)? else {
+        return Ok(None);
+    };
+    spline_vectors(ctx, &scalars)
 }
 
 fn parse_positional_spline_replay(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<(crate::interpolation_grid::InterpolationGrid, usize)> {
-    let shape = spline_replay_shape(prototype)?;
-    let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
-    let mut cursor = envelope_close.checked_add(1)?;
+) -> Result<Option<(crate::interpolation_grid::InterpolationGrid, usize)>, CodecError> {
+    let Some((shape, mut cursor)) = (|| {
+        let shape = spline_replay_shape(prototype)?;
+        let envelope_close = surface_body_compound_close(SurfaceKind::Spline, body, cache)?;
+        Some((shape, envelope_close.checked_add(1)?))
+    })() else {
+        return Ok(None);
+    };
 
     let mut replay_tangent_conditions = [0; 2];
     for condition in &mut replay_tangent_conditions {
         let (value, next) = compact_int(body, cursor);
-        (next > cursor).then_some(())?;
+        if next <= cursor {
+            return Ok(None);
+        }
         *condition = value;
         cursor = next;
     }
-    (replay_tangent_conditions == shape.tangent_conditions).then_some(())?;
+    if replay_tangent_conditions != shape.tangent_conditions {
+        return Ok(None);
+    }
 
-    let points = spline_vectors(&take_spline_scalars(
-        body,
-        &mut cursor,
-        shape.point_count.checked_mul(3)?,
-        "i_points",
-        cache,
-    )?)?;
-    let u_derivatives = spline_vectors(&take_spline_scalars(
-        body,
-        &mut cursor,
-        shape.u_derivative_count.checked_mul(3)?,
-        "end_u_tangts",
-        cache,
-    )?)?;
-    let v_derivatives = spline_vectors(&take_spline_scalars(
-        body,
-        &mut cursor,
-        shape.v_derivative_count.checked_mul(3)?,
-        "end_v_tangts",
-        cache,
-    )?)?;
-    let mixed_derivatives = spline_vectors(&take_spline_scalars(
-        body,
-        &mut cursor,
-        4usize.checked_mul(3)?,
-        "end_uv_deriv",
-        cache,
-    )?)?;
-    let u_parameters = take_spline_scalars(body, &mut cursor, shape.u_count, "u_params", cache)?;
-    let v_parameters = take_spline_scalars(body, &mut cursor, shape.v_count, "v_params", cache)?;
-    let mixed_derivatives = <[[f64; 3]; 4]>::try_from(mixed_derivatives).ok()?;
-    Some((
-        crate::interpolation_grid::InterpolationGrid::try_new(
+    let Some(point_count) = shape.point_count.checked_mul(3) else { return Ok(None) };
+    let Some(points) = take_spline_vectors(ctx, body, &mut cursor, point_count, "i_points", cache)? else { return Ok(None) };
+    let Some(u_count) = shape.u_derivative_count.checked_mul(3) else { return Ok(None) };
+    let Some(u_derivatives) = take_spline_vectors(ctx, body, &mut cursor, u_count, "end_u_tangts", cache)? else { return Ok(None) };
+    let Some(v_count) = shape.v_derivative_count.checked_mul(3) else { return Ok(None) };
+    let Some(v_derivatives) = take_spline_vectors(ctx, body, &mut cursor, v_count, "end_v_tangts", cache)? else { return Ok(None) };
+    let Some(mixed_derivatives) = take_spline_vectors(ctx, body, &mut cursor, 12, "end_uv_deriv", cache)? else { return Ok(None) };
+    let Some(u_parameters) = take_spline_scalars(ctx, body, &mut cursor, shape.u_count, "u_params", cache)? else { return Ok(None) };
+    let Some(v_parameters) = take_spline_scalars(ctx, body, &mut cursor, shape.v_count, "v_params", cache)? else { return Ok(None) };
+    let Ok(mixed_derivatives) = <[[f64; 3]; 4]>::try_from(mixed_derivatives) else { return Ok(None) };
+    Ok(crate::interpolation_grid::InterpolationGrid::try_new(
             points,
             u_parameters,
             v_parameters,
             u_derivatives,
             v_derivatives,
             mixed_derivatives,
-        )?,
-        cursor,
-    ))
+        ).map(|grid| (grid, cursor)))
 }
 
 /// Return the final structural close of a complete positional spline replay.
@@ -647,23 +659,22 @@ fn positional_spline_replay_body_end(
     let Some(prototype) = associated_spline_replay_prototype(ctx, payload, rows, row)? else {
         return Ok(None);
     };
-    Ok((|| {
-        let body = payload.get(body_start..body_limit)?;
-        let (_, consumed) = parse_positional_spline_replay(body, &prototype, cache)?;
-        (body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
-            .then(|| body_start.checked_add(consumed))
-            .flatten()
-    })())
+    let Some(body) = payload.get(body_start..body_limit) else { return Ok(None) };
+    let Some((_, consumed)) = parse_positional_spline_replay(ctx, body, &prototype, cache)? else { return Ok(None) };
+    Ok((body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
+        .then(|| body_start.checked_add(consumed))
+        .flatten())
 }
 
 /// Decode a positional spline replay body after its final close was removed.
 pub(crate) fn decode_positional_spline_replay(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     prototype: &SurfacePrototypeRecord,
     cache: &scalar::ScalarCache,
-) -> Option<crate::interpolation_grid::InterpolationGrid> {
-    let (replay, consumed) = parse_positional_spline_replay(body, prototype, cache)?;
-    (consumed == body.len()).then_some(replay)
+) -> Result<Option<crate::interpolation_grid::InterpolationGrid>, CodecError> {
+    let Some((replay, consumed)) = parse_positional_spline_replay(ctx, body, prototype, cache)? else { return Ok(None) };
+    Ok((consumed == body.len()).then_some(replay))
 }
 
 /// One complete contour-chain entry following a positional `srf_array` row's
