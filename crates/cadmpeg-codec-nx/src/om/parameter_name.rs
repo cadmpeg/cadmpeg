@@ -53,16 +53,6 @@ impl<S: AsRef<str>, I: Copy> ParameterName<S, I> {
     }
 }
 
-impl<I> ParameterName<&str, I> {
-    pub(crate) fn into_owned(self) -> ParameterName<String, I> {
-        ParameterName {
-            spelling: self.spelling.to_string(),
-            index: self.index,
-            qualifier_start: self.qualifier_start,
-        }
-    }
-}
-
 fn canonical_parts(name: &str) -> Option<(u32, Option<usize>)> {
     let tail = name.strip_prefix('p')?;
     let digit_count = tail.bytes().take_while(u8::is_ascii_digit).count();
