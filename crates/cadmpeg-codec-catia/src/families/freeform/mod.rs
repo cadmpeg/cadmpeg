@@ -1449,7 +1449,7 @@ pub(super) fn append_freeform_surface_pools(
         admission,
     )?;
 
-    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
+    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(admission.context(), data, records)? {
         let ctx = admission.context();
         let mut points = Vec::new();
         let mut first = Vec::new();
