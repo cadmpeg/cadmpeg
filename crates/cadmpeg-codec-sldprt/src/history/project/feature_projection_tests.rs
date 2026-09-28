@@ -950,9 +950,10 @@ fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
     ];
 
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
+        &cadmpeg_test_support::service_decode_context(),
         &mut histories,
         &[lane],
-    );
+    ).unwrap();
 
     assert_eq!(
         histories[0].features[1]

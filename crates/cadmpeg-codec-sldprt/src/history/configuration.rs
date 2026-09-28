@@ -101,8 +101,8 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::terminations::enrich_history_combine_selections(histories, lanes);
     crate::resolved_features::terminations::enrich_history_sweep_paths(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
-        histories, lanes,
-    );
+        ctx, histories, lanes,
+    )?;
     crate::resolved_features::operations::enrich_history_split_lines(ctx, histories, lanes)?;
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
