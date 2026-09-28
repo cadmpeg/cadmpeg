@@ -2317,7 +2317,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(ctx, scan)?;
         self.native.sketch_curve_identities =
             crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
-        self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+        self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(ctx, scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
             &self.native.design_entity_headers,
             &mut self.native.sketch_points,
