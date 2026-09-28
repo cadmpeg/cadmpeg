@@ -3247,7 +3247,8 @@ pub(crate) fn operation_terminal_frame(
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
-pub(crate) fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
+pub(crate) fn data_block_object_references(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DataBlockObjectReference>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX data-block object references")?;
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -3266,13 +3267,14 @@ pub(crate) fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectR
             at += 1;
             continue;
         }
+        reserve_om_retained_item(ctx, &mut references, "nx data-block object references")?;
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
         });
         at = end + 2;
     }
-    references
+    Ok(references)
 }
 
 fn boolean_operations_with_labels(
