@@ -721,7 +721,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         if current_matches || !mirrored_matches {
             continue;
         }
-        source_carriers.replace_surface_geometry(surface, mirrored)?;
+        source_carriers.replace_surface_geometry(ctx, surface, mirrored)?;
         reconciled += 1;
         if let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, face_id) {
             annotate(

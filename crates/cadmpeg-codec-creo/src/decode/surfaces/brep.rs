@@ -1657,7 +1657,7 @@ pub(in super::super) fn transfer_native_brep(
                         })
                     })
                 };
-                source_carriers.replace_curve_geometry(candidate, geometry)?;
+                source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
                 range
             } else {
                 None
