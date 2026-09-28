@@ -394,11 +394,16 @@ pub(super) fn lifted_curve_geometry(
         return Ok(NurbsCurve::from_lanes(pcurve.degree, knots, points, weights, false)
             .ok().map(SolvedCurveGeometry::Nurbs).map(CurveGeometry::Solved));
     }
+    if let B5Surface::Nurbs(surface) = surface {
+        return Ok(nurbs_isocurve(ctx, pcurve, surface)?
+            .map(SolvedCurveGeometry::Nurbs).map(CurveGeometry::Solved));
+    }
     Ok((|| -> Option<CurveGeometry> { match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
         | B5Surface::RollingBall { .. }
-        | B5Surface::Sphere { .. } => None,
+        | B5Surface::Sphere { .. }
+        | B5Surface::Nurbs(_) => None,
         B5Surface::Plane { .. } => None,
         B5Surface::Cylinder {
             origin,
@@ -531,29 +536,53 @@ pub(super) fn lifted_curve_geometry(
                 ),
             )))
         }
-        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface)
-            .map(SolvedCurveGeometry::Nurbs)
-            .map(CurveGeometry::Solved),
         B5Surface::Revolution { .. } => None,
     } })())
 }
 
-pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
-    if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
-            u,
-        )
+pub(super) fn nurbs_isocurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    pcurve: &B5Pcurve,
+    surface: &NurbsSurface,
+) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis;
+    let fixed = if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
+        (SurfaceParameterAxis::U, u)
     } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
-        cadmpeg_ir::eval::nurbs_surface_isocurve(
-            surface,
-            cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::V,
-            v,
-        )
+        (SurfaceParameterAxis::V, v)
     } else {
-        None
-    }
+        return Ok(None);
+    };
+    let (degree, count, knots) = match fixed.0 {
+        SurfaceParameterAxis::U => (surface.u_degree(), surface.v_count(), surface.v_knots().len()),
+        SurfaceParameterAxis::V => (surface.v_degree(), surface.u_count(), surface.u_knots().len()),
+    };
+    let fixed_basis = usize::try_from(degree).ok().and_then(|degree| degree.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_basis", u64::MAX, u64::MAX))?;
+    let rational_count = if surface.weights().is_some() { count } else { 0 };
+    let items = fixed_basis.checked_add(count.checked_mul(2).ok_or_else(||
+        ctx.refuse_codec_limit("catia_b5_isocurve_items", u64::MAX, u64::MAX))?)
+        .and_then(|total| total.checked_add(knots))
+        .and_then(|total| total.checked_add(rational_count))
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_items", u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(u64::try_from(items).map_err(|_|
+        ctx.refuse_codec_limit("catia_b5_isocurve_items", u64::MAX, u64::MAX))?,
+        "catia_b5_isocurve_items")?;
+    let retained_bytes = knots.checked_mul(std::mem::size_of::<f64>())
+        .and_then(|bytes| bytes.checked_add(count.checked_mul(
+            std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>())?))
+        .and_then(|bytes| bytes.checked_add(rational_count.checked_mul(
+            std::mem::size_of::<f64>())?))
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_retained", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(retained_bytes, "catia_b5_isocurve_retained")?;
+    let temporary_items = fixed_basis.checked_add(count).ok_or_else(||
+        ctx.refuse_codec_limit("catia_b5_isocurve_temporary", u64::MAX, u64::MAX))?;
+    let temporary_bytes = temporary_items.checked_mul(std::mem::size_of::<[f64; 4]>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_b5_isocurve_temporary", u64::MAX, u64::MAX))?;
+    let _temporary = ctx.reserve_scoped(temporary_bytes, "catia_b5_isocurve_temporary")?;
+    Ok(cadmpeg_ir::eval::nurbs_surface_isocurve(surface, fixed.0, fixed.1))
 }
 
 fn constant_coordinate(points: &[FiniteVector<2>], dimension: usize) -> Option<f64> {
