@@ -139,6 +139,7 @@ pub(super) fn linear_knots(
 // this function decides which native lane can be admitted to which support.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn assign_ext11_support_uv_with_index(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [Option<NonNullXmt>; 2],
@@ -146,12 +147,19 @@ pub(super) fn assign_ext11_support_uv_with_index(
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<SupportUv>, cadmpeg_core::decode::ResourceLimit> {
-    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&u32::from(support?)).cloned());
+) -> Result<Option<SupportUv>, cadmpeg_core::CodecError> {
+    let [first, second] = supports.map(|support| {
+        support
+            .and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
+            .map(|surface| crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx EXT11 support identity"))
+            .transpose()
+    });
+    let surface_ids = [first?, second?];
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return Ok(None);
     };
     assign_ext11_support_uv_to_surfaces_with_index(
+        ctx,
         index,
         [&first_surface, &second_surface],
         points,
@@ -165,6 +173,7 @@ pub(super) fn assign_ext11_support_uv_with_index(
 // validation must preserve the same support identity proof as assignment.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn validate_serialized_support_uv_with_index(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     supports: [Option<NonNullXmt>; 2],
@@ -172,7 +181,7 @@ pub(super) fn validate_serialized_support_uv_with_index(
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<SupportUv, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<SupportUv, cadmpeg_core::CodecError> {
     let mut admitted = [None, None];
     for side in 0..2 {
         let Some(surface) =
@@ -184,15 +193,16 @@ pub(super) fn validate_serialized_support_uv_with_index(
             continue;
         };
         let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
-        admitted[side] = support_uv_lane_matches_surface_with_budget(
+        if support_uv_lane_matches_surface_with_budget(
             index,
             surface,
             points,
             tolerance,
             Some(values),
             geometry_budget,
-        )?
-        .then(|| values.clone());
+        )? {
+            admitted[side] = Some(values.clone_charged(ctx)?);
+        }
     }
     Ok(admitted)
 }
@@ -256,25 +266,29 @@ pub(super) fn assign_ext11_support_uv_to_surfaces(
 ) -> Option<SupportUv> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    assign_ext11_support_uv_to_surfaces_with_index(
-        &index,
-        surfaces,
-        points,
-        fit_tolerance,
-        lanes,
-        &geometry_budget,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        assign_ext11_support_uv_to_surfaces_with_index(
+            ctx,
+            &index,
+            surfaces,
+            points,
+            fit_tolerance,
+            lanes,
+            &geometry_budget,
+        )
+    })
     .expect("evaluator allocation succeeds")
 }
 
 fn assign_ext11_support_uv_to_surfaces_with_index(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &SupportUv,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<SupportUv>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<SupportUv>, cadmpeg_core::CodecError> {
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
         support_uv_lane_matches_surface_with_budget(
             index,
@@ -309,7 +323,10 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         if assigned[support].is_some() {
             return Ok(None);
         }
-        assigned[support].clone_from(&lanes[lane]);
+        assigned[support] = lanes[lane]
+            .as_ref()
+            .map(|lane| lane.clone_charged(ctx))
+            .transpose()?;
         assigned_lanes[support] = Some(lane);
     }
     if surfaces[0] != surfaces[1] && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
@@ -322,7 +339,10 @@ fn assign_ext11_support_uv_to_surfaces_with_index(
         let other_support = 1 - assigned_support;
         let other_lane = 1 - assigned_lane;
         if lane_matches_surface(surfaces[other_support], other_lane)? {
-            assigned[other_support].clone_from(&lanes[other_lane]);
+            assigned[other_support] = lanes[other_lane]
+                .as_ref()
+                .map(|lane| lane.clone_charged(ctx))
+                .transpose()?;
         }
     }
     Ok(assigned.iter().any(Option::is_some).then_some(assigned))
@@ -630,6 +650,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             continue;
         }
         let Some(assigned) = assign_ext11_support_uv_to_surfaces_with_index(
+            ctx,
             &model_index,
             [&surfaces[0], &surfaces[1]],
             points,
