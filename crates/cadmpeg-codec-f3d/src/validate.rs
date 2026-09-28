@@ -1083,7 +1083,7 @@ fn validate_loaded(
     validate_component_occurrences(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings)?;
-    validate_parameter_scopes(&ctx, &mut findings);
+    validate_parameter_scopes(&ctx, &mut findings)?;
     validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings)?;
     validate_path_feature_operand_roles(&ctx, &mut findings);
@@ -1937,7 +1937,7 @@ fn validate_body_bounds(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resul
 }
 
 /// Validate feature parameter scopes and their paired feature-operation frames.
-fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
@@ -1945,7 +1945,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut scope_indices = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
-        let unique_index = scope_indices.insert((native_stream, scope.record_index));
+        let unique_index = ctx.insert_unique(&mut scope_indices,
+            (native_stream, scope.record_index), "index F3D parameter scope records")?;
         let entity_link = scope.sketch_entity().map(|binding| {
             entities_by_suffix
                 .get(&(native_stream, binding.entity_id.suffix()))
@@ -3843,14 +3844,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design parameter scope has an invalid paired frame".into(),
-                entity: Some(scope.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design parameter scope has an invalid paired frame",
+                Some(ctx.copy_entity(&scope.id)?))?;
         }
     }
+    Ok(())
 }
 
 fn valid_work_point_construction(
