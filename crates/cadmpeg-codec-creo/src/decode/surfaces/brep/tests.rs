@@ -9,6 +9,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
@@ -17,6 +19,264 @@ use super::{
     BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence,
     NativeCurveEvidence, NeutralShellSpec,
 };
+
+fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let lp = crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: (10..13)
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
+            .collect(),
+    };
+    let polygon = [[0.0, 0.0], [2.0, 0.0], [0.0, 2.0]];
+    let bindings = lp
+        .half_edges
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, half_edge)| crate::topology::HalfEdgeVertexIncidence {
+            half_edge,
+            start_vertex_id: u32::try_from(index + 1).expect("three vertices"),
+            end_vertex_id: Some(u32::try_from((index + 1) % 3 + 1).expect("three vertices")),
+        })
+        .collect::<Vec<_>>();
+    let incidence = bindings
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let solved_vertices = polygon
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            (
+                u32::try_from(index + 1).expect("three vertices"),
+                [point[0], point[1], 0.0],
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let native_pcurves = lp
+        .half_edges
+        .iter()
+        .enumerate()
+        .map(|(index, half_edge)| {
+            (
+                (half_edge.curve_id, 5),
+                vec![([polygon[index], polygon[(index + 1) % 3]], 0)],
+            )
+        })
+        .collect::<super::NativePcurveCandidates>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let typed = BTreeSet::new();
+    let result = if ordered {
+        ordered_native_parameter_face_loops(
+            &ctx,
+            &[&lp],
+            5,
+            &surface,
+            &incidence,
+            &solved_vertices,
+            &native_pcurves,
+            NativeCurveEvidence {
+                typed_nonlinear_curve_ids: &typed,
+                model_curves: &[],
+                source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            },
+        )
+        .map(|_| ())
+    } else {
+        native_parameter_loop_polygon(
+            &ctx,
+            &lp,
+            5,
+            &surface,
+            &incidence,
+            &solved_vertices,
+            &native_pcurves,
+            &typed,
+        )
+        .map(|_| ())
+    };
+    result.expect_err("native triangle collection exceeds limit")
+}
+
+fn assert_native_collection_refusal(error: CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn native_parameter_loop_polygon_refuses_pcurve_segments() {
+    assert_native_collection_refusal(
+        native_triangle_collection_error(0, false),
+        "creo native loop pcurve segments",
+    );
+}
+
+#[test]
+fn native_parameter_loop_polygon_refuses_polygon_points() {
+    assert_native_collection_refusal(
+        native_triangle_collection_error(3, false),
+        "creo native loop polygon points",
+    );
+}
+
+#[test]
+fn ordered_native_parameter_face_loops_refuses_polygon_collection() {
+    assert_native_collection_refusal(
+        native_triangle_collection_error(6, true),
+        "creo native face loop polygons",
+    );
+}
+
+#[test]
+fn ordered_native_parameter_face_loops_refuses_loop_references() {
+    assert_native_collection_refusal(
+        native_triangle_collection_error(7, true),
+        "creo native face loop references",
+    );
+}
+
+fn circle_order_collection_error(limit: u64) -> CodecError {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let make_loop = |base: u32| crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: [base, base + 1]
+            .into_iter()
+            .map(|curve_id| crate::topology::HalfEdgeId {
+                curve_id,
+                side: crate::topology::Side::Zero,
+            })
+            .collect(),
+    };
+    let outer = make_loop(10);
+    let inner = make_loop(20);
+    let make_circle = |id: u32, radius| Curve {
+        id: CurveId::mint(format!("creo:visibgeom:curve#{id}")).expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CircleCurve fixture"),
+        )),
+        source_object: None,
+    };
+    let curves = vec![
+        make_circle(10, 2.0),
+        make_circle(11, 2.0),
+        make_circle(20, 1.0),
+        make_circle(21, 1.0),
+    ];
+    let polygons = vec![vec![[2.0, 0.0], [-2.0, 0.0]], vec![[1.0, 0.0], [-1.0, 0.0]]];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    super::ordered_two_edge_circle_loops(
+        &ctx,
+        &[&outer, &inner],
+        &polygons,
+        &surface,
+        &curves,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("circle loop collection exceeds limit")
+}
+
+#[test]
+fn ordered_two_edge_circle_loops_refuses_geometry_collection() {
+    assert_native_collection_refusal(
+        circle_order_collection_error(0),
+        "creo native circle loop geometry",
+    );
+}
+
+#[test]
+fn ordered_two_edge_circle_loops_refuses_order_collection() {
+    assert_native_collection_refusal(
+        circle_order_collection_error(2),
+        "creo native circle loop order",
+    );
+}
+
+#[test]
+fn ordered_two_edge_circle_loops_refuses_ordered_output() {
+    assert_native_collection_refusal(
+        circle_order_collection_error(4),
+        "creo native ordered circle loops",
+    );
+}
+
+fn native_parameter_loop_polygon_service(
+    lp: &crate::topology::Loop,
+    face_id: u32,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<crate::topology::HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &super::NativePcurveCandidates,
+    typed_nonlinear_curve_ids: &BTreeSet<u32>,
+) -> Option<Vec<[f64; 2]>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        native_parameter_loop_polygon(
+            ctx,
+            lp,
+            face_id,
+            surface,
+            incidence,
+            solved_vertices,
+            native_pcurves,
+            typed_nonlinear_curve_ids,
+        )
+    })
+    .expect("service native loop polygon")
+}
+
+fn ordered_native_parameter_face_loops_service<'a>(
+    loops: &[&'a crate::topology::Loop],
+    face_id: u32,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<crate::topology::HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &super::NativePcurveCandidates,
+    curve_evidence: NativeCurveEvidence<'_>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        ordered_native_parameter_face_loops(
+            ctx,
+            loops,
+            face_id,
+            surface,
+            incidence,
+            solved_vertices,
+            native_pcurves,
+            curve_evidence,
+        )
+    })
+    .expect("service native face loop ordering")
+}
 
 #[test]
 fn infinite_point_cannot_match_a_finite_point() {
@@ -464,7 +724,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         .collect::<BTreeMap<_, _>>();
 
     assert_eq!(
-        native_parameter_loop_polygon(
+        native_parameter_loop_polygon_service(
             &outer,
             5,
             &surface,
@@ -475,7 +735,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         ),
         Some(outer_polygon.into_iter().collect())
     );
-    let ordered = ordered_native_parameter_face_loops(
+    let ordered = ordered_native_parameter_face_loops_service(
         &[&inner, &outer],
         5,
         &surface,
@@ -574,7 +834,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
     let typed_nonlinear_curve_ids = BTreeSet::from([10, 11, 20, 21]);
 
     assert_eq!(
-        native_parameter_loop_polygon(
+        native_parameter_loop_polygon_service(
             &outer,
             5,
             &surface,
@@ -585,7 +845,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         ),
         Some(vec![[2.0, 0.0], [-2.0, 0.0]])
     );
-    assert!(native_parameter_loop_polygon(
+    assert!(native_parameter_loop_polygon_service(
         &outer,
         5,
         &surface,
@@ -596,7 +856,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
     )
     .is_none());
 
-    let ordered = ordered_native_parameter_face_loops(
+    let ordered = ordered_native_parameter_face_loops_service(
         &[&inner, &outer],
         5,
         &surface,

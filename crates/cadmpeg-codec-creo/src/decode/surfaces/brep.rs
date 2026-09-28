@@ -865,27 +865,32 @@ fn native_circle_loop_geometry(
 }
 
 fn ordered_two_edge_circle_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: &[&'a crate::topology::Loop],
     polygons: &[Vec<[f64; 2]>],
     surface: &SurfaceGeometry,
     model_curves: &[Curve],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Option<Vec<&'a crate::topology::Loop>> {
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
     if loops.len() < 2 || loops.len() != polygons.len() {
-        return None;
+        return Ok(None);
     }
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = surface else {
-        return None;
+        return Ok(None);
     };
     let origin = plane_surface.origin().get();
     let normal = plane_surface.frame().axis().as_raw();
-    let circle_loops = loops
-        .iter()
-        .map(|lp| native_circle_loop_geometry(lp, model_curves, source_carriers))
-        .collect::<Option<Vec<_>>>()?;
+    let mut circle_loops = Vec::new();
+    for lp in loops {
+        let Some(circle) = native_circle_loop_geometry(lp, model_curves, source_carriers) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut circle_loops, 1, "creo native circle loop geometry")?;
+        circle_loops.push(circle);
+    }
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let reference = circle_loops[0];
     if circle_loops.iter().any(|circle| {
@@ -903,21 +908,24 @@ fn ordered_two_edge_circle_loops<'a>(
             || !vectors_are_parallel(circle.axis, *normal)
             || distance_from_surface > EPS_GEOMETRY_AGREE * normal_length * center_scale
     }) {
-        return None;
+        return Ok(None);
     }
-    let center_uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
+    let Some(center_uv) = cadmpeg_ir::eval::analytic_surface_parameters(
         surface,
         reference.center.get(),
-    )?);
+    ) else {
+        return Ok(None);
+    };
+    let center_uv = cadmpeg_ir::math::Point2::from(center_uv);
     for (circle, polygon) in circle_loops.iter().zip(polygons) {
         let [first, second] = polygon.as_slice() else {
-            return None;
+            return Ok(None);
         };
         if [first[0], first[1], second[0], second[1]]
             .into_iter()
             .any(|value| !value.is_finite())
         {
-            return None;
+            return Ok(None);
         }
         let first_delta = [first[0] - center_uv.u, first[1] - center_uv.v];
         let second_delta = [second[0] - center_uv.u, second[1] - center_uv.v];
@@ -932,7 +940,7 @@ fn ordered_two_edge_circle_loops<'a>(
             || !scalar_values_agree(second_radius_squared, radius_squared)
             || !scalar_values_agree(endpoints_dot, -radius_squared)
         {
-            return None;
+            return Ok(None);
         }
     }
     if circle_loops.iter().enumerate().any(|(index, first)| {
@@ -941,18 +949,28 @@ fn ordered_two_edge_circle_loops<'a>(
             .skip(index + 1)
             .any(|second| scalar_values_agree(first.radius, second.radius))
     }) {
-        return None;
+        return Ok(None);
     }
-    let mut order = (0..loops.len()).collect::<Vec<_>>();
+    let mut order = Vec::new();
+    for index in 0..loops.len() {
+        ctx.try_reserve_items(&mut order, 1, "creo native circle loop order")?;
+        order.push(index);
+    }
     order.sort_by(|first, second| {
         circle_loops[*second]
             .radius
             .total_cmp(&circle_loops[*first].radius)
     });
-    Some(order.into_iter().map(|index| loops[index]).collect())
+    let mut ordered = Vec::new();
+    for index in order {
+        ctx.try_reserve_items(&mut ordered, 1, "creo native ordered circle loops")?;
+        ordered.push(loops[index]);
+    }
+    Ok(Some(ordered))
 }
 
 fn native_parameter_loop_polygon(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lp: &crate::topology::Loop,
     face_id: u32,
     surface: &SurfaceGeometry,
@@ -960,22 +978,30 @@ fn native_parameter_loop_polygon(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
     typed_nonlinear_curve_ids: &BTreeSet<u32>,
-) -> Option<Vec<[f64; 2]>> {
-    let segments = lp
-        .half_edges
-        .iter()
-        .map(|half_edge| {
-            let binding = incidence.get(half_edge)?;
-            let end_vertex_id = binding.end_vertex_id?;
-            let candidates = native_pcurves.get(&(half_edge.curve_id, face_id))?;
-            let traversal = [
-                solved_vertices.get(&binding.start_vertex_id).copied()?,
-                solved_vertices.get(&end_vertex_id).copied()?,
-            ];
-            unique_oriented_native_pcurve(surface, candidates, traversal)
-                .map(|(endpoints, _)| endpoints)
-        })
-        .collect::<Option<Vec<_>>>()?;
+) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+    let mut segments = Vec::new();
+    for half_edge in &lp.half_edges {
+        let Some(binding) = incidence.get(half_edge) else {
+            return Ok(None);
+        };
+        let Some(end_vertex_id) = binding.end_vertex_id else {
+            return Ok(None);
+        };
+        let Some(candidates) = native_pcurves.get(&(half_edge.curve_id, face_id)) else {
+            return Ok(None);
+        };
+        let (Some(start), Some(end)) = (
+            solved_vertices.get(&binding.start_vertex_id).copied(),
+            solved_vertices.get(&end_vertex_id).copied(),
+        ) else {
+            return Ok(None);
+        };
+        let Some((endpoints, _)) = unique_oriented_native_pcurve(surface, candidates, [start, end]) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut segments, 1, "creo native loop pcurve segments")?;
+        segments.push(endpoints);
+    }
     if segments.len() < 3
         && (segments.len() != 2
             || lp.half_edges[0].curve_id == lp.half_edges[1].curve_id
@@ -996,12 +1022,18 @@ fn native_parameter_loop_polygon(
             !parameter_points_agree(segment[1], next[0])
         })
     {
-        return None;
+        return Ok(None);
     }
-    Some(segments.into_iter().map(|segment| segment[0]).collect())
+    let mut polygon = Vec::new();
+    for segment in segments {
+        ctx.try_reserve_items(&mut polygon, 1, "creo native loop polygon points")?;
+        polygon.push(segment[0]);
+    }
+    Ok(Some(polygon))
 }
 
 fn ordered_native_parameter_face_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: &[&'a crate::topology::Loop],
     face_id: u32,
     surface: &SurfaceGeometry,
@@ -1009,30 +1041,39 @@ fn ordered_native_parameter_face_loops<'a>(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
     native_pcurves: &NativePcurveCandidates,
     curve_evidence: NativeCurveEvidence<'_>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    let polygons = loops
-        .iter()
-        .map(|lp| {
-            native_parameter_loop_polygon(
-                lp,
-                face_id,
-                surface,
-                incidence,
-                solved_vertices,
-                native_pcurves,
-                curve_evidence.typed_nonlinear_curve_ids,
-            )
-        })
-        .collect::<Option<Vec<_>>>()?;
-    ordered_parameter_face_loops(loops.to_owned(), &polygons).or_else(|| {
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let mut polygons = Vec::new();
+    for lp in loops {
+        let Some(polygon) = native_parameter_loop_polygon(
+            ctx,
+            lp,
+            face_id,
+            surface,
+            incidence,
+            solved_vertices,
+            native_pcurves,
+            curve_evidence.typed_nonlinear_curve_ids,
+        )? else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut polygons, 1, "creo native face loop polygons")?;
+        polygons.push(polygon);
+    }
+    let mut copied_loops = Vec::new();
+    ctx.try_reserve_items(&mut copied_loops, loops.len(), "creo native face loop references")?;
+    copied_loops.extend_from_slice(loops);
+    if let Some(ordered) = ordered_parameter_face_loops(ctx, copied_loops, &polygons)? {
+        Ok(Some(ordered))
+    } else {
         ordered_two_edge_circle_loops(
+            ctx,
             loops,
             &polygons,
             surface,
             curve_evidence.model_curves,
             curve_evidence.source_carriers,
         )
-    })
+    }
 }
 
 #[cfg(test)]
@@ -1303,31 +1344,34 @@ pub(in super::super) fn transfer_native_brep(
             diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
             continue;
         }
-        let two_edge_loops_are_proven =
-            loops
-                .iter()
-                .filter(|lp| lp.half_edges.len() == 2)
-                .all(|lp| {
-                    let surface_id = native_surface_id(scan, face_id);
-                    let Some(surface) = exactly_one(
-                        ir.model
-                            .surfaces
-                            .iter()
-                            .filter(|candidate| candidate.id == surface_id),
-                    ) else {
-                        return false;
-                    };
-                    native_parameter_loop_polygon(
-                        lp,
-                        face_id,
-                        source_carriers.surface_geometry(surface),
-                        &incidence,
-                        solved_vertices,
-                        &native_pcurves,
-                        &typed_nonlinear_curve_ids,
-                    )
-                    .is_some()
-                });
+        let mut two_edge_loops_are_proven = true;
+        for lp in loops.iter().filter(|lp| lp.half_edges.len() == 2) {
+            let surface_id = native_surface_id(scan, face_id);
+            let Some(surface) = exactly_one(
+                ir.model
+                    .surfaces
+                    .iter()
+                    .filter(|candidate| candidate.id == surface_id),
+            ) else {
+                two_edge_loops_are_proven = false;
+                break;
+            };
+            if native_parameter_loop_polygon(
+                ctx,
+                lp,
+                face_id,
+                source_carriers.surface_geometry(surface),
+                &incidence,
+                solved_vertices,
+                &native_pcurves,
+                &typed_nonlinear_curve_ids,
+            )?
+            .is_none()
+            {
+                two_edge_loops_are_proven = false;
+                break;
+            }
+        }
         if !two_edge_loops_are_proven {
             diagnostics.reject_face(FaceAdmissionRejection::TwoEdgeParameterProof, face_id);
             continue;
@@ -1338,29 +1382,36 @@ pub(in super::super) fn transfer_native_brep(
             planes.get(&face_id).copied(),
             &incidence,
             solved_vertices,
-        )?
-        .or_else(|| {
+        )?;
+        let ordered = if ordered.is_some() {
+            ordered
+        } else {
             let surface_id = native_surface_id(scan, face_id);
             let surface = exactly_one(
                 ir.model
                     .surfaces
                     .iter()
                     .filter(|candidate| candidate.id == surface_id),
-            )?;
-            ordered_native_parameter_face_loops(
-                loops,
-                face_id,
-                source_carriers.surface_geometry(surface),
-                &incidence,
-                solved_vertices,
-                &native_pcurves,
-                NativeCurveEvidence {
-                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                    model_curves: &ir.model.curves,
-                    source_carriers,
-                },
-            )
-        });
+            );
+            if let Some(surface) = surface {
+                ordered_native_parameter_face_loops(
+                    ctx,
+                    &loops,
+                    face_id,
+                    source_carriers.surface_geometry(surface),
+                    &incidence,
+                    solved_vertices,
+                    &native_pcurves,
+                    NativeCurveEvidence {
+                        typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                        model_curves: &ir.model.curves,
+                        source_carriers,
+                    },
+                )?
+            } else {
+                None
+            }
+        };
         let Some(ordered) = ordered else {
             diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
             continue;

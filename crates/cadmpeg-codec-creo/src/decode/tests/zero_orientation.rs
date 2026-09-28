@@ -76,6 +76,18 @@ fn ordered_face_loops_service<'a>(
     .expect("service face loop ordering")
 }
 
+fn ordered_planar_face_loops_service<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    plane: PlaneEquation,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        ordered_planar_face_loops(ctx, loops, plane, incidence, solved_vertices)
+    })
+    .expect("service planar loop ordering")
+}
+
 #[test]
 fn ordered_face_loops_refuse_boundary_point_vector() {
     let half_edge = HalfEdgeId {
@@ -1613,7 +1625,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         normal: [0.0, 0.0, 1.0],
     };
 
-    let ordered = ordered_planar_face_loops(vec![&inner, &outer], plane, &incidence, &points)
+    let ordered = ordered_planar_face_loops_service(vec![&inner, &outer], plane, &incidence, &points)
         .expect("unique outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 1);
     assert_eq!(ordered[1].half_edges[0].curve_id, 5);
@@ -1628,7 +1640,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
         })
         .collect::<BTreeMap<_, _>>();
     assert!(
-        ordered_planar_face_loops(vec![&outer, &inner], plane, &incidence, &disjoint_points,)
+        ordered_planar_face_loops_service(vec![&outer, &inner], plane, &incidence, &disjoint_points,)
             .is_none()
     );
     assert_eq!(
