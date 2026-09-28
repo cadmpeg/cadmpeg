@@ -244,14 +244,18 @@ fn isoparametric_angle_coordinate(
 }
 
 pub(super) fn oriented_nurbs_range(
-    geometry: CurveGeometry,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    geometry: &CurveGeometry,
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<CurvePlan> {
-    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) = geometry else {
-        return None;
+) -> Result<Option<CurvePlan>, cadmpeg_core::CodecError> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry else {
+        return Ok(None);
     };
+    let mut curve = crate::resource::copy_nurbs_curve(ctx, curve,
+        "catia_b5_oriented_nurbs_curve")?;
+    Ok((|| -> Option<CurvePlan> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let domain_start = *curve.knots().get(degree)?;
     let domain_end = *curve
@@ -300,6 +304,7 @@ pub(super) fn oriented_nurbs_range(
         },
         cache_fit_tolerance: None,
     })
+    })())
 }
 
 pub(super) fn isocurve_endpoint_parameters(

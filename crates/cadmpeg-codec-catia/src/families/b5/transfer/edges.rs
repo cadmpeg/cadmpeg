@@ -24,17 +24,19 @@ use crate::math::distance;
 const EPS_SUPPORT_ENDPOINT: f64 = 1.0e-6;
 
 pub(super) fn merge_curve_plan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     plans: &mut HashMap<u32, CurvePlan>,
     conflicts: &mut HashSet<u32>,
     edge: u32,
     candidate: CurvePlan,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if conflicts.contains(&edge) {
-        return;
+        return Ok(());
     }
     let Some(existing) = plans.get_mut(&edge) else {
-        plans.insert(edge, candidate);
-        return;
+        crate::resource::insert_map(ctx, plans, edge, candidate,
+            "catia_b5_edge_curve_plans")?;
+        return Ok(());
     };
     let range_conflict = existing
         .parameter_range
@@ -53,9 +55,10 @@ pub(super) fn merge_curve_plan(
         || edge_tolerance_conflict
         || cache_tolerance_conflict
     {
+        crate::resource::insert_set(ctx, conflicts, edge,
+            "catia_b5_conflicting_edge_curves")?;
         plans.remove(&edge);
-        conflicts.insert(edge);
-        return;
+        return Ok(());
     }
     if existing.parameter_range.is_none() {
         existing.parameter_range = candidate.parameter_range;
@@ -66,6 +69,7 @@ pub(super) fn merge_curve_plan(
     if existing.cache_fit_tolerance.is_none() {
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
+    Ok(())
 }
 
 fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
