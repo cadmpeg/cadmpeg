@@ -1179,16 +1179,28 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
 /// Decode exact counted selector lanes from bounded identical-instance output
 /// payloads.
 pub(in crate::native) fn feature_identical_instance_output_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureIdenticalInstanceOutputLane> {
+) -> Result<Vec<FeatureIdenticalInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) =
-                crate::om::identical_instance_output_payload_lane(record.payload_view())
-            else {
+            if failure.is_some() { return; }
+            let lane = match crate::om::identical_instance_output_payload_lane(ctx, record.payload_view()) {
+                Ok(lane) => lane,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(lane) = lane else {
                 return;
+            };
+            let selectors = match lane.selectors.map_charged(ctx, |token| crate::om::compact::LocatedCompactIndex {
+                atom: token.atom,
+                offset: entry_offset + token.offset as u64,
+            }) {
+                Ok(selectors) => selectors,
+                Err(error) => { failure = Some(error); return; }
             };
             lanes.push(FeatureIdenticalInstanceOutputLane {
                 id: format!(
@@ -1199,15 +1211,12 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                 ),
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
-                selectors: lane.selectors.map(|token| crate::om::compact::LocatedCompactIndex {
-                    atom: token.atom,
-                    offset: entry_offset + token.offset as u64,
-                }),
+                selectors,
                 source_offset: entry_offset + lane.offset as u64,
             });
         },
     );
-    lanes
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 use super::deserialize_reference_lane_count;

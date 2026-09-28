@@ -161,14 +161,16 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
 
 #[test]
 fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
+    let scan = |record| crate::test_support::with_decode_context(|ctx| {
+        identical_instance_output_payload_lane(ctx, record)
+    }).unwrap();
     let payload = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\
           \x14\x15\x01\x02\x16\x0f\x00\x03\
           \x14\x15\x01\x02\x16\x81\x23\x00\x04\
           \x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
     let label = "IDENTICAL INSTANCE OUTPUT";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let lane =
-        identical_instance_output_payload_lane(record).expect("complete identical-instance lane");
+    let lane = scan(record).expect("complete identical-instance lane");
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.leading_schema_index, 0x34);
     assert_eq!(lane.count_schema_index.value(), 0x13);
@@ -201,7 +203,7 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
 
     let mut wrong_ordinal = payload.to_vec();
     wrong_ordinal[21] = 4;
-    assert!(identical_instance_output_payload_lane(
+    assert!(scan(
         crate::om::operation_record::OperationPayload::new(
             &wrong_ordinal,
             record.payload_offset(),
@@ -212,7 +214,7 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     .is_none());
     let mut wrong_terminal_count = payload.to_vec();
     wrong_terminal_count[32] = 4;
-    assert!(identical_instance_output_payload_lane(
+    assert!(scan(
         crate::om::operation_record::OperationPayload::new(
             &wrong_terminal_count,
             record.payload_offset(),
@@ -222,7 +224,7 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     )
     .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(identical_instance_output_payload_lane(
+    assert!(scan(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
@@ -231,6 +233,38 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
         .unwrap()
     )
     .is_none());
+}
+
+fn identical_instance_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let payload = b"\x34\x13\x01\x02\x14\x15\x01\x02\x16\x20\x00\x02\x00\x03\xe0\x7f\xff\xff\xff\x00\x00";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(payload, 200, "IDENTICAL INSTANCE OUTPUT").unwrap();
+    identical_instance_output_payload_lane(&ctx, record).expect_err("identical-instance selector refusal")
+}
+
+#[test]
+fn om_identical_instance_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(identical_instance_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_identical_instance_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(identical_instance_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_identical_instance_route_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(identical_instance_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]

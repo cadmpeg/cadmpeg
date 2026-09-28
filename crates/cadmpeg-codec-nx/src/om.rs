@@ -1848,14 +1848,16 @@ pub(crate) fn multi_instance_output_payload_lane(
 /// Decode the unique exactly counted selector lane in an
 /// `IDENTICAL INSTANCE OUTPUT` payload.
 pub(crate) fn identical_instance_output_payload_lane(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<IdenticalInstanceOutputPayloadLane> {
+) -> Result<Option<IdenticalInstanceOutputPayloadLane>, CodecError> {
     const ROW_MIDDLE: [u8; 2] = [0x01, 0x02];
     const SENTINEL: [u8; 7] = [0xe0, 0x7f, 0xff, 0xff, 0xff, 0x00, 0x00];
 
     if record.name() != "IDENTICAL INSTANCE OUTPUT" {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX identical-instance selectors")?;
     let decode = |start: usize| {
         let leading_schema_index = *record.payload().get(start)?;
         let count_schema_index =
@@ -1866,20 +1868,14 @@ pub(crate) fn identical_instance_output_payload_lane(
         let [first_schema_index, second_schema_index, third_schema_index] =
             count_schema_index.row_indices();
         let mut at = start + 4;
-        let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
         for ordinal in 2..=declared_count {
             (record.payload().get(at) == Some(&first_schema_index)).then_some(())?;
             (record.payload().get(at + 1) == Some(&second_schema_index)).then_some(())?;
             (record.payload().get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
             (record.payload().get(at + 4) == Some(&third_schema_index)).then_some(())?;
             at += 5;
-            let selector_offset = at;
             let atom = CompactIndexAtom::read(record.payload().get(at..)?)?;
             let width = atom.raw().len();
-            selectors.push(LocatedCompactIndex {
-                atom,
-                offset: record.payload_offset() + selector_offset,
-            });
             at += width;
             (record.payload().get(at) == Some(&0x00)).then_some(())?;
             (record.payload().get(at + 1) == Some(&ordinal)).then_some(())?;
@@ -1889,14 +1885,36 @@ pub(crate) fn identical_instance_output_payload_lane(
         (record.payload().get(at) == Some(&0x00)).then_some(())?;
         (record.payload().get(at + 1) == Some(&terminal_count)).then_some(())?;
         (record.payload().get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
-        Some(IdenticalInstanceOutputPayloadLane {
+        Some((start, leading_schema_index, count_schema_index, declared_count))
+    };
+    let Some((start, leading_schema_index, count_schema_index, declared_count)) =
+        unique_candidate((0..record.payload().len().saturating_sub(3)).filter_map(decode))
+    else { return Ok(None); };
+    let selector_count = usize::from(declared_count - 1);
+    let count = cadmpeg_core::decode::u64_from_index(selector_count);
+    let operation = "NX identical-instance selectors";
+    ctx.charge_collection_items(count, operation)?;
+    let bytes = count.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<LocatedCompactIndex>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut selectors = Vec::new();
+    selectors.try_reserve_exact(selector_count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    let mut at = start + 4;
+    for _ in 2..=declared_count {
+        at += 5;
+        let Some(atom) = record.payload().get(at..).and_then(CompactIndexAtom::read) else { return Ok(None); };
+        selectors.push(LocatedCompactIndex { atom, offset: record.payload_offset() + at });
+        at += atom.raw().len() + 2;
+    }
+    Ok(compact::CountedIndexMembers::new(selectors).ok().map(|selectors| {
+        IdenticalInstanceOutputPayloadLane {
             offset: record.payload_offset() + start,
             leading_schema_index,
             count_schema_index,
-            selectors: compact::CountedIndexMembers::new(selectors).ok()?,
-        })
-    };
-    unique_candidate((0..record.payload().len().saturating_sub(3)).filter_map(decode))
+            selectors,
+        }
+    }))
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
