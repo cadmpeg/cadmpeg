@@ -1158,6 +1158,14 @@ pub(crate) fn decode(
     decode_body(ctx, header_body(payload, header)?, stream)
 }
 
+fn is_deltas_stream(header: &StreamHeader) -> bool {
+    header
+        .description
+        .as_bytes()
+        .windows(b"deltas".len())
+        .any(|window| window.eq_ignore_ascii_case(b"deltas"))
+}
+
 /// Decode related partition and deltas streams as one record source.
 ///
 /// Partition records are the base set. Deltas records fill missing subordinate
@@ -1173,23 +1181,32 @@ pub(crate) fn decode_bodies(
     let mut facts = entity::Facts::default();
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
-    let mut ordered = bodies.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|(_, header)| header.description.to_ascii_lowercase().contains("deltas"));
-    let entity_streams = ordered
-        .iter()
-        .map(|(payload, header)| {
-            let body = header_body(payload, header)?;
-            let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-            Ok((body, is_deltas))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+    let mut ordered = Vec::new();
+    ctx.reserve_collection_vec(&mut ordered, bodies.len(), "order Parasolid body streams")?;
+    ordered.extend(bodies.iter());
+    ordered.sort_by_key(|(_, header)| is_deltas_stream(header));
+    let mut entity_streams = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut entity_streams,
+        ordered.len(),
+        "index Parasolid body streams",
+    )?;
+    for (payload, header) in &ordered {
+        let body = header_body(payload, header)?;
+        entity_streams.push((body, is_deltas_stream(header)));
+    }
     for (body, _) in &entity_streams {
         admit_brep_scan_candidates(ctx, body)?;
     }
-    let typed_streams = entity_streams
-        .iter()
-        .map(|(body, _)| typed::scan(body, ctx))
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+    let mut typed_streams = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut typed_streams,
+        entity_streams.len(),
+        "index typed Parasolid streams",
+    )?;
+    for (body, _) in &entity_streams {
+        typed_streams.push(typed::scan(body, ctx)?);
+    }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
@@ -1199,7 +1216,7 @@ pub(crate) fn decode_bodies(
         ordered.into_iter().zip(typed_streams).enumerate()
     {
         let body = header_body(payload, header)?;
-        let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        let is_deltas = is_deltas_stream(header);
         let typed_face_offsets = typed_bridge_attrs
             .as_ref()
             .map_or_else(HashSet::new, |attrs| {

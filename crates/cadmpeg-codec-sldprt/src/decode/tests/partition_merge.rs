@@ -431,6 +431,35 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
 }
 
 #[test]
+fn partition_stream_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    let arena = DecodeArena::new();
+    let (header_ctx, _) = DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &DecodePolicy::service(),
+    )
+    .expect("header context");
+    let header = crate::parasolid::stream_header(&header_ctx, &payload)
+        .expect("header read")
+        .expect("header");
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).expect("root");
+    assert!(matches!(
+        crate::brep::graph::decode_bodies(
+            &ctx,
+            &[(&payload, &header)],
+            &cadmpeg_ir::stream_name!("precedence"),
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn unselected_deltas_bridges_do_not_enter_partition_membership() {
     let partition = triangle_body();
     let deltas = bridge(210, 220, 300);
