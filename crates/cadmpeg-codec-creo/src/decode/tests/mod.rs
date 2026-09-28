@@ -150,7 +150,9 @@ fn section_axis_line_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    let variable_points = definition.variables.as_ref()?.reconciled_points().0;
+    let variable_points = crate::decode::with_test_decode_ctx(|ctx| {
+        definition.variables.as_ref()?.reconciled_points(ctx).ok().map(|points| points.0)
+    })?;
     section_axis_line_carrier_with_points(&variable_points, segment)
 }
 
@@ -165,7 +167,7 @@ fn section_segment_intersection_carrier(
     let variable_points = definition
         .variables
         .as_ref()
-        .map(|variables| variables.reconciled_points().0)
+        .map(|variables| crate::decode::with_test_decode_ctx(|ctx| variables.reconciled_points(ctx).expect("test point reconciliation").0))
         .unwrap_or_default();
     section_segment_intersection_carrier_with_missing_line(
         definition,

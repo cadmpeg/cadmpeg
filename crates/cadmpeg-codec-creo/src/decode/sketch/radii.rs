@@ -79,7 +79,9 @@ pub(in crate::decode) fn resolved_section_radii(
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
-        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
+        .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
+        .transpose()?
+        .unwrap_or_default();
     for constraint in
         section_equation_radial_constraints(ctx, definition, &radial_coordinates, &ambiguous_point_ids)?
     {

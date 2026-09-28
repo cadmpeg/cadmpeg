@@ -116,12 +116,15 @@ fn equation_body(rows: &[(u8, u8, &[u8])]) -> Vec<u8> {
 fn axis_distance_values(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Vec<((crate::feature::definitions::VariableType, u32), f64)> {
-    let ambiguous_point_ids = definition
-        .variables
-        .as_ref()
-        .expect("variables")
-        .reconciled_points()
-        .1;
+    let ambiguous_point_ids = crate::decode::with_test_decode_ctx(|ctx| {
+        definition
+            .variables
+            .as_ref()
+            .expect("variables")
+            .reconciled_points(ctx)
+            .expect("test point reconciliation")
+            .1
+    });
     crate::decode::with_test_decode_ctx(|ctx| section_equation_function_forty_three_axis_distance_values(ctx,
         definition,
         &crate::decode::with_test_decode_ctx(|ctx| resolved_section_coordinates(ctx, definition))

@@ -15,6 +15,8 @@ use crate::surface::{
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
 use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale, unit_length};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::BTreeSet;
@@ -151,14 +153,17 @@ struct SectionFrameCandidate {
 }
 
 fn generated_cylinder_section_transform(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    definition.segments.as_ref()?.is_complete().then_some(())?;
-    let points = definition.variables.as_ref()?.reconciled_points();
-    points.1.is_empty().then_some(())?;
+) -> Result<Option<FeatureSectionTransform>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else { return Ok(None) };
+    let Some(segments) = definition.segments.as_ref() else { return Ok(None) };
+    if !segments.is_complete() { return Ok(None); }
+    let Some(variables) = definition.variables.as_ref() else { return Ok(None) };
+    let points = variables.reconciled_points(ctx)?;
+    if !points.1.is_empty() { return Ok(None); }
     let mut correspondences = Vec::<([f64; 2], [f64; 3], UnitVector3, usize)>::new();
     for (_, entry) in entity_tables
         .iter()
@@ -169,7 +174,7 @@ fn generated_cylinder_section_transform(
         let Some(external_id) = entry.source_entity_id() else {
             continue;
         };
-        let Some(segment) = definition.segments.as_ref()?.segment(external_id) else {
+        let Some(segment) = segments.segment(external_id) else {
             continue;
         };
         if !matches!(segment.kind, FeatureSegmentKind::Arc(_)) {
@@ -186,17 +191,17 @@ fn generated_cylinder_section_transform(
         else {
             continue;
         };
-        let parameters = sources
+        let parameters = exactly_one(sources
             .surface_parameters
             .iter()
-            .filter(|record| record.surface_id == row.id)
-            .collect::<Vec<_>>();
-        let [parameters] = parameters.as_slice() else {
+            .filter(|record| record.surface_id == row.id));
+        let Some(parameters) = parameters else {
             continue;
         };
         let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
+        ctx.try_reserve_items(&mut correspondences, 1, "creo cylinder placement correspondences")?;
         correspondences.push((
             [u, v],
             frame.frame().origin(),
@@ -204,6 +209,7 @@ fn generated_cylinder_section_transform(
             parameters.offset,
         ));
     }
+    let result = (|| {
     let first = correspondences.first()?;
     let normal = unit_length(first.2);
     let scale = correspondences
@@ -224,7 +230,7 @@ fn generated_cylinder_section_transform(
         })
         .then_some(())?;
 
-    let mut frames = Vec::new();
+    let mut frame = None::<([f64; 3], [f64; 3], [f64; 3])>;
     for second in correspondences.iter().skip(1) {
         let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
         let model = std::array::from_fn::<_, 3, _>(|index| second.1[index] - first.1[index]);
@@ -246,12 +252,8 @@ fn generated_cylinder_section_transform(
         let origin = std::array::from_fn(|index| {
             first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
         });
-        frames.push((origin, u_axis, v_axis));
-    }
-    let valid = frames
-        .iter()
-        .filter(|candidate| {
-            correspondences.iter().all(|(local, model, _, _)| {
+        let candidate = (origin, u_axis, v_axis);
+        if !correspondences.iter().all(|(local, model, _, _)| {
                 (0..3).all(|index| {
                     close(
                         candidate.0[index]
@@ -260,22 +262,25 @@ fn generated_cylinder_section_transform(
                         model[index],
                     )
                 })
-            })
-        })
-        .collect::<Vec<_>>();
-    let frame = *valid.first()?;
-    valid
-        .iter()
-        .all(|candidate| {
-            candidate
+            }) {
+            continue;
+        }
+        if let Some(previous) = frame {
+            if !candidate
                 .0
                 .iter()
                 .chain(candidate.1.iter())
                 .chain(candidate.2.iter())
-                .zip(frame.0.iter().chain(frame.1.iter()).chain(frame.2.iter()))
+                .zip(previous.0.iter().chain(previous.1.iter()).chain(previous.2.iter()))
                 .all(|(left, right)| close(*left, *right))
-        })
-        .then_some(())?;
+            {
+                return None;
+            }
+        } else {
+            frame = Some(candidate);
+        }
+    }
+    let frame = frame?;
     let offset = definition.section_3d.as_ref().map_or_else(
         || correspondences.iter().map(|item| item.3).min(),
         |section| Some(section.offset),
@@ -288,25 +293,28 @@ fn generated_cylinder_section_transform(
         frame.2,
         offset,
     )
+    })();
+    Ok(result)
 }
 
 fn generated_planar_section_transform(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    let (points, conflicting_points) = definition.variables.as_ref()?.reconciled_points();
-    conflicting_points.is_empty().then_some(())?;
-    let tables = entity_tables
+) -> Result<Option<FeatureSectionTransform>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else { return Ok(None) };
+    let Some(segments) = definition.segments.as_ref() else { return Ok(None) };
+    if !segments.is_complete() { return Ok(None); }
+    let Some(variables) = definition.variables.as_ref() else { return Ok(None) };
+    let (points, conflicting_points) = variables.reconciled_points(ctx)?;
+    if !conflicting_points.is_empty() { return Ok(None); }
+    let table = exactly_one(entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
-        .filter(|table| generated_planar_table_shape(table))
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
+        .filter(|table| generated_planar_table_shape(table)));
+    let Some(table) = table else {
+        return Ok(None);
     };
     let offset = definition
         .section_3d
@@ -339,10 +347,11 @@ fn generated_planar_section_transform(
         normal[axis] = 1.0;
         Some((normal, coordinate))
     };
-    let caps = [
-        generated_plane_equation(&table.entries[0])?,
-        generated_plane_equation(&table.entries[1])?,
-    ];
+    let (Some(first_cap), Some(second_cap)) = (
+        generated_plane_equation(&table.entries[0]),
+        generated_plane_equation(&table.entries[1]),
+    ) else { return Ok(None) };
+    let caps = [first_cap, second_cap];
     let mut sides = Vec::new();
     for entry in table.entries[2..]
         .iter()
@@ -354,21 +363,22 @@ fn generated_planar_section_transform(
         let Some(segment) = entry.source_entity_id().and_then(|id| segments.segment(id)) else {
             continue;
         };
-        matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
+        if !matches!(segment.kind, FeatureSegmentKind::Line(_)) { return Ok(None); }
         let point = |point_id| {
             let point = points.get(&point_id)?;
             Some([point[0]?, point[1]?])
         };
-        let start = point(segment.point_ids()[0])?;
-        let end = point(segment.point_ids()[1])?;
+        let Some(start) = point(segment.point_ids()[0]) else { return Ok(None) };
+        let Some(end) = point(segment.point_ids()[1]) else { return Ok(None) };
         let direction = [end[0] - start[0], end[1] - start[1]];
         let length = direction[0].hypot(direction[1]);
-        (length.is_finite() && length > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        if !length.is_finite() || length <= EPS_PLACEMENT_EXACT_GEOMETRY { return Ok(None); }
         let local_normal = [direction[1] / length, -direction[0] / length];
         let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
         let (model_normal, model_offset) = model_plane;
         let magnitude = dot(model_normal, model_normal).sqrt();
-        (magnitude.is_finite() && magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        if !magnitude.is_finite() || magnitude <= EPS_PLACEMENT_EXACT_GEOMETRY { return Ok(None); }
+        ctx.try_reserve_items(&mut sides, 1, "creo planar placement sides")?;
         sides.push((
             local_normal,
             local_offset,
@@ -479,6 +489,7 @@ fn generated_planar_section_transform(
                             && vectors_close(existing.v_axis(), candidate.v_axis())
                             && vectors_close(existing.normal(), candidate.normal())
                     }) {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo planar placement candidates")?;
                         candidates.push(candidate);
                     }
                 }
@@ -486,9 +497,9 @@ fn generated_planar_section_transform(
         }
     }
     let [transform] = candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(transform.clone())
+    Ok(Some(transform.clone()))
 }
 
 fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
@@ -807,39 +818,22 @@ fn generated_datum_plane_equation(
 }
 
 fn feature_generated_plane_equation(
+    ctx: &DecodeContext<'_>,
     id: u32,
     definitions: &[FeatureDefinition],
     transforms: &[FeatureSectionTransform],
     sources: &PlacementSources<'_>,
-) -> Option<SignedPlaneEquation> {
-    let surface_rows = sources
-        .surface_rows
-        .iter()
-        .filter(|row| row.id == id && row.kind == SurfaceKind::Plane)
-        .collect::<Vec<_>>();
-    let [surface_row] = surface_rows.as_slice() else {
-        return None;
-    };
+) -> Result<Option<SignedPlaneEquation>, CodecError> {
+    let Some(surface_row) = exactly_one(sources.surface_rows.iter().filter(|row| row.id == id && row.kind == SurfaceKind::Plane)) else { return Ok(None) };
     let feature_id = surface_row.feature_id;
-    let transforms = transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let [transform] = transforms.as_slice() else {
-        return None;
-    };
-    let definitions = definitions
-        .iter()
-        .filter(|definition| definition.identity.id() == transform.definition_id)
-        .collect::<Vec<_>>();
-    let [definition] = definitions.as_slice() else {
-        return None;
-    };
-    let segments = definition.segments.as_ref()?;
-    let segment = segments.segment(id)?;
-    matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
-    let variables = definition.variables.as_ref()?;
-    let (points, _) = variables.reconciled_points();
+    let Some(transform) = exactly_one(transforms.iter().filter(|transform| transform.feature_id == Some(feature_id))) else { return Ok(None) };
+    let Some(definition) = exactly_one(definitions.iter().filter(|definition| definition.identity.id() == transform.definition_id)) else { return Ok(None) };
+    let Some(segments) = definition.segments.as_ref() else { return Ok(None) };
+    let Some(segment) = segments.segment(id) else { return Ok(None) };
+    if !matches!(segment.kind, FeatureSegmentKind::Line(_)) { return Ok(None) }
+    let Some(variables) = definition.variables.as_ref() else { return Ok(None) };
+    let (points, _) = variables.reconciled_points(ctx)?;
+    let result = (|| {
     let point = |point_id| {
         let point = points.get(&point_id)?;
         Some([point[0]?, point[1]?])
@@ -867,6 +861,8 @@ fn feature_generated_plane_equation(
         normal,
         offset: dot(normal, start),
     })
+    })();
+    Ok(result)
 }
 
 fn generated_cap_pair_plane_equation(
@@ -1116,10 +1112,11 @@ fn circular_profile_aligned_origin(
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
 pub(crate) fn resolve(
+    ctx: &DecodeContext<'_>,
     definitions: &[FeatureDefinition],
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Vec<FeatureSectionTransform> {
+) -> Result<Vec<FeatureSectionTransform>, CodecError> {
     let mut result = Vec::new();
     for definition in definitions {
         let Some(section) = &definition.section_3d else {
@@ -1128,14 +1125,20 @@ pub(crate) fn resolve(
         let Some(sketch_id) = section.sketch_plane_entity_id else {
             continue;
         };
-        let carrier_transform =
-            generated_cylinder_section_transform(definition, sources, entity_tables)
-                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
-                .map(|transform| apply_section_orientation(transform, section));
-        let mut reference_ids = section.reference_plane_datum_geometry_id.map_or_else(
-            || section.reference_planes.entity_ids().collect(),
-            |id| vec![id],
-        );
+        let carrier_transform = match generated_cylinder_section_transform(ctx, definition, sources, entity_tables)? {
+            Some(transform) => Some(transform),
+            None => generated_planar_section_transform(ctx, definition, sources, entity_tables)?,
+        }.map(|transform| apply_section_orientation(transform, section));
+        let mut reference_ids = Vec::new();
+        if let Some(id) = section.reference_plane_datum_geometry_id {
+            ctx.try_reserve_items(&mut reference_ids, 1, "creo placement reference IDs")?;
+            reference_ids.push(id);
+        } else {
+            for id in section.reference_planes.entity_ids() {
+                ctx.try_reserve_items(&mut reference_ids, 1, "creo placement reference IDs")?;
+                reference_ids.push(id);
+            }
+        }
         reference_ids.sort_unstable();
         reference_ids.dedup();
         let direct_sketch = plane_equation(
@@ -1162,7 +1165,7 @@ pub(crate) fn resolve(
                 sources.outline_planes,
             );
             if let Some(sketch) = direct_sketch {
-                let reference = direct_reference
+                let mut reference = direct_reference
                     .or_else(|| {
                         generated_datum_plane_equation(
                             reference_id,
@@ -1170,15 +1173,10 @@ pub(crate) fn resolve(
                             sketch.normal,
                             sources,
                         )
-                    })
-                    .or_else(|| {
-                        feature_generated_plane_equation(
-                            reference_id,
-                            definitions,
-                            &result,
-                            sources,
-                        )
                     });
+                if reference.is_none() {
+                    reference = feature_generated_plane_equation(ctx, reference_id, definitions, &result, sources)?;
+                }
                 if let Some(reference) = reference {
                     if dot(sketch.normal, reference.normal).abs()
                         < 1.0 - EPS_PLACEMENT_EXACT_GEOMETRY
@@ -1186,6 +1184,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1216,6 +1215,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
+                        ctx.try_reserve_items(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1227,8 +1227,10 @@ pub(crate) fn resolve(
         }
         if candidates.len() != 1 {
             if let Some(transform) = carrier_transform {
+                ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             } else if let Some(transform) = definition_local_frame_transform(definition, section) {
+                ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             }
             continue;
@@ -1313,6 +1315,7 @@ pub(crate) fn resolve(
             section.offset,
         );
         if let Some(transform) = carrier_transform.or(direct_transform) {
+            ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }
@@ -1323,15 +1326,17 @@ pub(crate) fn resolve(
         {
             continue;
         }
-        if let Some(transform) =
-            generated_cylinder_section_transform(definition, sources, entity_tables)
-                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
-        {
+        let transform = match generated_cylinder_section_transform(ctx, definition, sources, entity_tables)? {
+            Some(transform) => Some(transform),
+            None => generated_planar_section_transform(ctx, definition, sources, entity_tables)?,
+        };
+        if let Some(transform) = transform {
+            ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }
     result.sort_by_key(|transform| transform.offset);
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

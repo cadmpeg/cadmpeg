@@ -255,7 +255,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
 ) -> Result<BTreeMap<u32, [Option<f64>; 2]>, CodecError> {
     let (points, ambiguous_point_ids) = match &definition.variables {
-        Some(variables) if variables.is_complete() => variables.reconciled_points(),
+        Some(variables) if variables.is_complete() => variables.reconciled_points(ctx)?,
         Some(_) => (BTreeMap::new(), BTreeSet::new()),
         None => (BTreeMap::new(), BTreeSet::new()),
     };

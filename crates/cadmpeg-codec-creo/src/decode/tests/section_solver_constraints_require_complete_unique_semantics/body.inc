@@ -5268,7 +5268,8 @@ offset: 30,
     conflicting.u = Some(30.0);
     append_points(conflicting_definition.variables.as_mut().expect("variables"), vec![conflicting]);
     assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &conflicting_definition)).expect("test section solve").contains_key(&2));
-    let conflicting_record = sketch_section_point_records(&conflicting_definition)
+    let conflicting_record = crate::decode::with_test_decode_ctx(|ctx| sketch_section_point_records(ctx, &conflicting_definition))
+        .expect("section point records admitted")
         .into_iter()
         .find(|point| point.point_id == 2)
         .expect("conflicting point record");

@@ -581,18 +581,12 @@ pub(super) fn source_meta(
             .map(|definition| definition.outlines.len())
             .sum::<usize>(),
     );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_SECTION_POINT_COUNT,
-        scan.features
-            .definitions
-            .iter()
-            .filter_map(|definition| definition.variables.as_ref())
-            .map(|variables| {
-                let (points, ambiguous) = variables.reconciled_points();
-                points.len() + ambiguous.len()
-            })
-            .sum::<usize>(),
-    );
+    let mut section_point_count = 0;
+    for variables in scan.features.definitions.iter().filter_map(|definition| definition.variables.as_ref()) {
+        let (points, ambiguous) = variables.reconciled_points(ctx)?;
+        section_point_count += points.len() + ambiguous.len();
+    }
+    coverage.record(crate::coverage::DECODED_FEATURE_SECTION_POINT_COUNT, section_point_count);
     coverage.record(
         crate::coverage::DECODED_FEATURE_SOLVER_VARIABLE_COUNT,
         scan.features

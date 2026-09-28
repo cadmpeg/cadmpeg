@@ -329,11 +329,11 @@ fn arc_carriers_use_trim_vertices() {
                 trimmed_section_segment_geometry(&scaled, &BTreeMap::new(), &vertices, &segment);
             let resolved = crate::decode::with_test_decode_ctx(|ctx| {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &scaled)?;
-                Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+                resolved_trim_vertex_coordinates(ctx,
                     &scaled,
                     &BTreeMap::new(),
                     &radii,
-                ))
+                )
             })
             .expect("test section geometry");
             if factor == 1.0 {

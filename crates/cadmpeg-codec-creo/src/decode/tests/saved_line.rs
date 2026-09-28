@@ -1745,11 +1745,11 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+            resolved_trim_vertex_coordinates(ctx,
                 &trimmed,
                 &BTreeMap::new(),
                 &radii,
-            ))
+            )
         })
         .expect("test section geometry"),
         BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
@@ -1784,11 +1784,11 @@ fn saved_arc_joins_through_order_table() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii =
                 crate::decode::sketch::radii::resolved_section_radii(ctx, &conflicting_vertex)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+            resolved_trim_vertex_coordinates(ctx,
                 &conflicting_vertex,
                 &BTreeMap::new(),
                 &radii,
-            ))
+            )
         })
         .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])
@@ -1836,11 +1836,11 @@ fn saved_arc_joins_through_order_table() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| {
             let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
+            resolved_trim_vertex_coordinates(ctx,
                 &trimmed,
                 &BTreeMap::new(),
                 &radii,
-            ))
+            )
         })
         .expect("test section geometry"),
         BTreeMap::from([(2, [-2.0, 0.0])])
