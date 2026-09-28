@@ -1764,17 +1764,34 @@ pub(crate) fn decode_loft_legacy_body_carriers(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(mut carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
+            let Some(carrier) = parse_loft_legacy_body_carrier(bytes, scope, header) else {
                 continue;
             };
-            carrier.id =
-                ids::native_design_loft_legacy_body_carrier_id(&entry.name, header.byte_offset);
-            out.push(carrier);
+            push_loft_legacy_body_carrier(ctx, &mut out, carrier, &entry.name, header.byte_offset)?;
         }
     }
     out.sort_by(|left, right| left.id.cmp(&right.id));
     out.dedup_by(|left, right| left.id == right.id);
     Ok(out)
+}
+
+fn push_loft_legacy_body_carrier(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignLoftLegacyBodyCarrier>,
+    mut carrier: DesignLoftLegacyBodyCarrier,
+    stream: &str,
+    offset: u64,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d legacy Loft body carrier output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d legacy Loft body carrier allocation", 0, 1)
+    })?;
+    carrier.id = design_record_id_charged(
+        ctx, stream, ":design-loft-legacy-body-carrier#", offset,
+        "f3d legacy Loft body carrier ID", "f3d legacy Loft body carrier ID allocation",
+    )?;
+    out.push(carrier);
+    Ok(())
 }
 
 /// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
