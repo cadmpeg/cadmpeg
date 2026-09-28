@@ -9,6 +9,434 @@ use crate::history_records::{
     AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
     AsmHistory, AsmTopologyCache,
 };
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+use crate::records::topology::fillet::HistoricalBinding;
+
+fn historical_point_member() -> DesignExtrudeSelectionMember {
+    DesignExtrudeSelectionMember::try_new(
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionMemberDraft {
+            id: "synthetic:selection-member#10".into(),
+            group_record_index: 9,
+            group_member_ordinal: 0,
+            record_index: 10,
+            byte_offset: 0,
+            class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned())
+                .unwrap(),
+            local_id: 40,
+            local_id_offset: 21,
+            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            ).unwrap(),
+            asset_id_offset: 33,
+            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            ).unwrap(),
+            context_id_offset: 109,
+            tail_slot_present: false,
+            tail_slot_offset: 0,
+            resolved_geometry: None,
+            operand_identity_ids: Vec::new(),
+            historical: Some(HistoricalBinding {
+                kind: AsmHistoricalEntityKind::Point,
+                entity_ref: 40,
+                state_ids: vec![2],
+            }),
+            next_record_index: 11,
+            next_byte_offset: 190,
+        },
+    ).unwrap()
+}
+
+fn assert_historical_selection_refusal(operation: &'static str) {
+    let sketch = empty_sketch();
+    let member = historical_point_member();
+    let topology = AsmHistoricalTopology {
+        point_positions: vec![AsmHistoricalPoint {
+            point: 40, position: Point3::new(0.5, 0.5, 0.0),
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let histories = [AsmHistory {
+        id: "synthetic:history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![transition_state(2, topology, None)],
+    }];
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    for limit in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::historical_selection_regions(
+            &[&member], &sketch, &[], &histories, 0.000001,
+            &arrangement_budget, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected historical selection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no historical selection refusal at {operation}");
+}
+
+macro_rules! historical_selection_refusal {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() { assert_historical_selection_refusal($operation); }
+    };
+}
+
+historical_selection_refusal!(historical_state_index_refuses_limit,
+    "f3d historical selection state index");
+historical_selection_refusal!(historical_state_id_refuses_limit,
+    "f3d historical selection state id");
+historical_selection_refusal!(historical_member_points_refuse_limit,
+    "f3d historical selection member points");
+historical_selection_refusal!(historical_combined_member_point_refuses_limit,
+    "f3d historical combined member point");
+historical_selection_refusal!(historical_member_selection_refuses_limit,
+    "f3d historical member selection");
+historical_selection_refusal!(historical_fallback_selection_refuses_limit,
+    "f3d historical fallback selection");
+historical_selection_refusal!(historical_projected_selection_point_refuses_limit,
+    "f3d historical projected selection point");
+
+fn assert_historical_boundary_refusal(operation: &'static str) {
+    let mut sketch = empty_sketch();
+    let entity_id = SketchEntityId::mint("synthetic:test:id#historical-boundary-line").unwrap();
+    sketch.profiles.try_push(vec![SketchEntityUse {
+        entity: entity_id.clone(), reversed: false,
+    }]).unwrap();
+    let entity = SketchEntity::new(
+        entity_id, sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0), end: Point2::new(1.0, 0.0),
+        }).unwrap(),
+    );
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::selection_containing_points(
+            &sketch, std::slice::from_ref(&entity),
+            &[Point3::new(0.5, 0.0, 0.0)], 0.000001,
+            &arrangement_budget, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected historical boundary refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no historical boundary refusal at {operation}");
+}
+
+#[test]
+fn historical_boundary_profile_refuses_limit() {
+    assert_historical_boundary_refusal("f3d historical boundary profile");
+}
+
+#[test]
+fn historical_selected_profile_refuses_limit() {
+    assert_historical_boundary_refusal("f3d historical selected profile");
+}
+
+#[test]
+fn ordered_selected_profile_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::ordered_unique_profile_selections([
+            Some(super::super::ResolvedProfileSelection::Loops(vec![0])),
+        ], Some(&ctx)),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d ordered selected profile"
+    ));
+}
+
+#[test]
+fn ordered_selected_region_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, Vec::new()).unwrap();
+    assert!(matches!(
+        super::super::ordered_unique_profile_selections([
+            Some(super::super::ResolvedProfileSelection::Regions(vec![region])),
+        ], Some(&ctx)),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d ordered selected region"
+    ));
+}
+
+fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained: bool) {
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
+
+    let sketch = empty_sketch().id;
+    let selection = if region {
+        ProfileRef::Planar(PlanarProfileRef::sketch_regions(
+            sketch.clone(), vec![SketchProfileRegion::loops(0, vec![1]).unwrap()],
+        ).unwrap())
+    } else {
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(
+            sketch.clone(), vec![0],
+        ).unwrap())
+    };
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::merge_resolved_profile_selections(
+            &sketch, std::slice::from_ref(&selection), Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected merged profile refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no merged profile refusal at {operation}");
+}
+
+#[test]
+fn merged_selected_profile_refuses_collection_limit() {
+    assert_merged_profile_refusal("f3d merged selected profile", false, false);
+}
+
+#[test]
+fn merged_region_hole_refuses_collection_limit() {
+    assert_merged_profile_refusal("f3d merged region hole", true, false);
+}
+
+#[test]
+fn merged_selected_region_refuses_collection_limit() {
+    assert_merged_profile_refusal("f3d merged selected region", true, false);
+}
+
+#[test]
+fn merged_profile_sketch_id_refuses_retained_limit() {
+    assert_merged_profile_refusal("f3d profile sketch id", false, true);
+}
+
+fn assert_merged_trimmed_region_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_ir::features::{
+        PlanarProfileRef, ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+    };
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let sketch = empty_sketch().id;
+    let boundary = SketchProfileBoundaryUse {
+        entity: SketchEntityId::mint("synthetic:test:id#trimmed-boundary").unwrap(),
+        parameter_range: DirectedParameterRange::from_finite_endpoints([
+            FiniteReal::new(0.0).unwrap(), FiniteReal::new(1.0).unwrap(),
+        ]).unwrap(),
+        reversed: false,
+    };
+    let region = SketchProfileRegion::trimmed(
+        vec![boundary.clone()], vec![vec![boundary]],
+    ).unwrap();
+    let selection = ProfileRef::Planar(PlanarProfileRef::sketch_regions(
+        sketch.clone(), vec![region],
+    ).unwrap());
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::merge_resolved_profile_selections(
+            &sketch, std::slice::from_ref(&selection), Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected trimmed region refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no trimmed region refusal at {operation}");
+}
+
+#[test]
+fn merged_boundary_entity_id_refuses_retained_limit() {
+    assert_merged_trimmed_region_refusal("f3d merged region boundary entity id", true);
+}
+
+#[test]
+fn merged_outer_boundary_refuses_collection_limit() {
+    assert_merged_trimmed_region_refusal("f3d merged region outer boundary", false);
+}
+
+#[test]
+fn merged_hole_boundary_refuses_collection_limit() {
+    assert_merged_trimmed_region_refusal("f3d merged region hole boundary", false);
+}
+
+#[test]
+fn merged_hole_ring_refuses_collection_limit() {
+    assert_merged_trimmed_region_refusal("f3d merged region hole ring", false);
+}
+
+#[test]
+fn resolved_member_profile_refuses_collection_limit() {
+    let mut member = historical_point_member();
+    member.resolved_geometry = Some(SketchRelationOperand::Curve {
+        record_index: 10, primary_id: 100, secondary_id: 0,
+    });
+    let mut sketch = empty_sketch();
+    let entity = neutral_sketch_curve_id(&sketch.id, 100, 0);
+    sketch.profiles.try_push(vec![SketchEntityUse { entity, reversed: false }]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::super::resolved_selection_member_profiles(&member, &sketch, Some(&ctx)),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d resolved member profile"
+    ));
+}
+
+fn assert_boundary_region_refusal(operation: &'static str) {
+    use super::super::ResolvedProfileSelection;
+
+    let member = historical_point_member();
+    let sketch = empty_sketch();
+    let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1]).unwrap();
+    let selections = [
+        Some(ResolvedProfileSelection::Regions(vec![region])),
+        Some(ResolvedProfileSelection::Loops(vec![0])),
+    ];
+    for limit in 0..8 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::region_with_boundary_selection_members(
+            &[&member, &member], &sketch, &selections, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected boundary region refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no boundary region refusal at {operation}");
+}
+
+#[test]
+fn historical_boundary_region_hole_refuses_collection_limit() {
+    assert_boundary_region_refusal("f3d historical boundary region hole");
+}
+
+#[test]
+fn historical_boundary_region_refuses_collection_limit() {
+    assert_boundary_region_refusal("f3d historical boundary region");
+}
+
+fn assert_fallback_point_refusal(operation: &'static str) {
+    let mut member = historical_point_member();
+    member.historical.as_mut().unwrap().entity_ref = 999;
+    member.resolved_geometry = Some(SketchRelationOperand::Point {
+        record_index: 10, persistent_id: Some(100),
+    });
+    let sketch = empty_sketch();
+    let entity = SketchEntity::new(
+        crate::ids::neutral_sketch_point_id(&sketch.id, 100),
+        sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(0.5, 0.5),
+        }).unwrap(),
+    );
+    let histories = [AsmHistory {
+        id: "synthetic:history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![transition_state(2, AsmHistoricalTopology::default(), None)],
+    }];
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    for limit in 0..64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::historical_selection_regions(
+            &[&member], &sketch, std::slice::from_ref(&entity),
+            &histories, 0.000001, &arrangement_budget, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected fallback point refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no fallback point refusal at {operation}");
+}
+
+#[test]
+fn historical_fallback_member_point_refuses_collection_limit() {
+    assert_fallback_point_refusal("f3d historical fallback member point");
+}
+
+#[test]
+fn resolved_fallback_member_point_refuses_collection_limit() {
+    assert_fallback_point_refusal("f3d resolved fallback member point");
+}
+
+#[test]
+fn resolved_fallback_member_points_refuse_collection_limit() {
+    assert_fallback_point_refusal("f3d resolved fallback member points");
+}
+
+#[test]
+fn historical_selected_arrangement_region_refuses_collection_limit() {
+    let mut sketch = empty_sketch();
+    let corners = [
+        Point2::new(0.0, 0.0), Point2::new(2.0, 0.0),
+        Point2::new(2.0, 2.0), Point2::new(0.0, 2.0),
+    ];
+    let mut entities = Vec::new();
+    let mut boundary = Vec::new();
+    for index in 0..4 {
+        let id = SketchEntityId::mint(format!("synthetic:test:id#arrangement-edge-{index}")).unwrap();
+        entities.push(SketchEntity::new(
+            id.clone(), sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: corners[index], end: corners[(index + 1) % 4],
+            }).unwrap(),
+        ));
+        boundary.push(SketchEntityUse { entity: id, reversed: false });
+    }
+    sketch.profiles.try_push(boundary).unwrap();
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    for limit in 0..10_000 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::selection_containing_points(
+            &sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)],
+            0.000001, &arrangement_budget, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d historical selected arrangement region" => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected arrangement region refusal: {other:?}"),
+        }
+    }
+    panic!("no arrangement region refusal");
+}
 
 fn transition_state(
     state_id: i64,

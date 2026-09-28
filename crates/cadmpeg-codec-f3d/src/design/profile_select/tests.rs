@@ -1166,7 +1166,7 @@ fn historical_selection_preserves_first_member_region_order() {
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(1)])),
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(2)])),
-        ]),
+        ], None).unwrap(),
         Some(
             crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
                 region(3),
@@ -1179,7 +1179,7 @@ fn historical_selection_preserves_first_member_region_order() {
         crate::design::profile_select::ordered_unique_profile_selections([
             Some(crate::design::profile_select::ResolvedProfileSelection::Regions(vec![region(3)])),
             None,
-        ]),
+        ], None).unwrap(),
         None
     );
 }
@@ -1198,7 +1198,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops),
+        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &loops, None).unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_profiles(sketch.clone(), vec![3, 1, 2])
                 .unwrap()
@@ -1222,7 +1222,7 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
         ),
     ];
     assert_eq!(
-        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions),
+        crate::design::profile_select::merge_resolved_profile_selections(&sketch, &regions, None).unwrap(),
         Some(cadmpeg_ir::features::ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
                 sketch.clone(),
@@ -1238,8 +1238,9 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
     assert_eq!(
         crate::design::profile_select::merge_resolved_profile_selections(
             &sketch,
-            &[loops[0].clone(), regions[0].clone()]
-        ),
+            &[loops[0].clone(), regions[0].clone()],
+            None,
+        ).unwrap(),
         None
     );
     assert_eq!(
@@ -1254,8 +1255,9 @@ fn multiple_extrude_profile_groups_merge_only_exact_same_kind_selections() {
                     )
                     .unwrap()
                 ),
-            ]
-        ),
+            ],
+            None,
+        ).unwrap(),
         None
     );
 }
