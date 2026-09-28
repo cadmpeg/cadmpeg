@@ -48,6 +48,24 @@ fn insert_project_index<K: Eq + Hash, V>(
     Ok(())
 }
 
+fn collect_project_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for item in items {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            collected.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, 0, 1)
+            })?;
+        }
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
 fn record_spline_segment<'a>(
     ctx: Option<&DecodeContext<'_>>,
     segments: &mut HashMap<(&'a str, u32), Option<[Point3; 2]>>,
@@ -393,18 +411,21 @@ pub(crate) fn project_sketch_design(
                     && geometry.poles().points().all(planar_point) =>
             {
                 let poles = geometry.poles();
+                let planar_poles = collect_project_items(
+                    ctx,
+                    poles.points().map(|point| Point2::new(point.x, point.y)),
+                    "f3d planar sketch nurbs poles",
+                )?;
+                let weights = poles.weights().next().is_some()
+                    .then(|| collect_project_items(
+                        ctx, poles.weights(), "f3d planar sketch nurbs weights",
+                    ))
+                    .transpose()?;
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     geometry.degree(),
                     geometry.knots(),
-                    poles
-                        .points()
-                        .map(|point| Point2::new(point.x, point.y))
-                        .collect(),
-                    poles
-                        .weights()
-                        .next()
-                        .is_some()
-                        .then(|| poles.weights().collect()),
+                    planar_poles,
+                    weights,
                     false,
                 )?)
             }
@@ -693,18 +714,21 @@ pub(crate) fn project_spatial_sketch_design(
                     }
                     SketchCurveGeometry::Nurbs { geometry, .. } => {
                         let poles = geometry.poles();
+                        let transformed_poles = collect_project_items(
+                            ctx,
+                            poles.points().map(|point| transform_point(placement, point)),
+                            "f3d spatial sketch nurbs poles",
+                        )?;
+                        let weights = poles.weights().next().is_some()
+                            .then(|| collect_project_items(
+                                ctx, poles.weights(), "f3d spatial sketch nurbs weights",
+                            ))
+                            .transpose()?;
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             geometry.degree(),
                             geometry.knots(),
-                            poles
-                                .points()
-                                .map(|point| transform_point(placement, point))
-                                .collect(),
-                            poles
-                                .weights()
-                                .next()
-                                .is_some()
-                                .then(|| poles.weights().collect()),
+                            transformed_poles,
+                            weights,
                             false,
                         )?;
                         let Ok(curve3d) = curve3d.try_into() else {
@@ -772,6 +796,31 @@ pub(crate) fn project_spatial_sketch_design(
         };
         let sketch = neutral_spatial_sketch_id(placement);
         let entity_id = neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id.get());
+        let u_knots = collect_project_items(
+            ctx,
+            surface.geometry.u_knots.iter().copied().map(cadmpeg_ir::scalar::FiniteReal::get),
+            "f3d spatial sketch surface u knots",
+        )?;
+        let v_knots = collect_project_items(
+            ctx,
+            surface.geometry.v_knots.iter().copied().map(cadmpeg_ir::scalar::FiniteReal::get),
+            "f3d spatial sketch surface v knots",
+        )?;
+        let mut control_points = Vec::new();
+        for row in &surface.geometry.control_points {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d spatial sketch surface control rows")?;
+                control_points.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d spatial sketch surface control row allocation", 0, 1)
+                })?;
+            }
+            let points = collect_project_items(
+                ctx,
+                row.iter().map(|point| transform_point(placement, &point.get())),
+                "f3d spatial sketch surface control points",
+            )?;
+            control_points.push(points);
+        }
         entities.push(
             SpatialSketchEntity::new(
                 entity_id,
@@ -780,30 +829,9 @@ pub(crate) fn project_spatial_sketch_design(
                     surface: cadmpeg_ir::geometry::nurbs::BsplineSurface::new(
                         surface.geometry.u_degree.get(),
                         surface.geometry.v_degree.get(),
-                        surface
-                            .geometry
-                            .u_knots
-                            .iter()
-                            .copied()
-                            .map(cadmpeg_ir::scalar::FiniteReal::get)
-                            .collect(),
-                        surface
-                            .geometry
-                            .v_knots
-                            .iter()
-                            .copied()
-                            .map(cadmpeg_ir::scalar::FiniteReal::get)
-                            .collect(),
-                        surface
-                            .geometry
-                            .control_points
-                            .iter()
-                            .map(|row| {
-                                row.iter()
-                                    .map(|point| transform_point(placement, &point.get()))
-                                    .collect()
-                            })
-                            .collect(),
+                        u_knots,
+                        v_knots,
+                        control_points,
                     )
                     .map_err(|error| {
                         cadmpeg_core::CodecError::malformed(format_args!(
