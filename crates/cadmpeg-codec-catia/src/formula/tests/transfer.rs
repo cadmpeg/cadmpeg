@@ -1067,6 +1067,47 @@ fn formula_definition_chain_limit_refuses_before_candidate_creation() {
 }
 
 #[test]
+fn definition_chain_history_id_refuses_retained_limit() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean", &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native.entity_records.iter().find(|entity|
+        entity.definition_chain_value().is_some()).expect("definition chain entity");
+    let chain = entity.definition_chain_value().expect("typed chain");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_neutral_history_source"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::definition_chain_parameter_candidate(ctx, entity, chain)
+    }).expect("service profile admits definition candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
+fn typed_parameter_history_id_refuses_retained_limit() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4, false, &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH", Some(33.0), "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let entity = native.entity_records.iter().find(|entity|
+        entity.parameter_value().is_some()).expect("typed parameter entity");
+    let value = entity.parameter_value().expect("typed parameter");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_neutral_history_source"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::typed_entity_parameter_candidate(ctx, entity, value, "LENGTH")
+    }).expect("service profile admits typed candidate");
+    assert!(admitted.is_some());
+}
+
+#[test]
 fn formula_relation_program_output_limit_refuses_before_candidate_creation() {
     let bytes = standard_catpart_with_formula_relation(0x63, false);
     let mut native = crate::native::CatiaNative::decode(&bytes);

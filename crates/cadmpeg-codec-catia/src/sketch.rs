@@ -108,12 +108,15 @@ pub(crate) fn transfer_native_sketch_entities(
                 continue;
             }
 
-            let Ok(entity_id) = neutral_history_id(
+            let entity_id = match neutral_history_id(
+                ctx,
                 &geometry_field.id,
                 &cadmpeg_ir::identity_component!("sketch-entity"),
             )
-            .map(SketchEntityId::from) else {
-                continue;
+            .map(SketchEntityId::from) {
+                Ok(id) => id,
+                Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+                Err(error) => return Err(error),
             };
             if ir.model.sketch_entities.iter().any(|entity| {
                 entity.id() == &entity_id
@@ -326,12 +329,15 @@ pub(crate) fn transfer_native_sketch_constraints(
 
     let mut transferred = HashSet::new();
     for candidate in candidates {
-        let Ok(constraint_id) = neutral_history_id(
+        let constraint_id = match neutral_history_id(
+            ctx,
             &candidate.target_entity_record.id,
             &cadmpeg_ir::identity_component!("sketch-constraint"),
         )
-        .map(SketchConstraintId::from) else {
-            continue;
+        .map(SketchConstraintId::from) {
+            Ok(id) => id,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
         };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id
@@ -601,12 +607,15 @@ pub(crate) fn transfer_constraint_ranges(
             continue;
         };
 
-        let Ok(constraint_id) = neutral_history_id(
+        let constraint_id = match neutral_history_id(
+            ctx,
             &entity.id,
             &cadmpeg_ir::identity_component!("sketch-constraint"),
         )
-        .map(SketchConstraintId::from) else {
-            continue;
+        .map(SketchConstraintId::from) {
+            Ok(id) => id,
+            Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+            Err(error) => return Err(error),
         };
         if ir.model.sketch_constraints.iter().any(|constraint| {
             constraint.id == constraint_id

@@ -58,7 +58,7 @@ pub(crate) fn transfer_parameters(
             );
         for output in outputs {
             *formula_definition_counts
-                .entry(neutral_parameter_id(output)?)
+                .entry(neutral_parameter_id(ctx, output)?)
                 .or_default() += 1;
         }
     }
@@ -255,7 +255,7 @@ pub(crate) fn transfer_parameters(
             .and_then(|id| entities.get(id))
         {
             if let Some(output_value) = output.parameter_value() {
-                let output_id = neutral_parameter_id(&output.id)?;
+                let output_id = neutral_parameter_id(ctx, &output.id)?;
                 if !dependencies.contains(&output_id) {
                     if let Some((parameter_type, value)) =
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
@@ -604,8 +604,10 @@ fn definition_chain_parameter_candidate(
     if chain.selector.value.is_empty() {
         return Ok(None);
     }
-    let Some(id) = neutral_parameter_id(&entity.id).ok() else {
-        return Ok(None);
+    let id = match neutral_parameter_id(ctx, &entity.id) {
+        Ok(id) => id,
+        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+        Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let name = chain.selector.value.clone();
@@ -1203,8 +1205,10 @@ fn typed_entity_parameter_candidate(
     else {
         return Ok(None);
     };
-    let Some(id) = neutral_parameter_id(&entity.id).ok() else {
-        return Ok(None);
+    let id = match neutral_parameter_id(ctx, &entity.id) {
+        Ok(id) => id,
+        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+        Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let (expression, value) = match evaluation {
@@ -1395,8 +1399,10 @@ fn relation_program_output_candidate(
     let Some(output_value) = output_entity.parameter_value() else {
         return Ok(None);
     };
-    let Some(output_id) = neutral_parameter_id(&output_entity.id).ok() else {
-        return Ok(None);
+    let output_id = match neutral_parameter_id(ctx, &output_entity.id) {
+        Ok(id) => id,
+        Err(cadmpeg_core::CodecError::Malformed(_)) => return Ok(None),
+        Err(error) => return Err(error),
     };
     if dependencies.contains(&output_id) {
         return Ok(None);
@@ -3444,8 +3450,10 @@ fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
     }
 }
 
-fn neutral_parameter_id(native_id: &str) -> Result<ParameterId, cadmpeg_core::CodecError> {
-    crate::ids::neutral_history_id(native_id, &cadmpeg_ir::identity_component!("parameter"))
+fn neutral_parameter_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, native_id: &str,
+) -> Result<ParameterId, cadmpeg_core::CodecError> {
+    crate::ids::neutral_history_id(ctx, native_id, &cadmpeg_ir::identity_component!("parameter"))
         .map(ParameterId::from)
 }
 
