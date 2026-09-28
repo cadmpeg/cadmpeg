@@ -36,6 +36,27 @@ fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn spline_identity_copies_refuse_retained_byte_limit() {
+    let bytes = parametric_spline_curve_file();
+    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges splines identity copy" { return; }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            Ok(_) => panic!("spline identity refusal was not reached at cap {cap}"),
+            Err(error) => panic!("expected spline identity refusal: {error:?}"),
+        }
+    }
+    panic!("spline identity refusal was not reached within 4096 boundaries");
+}
+
+#[test]
 fn spline_projection_refuses_unadmitted_knots_rows_slots_and_losses() {
     let curve = parametric_spline_curve_file();
     for operation in [

@@ -401,11 +401,11 @@ pub(super) fn project(
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
                 ir.model
                     .points
-                    .push(Point::new(point.clone(), position, None));
+                    .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &point, "iges copious identity copy")?, position, None));
                 reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
                 ir.model.vertices.push(Vertex {
-                    id: vertex.clone(),
+                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex, "iges copious identity copy")?,
                     point,
                     tolerance: None,
                 });
@@ -462,7 +462,7 @@ pub(super) fn project(
         sequences.record_point(&end_point, &stem, Some(ctx))?;
         let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
         let end_vertex = if entry.form == 63 {
-            start_vertex.clone()
+            crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges copious identity copy")?
         } else {
             crate::ids::vertex(&stem.tail(crate::ids::Word::End))
         };
@@ -472,11 +472,11 @@ pub(super) fn project(
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model
             .points
-            .push(Point::new(start_point.clone(), start, None));
+            .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &start_point, "iges copious identity copy")?, start, None));
         reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
-            id: start_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges copious identity copy")?,
             point: start_point,
             tolerance: topology_tolerance,
         });
@@ -485,11 +485,11 @@ pub(super) fn project(
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model
                 .points
-                .push(Point::new(end_point.clone(), end, None));
+                .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &end_point, "iges copious identity copy")?, end, None));
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
-                id: end_vertex.clone(),
+                id: crate::decode_resource::clone_optional_identity(Some(ctx), &end_vertex, "iges copious identity copy")?,
                 point: end_point,
                 tolerance: topology_tolerance,
             });
@@ -510,7 +510,7 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges copious neutral curves")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
-            id: curve.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &curve, "iges copious identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
             )?)),
@@ -519,7 +519,7 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges copious neutral edges")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &edge, "iges copious identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve),
                 Some([0.0, parameter_end]),

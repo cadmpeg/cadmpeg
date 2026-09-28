@@ -79,19 +79,19 @@ fn add_bounded_curve(
     reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges conic neutral points")?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None),
-        Point::new(end_point.clone(), end, None),
+        Point::new(crate::decode_resource::clone_optional_identity(ctx, &start_point, "iges conics identity copy")?, start, None),
+        Point::new(crate::decode_resource::clone_optional_identity(ctx, &end_point, "iges conics identity copy")?, end, None),
     ]);
     reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges conic neutral vertices")?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges conics identity copy")?,
             point: start_point,
             tolerance,
         },
         Vertex {
-            id: end_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges conics identity copy")?,
             point: end_point,
             tolerance,
         },
@@ -100,14 +100,14 @@ fn add_bounded_curve(
     reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges conic neutral curves")?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
-        id: curve.clone(),
+        id: crate::decode_resource::clone_optional_identity(ctx, &curve, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
     });
     reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges conic neutral edges")?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
-        id: edge.clone(),
+        id: crate::decode_resource::clone_optional_identity(ctx, &edge, "iges conics identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,
         start: start_vertex,

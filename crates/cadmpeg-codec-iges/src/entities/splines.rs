@@ -192,19 +192,19 @@ fn add_edge(
     reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges spline neutral point slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None),
-        Point::new(end_point.clone(), end, None),
+        Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &start_point, "iges splines identity copy")?, start, None),
+        Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &end_point, "iges splines identity copy")?, end, None),
     ]);
     reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges spline neutral vertex slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges splines identity copy")?,
             point: start_point,
             tolerance: None,
         },
         Vertex {
-            id: end_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &end_vertex, "iges splines identity copy")?,
             point: end_point,
             tolerance: None,
         },
@@ -213,7 +213,7 @@ fn add_edge(
     reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges spline neutral curve slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
-        id: curve.clone(),
+        id: crate::decode_resource::clone_optional_identity(Some(ctx), &curve, "iges splines identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         source_object: Some(match source_object(entry, Some(ctx)) {
             Ok(source) => source,
@@ -226,7 +226,7 @@ fn add_edge(
     reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges spline neutral edge slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
-        id: edge.clone(),
+        id: crate::decode_resource::clone_optional_identity(Some(ctx), &edge, "iges splines identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
         start: start_vertex,
         end: end_vertex,
