@@ -883,7 +883,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(boundary.strictly_contains(&hole));
+    assert!(boundary.strictly_contains(&hole, None).unwrap());
 }
 
 #[test]
@@ -907,8 +907,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    assert!(polygon.strictly_contains(&arc_loop));
-    assert!(!arc_loop.strictly_contains(&polygon));
+    assert!(polygon.strictly_contains(&arc_loop, None).unwrap());
+    assert!(!arc_loop.strictly_contains(&polygon, None).unwrap());
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -922,8 +922,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!polygon.strictly_contains(&crossing));
-    assert!(!crossing.strictly_contains(&polygon));
+    assert!(!polygon.strictly_contains(&crossing, None).unwrap());
+    assert!(!crossing.strictly_contains(&polygon, None).unwrap());
 }
 
 #[test]
@@ -947,10 +947,10 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    assert!(outer.strictly_contains(&inner));
-    assert!(!inner.strictly_contains(&outer));
-    assert!(!outer.strictly_contains(&crossing));
-    assert!(!outer.strictly_contains(&touching));
+    assert!(outer.strictly_contains(&inner, None).unwrap());
+    assert!(!inner.strictly_contains(&outer, None).unwrap());
+    assert!(!outer.strictly_contains(&crossing, None).unwrap());
+    assert!(!outer.strictly_contains(&touching, None).unwrap());
 }
 
 #[test]
@@ -1689,6 +1689,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
 mod predicates;
 mod arrangement_allocation;
 mod region_allocation;
+mod certified_allocation;
 
 macro_rules! geometry_collection_refusal_test {
     ($name:ident, $operation:literal) => {
@@ -1963,7 +1964,7 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
         Point2::new(2.0, 0.0),
         Point2::new(0.0, 2.0),
     ];
-    let loop_ = super::CertifiedProfileLoop::from_vertices(&vertices).unwrap();
+    let loop_ = super::CertifiedProfileLoop::from_vertices(&vertices, None).unwrap().unwrap();
     assert!(loop_.contains_point(Point2::new(0.25, 0.25)));
     assert!(!loop_.contains_point(Point2::new(1.5, 1.5)));
     assert!(!loop_.contains_point(Point2::new(0.0, 0.0)));
