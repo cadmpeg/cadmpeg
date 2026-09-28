@@ -312,16 +312,14 @@ fn ordinal_at(position: usize) -> Result<u32, CodecError> {
 
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError> {
-    let parsed = {
-        let length = u64::try_from(bytes.len())
-            .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
-        let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
-        serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
-            CodecError::malformed(format_args!(
-                "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
-            ))
-        })?
-    };
+    let length = u64::try_from(bytes.len())
+        .map_err(|_| ctx.refuse_codec_limit("parse F3D redirections JSON", 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(length, "parse F3D redirections JSON")?;
+    let parsed = serde_json::from_slice::<RedirectionsJson>(bytes).map_err(|error| {
+        CodecError::malformed(format_args!(
+            "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
+        ))
+    })?;
     if parsed.name != "RedirectionsStream" {
         return Err(redirections_error(format_args!(
             "name must be RedirectionsStream"
