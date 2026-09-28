@@ -315,6 +315,13 @@ impl StreamView {
                 cadmpeg_core::decode::u64_from_index(delta_indices.len()),
                 "nx auxiliary replacement views",
             )?;
+            let replacement_bytes = delta_indices.len()
+                .checked_mul(std::mem::size_of::<&[u8]>())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
+            let _replacement_reservation = ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(replacement_bytes),
+                "nx auxiliary replacement views",
+            )?;
             let mut replacement_streams = Vec::new();
             replacement_streams
                 .try_reserve_exact(delta_indices.len())
@@ -859,6 +866,24 @@ mod tests {
             ),
             "{error:?}"
         );
+    }
+
+    #[test]
+    fn auxiliary_replacement_views_refuse_scoped_storage() {
+        let scan = scan_with_streams(one_delta_pair());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<usize>() + std::mem::size_of::<&[u8]>() - 1,
+        );
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        let error = ParsedStreams::parse(&ctx, &scan)
+            .err()
+            .expect("replacement view exceeds remaining scoped bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes
+                && limit.operation == "nx auxiliary replacement views"));
     }
 
     fn pair_under_limits(collection_items: u64, work_units: u64) -> cadmpeg_core::CodecError {
