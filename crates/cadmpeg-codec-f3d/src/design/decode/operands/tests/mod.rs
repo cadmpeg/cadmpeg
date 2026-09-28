@@ -9,6 +9,7 @@
 mod construction;
 mod edge_index;
 mod face_sources;
+mod header_index;
 mod recipes;
 mod selection;
 mod work_point;

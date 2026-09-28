@@ -1360,6 +1360,25 @@ fn indexed_operand_recipes<'a>(
     Ok(indexed)
 }
 
+fn indexed_operand_headers<'a>(
+    ctx: &DecodeContext<'_>,
+    headers: &'a [DesignRecordHeader],
+) -> Result<HashMap<(&'a str, u32), &'a DesignRecordHeader>, CodecError> {
+    let mut indexed = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !indexed.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d operand header index")?;
+            indexed.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d operand header index allocation", 0, 1)
+            })?;
+        }
+        indexed.insert(key, header);
+    }
+    Ok(indexed)
+}
+
 fn push_operand_face_candidate(
     ctx: &DecodeContext<'_>,
     candidates: &mut Vec<cadmpeg_ir::ids::FaceId>,
@@ -1515,15 +1534,13 @@ pub(crate) fn edge_operand_candidate_faces(
 
 /// Resolve the unique sketch-profile frame named by profile-based scopes.
 pub(crate) fn bind_sketch_profiles(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1582,14 +1599,12 @@ pub(crate) fn bind_sketch_profiles(
 
 /// Decode the counted selection group named by each Extrude scope.
 pub(crate) fn decode_extrude_selection_groups(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignExtrudeSelectionGroup>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -1627,14 +1642,12 @@ pub(crate) fn decode_extrude_selection_groups(
 /// close it is recorded on the owning scope, so a group the grammar cannot read
 /// is distinguishable from a reference member that is not a group at all.
 pub(crate) fn decode_construction_operand_groups(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
@@ -1721,14 +1734,12 @@ pub(crate) fn decode_construction_operand_groups(
 /// envelopes. The ordinary role-`0x8` body group is admitted only when this
 /// exact carrier is present at scope-reference ordinal zero.
 pub(crate) fn decode_loft_legacy_body_carriers(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignLoftLegacyBodyCarrier>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -2617,14 +2628,12 @@ fn legacy_body_group_tail(
 
 /// Bind exact typed records selected by construction-group trailing runs.
 pub(crate) fn bind_construction_operand_trailing_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     for group in groups {
         group
             .frame
@@ -2707,14 +2716,12 @@ fn parse_construction_operand_flag(
 
 /// Bind exact persistent-entity path records selected by construction groups.
 pub(crate) fn bind_construction_operand_paths(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &mut [DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     for group in groups {
         group
             .frame
@@ -2904,14 +2911,12 @@ fn take_record_reference(bytes: &[u8], at: &mut usize) -> Option<(u32, u64)> {
 
 /// Decode the persistent identity frame named by each construction-operand group.
 pub(crate) fn decode_construction_operand_identities(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3296,14 +3301,12 @@ fn parse_extrude_selection_group(
 
 /// Decode the fixed-width records named by Extrude selection groups.
 pub(crate) fn decode_extrude_selection_members(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignExtrudeSelectionGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignExtrudeSelectionMember>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -3340,14 +3343,12 @@ pub(crate) fn decode_extrude_selection_members(
 
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let headers = indexed_operand_headers(ctx, headers)?;
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {

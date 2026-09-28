@@ -4416,6 +4416,7 @@ fn extend_related_design_records(
     );
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_sketch_profiles(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
@@ -4423,12 +4424,14 @@ fn extend_related_design_records(
     )?;
     native.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
+            ctx,
             scan,
             &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
     native.design_loft_legacy_body_carriers =
         crate::design::decode::operands::decode_loft_legacy_body_carriers(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_record_headers,
@@ -4444,6 +4447,7 @@ fn extend_related_design_records(
     )?;
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_record_headers,
@@ -4522,17 +4526,20 @@ fn extend_related_design_records(
     );
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_construction_operand_trailing_records(
+        ctx,
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
     crate::design::decode::operands::bind_construction_operand_paths(
+        ctx,
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
     native.design_construction_operand_identities =
         crate::design::decode::operands::decode_construction_operand_identities(
+            ctx,
             scan,
             &native.design_construction_operand_groups,
             &native.design_record_headers,
@@ -4654,12 +4661,14 @@ fn extend_related_design_records(
     native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
+            ctx,
             scan,
             &native.design_extrude_selection_groups,
             &native.design_record_headers,
         )?;
     native.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            ctx,
             scan,
             &native.design_construction_operand_groups,
             &native.design_record_headers,
