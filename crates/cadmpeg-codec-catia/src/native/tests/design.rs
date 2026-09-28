@@ -17,6 +17,66 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn native_design_objects_refuse_caller_collection_limit() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_nested_design_objects());
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_object_id"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_objects(ctx, &native.object_graphs, &native.entity_records)
+    })
+    .expect("service profile admits design objects");
+    assert_eq!(admitted, native.design_objects);
+}
+
+#[test]
+fn parallel_reference_table_refuses_nested_collection_limit() {
+    use std::collections::HashMap;
+
+    let list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x84, 0x85, 0xfe];
+    let list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
+    let mut bytes = sequential_entity_backed_object_graph(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x83], &list_a),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x84], &list_b),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x83], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x84], &[0xfe]),
+    ]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager", "catalogManager", "catalogLinks", "", "Profile", "Limit", "Profile", "Limit",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let graph = &native.object_graphs[0];
+    let owner = native.design_objects[0].owner_entity_id;
+    let fields = graph.records.iter().filter(|record| record.owner_entity_id() == Some(owner))
+        .collect::<Vec<_>>();
+    let indices = graph.records.iter().enumerate().filter_map(|(index, record)| {
+        Some((record.entity_id()?, index))
+    }).collect::<HashMap<_, _>>();
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_row_cells"));
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_design_column_field"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::design_parallel_reference_table(ctx, &fields, graph, &indices)
+    })
+    .expect("service profile admits parallel reference table");
+    assert_eq!(admitted, native.design_objects[0].parallel_reference_table);
+}
+
+#[test]
 fn native_design_objects_preserve_payload_references_to_target_owners() {
     let bytes = sequential_entity_backed_object_graph(&[
         object_graph_record(
