@@ -7,6 +7,7 @@
 )]
 
 mod construction;
+mod edge_index;
 mod face_sources;
 mod recipes;
 mod selection;
