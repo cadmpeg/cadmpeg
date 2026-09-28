@@ -25,7 +25,7 @@ pub(super) fn attach_expanded_sections(
     // The whole expansion namespace is gated on there being expanded sections at
     // all: with none, the double-xar and primitive-scalar arenas are skipped even
     // when their scan tables are non-empty. Preserve that early return.
-    let records = expanded_section_records(scan);
+    let records = expanded_section_records(ctx, scan)?;
     if records.is_empty() {
         return Ok(());
     }
