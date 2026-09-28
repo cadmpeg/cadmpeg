@@ -595,6 +595,20 @@ where
     Ok(index)
 }
 
+fn reload_native_arena<T: serde::de::DeserializeOwned>(
+    decode: Option<&DecodeContext<'_>>,
+    ir: &CadIr,
+    name: &str,
+) -> Result<Vec<T>, CodecError> {
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(Vec::new());
+    };
+    match decode {
+        Some(decode) => namespace.arena_as_charged(decode, name).map_err(Into::into),
+        None => namespace.arena_as(name).map_err(Into::into),
+    }
+}
+
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
 /// per-family validators. Every map is derived purely from the namespace and
 /// borrows it for the duration of a [`validate_native`] call.
@@ -820,7 +834,7 @@ fn validate_loaded(
 ) -> Result<Vec<Finding>, CodecError> {
     let ctx = Ctx::new(ir, native, decode)?;
     let mut findings = Vec::new();
-    let mut expected_face_operands = native.design_face_operands.clone();
+    let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -881,11 +895,11 @@ fn validate_loaded(
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
-        validate_edge_identity_operands(&ctx, &mut findings, &expected_face_operands);
-    let body_recipe_operand_records = validate_body_recipe_operands(&ctx, &mut findings);
-    let edge_operand_records = validate_edge_operands(&ctx, &mut findings);
+        validate_edge_identity_operands(decode, &ctx, &mut findings, &expected_face_operands)?;
+    let body_recipe_operand_records = validate_body_recipe_operands(decode, &ctx, &mut findings)?;
+    let edge_operand_records = validate_edge_operands(decode, &ctx, &mut findings)?;
     let edge_treatment_vertex_records =
-        validate_edge_treatment_vertex_operands(&ctx, &mut findings);
+        validate_edge_treatment_vertex_operands(decode, &ctx, &mut findings)?;
     validate_operand_group_carriers(
         &ctx,
         &mut findings,
@@ -5498,15 +5512,17 @@ fn validate_construction_operand_identities<'a>(
 
 /// Validate edge identity operands; returns their backing record set.
 fn validate_edge_identity_operands<'a>(
+    decode: Option<&DecodeContext<'_>>,
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
     expected_face_operands: &[records::topology::face::DesignFaceOperand],
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
-    let mut expected_edge_identity_operands = native.design_edge_identity_operands.clone();
+    let mut expected_edge_identity_operands =
+        reload_native_arena(decode, ctx.ir, "design_edge_identity_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -5565,20 +5581,22 @@ fn validate_edge_identity_operands<'a>(
             });
         }
     }
-    edge_identity_records
+    Ok(edge_identity_records)
 }
 
 /// Validate whole-body recipe operands; returns their backing record set.
 fn validate_body_recipe_operands<'a>(
+    decode: Option<&DecodeContext<'_>>,
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
-    let mut expected_operands = native.design_body_recipe_operands.clone();
+    let mut expected_operands =
+        reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
     design::decode::operands::bind_body_recipe_operand_candidates(
         &mut expected_operands,
         &native.construction_recipes,
@@ -5683,7 +5701,7 @@ fn validate_body_recipe_operands<'a>(
             });
         }
     }
-    operand_records
+    Ok(operand_records)
 }
 
 /// Report operand groups lacking a typed member carrier.
@@ -6141,9 +6159,10 @@ fn recipe_reference_frames_match(
 
 /// Validate edge operands and their recipe frames; returns their record set.
 fn validate_edge_operands<'a>(
+    decode: Option<&DecodeContext<'_>>,
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
@@ -6151,7 +6170,8 @@ fn validate_edge_operands<'a>(
     let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
-    let mut expected_edge_operands = native.design_edge_operands.clone();
+    let mut expected_edge_operands =
+        reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
@@ -6268,15 +6288,20 @@ fn validate_edge_operands<'a>(
             });
         }
     }
-    edge_operand_records
+    Ok(edge_operand_records)
 }
 
 fn validate_edge_treatment_vertex_operands<'a>(
+    decode: Option<&DecodeContext<'_>>,
     ctx: &Ctx<'a>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
-    let mut expected = native.design_edge_treatment_vertex_operands.clone();
+    let mut expected = reload_native_arena(
+        decode,
+        ctx.ir,
+        "design_edge_treatment_vertex_operands",
+    )?;
     design::decode::operands::bind_edge_treatment_vertex_candidates(
         &mut expected,
         &native.persistent_subentity_tags,
@@ -6345,7 +6370,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
             });
         }
     }
-    records
+    Ok(records)
 }
 
 /// Report Fillet/Chamfer edge groups with incomplete selection operands.

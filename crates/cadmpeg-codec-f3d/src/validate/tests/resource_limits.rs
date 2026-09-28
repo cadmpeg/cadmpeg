@@ -7,6 +7,33 @@ fn limited_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
 }
 
 #[test]
+fn validation_native_arena_reload_refuses_collection_limit() {
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let ctx = limited_context(&arena);
+    let result: Result<Vec<crate::history_records::AsmBulletinBoard>, _> =
+        super::super::reload_native_arena(Some(&ctx), &ir, "asm_bulletin_boards");
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "load typed native record"));
+}
+
+#[test]
 fn validation_map_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
