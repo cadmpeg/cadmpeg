@@ -984,7 +984,7 @@ pub(super) fn try_decode_geometry(
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         NurbsCurve::from_lanes(
                             1,
-                            linear_knots(&charted.samples.parameters_charged(ctx)?),
+                            linear_knots(&charted.samples.parameters_charged(ctx)?, &adaptive_geometry_budget)?,
                             charted.samples.points_charged(ctx)?,
                             None,
                             false,
@@ -1050,20 +1050,24 @@ pub(super) fn try_decode_geometry(
                 };
                 let parameters = charted.samples.parameters_charged(ctx)?;
                 let first = intersection_side(
+                    ctx,
                     &ir,
                     &surfaces_by_xmt,
                     Some(charted.primary_support),
                     support_uv[0]
                         .as_deref()
                         .map(|uv| (uv, parameters.as_slice())),
+                    &adaptive_geometry_budget,
                 )?;
                 let second = intersection_side(
+                    ctx,
                     &ir,
                     &surfaces_by_xmt,
                     charted.secondary_support,
                     support_uv[1]
                         .as_deref()
                         .map(|uv| (uv, parameters.as_slice())),
+                    &adaptive_geometry_budget,
                 )?;
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext::try_new(

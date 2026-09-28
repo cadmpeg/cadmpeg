@@ -2397,33 +2397,63 @@ pub(super) fn solve_damped_least_squares_4x4(
 }
 
 pub(super) fn intersection_side(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[cadmpeg_ir::units::FiniteVector<2>], &[f64])>,
-) -> Result<IntcurveSupportSide, cadmpeg_ir::geometry::nurbs::NurbsError> {
-    let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
-    let lanes = surface.as_ref().and_then(|surface_id| {
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<IntcurveSupportSide, cadmpeg_core::CodecError> {
+    let surface = surface_xmt
+        .and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)))
+        .map(|surface| {
+            crate::decode::ids::copy_typed_id(
+                ctx,
+                surface.as_str(),
+                "nx intersection support identity",
+            )
+        })
+        .transpose()?;
+    let lanes = if let (Some(surface_id), Some((uv, parameters))) = (&surface, uv) {
         let geometry = ir
             .model
             .surfaces
             .iter()
             .find(|candidate| &candidate.id == surface_id)
-            .map(|surface| &surface.geometry)?;
-        let (uv, parameters) = uv?;
+            .map(|surface| &surface.geometry);
         if uv
             .iter()
             .flat_map(|pair| pair.iter())
             .any(|value| missing_support_parameter(*value))
         {
-            return None;
+            None
+        } else if let Some(geometry) = geometry {
+            let mut control_points = Vec::new();
+            let _reservation = geometry_budget.reserve_vec(
+                &mut control_points,
+                uv.len(),
+                "nx intersection support controls",
+            )?;
+            let mut valid = true;
+            for pair in uv {
+                if let Some(point) = surface_parameters(geometry, **pair) {
+                    control_points.push(point.get());
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid {
+                Some((control_points, linear_knots(parameters, geometry_budget)?))
+            } else {
+                None
+            }
+        } else {
+            None
         }
-        let control_points = uv
-            .iter()
-            .map(|pair| surface_parameters(geometry, **pair).map(FinitePoint2::get))
-            .collect::<Option<Vec<_>>>()?;
-        Some((control_points, linear_knots(parameters)))
-    });
+    } else {
+        None
+    };
     let pcurve = match lanes {
         Some((control_points, knots)) => Some(PcurveGeometry::Nurbs {
             nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -2432,7 +2462,8 @@ pub(super) fn intersection_side(
                 control_points,
                 None,
                 false,
-            )?,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
         }),
         None => None,
     };
