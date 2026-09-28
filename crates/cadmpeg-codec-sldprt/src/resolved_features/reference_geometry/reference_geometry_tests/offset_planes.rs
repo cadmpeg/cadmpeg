@@ -143,7 +143,7 @@ fn frame_only_offset_plane_reference_requires_one_unique_source() {
     );
     assert_eq!(
         select_reference_plane_frame_source(["same", "same"].into_iter()),
-        Some("same".into())
+        Some("same")
     );
     assert_eq!(
         select_reference_plane_frame_source(["first", "second"].into_iter()),
@@ -159,7 +159,7 @@ fn frame_only_offset_plane_reference_does_not_use_feature_order() {
     );
     assert_eq!(
         select_reference_plane_frame_source(["source", "source"].into_iter()),
-        Some("source".into())
+        Some("source")
     );
     assert_eq!(
         select_reference_plane_frame_source(["first", "second"].into_iter()),

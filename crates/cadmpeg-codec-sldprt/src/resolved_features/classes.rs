@@ -659,7 +659,11 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        enrich_history_reference_planes(&mut histories, &[lane]);
+        enrich_history_reference_planes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        ).unwrap();
 
         let properties = &histories[0].features[0].properties;
         assert!(!properties.contains_key("Reference"));

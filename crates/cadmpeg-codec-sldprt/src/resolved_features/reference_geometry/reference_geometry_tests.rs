@@ -1638,7 +1638,11 @@ fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
         sketch_entities: Vec::new(),
     };
 
-    super::enrich_history_reference_planes(&mut histories, &[lane]);
+    super::enrich_history_reference_planes(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &[lane],
+    ).unwrap();
 
     let properties = &histories[0].features[0].properties;
     assert_eq!(properties.get("Origin"), Some(&"0mm,0mm,145mm".to_string()));
@@ -1939,3 +1943,4 @@ mod offset_planes;
 mod plane_frames;
 mod reference_points;
 mod coordinate_systems;
+mod reference_planes;

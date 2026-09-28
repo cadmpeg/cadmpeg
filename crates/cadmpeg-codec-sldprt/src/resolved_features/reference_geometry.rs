@@ -81,11 +81,60 @@ fn reconcile_reference_plane_frame_with_source(
     }
 }
 
+/// Insert a charged frame candidate at a feature index.
+fn push_reference_plane_candidate<T>(
+    ctx: &DecodeContext<'_>,
+    candidates: &mut BTreeMap<(usize, usize), Vec<T>>,
+    index: (usize, usize),
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(values) = candidates.get_mut(&index) {
+        ctx.reserve_collection_vec(values, 1, operation)?;
+        values.push(value);
+    } else {
+        let mut values = Vec::new();
+        ctx.reserve_collection_vec(&mut values, 1, operation)?;
+        values.push(value);
+        ctx.charge_collection_items(1, operation)?;
+        candidates.insert(index, values);
+    }
+    Ok(())
+}
+
+fn insert_reference_plane_property(
+    ctx: &DecodeContext<'_>,
+    feature: &mut crate::records::Feature,
+    key: NonBlankString,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    let value = ctx.format_retained(value, "retain SLDPRT reference plane property")?;
+    if !feature.properties.contains_key(&key) {
+        ctx.charge_collection_items(1, "insert SLDPRT reference plane property")?;
+    }
+    feature.properties.insert(key, value);
+    Ok(())
+}
+
+fn retained_plane_frame_source(
+    ctx: &DecodeContext<'_>,
+    feature: &crate::records::Feature,
+) -> Result<String, CodecError> {
+    match feature.source_id {
+        Some(crate::records::FeatureSource::Reserved) =>
+            ctx.format_retained(format_args!("-1"), "retain SLDPRT plane frame source"),
+        Some(crate::records::FeatureSource::Id(id)) =>
+            ctx.format_retained(format_args!("{}", id.value()), "retain SLDPRT plane frame source"),
+        None => ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT plane frame source"),
+    }
+}
+
 /// Add validated reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let mut candidate_sources = BTreeMap::<(usize, usize), Vec<SketchPlaneUAxisSource>>::new();
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
@@ -94,51 +143,59 @@ pub(crate) fn enrich_history_reference_planes(
     let mut explicit_reference_indices = HashSet::new();
     let mut face_feature_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut face_native_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
-    let known_sources = histories
-        .iter()
-        .map(|history| {
-            history
-                .features
-                .iter()
-                .filter_map(crate::records::Feature::source_value)
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let features_by_source = histories
-        .iter()
-        .map(|history| {
-            history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature.source_value()?, feature.id.clone())))
-                .collect::<HashMap<_, _>>()
-        })
-        .collect::<Vec<_>>();
-    let known_reference_plane_sources = histories
-        .iter()
-        .map(|history| {
-            history
-                .features
-                .iter()
-                .filter(|feature| classify(feature) == Some(FeatureClass::ReferencePlane))
-                .filter_map(crate::records::Feature::source_value)
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
+    let mut known_sources = Vec::new();
+    let mut features_by_source = Vec::new();
+    let mut known_reference_plane_sources = Vec::new();
+    for history in histories.iter() {
+        let mut sources = HashSet::new();
+        let mut by_source = HashMap::new();
+        let mut reference_sources = HashSet::new();
+        for (index, feature) in history.features.iter().enumerate() {
+            let Some(source) = feature.source_value() else {
+                continue;
+            };
+            if !sources.contains(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT reference plane sources")?;
+                sources.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT reference plane sources", u64::MAX - 1, u64::MAX,
+                ))?;
+                sources.insert(source);
+            }
+            if !by_source.contains_key(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT reference plane features")?;
+                by_source.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT reference plane features", u64::MAX - 1, u64::MAX,
+                ))?;
+            }
+            by_source.insert(source, index);
+            if classify(feature) == Some(FeatureClass::ReferencePlane)
+                && !reference_sources.contains(&source)
+            {
+                ctx.charge_collection_items(1, "index SLDPRT reference plane targets")?;
+                reference_sources.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT reference plane targets", u64::MAX - 1, u64::MAX,
+                ))?;
+                reference_sources.insert(source);
+            }
+        }
+        ctx.reserve_collection_vec(&mut known_sources, 1, "collect SLDPRT reference plane source indexes")?;
+        known_sources.push(sources);
+        ctx.reserve_collection_vec(&mut features_by_source, 1, "collect SLDPRT reference plane feature indexes")?;
+        features_by_source.push(by_source);
+        ctx.reserve_collection_vec(&mut known_reference_plane_sources, 1, "collect SLDPRT reference plane target indexes")?;
+        known_reference_plane_sources.push(reference_sources);
+    }
     for lane in lanes {
-        let mut starts =
-            histories
-                .iter()
-                .enumerate()
-                .flat_map(|(history_index, history)| {
-                    history.features.iter().enumerate().filter_map(
-                        move |(feature_index, feature)| {
-                            feature_object_name(feature, lane)
-                                .map(|name| (name.offset, history_index, feature_index))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                ctx.charge_work(1, "scan SLDPRT reference plane features")?;
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT reference plane starts")?;
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
@@ -167,44 +224,69 @@ pub(crate) fn enrich_history_reference_planes(
                 &known_reference_plane_sources[history_index],
                 self_source,
             ) {
-                explicit_reference_indices.insert((history_index, feature_index));
-                reference_candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(source.to_string());
+                let index = (history_index, feature_index);
+                if !explicit_reference_indices.contains(&index) {
+                    ctx.charge_collection_items(1, "index SLDPRT explicit plane references")?;
+                    explicit_reference_indices.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "index SLDPRT explicit plane references", u64::MAX - 1, u64::MAX,
+                    ))?;
+                    explicit_reference_indices.insert(index);
+                }
+                let source = ctx.format_retained(
+                    format_args!("{source}"), "retain SLDPRT reference plane source",
+                )?;
+                push_reference_plane_candidate(
+                    ctx, &mut reference_candidates, index, source,
+                    "collect SLDPRT reference plane sources",
+                )?;
             }
             if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
-                face_native_candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(format!(
+                let native = ctx.format_retained(
+                    format_args!(
                         "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
-                        lane.id,
-                        start + relative_offset,
-                        owner
-                    ));
-                if let Some(target) = features_by_source[history_index].get(&owner) {
-                    face_feature_candidates
-                        .entry((history_index, feature_index))
-                        .or_default()
-                        .push(target.clone());
+                        lane.id, start + relative_offset, owner,
+                    ),
+                    "retain SLDPRT legacy face alias",
+                )?;
+                push_reference_plane_candidate(
+                    ctx, &mut face_native_candidates, (history_index, feature_index), native,
+                    "collect SLDPRT native face references",
+                )?;
+                if let Some(&target_index) = features_by_source[history_index].get(&owner) {
+                    let target = &histories[history_index].features[target_index].id;
+                    let target = ctx.format_retained(
+                        format_args!("{target}"), "retain SLDPRT face feature reference",
+                    )?;
+                    push_reference_plane_candidate(
+                        ctx, &mut face_feature_candidates, (history_index, feature_index), target,
+                        "collect SLDPRT face feature references",
+                    )?;
                 }
             }
             if let Some((relative_offset, components)) = component_face_reference_in_record(bytes) {
-                face_native_candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(format!(
-                        "sldprt:feature-input:surface-component-ids#{}:{}:{}",
-                        lane.id,
-                        start + relative_offset,
-                        components
-                            .iter()
-                            .filter_map(|component| component.local_id)
-                            .map(|local_id| local_id.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ));
+                let mut native = ctx.format_retained(
+                    format_args!(
+                        "sldprt:feature-input:surface-component-ids#{}:{}:",
+                        lane.id, start + relative_offset,
+                    ),
+                    "retain SLDPRT component face reference",
+                )?;
+                for (position, local_id) in components.iter().filter_map(|component| component.local_id).enumerate() {
+                    if position > 0 {
+                        ctx.reserve_retained_string(&mut native, 1, "retain SLDPRT component face reference")?;
+                        native.push(',');
+                    }
+                    let digits = usize::try_from(local_id.checked_ilog10().unwrap_or(0)).map_err(|_| {
+                        ctx.refuse_codec_limit("retain SLDPRT component face reference", u64::MAX - 1, u64::MAX)
+                    })? + 1;
+                    ctx.reserve_retained_string(&mut native, digits, "retain SLDPRT component face reference")?;
+                    std::fmt::Write::write_fmt(&mut native, format_args!("{local_id}"))
+                        .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT component face reference", u64::MAX - 1, u64::MAX))?;
+                }
+                push_reference_plane_candidate(
+                    ctx, &mut face_native_candidates, (history_index, feature_index), native,
+                    "collect SLDPRT native face references",
+                )?;
             }
             let offset_frames = feature
                 .parameters
@@ -212,30 +294,29 @@ pub(crate) fn enrich_history_reference_planes(
                 .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
                 .and_then(|distance| offset_reference_plane_frame_pair(bytes, distance));
             if let Some((offset, reference)) = offset_frames {
-                reference_frame_candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(reference);
-                candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(offset);
-                candidate_sources
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(SketchPlaneUAxisSource::Native);
+                let index = (history_index, feature_index);
+                push_reference_plane_candidate(ctx, &mut reference_frame_candidates, index, reference,
+                    "collect SLDPRT reference plane frame candidates")?;
+                push_reference_plane_candidate(ctx, &mut candidates, index, offset,
+                    "collect SLDPRT plane frame candidates")?;
+                push_reference_plane_candidate(ctx, &mut candidate_sources, index,
+                    SketchPlaneUAxisSource::Native, "collect SLDPRT plane U-axis sources")?;
             }
             let constraint = constraint_midplane_frame(bytes);
-            let mut anchored_frames = lane
-                .classes
-                .iter()
-                .filter_map(|class| {
+            let mut anchored_frames = Vec::new();
+            for class in &lane.classes {
+                let frame = (|| {
                     let offset = usize::try_from(class.offset).ok()?;
                     (start..end).contains(&offset).then(|| {
                         constraint_reference_plane_frame(&lane.native_payload, offset, &class.name)
                     })?
-                })
-                .collect::<Vec<_>>();
+                })();
+                if let Some(frame) = frame {
+                    ctx.reserve_collection_vec(&mut anchored_frames, 1,
+                        "collect SLDPRT anchored plane frames")?;
+                    anchored_frames.push(frame);
+                }
+            }
             anchored_frames.sort_by_key(reference_plane_frame_key);
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
             let explicit = if offset_frames.is_some() {
@@ -258,21 +339,23 @@ pub(crate) fn enrich_history_reference_planes(
                 continue;
             };
             let (origin, normal, u_axis) = frame;
-            candidates
-                .entry((history_index, feature_index))
-                .or_default()
-                .push((origin, normal, u_axis));
-            candidate_sources
-                .entry((history_index, feature_index))
-                .or_default()
-                .push(u_axis_source);
+            let index = (history_index, feature_index);
+            push_reference_plane_candidate(ctx, &mut candidates, index, (origin, normal, u_axis),
+                "collect SLDPRT plane frame candidates")?;
+            push_reference_plane_candidate(ctx, &mut candidate_sources, index, u_axis_source,
+                "collect SLDPRT plane U-axis sources")?;
         }
     }
-    let face_reference_indices = face_native_candidates
-        .keys()
-        .chain(face_feature_candidates.keys())
-        .copied()
-        .collect::<HashSet<_>>();
+    let mut face_reference_indices = HashSet::new();
+    for &index in face_native_candidates.keys().chain(face_feature_candidates.keys()) {
+        if !face_reference_indices.contains(&index) {
+            ctx.charge_collection_items(1, "index SLDPRT face references")?;
+            face_reference_indices.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT face references", u64::MAX - 1, u64::MAX,
+            ))?;
+            face_reference_indices.insert(index);
+        }
+    }
     for index in &face_reference_indices {
         reference_candidates.remove(index);
         explicit_reference_indices.remove(index);
@@ -281,101 +364,79 @@ pub(crate) fn enrich_history_reference_planes(
         native.sort_unstable();
         native.dedup();
         if let [native] = native.as_slice() {
-            histories[history_index].features[feature_index]
-                .properties
-                .insert(
-                    cadmpeg_core::nonblank_literal!("ReferenceFaceNative"),
-                    native.clone(),
-                );
+            insert_reference_plane_property(ctx, &mut histories[history_index].features[feature_index],
+                cadmpeg_core::nonblank_literal!("ReferenceFaceNative"), format_args!("{native}"))?;
         }
     }
     for ((history_index, feature_index), mut targets) in face_feature_candidates {
         targets.sort_unstable();
         targets.dedup();
         if let [target] = targets.as_slice() {
-            histories[history_index].features[feature_index]
-                .properties
-                .insert(
-                    cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"),
-                    target.clone(),
-                );
+            insert_reference_plane_property(ctx, &mut histories[history_index].features[feature_index],
+                cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"), format_args!("{target}"))?;
         }
     }
-    let unique_frames = candidates
-        .iter()
-        .filter_map(|(index, frames)| {
-            let mut frames = frames.clone();
-            frames.sort_by_key(reference_plane_frame_key);
-            frames.dedup();
-            let [frame] = frames.as_slice() else {
-                return None;
+    let mut unique_frames = HashMap::new();
+    for (&index, frames) in &candidates {
+        if let Some(&frame) = frames.first() {
+            if frames.iter().skip(1).all(|candidate| *candidate == frame) {
+                ctx.charge_collection_items(1, "index SLDPRT unique plane frames")?;
+                unique_frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT unique plane frames", u64::MAX - 1, u64::MAX,
+                ))?;
+                unique_frames.insert(index, frame);
+            }
+        }
+    }
+    let mut unique_u_axis_sources = HashMap::new();
+    for (&index, sources) in &candidate_sources {
+        let source = sources.iter().find(|source| **source == SketchPlaneUAxisSource::Native)
+            .copied().or_else(|| sources.first().copied());
+        if let Some(source) = source {
+            ctx.charge_collection_items(1, "index SLDPRT plane U-axis sources")?;
+            unique_u_axis_sources.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT plane U-axis sources", u64::MAX - 1, u64::MAX,
+            ))?;
+            unique_u_axis_sources.insert(index, source);
+        }
+    }
+    let mut unique_reference_frames = HashMap::new();
+    for (&index, frames) in &reference_frame_candidates {
+        if let Some(&frame) = frames.first() {
+            if frames.iter().skip(1).all(|candidate| *candidate == frame) {
+                ctx.charge_collection_items(1, "index SLDPRT unique reference frames")?;
+                unique_reference_frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT unique reference frames", u64::MAX - 1, u64::MAX,
+                ))?;
+                unique_reference_frames.insert(index, frame);
+            }
+        }
+    }
+    let mut frames_by_reference = Vec::new();
+    for (history_index, history) in histories.iter().enumerate() {
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            let Some(plane) = principal_plane_with_siblings(feature, &history.features) else {
+                continue;
             };
-            Some((*index, *frame))
-        })
-        .collect::<HashMap<_, _>>();
-    let unique_u_axis_sources = candidate_sources
-        .iter()
-        .filter_map(|(index, sources)| {
-            let source = sources
-                .iter()
-                .find(|source| **source == SketchPlaneUAxisSource::Native)
-                .copied()
-                .or_else(|| sources.first().copied())?;
-            Some((*index, source))
-        })
-        .collect::<HashMap<_, _>>();
-    let unique_reference_frames = reference_frame_candidates
-        .iter()
-        .filter_map(|(index, frames)| {
-            let mut frames = frames.clone();
-            frames.sort_by_key(reference_plane_frame_key);
-            frames.dedup();
-            let [frame] = frames.as_slice() else {
-                return None;
-            };
-            Some((*index, *frame))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut frames_by_reference = histories
-        .iter()
-        .enumerate()
-        .flat_map(|(history_index, history)| {
-            history
-                .features
-                .iter()
-                .enumerate()
-                .filter_map(move |(feature_index, feature)| {
-                    let reference = feature
-                        .source_id
-                        .map_or_else(|| feature.id.clone(), String::from);
-                    Some((
-                        reference,
-                        (history_index, feature_index),
-                        principal_sketch_frame(principal_plane_with_siblings(
-                            feature,
-                            &history.features,
-                        )?),
-                    ))
-                })
-        })
-        .collect::<Vec<_>>();
-    frames_by_reference.extend(unique_frames.iter().map(|(index, frame)| {
+            let reference = retained_plane_frame_source(ctx, feature)?;
+            ctx.reserve_collection_vec(&mut frames_by_reference, 1, "collect SLDPRT reference frames")?;
+            frames_by_reference.push((reference, (history_index, feature_index), principal_sketch_frame(plane)));
+        }
+    }
+    for (&index, &frame) in &unique_frames {
         let feature = &histories[index.0].features[index.1];
-        (
-            feature
-                .source_id
-                .map_or_else(|| feature.id.clone(), String::from),
-            *index,
-            *frame,
-        )
-    }));
+        let reference = retained_plane_frame_source(ctx, feature)?;
+        ctx.reserve_collection_vec(&mut frames_by_reference, 1, "collect SLDPRT reference frames")?;
+        frames_by_reference.push((reference, index, frame));
+    }
     for (&index, frames) in &reference_frame_candidates {
         if reference_candidates.contains_key(&index) || face_reference_indices.contains(&index) {
             continue;
         }
         let mut sources = Vec::new();
         for &reference in frames {
-            let matching = frames_by_reference
+            ctx.charge_work(u64_from_index(frames_by_reference.len()), "match SLDPRT reference plane frames")?;
+            let selected = select_reference_plane_frame_source(frames_by_reference
                 .iter()
                 .filter(|(_, candidate_index, candidate)| {
                     candidate_index.0 == index.0
@@ -387,21 +448,19 @@ pub(crate) fn enrich_history_reference_planes(
                             .is_some())
                         && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
                 })
-                .collect::<Vec<_>>();
-            let selected = select_reference_plane_frame_source(
-                matching.iter().map(|(source, _, _)| source.as_str()),
-            );
+                .map(|(source, _, _)| source.as_str()));
             if let Some(source) = selected {
+                ctx.reserve_collection_vec(&mut sources, 1, "collect SLDPRT inferred plane sources")?;
                 sources.push(source);
             }
         }
         sources.sort_unstable();
         sources.dedup();
         if let [source] = sources.as_slice() {
-            reference_candidates
-                .entry(index)
-                .or_default()
-                .push(source.clone());
+            let source = ctx.format_retained(format_args!("{source}"),
+                "retain SLDPRT inferred plane source")?;
+            push_reference_plane_candidate(ctx, &mut reference_candidates, index, source,
+                "collect SLDPRT reference plane sources")?;
         }
     }
     for (&index, &frame) in &unique_frames {
@@ -419,17 +478,18 @@ pub(crate) fn enrich_history_reference_planes(
         else {
             continue;
         };
-        let matching = frames_by_reference
+        ctx.charge_work(u64_from_index(frames_by_reference.len()), "match SLDPRT offset plane frames")?;
+        if let Some(source) = select_reference_plane_frame_source(frames_by_reference
             .iter()
             .filter(|(_, candidate_index, candidate)| {
                 candidate_index.0 == index.0
                     && offset_plane_reference_frame_matches(*candidate, frame, distance.get())
             })
-            .collect::<Vec<_>>();
-        if let Some(source) = select_reference_plane_frame_source(
-            matching.iter().map(|(source, _, _)| source.as_str()),
-        ) {
-            reference_candidates.entry(index).or_default().push(source);
+            .map(|(source, _, _)| source.as_str())) {
+            let source = ctx.format_retained(format_args!("{source}"),
+                "retain SLDPRT offset plane source")?;
+            push_reference_plane_candidate(ctx, &mut reference_candidates, index, source,
+                "collect SLDPRT reference plane sources")?;
         }
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
@@ -441,25 +501,24 @@ pub(crate) fn enrich_history_reference_planes(
                     .get("D1")
                     .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
                 {
-                    let compatible = sources
-                        .iter()
-                        .filter(|source| {
-                            frames_by_reference.iter().any(
-                                |(candidate_source, candidate_index, candidate)| {
-                                    candidate_source == *source
-                                        && candidate_index.0 == history_index
-                                        && offset_plane_reference_frame_matches(
-                                            *candidate,
-                                            *offset,
-                                            distance.get(),
-                                        )
-                                },
-                            )
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    if !compatible.is_empty() {
-                        sources = compatible;
+                    let compatible = |source: &String| frames_by_reference.iter().any(
+                        |(candidate_source, candidate_index, candidate)| {
+                            candidate_source == source
+                                && candidate_index.0 == history_index
+                                && offset_plane_reference_frame_matches(
+                                    *candidate, *offset, distance.get(),
+                                )
+                        },
+                    );
+                    let work = u64_from_index(sources.len())
+                        .checked_mul(u64_from_index(frames_by_reference.len()))
+                        .and_then(|work| work.checked_mul(2))
+                        .ok_or_else(|| ctx.refuse_codec_limit(
+                            "match SLDPRT compatible plane sources", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    ctx.charge_work(work, "match SLDPRT compatible plane sources")?;
+                    if sources.iter().any(&compatible) {
+                        sources.retain(compatible);
                     }
                 }
             }
@@ -469,24 +528,17 @@ pub(crate) fn enrich_history_reference_planes(
         let [source] = sources.as_slice() else {
             continue;
         };
-        histories[history_index].features[feature_index]
-            .properties
-            .insert(cadmpeg_core::nonblank_literal!("Reference"), source.clone());
+        insert_reference_plane_property(ctx, &mut histories[history_index].features[feature_index],
+            cadmpeg_core::nonblank_literal!("Reference"), format_args!("{source}"))?;
     }
     for ((history_index, feature_index), (origin, normal, u_axis)) in unique_reference_frames {
         let feature = &mut histories[history_index].features[feature_index];
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
-            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
-        );
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
-            format!("{},{},{}", normal.x, normal.y, normal.z),
-        );
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
-            format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
-        );
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("ReferenceFaceOrigin"),
+            format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z))?;
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("ReferenceFaceNormal"),
+            format_args!("{},{},{}", normal.x, normal.y, normal.z))?;
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("ReferenceFaceUAxis"),
+            format_args!("{},{},{}", u_axis.x, u_axis.y, u_axis.z))?;
     }
     for ((history_index, feature_index), mut frames) in candidates {
         frames.sort_by_key(reference_plane_frame_key);
@@ -495,31 +547,25 @@ pub(crate) fn enrich_history_reference_planes(
             continue;
         };
         let feature = &mut histories[history_index].features[feature_index];
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Origin"),
-            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
-        );
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Normal"),
-            format!("{},{},{}", normal.x, normal.y, normal.z),
-        );
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("UAxis"),
-            format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
-        );
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("Origin"),
+            format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z))?;
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("Normal"),
+            format_args!("{},{},{}", normal.x, normal.y, normal.z))?;
+        insert_reference_plane_property(ctx, feature, cadmpeg_core::nonblank_literal!("UAxis"),
+            format_args!("{},{},{}", u_axis.x, u_axis.y, u_axis.z))?;
         if unique_u_axis_sources.get(&(history_index, feature_index))
             == Some(&SketchPlaneUAxisSource::ConstructedMidPlane)
         {
-            feature.properties.insert(
+            insert_reference_plane_property(ctx, feature,
                 cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
-                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.into(),
-            );
+                format_args!("{CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE}"))?;
         } else {
             feature
                 .properties
                 .remove(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY);
         }
     }
+    Ok(())
 }
 
 /// Add solved model-space positions to reference-point history records.
@@ -1285,14 +1331,10 @@ fn coordinate_system_frame_key(
 
 fn select_reference_plane_frame_source<'a>(
     candidates: impl Iterator<Item = &'a str>,
-) -> Option<String> {
-    let mut sources = candidates.collect::<Vec<_>>();
-    sources.sort_unstable();
-    sources.dedup();
-    let [source] = sources.as_slice() else {
-        return None;
-    };
-    Some((*source).to_string())
+) -> Option<&'a str> {
+    let mut candidates = candidates;
+    let source = candidates.next()?;
+    candidates.all(|candidate| candidate == source).then_some(source)
 }
 
 fn offset_plane_reference_frame_matches(

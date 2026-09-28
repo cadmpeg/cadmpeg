@@ -114,7 +114,7 @@ pub(crate) fn enrich_history_semantic(
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
     }
-    crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_reference_planes(ctx, histories, lanes)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_points(ctx, histories, lanes)?;
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
         ctx, histories, lanes,
