@@ -17,7 +17,6 @@ use crate::om::pattern_references::PatternReferences;
 use crate::om::point_feature_payload_header;
 use crate::om::point_feature_scalar_lane;
 use crate::om::product_record_count_within;
-use crate::om::sketch_payload_references;
 use crate::om::store_version;
 use crate::om::swp104_payload_leading_branch;
 use crate::om::BooleanOperationKind;
@@ -46,6 +45,10 @@ fn multi_instance_output_payload_lane(
 
 fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
     with_test_ctx(|ctx| crate::om::operation_labels(ctx, bytes, base_offset)).unwrap()
+}
+
+fn sketch_payload_references(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::sketch_references::SketchReferenceField> {
+    with_test_ctx(|ctx| crate::om::sketch_payload_references(ctx, record)).unwrap()
 }
 
 fn one_multi_instance_output_payload() -> Vec<u8> {

@@ -6521,11 +6521,15 @@ pub(super) fn feature_sketch_references(ctx: &cadmpeg_core::decode::DecodeContex
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::sketch_payload_references(record.payload_view()) else {
-                return;
+            if failure.is_some() { return; }
+            let decoded = match crate::om::sketch_payload_references(ctx, record.payload_view()) {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
@@ -6545,6 +6549,7 @@ pub(super) fn feature_sketch_references(ctx: &cadmpeg_core::decode::DecodeContex
             }));
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(references)
 }
 

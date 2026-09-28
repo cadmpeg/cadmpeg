@@ -1664,19 +1664,28 @@ pub(crate) fn hole_package_construction_group_lane(
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
 pub(crate) fn sketch_payload_references(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<SketchReferenceField> {
+) -> Result<Option<SketchReferenceField>, CodecError> {
     if record.name() != "SKETCH" {
-        return None;
+        return Ok(None);
     }
-    unique_candidate(
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX sketch reference fields")?;
+    let mut failure = None;
+    let field = unique_candidate(
         (0..record.payload().len().saturating_sub(3)).filter_map(|start| {
+            if failure.is_some() { return None; }
             if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
                 return None;
             }
-            SketchReferenceField::read(record, start)
+            match SketchReferenceField::read(ctx, record, start) {
+                Ok(field) => field,
+                Err(error) => { failure = Some(error); None }
+            }
         }),
-    )
+    );
+    if let Some(error) = failure { return Err(error); }
+    Ok(field)
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
