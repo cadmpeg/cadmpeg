@@ -5956,58 +5956,16 @@ pub(crate) struct CurveTransfer {
     pub(crate) procedural: Vec<(CurveId, ProceduralCurve)>,
 }
 
-pub(crate) fn clone_nurbs_curve(
-    ctx: &DecodeContext<'_>,
-    nurbs: &NurbsCurve,
-) -> Result<NurbsCurve, CodecError> {
-    let count = nurbs
-        .knots()
-        .len()
-        .checked_add(nurbs.pole_count())
-        .ok_or_else(|| {
-            crate::resource::collection_allocation_failed(ctx, u64::MAX, "FreeCAD NURBS curve copy")
-        })?;
-    ctx.charge_collection_items(count as u64, "FreeCAD NURBS curve copy")?;
-    nurbs.try_clone().map_err(|_| {
-        crate::resource::collection_allocation_failed(ctx, count as u64, "FreeCAD NURBS curve copy")
-    })
-}
-
-pub(crate) fn clone_nurbs_surface(
-    ctx: &DecodeContext<'_>,
-    nurbs: &NurbsSurface,
-) -> Result<NurbsSurface, CodecError> {
-    let count = nurbs
-        .u_count()
-        .checked_mul(nurbs.v_count())
-        .and_then(|count| count.checked_add(nurbs.u_count()))
-        .and_then(|count| count.checked_add(nurbs.u_knots().len()))
-        .and_then(|count| count.checked_add(nurbs.v_knots().len()))
-        .ok_or_else(|| {
-            crate::resource::collection_allocation_failed(
-                ctx,
-                u64::MAX,
-                "FreeCAD NURBS surface copy",
-            )
-        })?;
-    ctx.charge_collection_items(count as u64, "FreeCAD NURBS surface copy")?;
-    nurbs.try_clone().map_err(|_| {
-        crate::resource::collection_allocation_failed(
-            ctx,
-            count as u64,
-            "FreeCAD NURBS surface copy",
-        )
-    })
-}
-
 fn clone_curve_geometry(
     ctx: &DecodeContext<'_>,
     geometry: &CurveGeometry,
 ) -> Result<CurveGeometry, CodecError> {
     match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => Ok(CurveGeometry::Solved(
-            SolvedCurveGeometry::Nurbs(clone_nurbs_curve(ctx, nurbs)?),
-        )),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?,
+            )))
+        }
         _ => Ok(geometry.clone()),
     }
 }
@@ -6019,7 +5977,7 @@ fn clone_surface_geometry(
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                clone_nurbs_surface(ctx, nurbs)?,
+                nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
             )))
         }
         _ => Ok(geometry.clone()),
@@ -6246,9 +6204,9 @@ fn append_text_curve(
                 ),
             ))
         }
-        TextCurve::Nurbs(nurbs) => {
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(clone_nurbs_curve(ctx, nurbs)?))
-        }
+        TextCurve::Nurbs(nurbs) => CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?,
+        )),
         TextCurve::Trimmed {
             parameter_range,
             basis,
@@ -6568,7 +6526,7 @@ fn append_text_surface(
             ))
         }
         TextSurface::Nurbs(nurbs) => SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            clone_nurbs_surface(ctx, nurbs)?,
+            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
         )),
         TextSurface::Extrusion {
             direction,

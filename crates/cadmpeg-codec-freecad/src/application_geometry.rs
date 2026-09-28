@@ -229,7 +229,13 @@ fn parse_mesh(
     }
     reader.finish("mesh payload")?;
     Ok(Tessellation::from_parts(
-        retained_suffix(ctx, &property.id, ":mesh", "FreeCAD mesh identity")?,
+        cadmpeg_ir::tessellation::TessellationId::mint(retained_suffix(
+            ctx,
+            &property.id,
+            ":mesh",
+            "FreeCAD mesh identity",
+        )?)
+        .map_err(|error| CodecError::malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::List {
             vertices,
             triangles,

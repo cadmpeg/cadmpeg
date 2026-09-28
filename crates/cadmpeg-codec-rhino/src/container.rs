@@ -17,9 +17,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
-    checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
-    parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+    admitted_vec, checked_count_bytes, checksum_children_through_class_end, chunk_at,
+    direct_checksum_ranges, parse_header, validate_eof, verify_checksum, verify_checksum_ranges,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE,
+    TCODE_ENDOFTABLE,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -273,12 +274,6 @@ pub(crate) struct Scan<'a> {
     pub(crate) metadata: crate::settings::DocumentMetadata,
 }
 
-impl Scan<'_> {
-    fn version_note(&self) -> String {
-        format!("archive version {}", self.archive.value())
-    }
-}
-
 /// Borrows the session root bytes after the shared input budget admitted them.
 fn acquire(root: View<'_>) -> &[u8] {
     root.window()
@@ -344,35 +339,15 @@ fn checksum_warning(
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
         };
-        let extra_ranges = children
-            .len()
-            .checked_mul(2)
-            .and_then(|count| count.checked_add(1))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Rhino view checksum range count exceeds address space".to_string(),
-                )
-            })?;
-        let extra_bytes = extra_ranges
-            .checked_mul(std::mem::size_of::<std::ops::Range<usize>>())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "Rhino view checksum range bytes exceed address space".to_string(),
-                )
-            })?;
-        reservation.grow(u64::try_from(extra_bytes).map_err(|_| {
-            CodecError::NotImplemented(
-                "Rhino view checksum range bytes exceed address space".to_string(),
-            )
-        })?)?;
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if matches!(
         typecode,
         TCODE_RENDER_MESH_SETTINGS | TCODE_ANALYSIS_MESH_SETTINGS
     ) {
-        let children = match mesh_checksum_children(data, &chunk, archive) {
+        let children = match mesh_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -380,8 +355,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_SETTINGS {
-        let children = match render_settings_checksum_children(data, &chunk, archive) {
+        let children = match render_settings_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -389,8 +365,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_SETTINGS_ATTRIBUTES {
-        let children = match settings_attributes_checksum_children(data, &chunk, archive) {
+        let children = match settings_attributes_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -398,8 +375,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_PLUGIN_LIST {
-        let children = match plugin_list_checksum_children(data, &chunk, archive) {
+        let children = match plugin_list_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -408,12 +386,14 @@ fn checksum_warning(
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_RENDER_USERDATA {
         let children = match checksum_children_through_class_end(
+            ctx,
             data,
             chunk.body().clone(),
             archive,
             "render-settings userdata",
         ) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -421,8 +401,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_COMPRESSED_PREVIEW {
-        let children = match compressed_preview_checksum_children(data, &chunk, archive) {
+        let children = match compressed_preview_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -430,8 +411,9 @@ fn checksum_warning(
         let direct = direct_checksum_ranges(&chunk.body(), &children).map_err(framing_error)?;
         verify_checksum_ranges(data, &chunk, &direct)
     } else if typecode == TCODE_USER_TABLE_UUID {
-        let children = match user_table_uuid_checksum_children(data, &chunk, archive) {
+        let children = match user_table_uuid_checksum_children(ctx, data, &chunk, archive) {
             Ok(children) => children,
+            Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 return Ok(Some(checksum_children_warning(typecode, offset, &error)));
             }
@@ -457,14 +439,18 @@ fn checksum_warning(
 /// calls `ON_SubDDisplayParameters::Write()`. Future minor versions keep that
 /// child position; any later bytes remain direct suffix bytes.
 fn mesh_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
-    Ok(mesh_subd_checksum_child(data, &mut reader, archive)?
-        .into_iter()
-        .collect())
+    let mut children = Vec::new();
+    if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+        crate::chunks::reserve_admitted_vec(ctx, &mut children, 1, "Rhino mesh checksum children")?;
+        children.push(child);
+    }
+    Ok(children)
 }
 
 /// Skips the direct mesh-parameter prefix and returns its nested `SubD` child.
@@ -511,6 +497,7 @@ fn mesh_subd_checksum_child(
 /// version. Modern V6-and-later settings begin with one anonymous chunk; a
 /// direct suffix after that child remains part of the outer checksum.
 fn render_settings_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -519,16 +506,17 @@ fn render_settings_checksum_children(
         return Ok(Vec::new());
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
-    Ok(vec![take_anonymous_checksum_child(
-        data,
-        &mut reader,
-        archive,
-        "modern render settings",
-    )?])
+    let child =
+        take_anonymous_checksum_child(data, &mut reader, archive, "modern render settings")?;
+    let mut children =
+        crate::chunks::admitted_vec(ctx, 1, "Rhino render settings checksum children")?;
+    children.push(child);
+    Ok(children)
 }
 
 /// Returns the complete nested chunks in a settings-attributes body.
 fn settings_attributes_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -547,38 +535,65 @@ fn settings_attributes_checksum_children(
     let minor = packed_version & 0x0f;
     let mut children = Vec::new();
     if minor >= 1 {
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes page units",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 2 {
         reader.skip(16)?;
     }
     if minor >= 3 {
         reader.skip(24)?;
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes earth anchor",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 4 {
         reader.bool()?;
     }
     if minor >= 5 {
-        children.push(take_anonymous_checksum_child(
+        let child = take_anonymous_checksum_child(
             data,
             &mut reader,
             archive,
             "settings-attributes IO settings",
-        )?);
+        )?;
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino settings checksum children",
+        )?;
+        children.push(child);
     }
     if minor >= 6 {
         if let Some(child) = mesh_subd_checksum_child(data, &mut reader, archive)? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino settings checksum children",
+            )?;
             children.push(child);
         }
     }
@@ -597,6 +612,7 @@ fn settings_attributes_checksum_children(
 /// the bytes directly. A non-contiguous bitmap writes a second buffer after a
 /// palette-only first buffer.
 fn compressed_preview_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -653,6 +669,12 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
     } else if image_size > 0 && first_size == palette_size {
@@ -663,6 +685,12 @@ fn compressed_preview_checksum_children(
             first_size,
             "compressed preview palette buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
         let second_size = usize::try_from(reader.u32()?).map_err(|_| FramingError::Overflow {
@@ -678,6 +706,12 @@ fn compressed_preview_checksum_children(
             second_size,
             "compressed preview image buffer",
         )? {
+            crate::chunks::reserve_admitted_vec(
+                ctx,
+                &mut children,
+                1,
+                "Rhino preview checksum children",
+            )?;
             children.push(child);
         }
     } else {
@@ -737,6 +771,7 @@ fn take_anonymous_checksum_child(
 
 /// Returns the optional record-header child inside a user-table UUID record.
 fn user_table_uuid_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -757,7 +792,9 @@ fn user_table_uuid_checksum_children(
             "user-table record header must be a long chunk",
         ));
     }
-    Ok(vec![child.range()])
+    let mut children = crate::chunks::admitted_vec(ctx, 1, "Rhino user table checksum children")?;
+    children.push(child.range());
+    Ok(children)
 }
 
 /// Returns the complete nested chunks after a counted view-list prefix.
@@ -849,6 +886,7 @@ fn list_checksum_children(
 /// The plugin-list CRC covers the prefix and any direct suffix bytes, but not
 /// these complete anonymous child chunks.
 fn plugin_list_checksum_children(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     chunk: &crate::chunks::Chunk,
     archive: ArchiveVersion,
@@ -866,7 +904,7 @@ fn plugin_list_checksum_children(
         TABLE_RECORD_CAP,
         count_offset,
     )?;
-    let mut children = Vec::with_capacity(child_count);
+    let mut children = admitted_vec(ctx, child_count, "Rhino plugin-list child ranges")?;
     for _ in 0..child_count {
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
@@ -1010,6 +1048,18 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, data: &'a [u8]) -> Result<Scan<'
     scan_with_record_limit(ctx, data, TABLE_RECORD_CAP)
 }
 
+fn count_object_typecode(
+    ctx: &DecodeContext<'_>,
+    counts: &mut BTreeMap<u32, usize>,
+    typecode: u32,
+) -> Result<(), CodecError> {
+    if !counts.contains_key(&typecode) {
+        ctx.charge_collection_items(1, "Rhino object typecode counts")?;
+    }
+    *counts.entry(typecode).or_insert(0) += 1;
+    Ok(())
+}
+
 fn scan_with_record_limit<'a>(
     ctx: &DecodeContext<'_>,
     data: &'a [u8],
@@ -1036,7 +1086,11 @@ fn scan_with_record_limit<'a>(
         data.len(),
         archive,
     )? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{note}"),
+        )?;
     }
     let mut tables = Vec::new();
     let mut offset = comment.range.end;
@@ -1061,7 +1115,7 @@ fn scan_with_record_limit<'a>(
             validate_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
                 crate::settings::parse_metadata(ctx, data, archive, &tables, &mut warnings)?;
-            let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
+            let all_objects = resolve_identities(ctx, all_objects, &metadata, &mut warnings)?;
             opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
                 data,
@@ -1167,10 +1221,13 @@ fn scan_with_record_limit<'a>(
                         record.typecode, chunk.typecode
                     )));
                 }
-                warnings.push(format!(
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
-                ));
+                ),
+                )?;
             }
             if let Some(note) = checksum_warning(
                 ctx,
@@ -1180,11 +1237,16 @@ fn scan_with_record_limit<'a>(
                 chunk.body().end,
                 archive,
             )? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{note}"),
+                )?;
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
                 let descriptor = match parse_object_record(
+                    ctx,
                     data,
                     &record,
                     archive,
@@ -1192,16 +1254,21 @@ fn scan_with_record_limit<'a>(
                     &mut warnings,
                 ) {
                     Ok(descriptor) => descriptor,
+                    Err(FramingError::Resource(limit)) => {
+                        return Err(CodecError::ResourceLimit(limit))
+                    }
                     Err(error) => {
-                        warnings.push(format!(
-                            "bounded object record at {child_offset} is malformed: {error}"
-                        ));
-                        degraded_object_record(&record, &error)
+                        warnings.push_admitted(
+                            ctx,
+                            format_args!(
+                                "bounded object record at {child_offset} is malformed: {error}"
+                            ),
+                        )?;
+                        degraded_object_record(ctx, &record, &error)?
                     }
                 };
-                *object_typecodes
-                    .entry(descriptor.framed().map_or(0, |object| object.object_type))
-                    .or_insert(0) += 1;
+                let typecode = descriptor.framed().map_or(0, |object| object.object_type);
+                count_object_typecode(ctx, &mut object_typecodes, typecode)?;
                 all_objects.push(descriptor);
             }
             if opaque {
@@ -1216,10 +1283,10 @@ fn scan_with_record_limit<'a>(
             child_offset = child.next_offset();
         }
         if !terminated {
-            warnings.push(format!(
-                "table {:#x} has no end-of-table marker",
-                chunk.typecode
-            ));
+            warnings.push_admitted(
+                ctx,
+                format_args!("table {:#x} has no end-of-table marker", chunk.typecode),
+            )?;
         }
         if let Some(note) = checksum_warning(
             ctx,
@@ -1229,21 +1296,26 @@ fn scan_with_record_limit<'a>(
             chunk.next_offset(),
             archive,
         )? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, note);
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{note}"),
+            )?;
         }
         if table_base(chunk.typecode) == TCODE_INSTANCE_DEFINITION {
-            let parsed = parse_definitions(data, &records, archive, chunk.typecode);
+            let parsed = parse_definitions(ctx, data, &records, archive, chunk.typecode)?;
             definitions = parsed.scan;
             opaque_records.extend(parsed.opaque_records);
         }
         if table_base(chunk.typecode) == TCODE_HISTORY {
             let parsed = crate::history::parse_records(
+                ctx,
                 data,
                 &records,
                 archive,
                 &mut warnings,
                 chunk.typecode,
-            );
+            )?;
             history = parsed.records;
             opaque_records.extend(parsed.opaque_records);
         }
@@ -1297,25 +1369,83 @@ fn scan_with_test_record_limit(
     scan_with_record_limit(&ctx, data, record_limit)
 }
 
+fn insert_summary_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "Rhino container summary attributes")?;
+    let key = crate::wire::admitted_format(ctx, key, "Rhino container summary attribute key")?;
+    let value =
+        crate::wire::admitted_format(ctx, value, "Rhino container summary attribute value")?;
+    attributes.insert(key, value);
+    Ok(())
+}
+
+fn push_container_note(
+    ctx: &DecodeContext<'_>,
+    notes: &mut Vec<String>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    crate::wire::reserve_collection(ctx, notes, 1, "Rhino container summary notes")?;
+    notes.push(crate::wire::admitted_format(
+        ctx,
+        value,
+        "Rhino container summary note text",
+    )?);
+    Ok(())
+}
+
 /// Build the format-neutral container summary.
-fn summarize(scan: &Scan<'_>) -> ContainerSummary {
-    let mut entries = Vec::with_capacity(scan.tables.len());
+fn summarize(ctx: &DecodeContext<'_>, scan: &Scan<'_>) -> Result<ContainerSummary, CodecError> {
+    let mut entries = Vec::new();
     for table in &scan.tables {
         let mut attributes = BTreeMap::new();
-        attributes.insert("offset".to_string(), table.range().start.to_string());
-        attributes.insert("size".to_string(), table.range().len().to_string());
-        attributes.insert("body_offset".to_string(), table.body().start.to_string());
-        attributes.insert("record_count".to_string(), table.record_count.to_string());
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("offset"),
+            format_args!("{}", table.range().start),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("size"),
+            format_args!("{}", table.range().len()),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("body_offset"),
+            format_args!("{}", table.body().start),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("record_count"),
+            format_args!("{}", table.record_count),
+        )?;
         for (typecode, count) in &table.object_typecodes {
-            attributes.insert(format!("object_typecode_{typecode:#x}"), count.to_string());
+            insert_summary_attribute(
+                ctx,
+                &mut attributes,
+                format_args!("object_typecode_{typecode:#x}"),
+                format_args!("{count}"),
+            )?;
         }
         let storage = table
             .body_bytes(scan.data)
             .map_or(EntryStorage::unreported(VerbatimLabel::None), |body| {
                 EntryStorage::framed_by(VerbatimLabel::None, body.into(), table.framing())
             });
+        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: format!("table-{:#x}", table.typecode),
+            name: crate::wire::admitted_format(
+                ctx,
+                format_args!("table-{:#x}", table.typecode),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::Table,
             storage,
             attributes,
@@ -1325,42 +1455,80 @@ fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     for object in &scan.objects {
         // The container report groups degraded records under the nil class UUID.
         let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
+        if !classes.contains_key(&class_uuid) {
+            ctx.charge_collection_items(1, "Rhino container class groups")?;
+        }
         let entry = classes.entry(class_uuid).or_insert((0, 0));
         entry.0 += 1;
         entry.1 += object.range().len();
     }
     for (class_uuid, (count, bytes)) in classes {
         let mut attributes = BTreeMap::new();
-        attributes.insert("class_uuid".to_string(), class_uuid.to_string());
-        attributes.insert("nil_uuid".to_string(), class_uuid.is_nil().to_string());
-        attributes.insert("count".to_string(), count.to_string());
-        attributes.insert("total_record_bytes".to_string(), bytes.to_string());
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("class_uuid"),
+            format_args!("{class_uuid}"),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("nil_uuid"),
+            format_args!("{}", class_uuid.is_nil()),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("count"),
+            format_args!("{count}"),
+        )?;
+        insert_summary_attribute(
+            ctx,
+            &mut attributes,
+            format_args!("total_record_bytes"),
+            format_args!("{bytes}"),
+        )?;
+        crate::wire::reserve_collection(ctx, &mut entries, 1, "Rhino container summary entries")?;
         entries.push(ContainerEntry {
-            name: format!("class-{class_uuid}"),
+            name: crate::wire::admitted_format(
+                ctx,
+                format_args!("class-{class_uuid}"),
+                "Rhino container entry name",
+            )?,
             role: ContainerRole::ObjectClass,
             storage: EntryStorage::verbatim(VerbatimLabel::None, bytes as u64),
             attributes,
         });
     }
-    let mut notes = vec![scan.version_note()];
-    notes.extend(scan.warnings.messages().map(str::to_owned));
-    notes.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
-    );
+    let mut notes = Vec::new();
+    push_container_note(
+        ctx,
+        &mut notes,
+        format_args!("archive version {}", scan.archive.value()),
+    )?;
+    for warning in scan.warnings.messages() {
+        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("{}", diagnostic.diagnostic.message),
+        )?;
+    }
     let matched = dialect_match(scan);
-    let losses = crate::dialect::admission_loss(&matched)
-        .into_iter()
-        .collect();
-    ContainerSummary::classified(
+    let mut losses = Vec::new();
+    if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+        losses.push(loss);
+    }
+    Ok(ContainerSummary::classified(
         cadmpeg_core::dialect::DialectLayers::of(matched),
         cadmpeg_ir::ContainerKind::ThreeDmChunks,
         entries,
         losses,
         notes,
-    )
+    ))
 }
 
 /// Classifies a scanned archive.
@@ -1386,91 +1554,151 @@ pub(crate) enum SourceMetaDetail<'a> {
     },
 }
 
+fn insert_source_meta_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+    key: &'static str,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "Rhino source metadata attributes")?;
+    let key = crate::wire::copy_retained_string(ctx, key, "Rhino source metadata key")?;
+    let key = NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("generated Rhino source metadata key is blank"))?;
+    let value = crate::wire::admitted_format(ctx, value, "Rhino source metadata value")?;
+    attributes.insert(key, value);
+    Ok(())
+}
+
 /// Builds source metadata; `primary` is the one author of the document's identity.
-pub(crate) fn source_meta(primary: DialectMatch, detail: SourceMetaDetail<'_>) -> SourceMeta {
+pub(crate) fn source_meta(
+    ctx: &DecodeContext<'_>,
+    primary: DialectMatch,
+    detail: SourceMetaDetail<'_>,
+) -> Result<SourceMeta, CodecError> {
     let attributes = match detail {
-        SourceMetaDetail::FlatLegacyArchive => BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("archive_version"),
-            "1".to_string(),
-        )]),
+        SourceMetaDetail::FlatLegacyArchive => {
+            let mut attributes = BTreeMap::new();
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "archive_version",
+                format_args!("1"),
+            )?;
+            attributes
+        }
         SourceMetaDetail::ContainerOnly(scan) => {
-            let mut attributes = chunked_source_attributes(scan);
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("comment_offset"),
-                scan.comment.range.start.to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("eof_offset"),
-                scan.eof_offset.to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("table_count"),
-                scan.tables.len().to_string(),
-            );
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("instance_definition_count"),
-                scan.definitions.definitions().len().to_string(),
-            );
+            let mut attributes = BTreeMap::new();
+            chunked_source_attributes(ctx, scan, &mut attributes)?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "comment_offset",
+                format_args!("{}", scan.comment.range.start),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "eof_offset",
+                format_args!("{}", scan.eof_offset),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "table_count",
+                format_args!("{}", scan.tables.len()),
+            )?;
+            insert_source_meta_attribute(
+                ctx,
+                &mut attributes,
+                "instance_definition_count",
+                format_args!("{}", scan.definitions.definitions().len()),
+            )?;
             attributes
         }
         SourceMetaDetail::Full {
             scan,
-            attributes: full,
+            attributes: mut full,
         } => {
-            let mut attributes = chunked_source_attributes(scan);
-            attributes.extend(full);
-            attributes
+            chunked_source_attributes(ctx, scan, &mut full)?;
+            full
         }
     };
-    SourceMeta::classified(
+    Ok(SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,
-    )
+    ))
 }
 
-fn chunked_source_attributes(scan: &Scan<'_>) -> BTreeMap<NonBlankString, String> {
-    BTreeMap::from([
-        (
-            cadmpeg_core::nonblank_literal!("archive_version"),
-            scan.archive.value().to_string(),
-        ),
-        (
-            cadmpeg_core::nonblank_literal!("container_kind"),
-            "3dm-chunks".to_string(),
-        ),
-    ])
+fn chunked_source_attributes(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+) -> Result<(), CodecError> {
+    insert_source_meta_attribute(
+        ctx,
+        attributes,
+        "archive_version",
+        format_args!("{}", scan.archive.value()),
+    )?;
+    insert_source_meta_attribute(
+        ctx,
+        attributes,
+        "container_kind",
+        format_args!("3dm-chunks"),
+    )?;
+    Ok(())
 }
 
 /// Build an empty current-version IR and a container-only report.
-pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
-    let mut notes = vec![scan.version_note()];
-    notes.extend(scan.warnings.messages().map(str::to_owned));
-    notes.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic.message.clone()),
-    );
-    let mut losses: Vec<_> = scan
-        .warnings
-        .iter()
-        .map(|diagnostic| {
+pub(crate) fn container_only_result(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+) -> Result<Decoded, CodecError> {
+    let mut notes = Vec::new();
+    push_container_note(
+        ctx,
+        &mut notes,
+        format_args!("archive version {}", scan.archive.value()),
+    )?;
+    for warning in scan.warnings.messages() {
+        push_container_note(ctx, &mut notes, format_args!("{warning}"))?;
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("{}", diagnostic.diagnostic.message),
+        )?;
+    }
+    let mut losses = Vec::new();
+    for diagnostic in &scan.warnings {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(diagnostic.message.len()),
+            "Rhino container-only loss message",
+        )?;
+        losses.push(
             diagnostic
                 .code
                 .unwrap_or(crate::loss::RhinoLossCode::ContainerScanDiagnostic)
-                .note(diagnostic.message.clone())
-        })
-        .collect();
-    losses.extend(
-        scan.definitions
-            .diagnostics()
-            .iter()
-            .map(crate::instances::DefinitionDiagnostic::to_loss),
-    );
+                .note(&diagnostic.message),
+        );
+    }
+    for diagnostic in scan.definitions.diagnostics() {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        losses.push(diagnostic.to_loss(ctx)?);
+    }
     let primary = dialect_match(scan);
-    losses.extend(crate::dialect::admission_loss(&primary));
-    let ir = CadIr::decoded(source_meta(primary, SourceMetaDetail::ContainerOnly(scan)));
-    Decoded {
+    if let Some(loss) = crate::dialect::admission_loss(ctx, &primary)? {
+        crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container-only losses")?;
+        losses.push(loss);
+    }
+    let ir = CadIr::decoded(source_meta(
+        ctx,
+        primary,
+        SourceMetaDetail::ContainerOnly(scan),
+    )?);
+    Ok(Decoded {
         ir,
         body: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -1480,7 +1708,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Decoded {
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
         source_fidelity: cadmpeg_ir::SourceFidelity::default(),
-    }
+    })
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
@@ -1494,21 +1722,26 @@ pub(crate) fn inspect(
         // The properties table is not read on this path, so no openNURBS
         // writer-version stamp is declared.
         let matched = header.archive_version.classify(None);
-        let losses = crate::dialect::admission_loss(&matched)
-            .into_iter()
-            .collect();
+        let mut losses = Vec::new();
+        if let Some(loss) = crate::dialect::admission_loss(ctx, &matched)? {
+            crate::wire::reserve_collection(ctx, &mut losses, 1, "Rhino container summary losses")?;
+            losses.push(loss);
+        }
+        let mut notes = Vec::new();
+        push_container_note(
+            ctx,
+            &mut notes,
+            format_args!("archive version {}", header.archive_version.value()),
+        )?;
         return Ok(ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::of(matched),
             cadmpeg_ir::ContainerKind::ThreeDmChunks,
             Vec::new(),
             losses,
-            vec![format!(
-                "archive version {}",
-                header.archive_version.value()
-            )],
+            notes,
         ));
     }
-    Ok(summarize(&scan(ctx, data)?))
+    summarize(ctx, &scan(ctx, data)?)
 }
 
 /// Decode a Rhino stream according to the supported container depth.
@@ -1520,7 +1753,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     }
     let scan = scan(ctx, data)?;
     if ctx.container_only() && scan.archive.is_chunked() {
-        return Ok(container_only_result(&scan));
+        return container_only_result(ctx, &scan);
     }
     crate::decode::decode(&scan, crate::mesh::MeshExpand::new(ctx, root))
 }

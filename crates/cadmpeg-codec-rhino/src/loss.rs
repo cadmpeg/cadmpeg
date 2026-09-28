@@ -41,18 +41,35 @@ impl Diagnostics {
         Self(Vec::new())
     }
 
+    /// Admits one decoded diagnostic and its retained message before insertion.
+    pub(crate) fn push_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.push_coded_admitted(ctx, None, message)
+    }
+
+    /// Admits one classified diagnostic and its retained message before insertion.
+    pub(crate) fn push_coded_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        code: impl Into<Option<RhinoLossCode>>,
+        message: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino diagnostics")?;
+        let message = crate::wire::admitted_format(ctx, message, "Rhino diagnostic message")?;
+        self.0.push(RhinoDiagnostic {
+            code: code.into(),
+            message,
+        });
+        Ok(())
+    }
+
     /// Records a diagnostic whose category the consuming channel decides.
     pub(crate) fn push(&mut self, message: impl Into<String>) {
         self.0.push(RhinoDiagnostic {
             code: None,
-            message: message.into(),
-        });
-    }
-
-    /// Records a diagnostic whose category the producer knows.
-    pub(crate) fn push_coded(&mut self, code: RhinoLossCode, message: impl Into<String>) {
-        self.0.push(RhinoDiagnostic {
-            code: Some(code),
             message: message.into(),
         });
     }
@@ -66,30 +83,66 @@ impl Diagnostics {
         self.0.splice(0..0, earlier.0);
     }
 
-    /// Records an already-classified diagnostic.
-    pub(crate) fn push_diagnostic(&mut self, diagnostic: RhinoDiagnostic) {
-        self.0.push(diagnostic);
-    }
-
     pub(crate) fn truncate(&mut self, len: usize) {
         self.0.truncate(len);
     }
 
-    pub(crate) fn append(&mut self, other: &mut Self) {
+    /// Moves admitted diagnostics into a second report collection.
+    pub(crate) fn append_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &mut Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(
+            ctx,
+            &mut self.0,
+            other.0.len(),
+            "Rhino diagnostic copies",
+        )?;
         self.0.append(&mut other.0);
+        Ok(())
     }
 
-    /// Rewrites every message through `map`, keeping each code.
-    pub(crate) fn map_messages(self, map: impl Fn(String) -> String) -> Self {
-        Self(
-            self.0
-                .into_iter()
-                .map(|entry| RhinoDiagnostic {
-                    code: entry.code,
-                    message: map(entry.message),
-                })
-                .collect(),
-        )
+    /// Adds a source label while admitting each destination diagnostic and message.
+    pub(crate) fn append_prefixed_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: Self,
+        prefix: std::fmt::Arguments<'_>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for diagnostic in other {
+            self.push_coded_admitted(
+                ctx,
+                diagnostic.code,
+                format_args!("{prefix}: {}", diagnostic.message),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Copies diagnostics into another report after admitting the slots and text.
+    pub(crate) fn extend_cloned_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        other: &Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::wire::reserve_collection(
+            ctx,
+            &mut self.0,
+            other.0.len(),
+            "Rhino diagnostic copies",
+        )?;
+        for diagnostic in &other.0 {
+            self.0.push(RhinoDiagnostic {
+                code: diagnostic.code,
+                message: crate::wire::copy_retained_string(
+                    ctx,
+                    &diagnostic.message,
+                    "Rhino diagnostic copy text",
+                )?,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -137,11 +190,6 @@ impl<'a> IntoIterator for &'a Diagnostics {
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
     }
-}
-
-/// Construct the loss charged when a reading depends on an absent writer stamp.
-pub(crate) fn writer_stamp_unverified(message: impl std::fmt::Display) -> LossNote {
-    RhinoLossCode::SourceWriterStampUnverified.note(message)
 }
 
 /// A stable, machine-readable identifier for one `.3dm` transfer loss.
@@ -460,6 +508,63 @@ impl RhinoLossCode {
 mod tests {
     use super::RhinoLossCode;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn diagnostic_copy_refuses_collection_limit() {
+        let mut source = super::Diagnostics::new();
+        source.push("mesh warning");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .extend_cloned_admitted(&ctx, &source)
+            .expect_err("one diagnostic copy exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(item)
+                if item.operation == "Rhino diagnostic copies"
+        ));
+        let mut copy = super::Diagnostics::new();
+        copy.extend_cloned_admitted(&cadmpeg_test_support::service_decode_context(), &source)
+            .expect("service profile admits diagnostic copy");
+        assert_eq!(copy, source);
+    }
+
+    #[test]
+    fn diagnostics_refuse_collection_and_retained_limits() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_admitted(&ctx, format_args!("fixture warning"))
+            .expect_err("one diagnostic exceeds zero collection items");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostics"
+        ));
+        let mut retained_policy = cadmpeg_core::decode::DecodePolicy::service();
+        retained_policy.limits.max_retained_bytes = 0;
+        let (retained_ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &retained_policy)
+                .expect("empty root admitted");
+        let refusal = super::Diagnostics::new()
+            .push_coded_admitted(
+                &retained_ctx,
+                RhinoLossCode::IntegrityFailure,
+                format_args!("fixture warning"),
+            )
+            .expect_err("diagnostic text exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino diagnostic message"
+        ));
+    }
 
     #[test]
     fn code_strings_are_pinned() {

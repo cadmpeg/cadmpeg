@@ -267,12 +267,136 @@ mod tests {
                 false,
             )
             .unwrap();
-            let parameter =
-                super::closest_nurbs_curve_parameter(&curve, Point3::new(0.25, 0.0, 0.0), None)
-                    .expect("evaluator allocation succeeds")
-                    .unwrap();
+            let parameter = super::closest_nurbs_curve_parameter_with_budget(
+                &curve,
+                Point3::new(0.25, 0.0, 0.0),
+                None,
+                &super::GeometryWorkBudget::new(super::MAX_ADAPTIVE_GEOMETRY_WORK),
+            )
+            .expect("evaluator allocation succeeds")
+            .unwrap();
             assert!((parameter - 0.25).abs() <= 128.0 * f64::EPSILON);
         }
+    }
+
+    #[test]
+    fn nurbs_closest_parameter_refuses_weight_scratch_at_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            Some(vec![1.0, 1.0]),
+            false,
+        )
+        .expect("valid rational curve");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        let result = super::closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.25, 0.0, 0.0),
+            None,
+            &budget,
+        );
+        let limit = result.expect_err("two weights exceed one collection item");
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "nx spine NURBS weights");
+    }
+
+    #[test]
+    fn nurbs_closest_parameter_refuses_residual_scratch_at_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid polynomial curve");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        let result = super::closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.25, 0.0, 0.0),
+            None,
+            &budget,
+        );
+        let limit = result.expect_err("two residuals exceed one collection item");
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "nx spine NURBS residuals");
+    }
+
+    #[test]
+    fn nurbs_closest_parameter_refuses_session_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid polynomial curve");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let budget = super::GeometryWorkBudget::from_context(&ctx, 8_000_000);
+        let result = super::closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.25, 0.0, 0.0),
+            None,
+            &budget,
+        );
+        let limit = result.expect_err("closest-parameter search needs work");
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+    }
+
+    #[test]
+    fn nurbs_closest_parameter_refuses_local_geometry_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid polynomial curve");
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let budget = super::GeometryWorkBudget::from_context(&ctx, 0);
+        let result = super::closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            Point3::new(0.25, 0.0, 0.0),
+            None,
+            &budget,
+        );
+        let limit = result.expect_err("closest-parameter search exceeds zero local work");
+        assert_eq!(
+            limit.dimension,
+            ResourceDimension::Codec("nx adaptive geometry work")
+        );
+        assert_eq!(ctx.resource_refusal(), Some(limit));
     }
 }
 
@@ -4221,85 +4345,87 @@ fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
         .fold(0.0, |value, coefficient| value * parameter + coefficient)
 }
 
-#[cfg(test)]
-pub(super) fn closest_nurbs_curve_parameter(
-    curve: &NurbsCurve,
-    point: Point3,
-    seed: Option<f64>,
-) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
-    closest_nurbs_curve_parameter_with_budget(curve, point, seed, &geometry_budget)
-}
-
-fn closest_nurbs_curve_parameter_with_budget(
+pub(super) fn closest_nurbs_curve_parameter_with_budget(
     curve: &NurbsCurve,
     point: Point3,
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
-    (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
-        let degree = usize::try_from(curve.degree()).ok()?;
-        let count = curve.control_points().len();
-        if !point.is_finite() {
-            return None;
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(None);
+    };
+    let count = curve.control_points().len();
+    if !point.is_finite() {
+        return Ok(None);
+    }
+    let (Some(lower), Some(upper)) = (curve.knots().get(degree), curve.knots().get(count)) else {
+        return Ok(None);
+    };
+    let domain = [*lower, *upper];
+    if domain[0] >= domain[1] || seed.is_some_and(|seed| !seed.is_finite()) {
+        return Ok(None);
+    }
+    let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
+    let mut weights = Vec::new();
+    let _weight_reservation = if curve.pole_rows().weight_at(0).is_some() {
+        let reservation =
+            geometry_budget.reserve_vec(&mut weights, count, "nx spine NURBS weights")?;
+        for index in 0..count {
+            let Some(weight) = curve.pole_rows().weight_at(index) else {
+                return Ok(None);
+            };
+            weights.push(weight);
         }
-        let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
-        if domain[0] >= domain[1] {
-            return None;
+        if weights.iter().any(|weight| *weight <= 0.0) {
+            return Ok(None);
         }
-        if seed.is_some_and(|seed| !seed.is_finite()) {
-            return None;
-        }
-        let search_seed =
-            seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
-        let weights = curve.pole_rows().weights();
-        if weights
-            .as_ref()
-            .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
-        {
-            return None;
-        }
-        let coordinate_scale = curve
-            .control_points()
-            .iter()
-            .flat_map(|control| [control.x, control.y, control.z])
-            .chain([point.x, point.y, point.z])
-            .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-        let residuals = curve
-            .control_points()
-            .iter()
-            .map(|control| {
-                Point3::new(
-                    control.x - point.x,
-                    control.y - point.y,
-                    control.z - point.z,
-                )
-            })
-            .collect::<Vec<_>>();
-        let controls = match positive_controls(&residuals, weights.as_deref()) {
-            Ok(Some(controls)) => controls,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit)),
-        };
-        let spans = match homogeneous_spans(degree, curve.knots(), controls) {
-            Ok(Some(spans)) => spans,
-            Ok(None) => return None,
-            Err(limit) => return Some(Err(limit)),
-        };
-        let homogeneous = HomogeneousCurveSpans {
-            spans,
-            coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
-        };
-        let parameters = closest_parameter_candidates(
-            stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)?,
-            search_seed,
-        )?;
+        reservation
+    } else {
+        None
+    };
+    let coordinate_scale = curve
+        .control_points()
+        .iter()
+        .flat_map(|control| [control.x, control.y, control.z])
+        .chain([point.x, point.y, point.z])
+        .fold(1.0_f64, |scale, value| scale.max(value.abs()));
+    let mut residuals = Vec::new();
+    let _residual_reservation =
+        geometry_budget.reserve_vec(&mut residuals, count, "nx spine NURBS residuals")?;
+    for control in curve.control_points() {
+        residuals.push(Point3::new(
+            control.x - point.x,
+            control.y - point.y,
+            control.z - point.z,
+        ));
+    }
+    let Some(controls) = positive_controls(
+        &residuals,
+        (!weights.is_empty()).then_some(weights.as_slice()),
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(spans) = homogeneous_spans(degree, curve.knots(), controls)? else {
+        return Ok(None);
+    };
+    let homogeneous = HomogeneousCurveSpans {
+        spans,
+        coordinate_tolerance: 64.0 * f64::EPSILON * coordinate_scale,
+    };
+    let Some(candidates) =
+        stationary_rational_distance_candidates(&homogeneous, search_seed, geometry_budget)
+    else {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    };
+    let Some(parameters) = closest_parameter_candidates(candidates, search_seed) else {
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+    };
+    Ok(
         lift_periodic_parameters(parameters, domain, curve.periodic(), seed)
             .into_iter()
-            .next()
-            .map(Ok)
-    })()
-    .transpose()
+            .next(),
+    )
 }
 
 fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {

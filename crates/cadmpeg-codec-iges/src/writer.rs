@@ -3590,6 +3590,7 @@ fn oriented_curve_entity(
                 *ref_direction,
                 radius,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
             .ok_or_else(|| {
@@ -3621,6 +3622,7 @@ fn oriented_curve_entity(
                 major_radius,
                 minor_radius,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
             .ok_or_else(|| {
@@ -3650,6 +3652,7 @@ fn oriented_curve_entity(
                 *major_direction,
                 focal_distance,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
             .ok_or_else(|| {
@@ -7040,7 +7043,7 @@ fn encode_file(
         finite(minimum_resolution, "Global minimum resolution")?,
         finite(maximum_coordinate, "Global maximum coordinate")?,
     );
-    let global_cards = crate::global::layout_global_cards(&global)?;
+    let global_cards = crate::global::layout_global_cards(&global, None)?;
     let global_count = global_cards.len();
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     let mut expanded_index_by_entity = Vec::with_capacity(entities.len());
@@ -7097,7 +7100,7 @@ fn encode_file(
             .ok_or_else(|| {
                 CodecError::NotImplemented("IGES directory sequence overflows".into())
             })?;
-        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text())?;
+        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text(), None)?;
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;

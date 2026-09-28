@@ -16,6 +16,552 @@ use super::super::{
 };
 
 #[test]
+fn nested_value_copy_refuses_inner_collection_limit() {
+    let value = Value::List(vec![Value::List(vec![Value::Integer(1)])]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    assert!(matches!(
+        super::super::try_clone_value(&value, Some(&ctx), "step_test_value_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_test_value_copy"
+    ));
+}
+
+#[test]
+fn typed_value_copy_refuses_nested_slot_limit() {
+    let value = Value::Typed("MEASURE".into(), Box::new(Value::Integer(1)));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    assert!(matches!(
+        super::super::try_clone_value(&value, Some(&ctx), "step_test_typed_copy"),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_test_typed_copy"
+    ));
+}
+
+#[test]
+fn header_string_validation_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
+    assert!(matches!(
+        super::super::validate_header(exchange.header(), Some(&ctx)),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn header_string_refusal_reaches_parse_caller() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let refused = (1..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_string_text"
+        )
+    });
+    assert!(
+        refused,
+        "header text must refuse through parse_with_context"
+    );
+}
+
+#[test]
+fn section_language_string_validation_refuses_retained_limit() {
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SECTION_LANGUAGE($,'ENG');ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid section language");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
+    assert!(matches!(
+        super::super::validate_header_sections(
+            super::super::ImplementationLevel::Edition3Class2,
+            exchange.header(),
+            &[String::from("AP242")],
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn data_section_name_validation_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"DATA", &arena, &policy)
+        .expect("root fits retained policy");
+    let parameters = [
+        Value::String(b"section".to_vec()),
+        Value::List(vec![Value::String(b"AP242".to_vec())]),
+    ];
+    let mut section_names = std::collections::BTreeSet::new();
+    assert!(matches!(
+        super::super::valid_data_parameters(
+            &parameters,
+            &[String::from("AP242")],
+            super::super::ImplementationLevel::LegacyEdition1,
+            &mut section_names,
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+const EXTENDED_HEADER_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+fn validation_refuses(
+    operation: &str,
+    dimension: ResourceDimension,
+    source: &[u8],
+    run: impl Fn(
+        &crate::parse::Exchange,
+        &DecodeContext<'_>,
+    ) -> Result<(), super::super::ValidationError>,
+) {
+    let (exchange, _) = crate::parse::parse(source).expect("valid header source");
+    let refused = (0..=1024).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => unreachable!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            run(&exchange, &ctx),
+            Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.dimension == dimension && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no {dimension:?} limit refused {operation}");
+}
+
+fn header_validation_refuses(operation: &str, dimension: ResourceDimension) {
+    validation_refuses(
+        operation,
+        dimension,
+        EXTENDED_HEADER_SOURCE,
+        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+    );
+}
+
+fn header_section_validation_refuses(operation: &str, dimension: ResourceDimension) {
+    validation_refuses(
+        operation,
+        dimension,
+        EXTENDED_HEADER_SOURCE,
+        |exchange, ctx| {
+            super::super::validate_header_sections(
+                super::super::ImplementationLevel::Edition3Class2,
+                exchange.header(),
+                &[String::from("AP242")],
+                Some(ctx),
+            )
+            .map(|_| ())
+        },
+    );
+}
+
+macro_rules! header_limit_test {
+    ($name:ident, $operation:literal, $dimension:expr) => {
+        #[test]
+        fn $name() {
+            header_validation_refuses($operation, $dimension);
+        }
+    };
+}
+
+macro_rules! section_limit_test {
+    ($name:ident, $operation:literal, $dimension:expr) => {
+        #[test]
+        fn $name() {
+            header_section_validation_refuses($operation, $dimension);
+        }
+    };
+}
+
+header_limit_test!(
+    schema_identifier_normalization_refuses_retained_limit,
+    "step_schema_identifier_normalized",
+    ResourceDimension::RetainedBytes
+);
+header_limit_test!(
+    schema_identifier_name_set_refuses_collection_limit,
+    "step_schema_identifier_names",
+    ResourceDimension::CollectionItems
+);
+header_limit_test!(
+    admitted_schema_identifier_vec_refuses_collection_limit,
+    "step_schema_identifiers",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    file_population_sections_refuse_collection_limit,
+    "step_file_population_sections",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    header_data_references_refuse_collection_limit,
+    "step_header_data_references",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_language_names_refuse_collection_limit,
+    "step_section_language_names",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_context_names_refuse_collection_limit,
+    "step_section_context_names",
+    ResourceDimension::CollectionItems
+);
+section_limit_test!(
+    section_language_name_copy_refuses_retained_limit,
+    "step_section_language_name_copy",
+    ResourceDimension::RetainedBytes
+);
+section_limit_test!(
+    section_context_name_copy_refuses_retained_limit,
+    "step_section_context_name_copy",
+    ResourceDimension::RetainedBytes
+);
+
+#[test]
+fn implementation_level_diagnostic_text_refuses_retained_limit() {
+    validation_refuses(
+        "step_implementation_level_diagnostic_text",
+        ResourceDimension::RetainedBytes,
+        UNVERIFIED_LEVEL_SOURCE,
+        |exchange, ctx| super::super::validate_header(exchange.header(), Some(ctx)).map(|_| ()),
+    );
+}
+
+#[test]
+fn schema_oid_diagnostic_text_refuses_retained_limit() {
+    let (exchange, _) = crate::parse::parse(SCHEMA_DIAGNOSTIC_SOURCE)
+        .expect("valid out-of-range schema identifier");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(SCHEMA_DIAGNOSTIC_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_object_identifier_diagnostics(
+            &exchange.schema_identifiers,
+            exchange.header()[2].offset,
+            Some(&ctx),
+        )
+        .next(),
+        Some(Err(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_oid_diagnostic_text"
+    ));
+}
+
+#[test]
+fn schema_name_matching_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"AP242", &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_identifier_matches(&[String::from("AP242")], "AP242", Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_name_matching"
+    ));
+}
+
+#[test]
+fn matching_schema_names_refuse_collection_limit() {
+    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_schema_matching_names"
+    ));
+}
+
+#[test]
+fn matching_schema_name_text_refuses_retained_limit() {
+    let (exchange, _) = crate::parse::parse(EXTENDED_HEADER_SOURCE).expect("valid schema header");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(EXTENDED_HEADER_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::super::schema_names_for_matching(&exchange.schema_identifiers, Some(&ctx)),
+        Err(super::super::ParseError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_schema_matching_name"
+    ));
+}
+
+#[test]
+fn data_section_name_set_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"DATA", &arena, &policy)
+        .expect("root fits collection policy");
+    let parameters = [
+        Value::String(b"main".to_vec()),
+        Value::List(vec![Value::String(b"AP242".to_vec())]),
+    ];
+    let mut section_names = std::collections::BTreeSet::new();
+    assert!(matches!(
+        super::super::valid_data_parameters(
+            &parameters,
+            &[String::from("AP242")],
+            super::super::ImplementationLevel::LegacyEdition1,
+            &mut section_names,
+            Some(&ctx),
+        ),
+        Err(super::super::ValidationError::Resource(CodecError::ResourceLimit(refusal)))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_data_section_names"
+    ));
+}
+
+#[test]
+fn header_record_vector_refuses_collection_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(1);ENDSEC;END-ISO-10303-21;";
+    let arena = DecodeArena::new();
+    let refusal_at_header = (0..64).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            crate::parse::parse_with_context(source, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == "step_parse_header_records"
+        )
+    });
+    assert!(
+        refusal_at_header,
+        "one limit must refuse the header allocation"
+    );
+}
+
+fn collection_refusal_reaches_parser(source: &[u8], operation: &str) {
+    let arena = DecodeArena::new();
+    let refused = (0..1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        matches!(
+            crate::parse::parse_with_context(source, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+const VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#2);#2=ITEM();ENDSEC;END-ISO-10303-21;";
+const ANCHOR_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const COMPLEX_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
+const OMITTED_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+const SCHEMA_DIAGNOSTIC_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const UNVERIFIED_LEVEL_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+const SIGNATURE_VECTOR_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
+
+macro_rules! parser_vector_limit_test {
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            collection_refusal_reaches_parser($source, $operation);
+        }
+    };
+}
+
+parser_vector_limit_test!(
+    parameter_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_parameter"
+);
+parser_vector_limit_test!(
+    record_partial_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_record_partials"
+);
+parser_vector_limit_test!(
+    section_id_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_section_ids"
+);
+parser_vector_limit_test!(
+    record_table_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_record_table_items"
+);
+parser_vector_limit_test!(
+    data_section_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_data_sections"
+);
+parser_vector_limit_test!(
+    anchor_tag_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_anchor_tags"
+);
+parser_vector_limit_test!(
+    anchor_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_anchors"
+);
+parser_vector_limit_test!(
+    anchor_binding_map_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_anchor_binding_items"
+);
+
+#[test]
+fn anchor_binding_value_copy_refuses_retained_limit() {
+    let refused = (0..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(ANCHOR_VECTOR_SOURCE, &arena, &policy)
+            .expect("input fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(ANCHOR_VECTOR_SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_anchor_binding_value_copy"
+        )
+    });
+    assert!(refused, "anchor value copy must reach the parser caller");
+}
+parser_vector_limit_test!(
+    reference_entry_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_reference_entries"
+);
+parser_vector_limit_test!(
+    external_reference_id_set_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_external_reference_ids"
+);
+parser_vector_limit_test!(
+    reference_pending_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_reference_pending"
+);
+parser_vector_limit_test!(
+    entity_index_name_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_entity_index_names"
+);
+parser_vector_limit_test!(
+    entity_index_id_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_entity_index_ids"
+);
+parser_vector_limit_test!(
+    reference_id_vector_refuses_collection_limit,
+    VECTOR_SOURCE,
+    "step_parse_reference_ids"
+);
+parser_vector_limit_test!(
+    value_reference_id_vector_refuses_collection_limit,
+    ANCHOR_VECTOR_SOURCE,
+    "step_parse_value_reference_ids"
+);
+parser_vector_limit_test!(
+    complex_diagnostic_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    canonical_partial_name_vector_refuses_collection_limit,
+    COMPLEX_VECTOR_SOURCE,
+    "step_parse_canonical_partial_names"
+);
+
+#[test]
+fn complex_partial_diagnostic_text_refuses_retained_limit() {
+    let refused = (0..=8192).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(COMPLEX_VECTOR_SOURCE, &arena, &policy)
+            .expect("input fits retained policy");
+        matches!(
+            crate::parse::parse_with_context(COMPLEX_VECTOR_SOURCE, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_parse_complex_partial_diagnostic_text"
+        )
+    });
+    assert!(
+        refused,
+        "complex partial diagnostic text must reach the parser caller"
+    );
+}
+parser_vector_limit_test!(
+    omitted_name_diagnostic_vector_refuses_collection_limit,
+    OMITTED_VECTOR_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    schema_identifier_diagnostic_vector_refuses_collection_limit,
+    SCHEMA_DIAGNOSTIC_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    implementation_level_diagnostic_vector_refuses_collection_limit,
+    UNVERIFIED_LEVEL_SOURCE,
+    "step_parse_diagnostics"
+);
+parser_vector_limit_test!(
+    signature_span_vector_refuses_collection_limit,
+    SIGNATURE_VECTOR_SOURCE,
+    "step_parse_signature_spans"
+);
+
+#[test]
 fn anchor_list_slots_are_admitted_before_vector_allocation() {
     let value = Value::List((0..8).map(Value::Integer).collect());
     let anchors = BTreeMap::new();
@@ -98,6 +644,69 @@ fn anchor_typed_wrapper_is_charged_before_its_clone() {
 }
 
 #[test]
+fn anchor_reference_stack_refuses_collection_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("reference stack needs one item");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_anchor_reference_stack"
+    ));
+}
+
+#[test]
+fn cyclic_anchor_error_text_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Resource("a".into()))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let refused = (0..=1024).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            AnchorResolver::new(&anchors, Some(&ctx)).resolve_root(&value),
+            Err(ResolveError::Resource(CodecError::ResourceLimit(refusal)))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_cyclic_anchor_error_text"
+        )
+    });
+    assert!(
+        refused,
+        "cyclic anchor error text must reach the resolver caller"
+    );
+}
+
+#[test]
+fn anchor_reference_stack_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("reference stack needs retained pointer storage");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_anchor_reference_stack_storage"
+    ));
+}
+
+#[test]
 fn reference_bindings_are_admitted_before_map_allocation() {
     let anchors = BTreeMap::new();
     let references = [ReferenceEntry {
@@ -152,6 +761,30 @@ fn reference_stack_item_is_admitted_before_push() {
     assert!(
         matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_stack")
     );
+}
+
+#[test]
+fn reference_stack_refuses_retained_limit() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = super::super::btree_node_storage::<ReferenceName, &str>();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        .expect("binding storage fits selected profile")
+        .resolve_value(&Value::ValueReference(2), 0)
+        .expect_err("reference stack needs retained storage");
+    assert!(matches!(
+        error,
+        ResolveError::Resource(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "step_reference_stack_storage"
+    ));
 }
 
 #[test]

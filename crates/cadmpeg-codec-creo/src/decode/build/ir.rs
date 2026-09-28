@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::tessellation::{Tessellation, TessellationId};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
@@ -449,10 +449,13 @@ fn transfer_display_tessellations(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
-        let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
+        let id = TessellationId::compose(
+            &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
+            strip.offset,
+        );
         annotate(
             annotations,
-            &id,
+            id.as_str(),
             "SolidPrimdata",
             strip.offset as u64,
             "display_triangle_strip",

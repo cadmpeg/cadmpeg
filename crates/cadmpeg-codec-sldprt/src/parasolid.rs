@@ -116,10 +116,15 @@ pub(crate) fn extract_streams_with_offsets(
     // Preserve older nested wrappers that do not carry the chained-section
     // prefix. Try each zlib member; the first that inflates to a `PS\0\0`-leading
     // stream is the embedded body. zlib headers are `78 01` / `78 9c` / `78 da`.
-    let local_limit = u64::try_from(payload.len())
-        .ok()
-        .and_then(|len| len.checked_mul(16))
-        .unwrap_or(u64::MAX);
+    let local_limit = cadmpeg_core::decode::u64_from_index(payload.len())
+        .checked_mul(16)
+        .ok_or_else(|| {
+            cadmpeg_core::decode::refuse_local_limit(
+                "sldprt Parasolid probe work",
+                u64::MAX,
+                u64::MAX,
+            )
+        })?;
     let work = ctx.map(|ctx| ctx.work_budget(local_limit));
     let mut work_used = 0_u64;
     let mut i = 0usize;

@@ -2,10 +2,12 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -44,6 +46,58 @@ use super::{
     mirror_flag_valid, new_general_note_charset_valid, new_general_note_font_valid,
     sectioned_area_curves_coplanar, sectioned_area_valid, vertical_text_flag_valid,
 };
+
+fn assert_section_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimension) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = cap,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = cap,
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = cap,
+            _ => panic!("unsupported test dimension"),
+        }
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, dimension);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn sectioned_area_coplanarity_refuses_active_nodes_and_recursion() {
+    let bytes = symbol_and_sectioned_area_file();
+    assert_section_refusal(
+        &bytes,
+        "iges section active curves",
+        ResourceDimension::CollectionItems,
+    );
+    assert_section_refusal(
+        &bytes,
+        "iges section active curve id",
+        ResourceDimension::RetainedBytes,
+    );
+    assert_section_refusal(
+        &bytes,
+        "iges coplanar curve recursion",
+        ResourceDimension::RecursionDepth,
+    );
+}
 
 #[test]
 fn malformed_flag_note_width_sum_refuses_without_overflow() {
@@ -650,12 +704,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         });
     }
     let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
-    assert!(sectioned_area_curves_coplanar(
-        &ir,
-        &[1, 3],
-        pattern_plane,
-        0.001
-    ));
+    assert!(
+        sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, None)
+            .unwrap()
+    );
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
         &mut ir.model.curves[1].geometry
     {
@@ -673,12 +725,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         )
         .unwrap();
     }
-    assert!(!sectioned_area_curves_coplanar(
-        &ir,
-        &[1, 3],
-        pattern_plane,
-        0.001
-    ));
+    assert!(
+        !sectioned_area_curves_coplanar(&ir, [1, 3].into_iter(), pattern_plane, 0.001, None)
+            .unwrap()
+    );
 
     let entry = |sequence, entity_type| DirectoryEntry {
         source_offset: 0,
@@ -734,8 +784,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         GlobalTable::V4_0,
         Transform::identity(),
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
     assert!(!sectioned_area_valid(
         &ir,
         &record,
@@ -744,8 +796,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         GlobalTable::V5_0,
         Transform::identity(),
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
     if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
         &mut ir.model.curves[0].geometry
     {
@@ -777,8 +831,10 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         GlobalTable::V5_0,
         translated_pattern_plane,
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
 }
 
 #[test]
@@ -855,8 +911,10 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         GlobalTable::V5_0,
         Transform::identity(),
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
     assert!(!sectioned_area_valid(
         &ir,
         &record(0),
@@ -865,8 +923,10 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         GlobalTable::V5_0,
         Transform::identity(),
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
     assert!(!sectioned_area_valid(
         &ir,
         &record(1),
@@ -875,8 +935,10 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         GlobalTable::V5_0,
         Transform::identity(),
         1.0,
-        0.001
-    ));
+        0.001,
+        None
+    )
+    .unwrap());
 }
 
 #[test]

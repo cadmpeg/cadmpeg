@@ -1,6 +1,6 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -124,7 +124,8 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
         ],
         Point3::new(0.0, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("declared pcurve endpoints should be evaluable");
 
     assert!(fit <= 2.0 * f64::EPSILON);
@@ -167,9 +168,15 @@ fn bounded_pcurve_search_can_miss_an_unsampled_exact_point() {
     let exact_uv = pcurve_uv(&pcurve, exact_parameter).expect("witness pcurve is evaluable");
     let target = Point3::new(exact_uv.u, exact_uv.v, 0.0);
     let index = ModelIndex::new(&ir);
-    let seeds = pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface_geometry);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+    let seeds = pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface_geometry, &ctx)
+        .expect("seed collection fits policy");
     assert_eq!(seeds, vec![0.0]);
-    let bounded = pcurve_surface_closest(&index, &surface_id, &pcurve, target, &seeds).expect("resource allocation did not fail")
+    let bounded = pcurve_surface_closest(&index, &surface_id, &pcurve, target, &seeds)
+        .expect("resource allocation did not fail")
         .expect("bounded search returns an evaluated witness");
     assert!(bounded.0 > cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
     let exact = pcurve_uv(&pcurve, exact_parameter).expect("exact point remains evaluable");
@@ -456,7 +463,8 @@ fn divergent_interior_pcurve_is_omitted_from_coedge() {
     assert!(unknowns
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#56"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -494,7 +502,8 @@ fn competing_same_surface_pcurves_remain_detached() {
     assert!(unknowns
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#69"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -528,7 +537,8 @@ fn assert_tp09_competing_pcurves_are_order_independent(source: &[u8]) {
     assert!(unknowns
         .iter()
         .any(|record| record.id.as_str() == "step:data:pcurve#69"));
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -607,7 +617,8 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
             && loss.message.contains("surface #26")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -667,12 +678,17 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
             && loss.message.contains("surface #26")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
 fn shared_surface_carrier_is_staged_once() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -710,6 +726,7 @@ fn shared_surface_carrier_is_staged_once() {
             color: None,
             visible: None,
         },
+        &ctx,
     )
     .expect("duplicate references to one source surface must stage");
 

@@ -10,6 +10,218 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::StepCodec;
 
+const VALIDATION_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);ENDSEC;END-ISO-10303-21;";
+const VALIDATION_COLLECTION_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=CARTESIAN_POINT('point',(1.,2.,3.));#5=ITEM(#4);ENDSEC;END-ISO-10303-21;";
+const VALIDATION_UNSUPPORTED_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=PROPERTY_DEFINITION('geometric validation property','description',$);#2=REPRESENTATION('unused',(#4),$);#3=PROPERTY_DEFINITION_REPRESENTATION(#1,#2);#4=ITEM();ENDSEC;END-ISO-10303-21;";
+
+fn validation_resource_refuses(
+    source: &[u8],
+    operation: &str,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(source).expect("valid validation collection source");
+    let setup_arena = DecodeArena::new();
+    let setup_policy = DecodePolicy::service();
+    let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy)
+        .expect("root fits setup policy");
+    let mut setup_ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry = crate::reader::geometry::decode(&exchange, &mut setup_ir, &setup_ctx)
+        .expect("geometry setup decodes");
+    let refused = (0..=64).any(|limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => unreachable!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+            .expect("root fits selected policy");
+        let mut ir = setup_ir.clone();
+        matches!(
+            super::decode(&exchange, &geometry.value, &mut ir, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no {dimension:?} limit refused {operation}");
+}
+
+macro_rules! validation_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            validation_resource_refuses(
+                VALIDATION_COLLECTION_SOURCE,
+                $operation,
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            );
+        }
+    };
+}
+
+validation_collection_test!(
+    validation_representation_items_refuse_collection_limit,
+    "step_validation_representation_items"
+);
+validation_collection_test!(
+    validation_representations_refuse_collection_limit,
+    "step_validation_representations"
+);
+validation_collection_test!(
+    validation_used_representations_refuse_collection_limit,
+    "step_validation_used_representations"
+);
+validation_collection_test!(
+    validation_points_refuse_collection_limit,
+    "step_validation_points"
+);
+validation_collection_test!(
+    validation_claims_refuse_collection_limit,
+    "step_validation_claims"
+);
+validation_collection_test!(
+    validation_referenced_points_refuse_collection_limit,
+    "step_validation_referenced_points"
+);
+validation_collection_test!(
+    validation_notes_refuse_collection_limit,
+    "step_validation_notes"
+);
+
+#[test]
+fn validation_note_text_refuses_retained_limit() {
+    validation_resource_refuses(
+        VALIDATION_COLLECTION_SOURCE,
+        "step_validation_note_text",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+    );
+}
+
+#[test]
+fn validation_losses_refuse_collection_limit() {
+    validation_resource_refuses(
+        VALIDATION_UNSUPPORTED_SOURCE,
+        "step_validation_losses",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+    );
+}
+
+fn validation_limit_result(
+    retained_limit: Option<u64>,
+    collection_limit: Option<u64>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (exchange, _) =
+        crate::parse::parse(VALIDATION_LIMIT_SOURCE).expect("valid validation-property exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    if let Some(limit) = collection_limit {
+        policy.limits.max_collection_items = limit;
+    }
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let geometry_policy = DecodePolicy::service();
+    let (geometry_ctx, _) =
+        DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &geometry_policy)
+            .expect("root fits geometry policy");
+    let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &geometry_ctx)?;
+    let (ctx, _) = DecodeContext::from_root_bytes(VALIDATION_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits selected policy");
+    super::decode(&exchange, &geometry.value, &mut ir, &ctx)?;
+    Ok(())
+}
+
+#[test]
+fn validation_property_name_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(Some(1), None),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn validation_property_description_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(Some("geometric validation property".len() as u64), None),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn validation_property_map_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert!(matches!(
+        validation_limit_result(None, Some(0)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_validation_properties"
+    ));
+}
+
+#[test]
+fn validation_mesh_edges_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("mesh validation source decodes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits collection policy");
+    assert!(matches!(
+        super::mesh_properties(result.ir(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_validation_mesh_edges"
+    ));
+}
+
+#[test]
+fn validation_mesh_triangles_refuse_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_tessellation.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("mesh validation source decodes");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits work policy");
+    assert!(matches!(
+        super::mesh_properties(result.ir(), &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "step_validation_mesh_triangles"
+    ));
+}
+
 #[test]
 fn complex_validation_measure_carrier_is_decoded() {
     let source = String::from_utf8(
@@ -35,7 +247,8 @@ fn complex_validation_measure_carrier_is_decoded() {
         loss.message
             .contains("geometric validation property #41 has an unsupported value")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -192,6 +405,10 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     assert_eq!(ir.model.bodies.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits selected policy");
     for offset in [0.0, 1e6, 1e9] {
         let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
             .map(|p| Point3::new(p[0] + offset, p[1] + offset, p[2] + offset))
@@ -203,14 +420,19 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            "test:step:tessellation#numerical-followup",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).unwrap();
+        let properties = super::mesh_properties(&ir, &ctx)
+            .expect("mesh budget admits calculation")
+            .expect("mesh properties exist");
         assert!((properties.volume - 1.0 / 3.0).abs() <= f64::EPSILON);
         assert_eq!(
             properties.centroid,
@@ -231,6 +453,10 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     assert_eq!(ir.model.bodies.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits selected policy");
     for scale in [1.0e-90, 1.0, 1.0e90] {
         let points = [[0., 0., 0.], [2., 0., 0.], [0., 1., 0.], [0., 0., 1.]]
             .map(|p| Point3::new(p[0] * scale, p[1] * scale, p[2] * scale))
@@ -242,14 +468,19 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            "test:step:tessellation#numerical-followup",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )
         .unwrap();
         tessellation.body = Some(ir.model.bodies[0].id.clone());
         ir.model.tessellations = vec![tessellation];
-        let properties = super::mesh_properties(&ir).unwrap();
+        let properties = super::mesh_properties(&ir, &ctx)
+            .expect("mesh budget admits calculation")
+            .expect("mesh properties exist");
         assert!(
             (properties.volume / scale / scale / scale - 1.0 / 3.0).abs() <= 8.0 * f64::EPSILON
         );

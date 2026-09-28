@@ -362,7 +362,9 @@ fn nurbs_curve_copy_refuses_at_caller_limit() {
     let nurbs =
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_finite_lanes(1, knots, points, None, false)
             .expect("valid curve lanes");
-    let result = with_collection_limit(&[], 5, |ctx| super::clone_nurbs_curve(ctx, &nurbs));
+    let result = with_collection_limit(&[], 5, |ctx| {
+        nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")
+    });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD NURBS curve copy"));
 }
@@ -384,7 +386,9 @@ fn nurbs_surface_copy_refuses_at_caller_limit() {
         false,
     )
     .expect("valid surface lanes");
-    let result = with_collection_limit(&[], 13, |ctx| super::clone_nurbs_surface(ctx, &nurbs));
+    let result = with_collection_limit(&[], 13, |ctx| {
+        nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")
+    });
     assert!(matches!(result, Err(CodecError::ResourceLimit(limit))
             if limit.operation == "FreeCAD NURBS surface copy"));
 }
