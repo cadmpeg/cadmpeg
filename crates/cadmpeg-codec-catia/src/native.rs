@@ -4546,76 +4546,103 @@ fn entity_suffix_schema_selection(
     }))
 }
 
+fn copy_value_schema(
+    ctx: &DecodeContext<'_>,
+    selection: &CatiaEntityValueSchemaSelection,
+) -> Result<CatiaEntitySchemaValue, CodecError> {
+    Ok(CatiaEntitySchemaValue {
+        offset: selection.offset,
+        ordinal: selection.ordinal,
+        entry: crate::resource::copy_retained_str(ctx, &selection.entry,
+            "catia_native_value_schema_entry")?,
+        value: crate::resource::copy_retained_str(ctx, &selection.name,
+            "catia_native_value_schema_name")?,
+    })
+}
+
+fn copy_definition_schema(
+    ctx: &DecodeContext<'_>,
+    selection: &CatiaDefinitionSchemaSelection,
+) -> Result<Option<CatiaEntitySchemaValue>, CodecError> {
+    let (Some(entry), Some(value)) = (selection.entry.as_ref(), selection.name.as_ref()) else {
+        return Ok(None);
+    };
+    Ok(Some(CatiaEntitySchemaValue {
+        offset: selection.offset,
+        ordinal: selection.ordinal,
+        entry: crate::resource::copy_retained_str(ctx, entry,
+            "catia_native_definition_schema_entry")?,
+        value: crate::resource::copy_retained_str(ctx, value,
+            "catia_native_definition_schema_name")?,
+    }))
+}
+
 fn value_production(
+    ctx: &DecodeContext<'_>,
     entity: &CatiaEntityRecord,
     records: &[CatiaObjectRecord],
     value_fields: &[value_block::ValueField],
-) -> Option<CatiaEntityValueProduction> {
-    relation_expression(
+) -> Result<Option<CatiaEntityValueProduction>, CodecError> {
+    if let Some(relation) = relation_expression(
+        ctx,
         &entity.definition_schema_selections,
         &entity.value_schema_selections,
-    )
-    .map(CatiaEntityValueProduction::RelationExpression)
-    .or_else(|| {
-        parameter_value(
+    )? {
+        return Ok(Some(CatiaEntityValueProduction::RelationExpression(relation)));
+    }
+    if let Some(parameter) = parameter_value(
+            ctx,
             entity.lead,
             &entity.value_schema_selections,
             entity.suffix_value(),
-        )
-        .map(CatiaEntityValueProduction::ParameterValue)
-    })
-    .or_else(|| {
-        resolved_constraint_range(
+        )? {
+        return Ok(Some(CatiaEntityValueProduction::ParameterValue(parameter)));
+    }
+    if let Some(range) = resolved_constraint_range(
+            ctx,
             entity.lead,
             &entity.value_schema_selections,
             entity.suffix_value(),
             records,
             &entity.object_graph,
             entity.entity_id,
-        )
-        .map(CatiaEntityValueProduction::ConstraintRange)
-    })
-    .or_else(|| {
-        definition_value(
+        )? {
+        return Ok(Some(CatiaEntityValueProduction::ConstraintRange(range)));
+    }
+    if let Some(definition) = definition_value(
+            ctx,
             entity.lead,
             &entity.definition_schema_selections,
             value_fields,
             entity.suffix_value(),
             entity.suffix_schema_selection.as_ref(),
-        )
-        .map(CatiaEntityValueProduction::DefinitionValue)
-    })
-    .or_else(|| {
-        definition_chain_value(
+        )? {
+        return Ok(Some(CatiaEntityValueProduction::DefinitionValue(definition)));
+    }
+    Ok(definition_chain_value(
+            ctx,
             entity.lead,
             &entity.definition_schema_selections,
             value_fields,
             entity.suffix_value(),
             entity.suffix_schema_selection.as_ref(),
-        )
-        .map(CatiaEntityValueProduction::DefinitionChainValue)
-    })
+        )?.map(CatiaEntityValueProduction::DefinitionChainValue))
 }
 
 fn relation_expression(
+    ctx: &DecodeContext<'_>,
     definitions: &[CatiaDefinitionSchemaSelection],
     values: &[CatiaEntityValueSchemaSelection],
-) -> Option<CatiaRelationExpression> {
+) -> Result<Option<CatiaRelationExpression>, CodecError> {
     let [definition0, definition1] = definitions else {
-        return None;
+        return Ok(None);
     };
     if definition0.name.as_deref() != Some("body")
         || definition1.name.as_deref() != Some("body")
         || definition0.entry != definition1.entry
     {
-        return None;
+        return Ok(None);
     }
-    let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
-        offset: selection.offset,
-        ordinal: selection.ordinal,
-        entry: selection.entry.clone(),
-        value: selection.name.clone(),
-    };
     let (framing, expression, parameter_role, type_signature, function_role) = match values {
         [prefix_role, expression, parser_version_role, parameter_role, type_signature, state_role, function_role]
             if prefix_role.name == "Boolean"
@@ -4626,9 +4653,9 @@ fn relation_expression(
         {
             (
                 CatiaRelationExpressionFraming::OpenedBooleanParserVersion {
-                    prefix_role: schema_value(prefix_role),
-                    parser_version_role: schema_value(parser_version_role),
-                    state_role: schema_value(state_role),
+                    prefix_role: copy_value_schema(ctx, prefix_role)?,
+                    parser_version_role: copy_value_schema(ctx, parser_version_role)?,
+                    state_role: copy_value_schema(ctx, state_role)?,
                 },
                 expression,
                 parameter_role,
@@ -4643,8 +4670,8 @@ fn relation_expression(
         {
             (
                 CatiaRelationExpressionFraming::PlaceholderState {
-                    placeholder: schema_value(placeholder),
-                    state_role: schema_value(state_role),
+                    placeholder: copy_value_schema(ctx, placeholder)?,
+                    state_role: copy_value_schema(ctx, state_role)?,
                 },
                 expression,
                 parameter_role,
@@ -4660,8 +4687,8 @@ fn relation_expression(
         {
             (
                 CatiaRelationExpressionFraming::BooleanParserVersion {
-                    prefix_role: schema_value(prefix_role),
-                    parser_version_role: schema_value(parser_version_role),
+                    prefix_role: copy_value_schema(ctx, prefix_role)?,
+                    parser_version_role: copy_value_schema(ctx, parser_version_role)?,
                 },
                 expression,
                 parameter_role,
@@ -4676,7 +4703,7 @@ fn relation_expression(
         {
             (
                 CatiaRelationExpressionFraming::ParserVersion {
-                    parser_version_role: schema_value(parser_version_role),
+                    parser_version_role: copy_value_schema(ctx, parser_version_role)?,
                 },
                 expression,
                 parameter_role,
@@ -4684,15 +4711,15 @@ fn relation_expression(
                 function_role,
             )
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(CatiaRelationExpression {
+    Ok(Some(CatiaRelationExpression {
         framing,
-        expression: schema_value(expression),
-        parameter_role: schema_value(parameter_role),
-        type_signature: schema_value(type_signature),
-        function_role: schema_value(function_role),
-    })
+        expression: copy_value_schema(ctx, expression)?,
+        parameter_role: copy_value_schema(ctx, parameter_role)?,
+        type_signature: copy_value_schema(ctx, type_signature)?,
+        function_role: copy_value_schema(ctx, function_role)?,
+    }))
 }
 
 fn relation_type_signature(
@@ -4810,61 +4837,58 @@ fn relation_parameter_symbol(parameter: &str) -> bool {
 }
 
 fn parameter_value(
+    ctx: &DecodeContext<'_>,
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
-) -> Option<CatiaParameterValue> {
+) -> Result<Option<CatiaParameterValue>, CodecError> {
     if lead != 2 {
-        return None;
+        return Ok(None);
     }
     let [name, binding] = values else {
-        return None;
+        return Ok(None);
     };
-    let suffix_value = suffix_value?;
-    (suffix_value.prefix_atoms == [5, 22, 2]
+    let Some(suffix_value) = suffix_value else { return Ok(None) };
+    if !(suffix_value.prefix_atoms == [5, 22, 2]
         && suffix_value.prefix_atom_widths == [1, 1, 1]
         && suffix_value.prefix_code == 0x6a
-        && suffix_value.trailer == CatiaEntitySuffixTrailer::Token8152)
-        .then_some(())?;
+        && suffix_value.trailer == CatiaEntitySuffixTrailer::Token8152) {
+        return Ok(None);
+    }
     let CatiaEntitySuffixPayload::Evaluation {
         opcode_offset,
         evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = &suffix_value.payload
     else {
-        return None;
+        return Ok(None);
     };
-    let schema_value = |selection: &CatiaEntityValueSchemaSelection| CatiaEntitySchemaValue {
-        offset: selection.offset,
-        ordinal: selection.ordinal,
-        entry: selection.entry.clone(),
-        value: selection.name.clone(),
-    };
-    Some(CatiaParameterValue {
-        name: schema_value(name),
-        binding: schema_value(binding),
+    Ok(Some(CatiaParameterValue {
+        name: copy_value_schema(ctx, name)?,
+        binding: copy_value_schema(ctx, binding)?,
         evaluation: evaluation.clone(),
         evaluation_opcode_offset: *opcode_offset,
-    })
+    }))
 }
 
 fn constraint_range(
+    ctx: &DecodeContext<'_>,
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
-) -> Option<CatiaConstraintRange> {
+) -> Result<Option<CatiaConstraintRange>, CodecError> {
     if lead != 2 {
-        return None;
+        return Ok(None);
     }
     let [range, constraint] = values else {
-        return None;
+        return Ok(None);
     };
     if range.name != "Range" {
-        return None;
+        return Ok(None);
     }
-    let suffix_value = suffix_value?;
+    let Some(suffix_value) = suffix_value else { return Ok(None) };
     if suffix_value.prefix_atoms != [4, 22, 2] || suffix_value.prefix_atom_widths != [1, 1, 1] {
-        return None;
+        return Ok(None);
     }
     let framing = match (
         constraint.name.as_str(),
@@ -4886,7 +4910,7 @@ fn constraint_range(
         ("ComplexCst", 0xc9, CatiaEntitySuffixTrailer::Empty) => {
             CatiaConstraintRangeFraming::ComplexC9
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     let CatiaEntitySuffixPayload::Evaluation {
         opcode_offset,
@@ -4894,108 +4918,113 @@ fn constraint_range(
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = &suffix_value.payload
     else {
-        return None;
+        return Ok(None);
     };
-    Some(CatiaConstraintRange {
-        range: CatiaEntitySchemaValue {
-            offset: range.offset,
-            ordinal: range.ordinal,
-            entry: range.entry.clone(),
-            value: range.name.clone(),
-        },
-        constraint: CatiaEntitySchemaValue {
-            offset: constraint.offset,
-            ordinal: constraint.ordinal,
-            entry: constraint.entry.clone(),
-            value: constraint.name.clone(),
-        },
+    Ok(Some(CatiaConstraintRange {
+        range: copy_value_schema(ctx, range)?,
+        constraint: copy_value_schema(ctx, constraint)?,
         framing,
         evaluation: evaluation.clone(),
         evaluation_opcode_offset: *opcode_offset,
         incoming_references: Vec::new(),
         incoming_storage_references: Vec::new(),
-    })
+    }))
+}
+
+fn incidence_source_entity(
+    ctx: &DecodeContext<'_>,
+    record: &CatiaObjectRecord,
+) -> Result<Option<CatiaEntityReference>, CodecError> {
+    let Some(entity_id) = record.entity_id() else { return Ok(None) };
+    let entity = record.entity_record().map(|entity|
+        crate::resource::copy_retained_str(ctx, entity,
+            "catia_native_incidence_source_entity")).transpose()?;
+    let class_name = record.class_name().map(|class_name|
+        crate::resource::copy_retained_str(ctx, class_name,
+            "catia_native_incidence_source_class")).transpose()?;
+    Ok(Some(CatiaEntityReference::resolved_or_unresolved(
+        entity_id, entity, class_name)))
 }
 
 fn entity_incidences(
+    ctx: &DecodeContext<'_>,
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
-) -> (
+) -> Result<(
     Vec<CatiaEntityIncomingReference>,
     Vec<CatiaEntityIncomingStorageReference>,
-) {
+), CodecError> {
+    ctx.charge_work(u64::try_from(records.len()).map_err(|_|
+        ctx.refuse_codec_limit("catia_native_incidence_scan", u64::MAX, u64::MAX))?,
+        "catia_native_incidence_scan")?;
     let mut incoming_references = Vec::new();
     let mut incoming_storage_references = Vec::new();
     for record in records.iter().filter(|record| record.parent == graph_id) {
-        incoming_references.extend(
-            record
-                .references
-                .iter()
-                .filter(|reference| reference.entity_id() == entity_id)
-                .map(|reference| CatiaEntityIncomingReference {
-                    object_record: record.id.clone(),
-                    source_entity: record.entity_id().map(|entity_id| {
-                        CatiaEntityReference::resolved_or_unresolved(
-                            entity_id,
-                            record.entity_record().map(str::to_owned),
-                            record.class_name().map(str::to_owned),
-                        )
-                    }),
-                    payload_offset: reference.payload_offset(),
-                    source: reference.source().clone(),
-                }),
-        );
+        ctx.charge_work(u64::try_from(record.references.len()).map_err(|_|
+            ctx.refuse_codec_limit("catia_native_incidence_references", u64::MAX, u64::MAX))?,
+            "catia_native_incidence_references")?;
+        for reference in record.references.iter().filter(|reference| reference.entity_id() == entity_id) {
+            let incidence = CatiaEntityIncomingReference {
+                object_record: crate::resource::copy_retained_str(ctx, &record.id,
+                    "catia_native_incidence_record")?,
+                source_entity: incidence_source_entity(ctx, record)?,
+                payload_offset: reference.payload_offset(),
+                source: reference.source().clone(),
+            };
+            crate::resource::push(ctx, &mut incoming_references, incidence,
+                "catia_native_incoming_references")?;
+        }
         if record.storage_ref() == Some(entity_id) {
-            incoming_storage_references.push(CatiaEntityIncomingStorageReference {
-                object_record: record.id.clone(),
-                source_entity: record.entity_id().map(|entity_id| {
-                    CatiaEntityReference::resolved_or_unresolved(
-                        entity_id,
-                        record.entity_record().map(str::to_owned),
-                        record.class_name().map(str::to_owned),
-                    )
-                }),
-            });
+            let incidence = CatiaEntityIncomingStorageReference {
+                object_record: crate::resource::copy_retained_str(ctx, &record.id,
+                    "catia_native_storage_record")?,
+                source_entity: incidence_source_entity(ctx, record)?,
+            };
+            crate::resource::push(ctx, &mut incoming_storage_references, incidence,
+                "catia_native_incoming_storage")?;
         }
     }
-    (incoming_references, incoming_storage_references)
+    Ok((incoming_references, incoming_storage_references))
 }
 
 fn range_interval(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
-) -> Option<CatiaRangeInterval> {
+) -> Result<Option<CatiaRangeInterval>, CodecError> {
     let mut matches = values
         .iter()
         .enumerate()
         .filter(|(_, selection)| selection.name == "Range");
-    let (index, range) = matches.next()?;
-    matches.next().is_none().then_some(())?;
-    let start = usize::try_from(range.offset).ok()?.checked_add(5)?;
+    let Some((index, range)) = matches.next() else { return Ok(None) };
+    if matches.next().is_some() { return Ok(None) }
+    let Some(start) = usize::try_from(range.offset).ok().and_then(|offset| offset.checked_add(5)) else {
+        return Ok(None);
+    };
     let end = match values.get(index + 1) {
-        Some(selection) => usize::try_from(selection.offset).ok()?,
+        Some(selection) => {
+            let Ok(end) = usize::try_from(selection.offset) else { return Ok(None) };
+            end
+        },
         None => payload.len(),
     };
-    let interval = entity_table::parse_range_interval(payload, start, end)?;
+    let Some(interval) = entity_table::parse_range_interval(payload, start, end) else {
+        return Ok(None);
+    };
     let (incoming_references, incoming_storage_references) =
-        entity_incidences(records, graph_id, entity_id);
-    Some(CatiaRangeInterval {
-        range: CatiaEntitySchemaValue {
-            offset: range.offset,
-            ordinal: range.ordinal,
-            entry: range.entry.clone(),
-            value: range.name.clone(),
-        },
+        entity_incidences(ctx, records, graph_id, entity_id)?;
+    Ok(Some(CatiaRangeInterval {
+        range: copy_value_schema(ctx, range)?,
         interval,
         nominal: range_nominal(suffix_value),
         incoming_references,
         incoming_storage_references,
-    })
+    }))
 }
 
 fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaRangeNominal> {
@@ -5026,95 +5055,152 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
 }
 
 fn resolved_constraint_range(
+    ctx: &DecodeContext<'_>,
     lead: u8,
     values: &[CatiaEntityValueSchemaSelection],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     records: &[CatiaObjectRecord],
     graph_id: &str,
     entity_id: u32,
-) -> Option<CatiaConstraintRange> {
-    let mut range = constraint_range(lead, values, suffix_value)?;
+) -> Result<Option<CatiaConstraintRange>, CodecError> {
+    let Some(mut range) = constraint_range(ctx, lead, values, suffix_value)? else {
+        return Ok(None);
+    };
     (range.incoming_references, range.incoming_storage_references) =
-        entity_incidences(records, graph_id, entity_id);
-    Some(range)
+        entity_incidences(ctx, records, graph_id, entity_id)?;
+    Ok(Some(range))
+}
+
+fn copy_suffix_schema_value(
+    ctx: &DecodeContext<'_>,
+    value: &CatiaEntitySuffixSchemaValue,
+) -> Result<CatiaEntitySuffixSchemaValue, CodecError> {
+    Ok(match value {
+        CatiaEntitySuffixSchemaValue::Atom { value } =>
+            CatiaEntitySuffixSchemaValue::Atom { value: *value },
+        CatiaEntitySuffixSchemaValue::Evaluation { opcode_offset, evaluation } =>
+            CatiaEntitySuffixSchemaValue::Evaluation {
+                opcode_offset: *opcode_offset,
+                evaluation: evaluation.clone(),
+            },
+        CatiaEntitySuffixSchemaValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
+        CatiaEntitySuffixSchemaValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
+        CatiaEntitySuffixSchemaValue::SchemaSelector { offset, ordinal, resolution } =>
+            CatiaEntitySuffixSchemaValue::SchemaSelector {
+                offset: *offset,
+                ordinal: *ordinal,
+                resolution: resolution.as_ref().map(|class| -> Result<CatiaDesignClass, CodecError> {
+                    Ok(CatiaDesignClass {
+                        entry: crate::resource::copy_retained_str(ctx, &class.entry,
+                            "catia_native_suffix_class_entry")?,
+                        name: crate::resource::copy_retained_str(ctx, &class.name,
+                            "catia_native_suffix_class_name")?,
+                    })
+                }).transpose()?,
+            },
+    })
+}
+
+fn copy_suffix_payload(
+    ctx: &DecodeContext<'_>,
+    payload: &CatiaEntitySuffixPayload,
+) -> Result<CatiaEntitySuffixPayload, CodecError> {
+    Ok(match payload {
+        CatiaEntitySuffixPayload::Evaluation { opcode_offset, evaluation, encoding } =>
+            CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: *opcode_offset,
+                evaluation: evaluation.clone(),
+                encoding: *encoding,
+            },
+        CatiaEntitySuffixPayload::Atom { value } =>
+            CatiaEntitySuffixPayload::Atom { value: *value },
+        CatiaEntitySuffixPayload::SchemaSelected { selector_offset, selector, value } =>
+            CatiaEntitySuffixPayload::SchemaSelected {
+                selector_offset: *selector_offset,
+                selector: *selector,
+                value: copy_suffix_schema_value(ctx, value)?,
+            },
+        CatiaEntitySuffixPayload::ControlE8 => CatiaEntitySuffixPayload::ControlE8,
+        CatiaEntitySuffixPayload::ControlE9 => CatiaEntitySuffixPayload::ControlE9,
+        CatiaEntitySuffixPayload::Separator37 => CatiaEntitySuffixPayload::Separator37,
+    })
 }
 
 fn definition_value(
+    ctx: &DecodeContext<'_>,
     lead: u8,
     definitions: &[CatiaDefinitionSchemaSelection],
     value_fields: &[value_block::ValueField],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
-) -> Option<CatiaDefinitionValue> {
+) -> Result<Option<CatiaDefinitionValue>, CodecError> {
     if lead != 2
         || !matches!(
             value_fields,
             [value_block::ValueField::Terminator { offset: 0 }]
         )
     {
-        return None;
+        return Ok(None);
     }
     let [definition] = definitions else {
-        return None;
+        return Ok(None);
     };
-    let suffix_value = suffix_value?;
-    Some(CatiaDefinitionValue {
-        definition: CatiaEntitySchemaValue {
-            offset: definition.offset,
-            ordinal: definition.ordinal,
-            entry: definition.entry.clone()?,
-            value: definition.name.clone()?,
-        },
-        payload: suffix_value.payload.clone(),
-        schema_selection: suffix_schema_selection.cloned(),
-    })
+    let Some(suffix_value) = suffix_value else { return Ok(None) };
+    let Some(definition) = copy_definition_schema(ctx, definition)? else { return Ok(None) };
+    let schema_selection = suffix_schema_selection.map(|selection| -> Result<_, CodecError> {
+        Ok(CatiaEntitySuffixSchemaSelection {
+            offset: selection.offset,
+            ordinal: selection.ordinal,
+            entry: crate::resource::copy_retained_str(ctx, &selection.entry,
+                "catia_native_definition_suffix_entry")?,
+            name: crate::resource::copy_retained_str(ctx, &selection.name,
+                "catia_native_definition_suffix_name")?,
+            value: copy_suffix_schema_value(ctx, &selection.value)?,
+        })
+    }).transpose()?;
+    Ok(Some(CatiaDefinitionValue {
+        definition,
+        payload: copy_suffix_payload(ctx, &suffix_value.payload)?,
+        schema_selection,
+    }))
 }
 
 fn definition_chain_value(
+    ctx: &DecodeContext<'_>,
     lead: u8,
     definitions: &[CatiaDefinitionSchemaSelection],
     value_fields: &[value_block::ValueField],
     suffix_value: Option<&CatiaEntitySuffixValue>,
     suffix_schema_selection: Option<&CatiaEntitySuffixSchemaSelection>,
-) -> Option<CatiaDefinitionChainValue> {
+) -> Result<Option<CatiaDefinitionChainValue>, CodecError> {
     if lead != 2
         || !matches!(
             value_fields,
             [value_block::ValueField::Terminator { offset: 0 }]
         )
     {
-        return None;
+        return Ok(None);
     }
     let [selector, role] = definitions else {
-        return None;
+        return Ok(None);
     };
-    let selector_value = CatiaEntitySchemaValue {
-        offset: selector.offset,
-        ordinal: selector.ordinal,
-        entry: selector.entry.clone()?,
-        value: selector.name.clone()?,
-    };
-    let role = CatiaEntitySchemaValue {
-        offset: role.offset,
-        ordinal: role.ordinal,
-        entry: role.entry.clone()?,
-        value: role.name.clone()?,
-    };
-    let suffix_schema_selection = suffix_schema_selection?;
+    let Some(selector_value) = copy_definition_schema(ctx, selector)? else { return Ok(None) };
+    let Some(role) = copy_definition_schema(ctx, role)? else { return Ok(None) };
+    let Some(suffix_schema_selection) = suffix_schema_selection else { return Ok(None) };
     if suffix_schema_selection.entry != selector_value.entry
         || suffix_schema_selection.name != selector_value.value
     {
-        return None;
+        return Ok(None);
     }
-    let suffix_value = suffix_value?;
+    let Some(suffix_value) = suffix_value else { return Ok(None) };
     let CatiaEntitySuffixPayload::SchemaSelected { .. } = &suffix_value.payload else {
-        return None;
+        return Ok(None);
     };
-    Some(CatiaDefinitionChainValue {
+    Ok(Some(CatiaDefinitionChainValue {
         selector: selector_value,
         role,
-        value: suffix_schema_selection.value.clone(),
-    })
+        value: copy_suffix_schema_value(ctx, &suffix_schema_selection.value)?,
+    }))
 }
 
 fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
@@ -9657,15 +9743,16 @@ impl CatiaNative {
                 entity.parse_suffix(ctx)?;
                 entity.suffix_schema_selection =
                     entity_suffix_schema_selection(ctx, entity.suffix_value(), catalog)?;
-                entity.value_production = value_production(entity, &graph.records, &value_fields);
+                entity.value_production = value_production(ctx, entity, &graph.records, &value_fields)?;
                 entity.range_interval = range_interval(
+                    ctx,
                     entity.value_payload(),
                     &entity.value_schema_selections,
                     entity.suffix_value(),
                     &graph.records,
                     &graph.id,
                     entity.entity_id,
-                );
+                )?;
             }
         }
         let entity_classes_by_graph_identity =

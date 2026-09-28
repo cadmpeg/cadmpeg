@@ -706,6 +706,44 @@ fn entity_value_selection_refuses_collection_and_retained_limits() {
 }
 
 #[test]
+fn native_value_productions_refuse_catalog_and_suffix_copies() {
+    let scalar_suffix = [0x85, 0x96, 0x82, 0x6a, 0xe7, 0x81, 0x52];
+    let native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_parameter_value(&scalar_suffix));
+    let entity = &native.entity_records[0];
+    let fields = crate::test_support::with_service_context(|ctx| {
+        entity.value_fields_charged(ctx)
+    }).expect("service profile admits value fields");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_schema_entry"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::value_production(ctx, entity, &native.object_graphs[0].records, &fields)
+    }).expect("service profile admits parameter production");
+    assert_eq!(service, entity.value_production);
+
+    let nested = crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
+        offset: 4,
+        ordinal: 1,
+        resolution: Some(crate::native::CatiaDesignClass {
+            entry: "catalog-entry".to_string(),
+            name: "Class".to_string(),
+        }),
+    };
+    let nested_refusal = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::copy_suffix_schema_value(ctx, &nested)
+    });
+    assert!(matches!(nested_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_suffix_class_entry"));
+    let nested_service = crate::test_support::with_service_context(|ctx| {
+        super::super::copy_suffix_schema_value(ctx, &nested)
+    }).expect("service profile admits nested suffix value");
+    assert_eq!(nested_service, nested);
+}
+
+#[test]
 fn native_namespace_types_and_validates_named_parameter_values() {
     use crate::native::{
         CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
@@ -782,6 +820,45 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_definition_value_and_chain_refuse_retained_schema_copies() {
+    let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0];
+    let definition_native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_definition_value(
+            &definition, &[0xfe], &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49]));
+    let definition_entity = &definition_native.entity_records[0];
+    assert!(definition_entity.definition_value().is_some());
+    let definition_fields = crate::test_support::with_service_context(|ctx| {
+        definition_entity.value_fields_charged(ctx)
+    }).expect("service profile admits definition fields");
+    let definition_refusal = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::value_production(ctx, definition_entity,
+            &definition_native.object_graphs[0].records, &definition_fields)
+    });
+    assert!(matches!(definition_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_definition_schema_entry"));
+
+    let chain_native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_definition_chain_value(&[
+            0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x87]));
+    let chain_entity = &chain_native.entity_records[0];
+    assert!(chain_entity.definition_chain_value().is_some());
+    let chain_fields = crate::test_support::with_service_context(|ctx| {
+        chain_entity.value_fields_charged(ctx)
+    }).expect("service profile admits chain fields");
+    let chain_refusal = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::value_production(ctx, chain_entity,
+            &chain_native.object_graphs[0].records, &chain_fields)
+    });
+    assert!(matches!(chain_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_definition_schema_entry"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::value_production(ctx, chain_entity,
+            &chain_native.object_graphs[0].records, &chain_fields)
+    }).expect("service profile admits definition chain");
+    assert_eq!(service, chain_entity.value_production);
 }
 
 #[test]

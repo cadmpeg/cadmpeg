@@ -328,6 +328,22 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
+fn native_incoming_incidences_refuse_collection_limit() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::entity_incidences(ctx, &graph.records, &graph.id, 5)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_incoming_references"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_incidences(ctx, &graph.records, &graph.id, 5)
+    }).expect("service profile admits incoming incidences");
+    assert!(!admitted.0.is_empty());
+}
+
+#[test]
 fn native_configuration_production_propagates_retained_refusal() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);
