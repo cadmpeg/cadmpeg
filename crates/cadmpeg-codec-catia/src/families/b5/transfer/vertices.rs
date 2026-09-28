@@ -155,7 +155,7 @@ pub(super) fn emit_vertices(
             crate::resource::copy_id(admission.context(), point_id.as_str(),
                 PointId::mint, "catia_b5_point_record_id")?,
             vertex.point,
-            Some(cgm_source("vertex", vertex.object_id)),
+            Some(cgm_source(admission.context(), "vertex", vertex.object_id)?),
         ));
         let vertex_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),

@@ -28,20 +28,32 @@ use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
 use crate::resource::{self, HexBytes};
 
-pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
-    cgm_source_key(kind, format!("{tag:06x}"))
+pub(crate) fn cgm_source(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    kind: &str,
+    tag: u32,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    cgm_source_key(ctx, kind, format_args!("{tag:06x}"))
 }
 
-pub(crate) fn cgm_source_key(kind: &str, key: impl std::fmt::Display) -> SourceObjectAssociation {
-    SourceObjectAssociation {
+pub(crate) fn cgm_source_key(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    kind: &str,
+    key: impl std::fmt::Display,
+) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
+    let object_id = resource::format_retained(ctx, format_args!("cgm-{kind}:{key}"),
+        "catia_cgm_source_object_id")?;
+    let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_cgm_source_object_id", 1, 1))?;
+    Ok(SourceObjectAssociation {
         format: cadmpeg_ir::codec_format!(crate::dialect::FORMAT),
-        object_id: cadmpeg_core::nonblank_literal!("cgm-{kind}:{key}"),
+        object_id,
         name: None,
         color: None,
         visible: None,
         layer: None,
         instance_path: Vec::new(),
-    }
+    })
 }
 
 pub(crate) fn annotate(
@@ -861,6 +873,23 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn cgm_source_object_identity_refuses_retained_limit() {
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::cgm_source(ctx, "surface", 0x1234)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_cgm_source_object_id"));
+        let source = crate::test_support::with_service_context(|ctx| {
+            super::cgm_source(ctx, "surface", 0x1234)
+        }).expect("service profile admits source identity");
+        assert_eq!(source.object_id.as_str(), "cgm-surface:001234");
+        let key = crate::test_support::with_service_context(|ctx| {
+            super::cgm_source_key(ctx, "frame", format_args!("{:010}", 23))
+        }).expect("service profile admits frame identity");
+        assert_eq!(key.object_id.as_str(), "cgm-frame:0000000023");
+    }
 
     #[test]
     fn container_report_losses_refuse_low_retained_and_collection_limits() {

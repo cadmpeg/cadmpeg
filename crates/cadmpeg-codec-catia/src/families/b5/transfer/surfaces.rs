@@ -759,7 +759,7 @@ pub(super) fn emit_surfaces(
         ir.model.surfaces.push(Surface {
             id: model_id,
             geometry: plan.geometry,
-            source_object: Some(cgm_source("surface", object_id)),
+            source_object: Some(cgm_source(admission.context(), "surface", object_id)?),
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
@@ -955,7 +955,7 @@ fn emit_extrusion_procedure(
                 id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
                     CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source(admission.context(), "curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
@@ -1003,7 +1003,7 @@ fn emit_extrusion_procedure(
                 id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
                     CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: curve,
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source(admission.context(), "curve", extrusion.directrix_object_id)?),
             });
         }
         super::ResolvedExtrusionDirectrix::Offset {
@@ -1030,7 +1030,7 @@ fn emit_extrusion_procedure(
                 id: crate::resource::copy_id(admission.context(), source_id.as_str(),
                     CurveId::mint, "catia_b5_extrusion_source_record_id")?,
                 geometry: source_curve,
-                source_object: Some(cgm_source("curve", source_object_id)),
+                source_object: Some(cgm_source(admission.context(), "curve", source_object_id)?),
             });
             annotate(
                 admission.context(),
@@ -1045,7 +1045,7 @@ fn emit_extrusion_procedure(
                 id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
                     CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
+                source_object: Some(cgm_source(admission.context(), "curve", extrusion.directrix_object_id)?),
             });
             let procedure_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),

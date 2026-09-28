@@ -359,7 +359,7 @@ pub(super) fn emit_edges(
         ir.model.curves.push(Curve {
             id: model_curve_id,
             geometry,
-            source_object: Some(cgm_source("edge", edge_id)),
+            source_object: Some(cgm_source(admission.context(), "edge", edge_id)?),
         });
         let procedural = if let Some(helix) = helix {
             Some((
