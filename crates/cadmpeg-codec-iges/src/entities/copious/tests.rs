@@ -90,6 +90,13 @@ fn assert_copious_retained_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn copious_identity_copies_refuse_retained_byte_limit() {
+    let bytes = copious_data_file(12, b"106,2,3,0,0,0,1,0,0,1,2,0;", "00000000");
+    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    assert_copious_retained_refusal(&bytes, "iges copious identity copy");
+}
+
+#[test]
 fn copious_projection_losses_refuse_slot_and_message_limits() {
     let bytes = copious_data_file(12, b"106,2,0;", "00000000");
     assert_copious_collection_refusal(&bytes, "iges entity loss slots");
