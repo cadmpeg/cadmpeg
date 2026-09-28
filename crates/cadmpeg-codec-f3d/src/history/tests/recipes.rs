@@ -1039,11 +1039,12 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     };
     assert_eq!(
         super::super::body_recipe_link_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             std::slice::from_ref(&recipe),
             std::slice::from_ref(&link),
             std::slice::from_ref(&body),
-        ),
+        ).unwrap(),
         Some(body.id.clone())
     );
 

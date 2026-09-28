@@ -2401,13 +2401,14 @@ fn bind_direct_body_recipe_body_selection(
                     return Ok(());
                 }
                 let Some(body) = direct_body_recipe_candidate(
+                    ctx,
                     operand,
                     construction_recipes,
                     persistent_design_links,
                     bodies,
                     regions,
                     shells,
-                ) else {
+                )? else {
                     return Ok(());
                 };
                 if selected.contains(&body) {
@@ -2470,13 +2471,14 @@ fn bind_direct_body_recipe_body_selection(
             return Ok(());
         }
         let Some(body) = direct_body_recipe_candidate(
+            ctx,
             operand,
             construction_recipes,
             persistent_design_links,
             bodies,
             regions,
             shells,
-        ) else {
+        )? else {
             return Ok(());
         };
         if rows.iter().any(|row: &BodyMember<_>| row.body() == &body) {
@@ -2502,100 +2504,127 @@ fn bind_direct_body_recipe_body_selection(
 }
 
 fn direct_body_recipe_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     construction_recipes: &[crate::records::recipes::ConstructionRecipe],
     persistent_design_links: &[crate::records::sketch_links::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
-) -> Option<cadmpeg_ir::ids::BodyId> {
+) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
     if let Some(body) = body_recipe_link_candidate(
+        ctx,
         operand,
         construction_recipes,
         persistent_design_links,
         bodies,
-    ) {
-        let candidate_bodies = body_recipe_face_body_candidates(operand, bodies, regions, shells);
-        if candidate_bodies.is_empty() || candidate_bodies.contains(&body) {
-            return Some(body);
+    )? {
+        let (any_candidate, contains_body) = body_recipe_face_body_candidates(
+            ctx, operand, &body, bodies, regions, shells)?;
+        if !any_candidate || contains_body {
+            return Ok(Some(body));
         }
-        return None;
+        return Ok(None);
     }
-    unique_external_body_candidate(operand, None, bodies, regions, shells)
+    Ok(unique_external_body_candidate(operand, None, bodies, regions, shells))
 }
 
 fn body_recipe_link_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     construction_recipes: &[crate::records::recipes::ConstructionRecipe],
     persistent_design_links: &[crate::records::sketch_links::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
-) -> Option<cadmpeg_ir::ids::BodyId> {
-    let stream = crate::ids::native_stream(&operand.id)?;
+) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+    let Some(stream) = crate::ids::native_stream(&operand.id) else { return Ok(None); };
     let mut matching_recipes = construction_recipes.iter().filter(|recipe| {
         recipe.id == operand.recipe_id
             && recipe.kind == crate::records::recipes::ConstructionRecipeKind::Body
             && crate::ids::native_stream(&recipe.id) == Some(stream)
     });
-    let recipe = matching_recipes.next()?;
+    let Some(recipe) = matching_recipes.next() else { return Ok(None); };
     if matching_recipes.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let design = recipe.design.as_ref()?;
+    let Some(design) = recipe.design.as_ref() else { return Ok(None); };
     let design_id = design.id.value.as_str();
-    let selector = i64::from(design.selector?.value);
-    let mut matching_bodies = Vec::new();
-    for link in
-        crate::records::sketch_links::current_persistent_design_links(persistent_design_links)
-            .into_values()
-            .filter(|link| {
-                link.design_id.as_str() == design_id && link.design_reference == selector
-            })
-    {
+    let Some(selector) = design.selector else { return Ok(None); };
+    let selector = i64::from(selector.value);
+    let mut matching_body: Option<&cadmpeg_ir::ids::BodyId> = None;
+    for (index, link) in persistent_design_links.iter().enumerate() {
+        ctx.charge_work(1, "resolve F3D persistent body link")?;
+        if link.design_id.as_str() != design_id || link.design_reference != selector {
+            continue;
+        }
+        ctx.charge_work(u64::try_from(persistent_design_links.len()).map_err(|_| {
+            ctx.refuse_codec_limit("resolve F3D persistent body link", 0, u64::MAX)
+        })?, "resolve F3D persistent body link")?;
+        let superseded = persistent_design_links.iter().enumerate().any(|(other_index, other)| {
+            other.target == link.target
+                && (other.ordinal > link.ordinal
+                    || (other.ordinal == link.ordinal && other_index < index))
+        });
+        if superseded { continue; }
         let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
             continue;
         };
-        if bodies.iter().any(|candidate| candidate.id == *body) && !matching_bodies.contains(body) {
-            matching_bodies.push(body.clone());
+        ctx.charge_work(u64::try_from(bodies.len()).map_err(|_| {
+            ctx.refuse_codec_limit("resolve F3D persistent body link", 0, u64::MAX)
+        })?, "resolve F3D persistent body link")?;
+        if bodies.iter().any(|candidate| candidate.id == *body) {
+            if matching_body.is_some_and(|existing| existing != body) {
+                return Ok(None);
+            }
+            matching_body = Some(body);
         }
     }
-    let [body] = matching_bodies.as_slice() else {
-        return None;
-    };
-    Some(body.clone())
+    let Some(body) = matching_body else { return Ok(None); };
+    Ok(Some(cadmpeg_ir::ids::BodyId::mint(copy_history_string(ctx,
+        body.as_str(), "copy F3D persistent body link identity")?)
+        .map_err(cadmpeg_core::CodecError::malformed)?))
 }
 
 fn body_recipe_face_body_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+    selected: &cadmpeg_ir::ids::BodyId,
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
-) -> Vec<cadmpeg_ir::ids::BodyId> {
-    let body_by_region = regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<std::collections::HashMap<_, _>>();
-    let body_by_face = shells
-        .iter()
-        .filter_map(|shell| {
-            let body = body_by_region.get(&shell.region)?;
-            Some(shell.faces().iter().map(move |face| (face, *body)))
-        })
-        .flatten()
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut candidates = Vec::new();
+) -> Result<(bool, bool), cadmpeg_core::CodecError> {
+    let mut any_candidate = false;
+    let mut contains_selected = false;
     for face in operand
         .references()
         .iter()
         .flat_map(|reference| &reference.candidate_faces)
     {
-        let Some(body) = body_by_face.get(face).copied() else {
-            continue;
-        };
-        if bodies.iter().any(|candidate| candidate.id == *body) && !candidates.contains(body) {
-            candidates.push(body.clone());
+        let mut mapped_body = None;
+        for shell in shells.iter().rev() {
+            ctx.charge_work(1, "resolve F3D body recipe face carrier")?;
+            ctx.charge_work(u64::try_from(shell.faces().len()).map_err(|_| {
+                ctx.refuse_codec_limit("resolve F3D body recipe face carrier", 0, u64::MAX)
+            })?, "resolve F3D body recipe face carrier")?;
+            if !shell.faces().contains(face) { continue; }
+            for region in regions.iter().rev() {
+                ctx.charge_work(1, "resolve F3D body recipe face carrier")?;
+                if region.id == shell.region {
+                    mapped_body = Some(&region.body);
+                    break;
+                }
+            }
+            if mapped_body.is_some() { break; }
+        }
+        let Some(body) = mapped_body else { continue; };
+        ctx.charge_work(u64::try_from(bodies.len()).map_err(|_| {
+            ctx.refuse_codec_limit("resolve F3D body recipe face carrier", 0, u64::MAX)
+        })?, "resolve F3D body recipe face carrier")?;
+        if bodies.iter().any(|candidate| candidate.id == *body) {
+            any_candidate = true;
+            contains_selected |= body == selected;
         }
     }
-    candidates
+    Ok((any_candidate, contains_selected))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
