@@ -538,10 +538,10 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    pub(super) fn supports(&self) -> Vec<(u32, u32, [FiniteReal; 2])> {
+    pub(super) fn supports(&self) -> &[(u32, u32, [FiniteReal; 2])] {
         match self {
-            Self::Intersection { supports, .. } => supports.to_vec(),
-            Self::SurfaceCurve { support, .. } => vec![*support],
+            Self::Intersection { supports, .. } => supports,
+            Self::SurfaceCurve { support, .. } => std::slice::from_ref(support),
             Self::Offset { source, .. } => source.supports(),
         }
     }
@@ -1132,12 +1132,13 @@ fn parse_from_records_with_class21(
                     continue;
                 }
                 let Some(extrusion) = parse_extrusion_surface_with_context(
+                    ctx,
                     record,
                     by_id,
                     &object_stream_pcurves,
                     &offset_constructions,
                     &extrusion_surfaces,
-                ) else {
+                )? else {
                     continue;
                 };
                 crate::resource::insert_btree_map(ctx, &mut extrusion_surfaces,
@@ -1152,7 +1153,7 @@ fn parse_from_records_with_class21(
     let mut extrusion_pcurves = HashSet::new();
     for extrusion in extrusion_surfaces.values() {
         for (_, pcurve, _) in extrusion.directrix.supports() {
-            crate::resource::insert_set(ctx, &mut extrusion_pcurves, pcurve,
+            crate::resource::insert_set(ctx, &mut extrusion_pcurves, *pcurve,
                 "catia_b5_extrusion_pcurve_ids")?;
         }
     }
@@ -1266,9 +1267,9 @@ fn parse_from_records_with_class21(
     let mut pcurves = BTreeMap::new();
     for record in records {
         let pcurve = match record.class {
-            0x18 => parse_line_pcurve(record),
-            0x19 => parse_circle_pcurve(record),
-            0x1a => parse_class_1a_pcurve(record),
+            0x18 => parse_line_pcurve(ctx, record)?,
+            0x19 => parse_circle_pcurve(ctx, record)?,
+            0x1a => parse_class_1a_pcurve(ctx, record)?,
             0x21 => parse_pcurve(ctx, record)?,
             _ => None,
         };
@@ -3819,59 +3820,60 @@ fn parse_extrusion_surface(
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
 ) -> Option<B5ExtrusionSurface> {
-    parse_extrusion_surface_with_context(
-        record,
-        records,
-        object_stream_pcurves,
-        &[],
-        &BTreeMap::new(),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        parse_extrusion_surface_with_context(ctx, record, records,
+            object_stream_pcurves, &[], &BTreeMap::new())
+    }).expect("service budget")
 }
 
 fn parse_extrusion_surface_with_context(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
-) -> Option<B5ExtrusionSurface> {
-    let carrier = extrusion_carrier(record)?;
+) -> Result<Option<B5ExtrusionSurface>, CodecError> {
+    let Some(carrier) = extrusion_carrier(record) else { return Ok(None) };
     let Some(active_bounds) = carrier.v_bounds else {
-        let directrix = parse_extrusion_directrix(
-            records.get(&carrier.directrix_id)?,
+        let Some(directrix_record) = records.get(&carrier.directrix_id) else { return Ok(None) };
+        let Some(directrix) = parse_extrusion_directrix(
+            ctx, directrix_record,
             records,
             object_stream_pcurves,
-        )?;
-        let parameter_bounds = contextual_offset_extrusion_bounds(
+        )? else { return Ok(None) };
+        let Some(parameter_bounds) = contextual_offset_extrusion_bounds(
             record.object_id,
             &carrier,
             &directrix,
             offset_constructions,
             extrusion_surfaces,
-        )?;
-        return Some(B5ExtrusionSurface {
+        ) else { return Ok(None) };
+        return Ok(Some(B5ExtrusionSurface {
             object_id: record.object_id,
             direction: carrier.direction,
             parameter_bounds,
             directrix,
-        });
+        }));
     };
     let active = active_bounds.endpoints();
     let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
-    let mut directrix = if terminal_span_chart {
+    let directrix = if terminal_span_chart {
         terminal_span_directrix(
             carrier.directrix_id,
             active_bounds,
             carrier.controls,
             object_stream_pcurves,
-        )?
+        )
     } else {
+        let Some(directrix_record) = records.get(&carrier.directrix_id) else { return Ok(None) };
         parse_extrusion_directrix(
-            records.get(&carrier.directrix_id)?,
+            ctx, directrix_record,
             records,
             object_stream_pcurves,
         )?
     };
+    let Some(mut directrix) = directrix else { return Ok(None) };
     let directrix_contains_active = active.into_iter().all(|value| {
         cadmpeg_ir::math::parameter_in_domain(
             value,
@@ -3881,14 +3883,14 @@ fn parse_extrusion_surface_with_context(
     });
     let translated_chart = carrier.controls == [0x05, 0x11];
     if translated_chart {
-        translated_directrix_span_count(
+        if translated_directrix_span_count(
             &directrix,
             active,
             carrier.controls,
             object_stream_pcurves,
-        )?;
+        ).is_none() { return Ok(None) }
         if !directrix.reorigin_parameter_range(active_bounds) {
-            return None;
+            return Ok(None);
         }
     } else if !directrix_contains_active {
         let source_range = directrix.parameter_range().endpoints();
@@ -3901,18 +3903,18 @@ fn parse_extrusion_surface_with_context(
         if !parameter_range_spans_agree(source_range, active)
             || !suffix_span.is_some_and(|span| parameter_spans_agree(span.get(), active_span))
         {
-            return None;
+            return Ok(None);
         }
         if !directrix.reorigin_parameter_range(active_bounds) {
-            return None;
+            return Ok(None);
         }
     }
-    Some(B5ExtrusionSurface {
+    Ok(Some(B5ExtrusionSurface {
         object_id: record.object_id,
         direction: carrier.direction,
         parameter_bounds: [carrier.u_bounds, active_bounds],
         directrix,
-    })
+    }))
 }
 
 fn contextual_offset_extrusion_bounds(
@@ -4097,16 +4099,18 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
 }
 
 fn parse_extrusion_directrix(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
-) -> Option<B5ExtrusionDirectrix> {
+) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
     if record.family == 0xb5 && record.class == 0x24 {
-        return parse_surface_curve_directrix(record, records, object_stream_pcurves);
+        return parse_surface_curve_directrix(ctx, record, records, object_stream_pcurves);
     }
     if record.family == 0xb5 && record.class == 0x14 {
-        return parse_offset_curve_directrix(record, records, object_stream_pcurves);
+        return parse_offset_curve_directrix(ctx, record, records, object_stream_pcurves);
     }
+    let parsed = (|| -> Option<_> {
     (record.family == 0xa8 && record.class == 0x25 && record.payload.first() == Some(&0x82))
         .then_some(())?;
     let mut position = 1;
@@ -4144,24 +4148,31 @@ fn parse_extrusion_directrix(
     }
     let first = records.get(&first_pcurve)?;
     let first_surface = pcurve_surface_reference(first)?;
-    let first_range = analytic_pcurve_range(first)?;
     let second = object_stream_pcurves.get(&second_pcurve)?;
-    Some(B5ExtrusionDirectrix::Intersection {
+    Some((first, first_surface, first_pcurve, second_pcurve, second.surface,
+        second.parameter_range, parameter_range, cache_fit_tolerance))
+    })();
+    let Some((first, first_surface, first_pcurve, second_pcurve, second_surface,
+        second_range, parameter_range, cache_fit_tolerance)) = parsed else { return Ok(None) };
+    let Some(first_range) = analytic_pcurve_range(ctx, first)? else { return Ok(None) };
+    Ok(Some(B5ExtrusionDirectrix::Intersection {
         object_id: record.object_id,
         supports: [
             (first_surface, first_pcurve, first_range),
-            (second.surface, second_pcurve, second.parameter_range),
+            (second_surface, second_pcurve, second_range),
         ],
         parameter_range,
         cache_fit_tolerance,
-    })
+    }))
 }
 
 fn parse_surface_curve_directrix(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
-) -> Option<B5ExtrusionDirectrix> {
+) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
+    let parsed = (|| -> Option<_> {
     (record.family == 0xb5 && record.class == 0x24 && record.payload.first() == Some(&0x81))
         .then_some(())?;
     let mut position = 1;
@@ -4176,18 +4187,19 @@ fn parse_surface_curve_directrix(
     if record.payload.get(position..) != Some(&[0x01]) || zero.get().to_bits() != 0.0f64.to_bits() {
         return None;
     }
-    let (surface, pcurve_range) = object_stream_pcurves
-        .get(&pcurve)
-        .map(|pcurve| (pcurve.surface, pcurve.parameter_range))
-        .or_else(|| {
-            let pcurve_record = records.get(&pcurve)?;
-            Some((
-                pcurve_surface_reference(pcurve_record)?,
-                analytic_pcurve_range(pcurve_record)?,
-            ))
-        })?;
+    Some((pcurve, start, end, interval))
+    })();
+    let Some((pcurve, start, end, interval)) = parsed else { return Ok(None) };
+    let (surface, pcurve_range) = if let Some(candidate) = object_stream_pcurves.get(&pcurve) {
+        (candidate.surface, candidate.parameter_range)
+    } else {
+        let Some(pcurve_record) = records.get(&pcurve) else { return Ok(None) };
+        let Some(surface) = pcurve_surface_reference(pcurve_record) else { return Ok(None) };
+        let Some(range) = analytic_pcurve_range(ctx, pcurve_record)? else { return Ok(None) };
+        (surface, range)
+    };
     let parameter_range = [start, end];
-    parameter_range
+    Ok(parameter_range
         .into_iter()
         .all(|value| {
             cadmpeg_ir::math::parameter_in_domain(
@@ -4200,14 +4212,16 @@ fn parse_surface_curve_directrix(
             object_id: record.object_id,
             support: (surface, pcurve, parameter_range),
             parameter_range: interval,
-        })
+        }))
 }
 
 fn parse_offset_curve_directrix(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     object_stream_pcurves: &BTreeMap<u32, B5ObjectStreamPcurve>,
-) -> Option<B5ExtrusionDirectrix> {
+) -> Result<Option<B5ExtrusionDirectrix>, CodecError> {
+    let parsed = (|| -> Option<_> {
     (record.family == 0xb5 && record.class == 0x14 && record.payload.first() == Some(&0x81))
         .then_some(())?;
     let mut position = 1;
@@ -4230,28 +4244,37 @@ fn parse_offset_curve_directrix(
     {
         return None;
     }
-    let source = parse_extrusion_directrix(source_record, records, object_stream_pcurves)?;
     let direction = ExactUnitVector3::new([x, y, z])?.into();
-    if position != record.payload.len()
-        || distance.get() == 0.0
-        || !source.supports().iter().any(|support| {
+    if position != record.payload.len() || distance.get() == 0.0 {
+        return None;
+    }
+    Some((source_record, source_parameter_range, distance, direction, parameter_range))
+    })();
+    let Some((source_record, source_parameter_range, distance, direction, parameter_range)) = parsed else {
+        return Ok(None);
+    };
+    let Some(source) = parse_extrusion_directrix(ctx, source_record, records,
+        object_stream_pcurves)? else { return Ok(None) };
+    if !source.supports().iter().any(|support| {
             support
                 .2
                 .into_iter()
                 .zip(source_parameter_range.endpoints())
                 .all(|(left, right)| left.get().to_bits() == right.to_bits())
-        })
-    {
-        return None;
+        }) {
+        return Ok(None);
     }
-    Some(B5ExtrusionDirectrix::Offset {
+    ctx.charge_collection_items(1, "catia_b5_offset_directrix_box")?;
+    ctx.charge_retained(std::mem::size_of::<B5ExtrusionDirectrix>() as u64,
+        "catia_b5_offset_directrix_box")?;
+    Ok(Some(B5ExtrusionDirectrix::Offset {
         object_id: record.object_id,
         source: Box::new(source),
         source_parameter_range,
         distance,
         direction,
         parameter_range,
-    })
+    }))
 }
 
 fn pcurve_surface_reference(record: &B5Record) -> Option<u32> {
@@ -4260,32 +4283,28 @@ fn pcurve_surface_reference(record: &B5Record) -> Option<u32> {
     wire::tokens::object_ref(&record.payload, &mut position, true)
 }
 
-fn analytic_pcurve_range(record: &B5Record) -> Option<[FiniteReal; 2]> {
-    match record.class {
-        0x18 => parse_line_pcurve(record).and_then(|pcurve| {
-            Some([
-                *pcurve.distinct_knots.first()?,
-                *pcurve.distinct_knots.last()?,
-            ])
-        }),
-        0x19 => parse_circle_pcurve(record).and_then(|pcurve| {
-            Some([
-                *pcurve.distinct_knots.first()?,
-                *pcurve.distinct_knots.last()?,
-            ])
-        }),
+fn analytic_pcurve_range(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<[FiniteReal; 2]>, CodecError> {
+    let pcurve = match record.class {
+        0x18 => parse_line_pcurve(ctx, record)?,
+        0x19 => parse_circle_pcurve(ctx, record)?,
         _ => None,
-    }
+    };
+    Ok(pcurve.and_then(|pcurve| Some([
+        *pcurve.distinct_knots.first()?,
+        *pcurve.distinct_knots.last()?,
+    ])))
 }
 
 fn parse_supported_surface(record: &B5Record) -> Option<B5SupportedSurface> {
     (record.family == 0xb5 && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
-    let references: [u32; 5] = (0..5)
-        .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let references = [
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+    ];
     (record.payload.len() == position.checked_add(22)?).then_some(())?;
     let parameters = match record.class {
         0x37 => {
@@ -4675,7 +4694,15 @@ fn parse_pcurve(
     })().transpose()
 }
 
-fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_circle_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
+    let Some((surface, center, radius, range, angles)) = parse_circle_pcurve_fields(record) else {
+        return Ok(None);
+    };
+    rational_arc_pcurve(ctx, record, surface, center, [1.0, 0.0], [0.0, 1.0],
+        radius, range, angles)
+}
+
+fn parse_circle_pcurve_fields(record: &B5Record) -> Option<(u32, [f64; 2], f64, [f64; 2], [f64; 2])> {
     if record.family != 0xb5 || record.class != 0x19 || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -4697,19 +4724,17 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let start_angle = phase + orientation * start / radius;
     let end_angle = phase + orientation * end / radius;
-    rational_arc_pcurve(
-        record,
-        surface,
-        center,
-        [1.0, 0.0],
-        [0.0, 1.0],
-        radius,
-        [start, end],
-        [start_angle, end_angle],
-    )
+    Some((surface, center, radius, [start, end], [start_angle, end_angle]))
 }
 
-fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_class_1a_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
+    let Some((surface, center, reference_x, reference_y, radius, range, angles)) =
+        parse_class_1a_pcurve_fields(record) else { return Ok(None) };
+    rational_arc_pcurve(ctx, record, surface, center, reference_x, reference_y,
+        radius, range, angles)
+}
+
+fn parse_class_1a_pcurve_fields(record: &B5Record) -> Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64; 2], [f64; 2])> {
     if record.family != 0xb5 || record.class != 0x1a || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -4743,20 +4768,13 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         orientation * std::f64::consts::TAU * start / period,
         orientation * std::f64::consts::TAU * end / period,
     ];
-    rational_arc_pcurve(
-        record,
-        surface,
-        center,
-        reference_x,
-        reference_y,
-        diameter * 0.5,
-        [start, end],
-        angles,
-    )
+    Some((surface, center, reference_x, reference_y, diameter * 0.5,
+        [start, end], angles))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn rational_arc_pcurve(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     surface: u32,
     center: [f64; 2],
@@ -4765,22 +4783,35 @@ fn rational_arc_pcurve(
     radius: f64,
     parameter_range: [f64; 2],
     angle_range: [f64; 2],
-) -> Option<B5Pcurve> {
+) -> Result<Option<B5Pcurve>, CodecError> {
     let [start, end] = parameter_range;
     let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
+        return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
-    let control_count = span_count.checked_mul(2)?.checked_add(1)?;
-    let mut control_points = Vec::with_capacity(control_count);
-    let mut weights = Vec::with_capacity(control_count);
-    let mut distinct_knots = vec![start];
-    let mut multiplicities = vec![3];
+    let Some(span_count) = std::num::NonZeroUsize::new(span_count as usize) else { return Ok(None) };
+    let span_count = span_count.get();
+    let Some(control_count) = span_count.checked_mul(2).and_then(|count| count.checked_add(1)) else {
+        return Ok(None);
+    };
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    let mut distinct_knots = Vec::new();
+    let mut multiplicities = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count,
+        "catia_b5_arc_control_points")?;
+    crate::resource::reserve_vec(ctx, &mut weights, control_count,
+        "catia_b5_arc_weights")?;
+    crate::resource::reserve_vec(ctx, &mut distinct_knots, span_count + 1,
+        "catia_b5_arc_distinct_knots")?;
+    crate::resource::reserve_vec(ctx, &mut multiplicities, span_count + 1,
+        "catia_b5_arc_multiplicities")?;
+    distinct_knots.push(start);
+    multiplicities.push(3);
     for span in 0..span_count {
         let fraction0 = span as f64 / span_count as f64;
         let fraction1 = (span + 1) as f64 / span_count as f64;
@@ -4789,7 +4820,7 @@ fn rational_arc_pcurve(
         let middle = (angle0 + angle1) * 0.5;
         let middle_weight = ((angle1 - angle0) * 0.5).cos();
         if middle_weight <= f64::EPSILON {
-            return None;
+            return Ok(None);
         }
         if span == 0 {
             control_points.push([
@@ -4818,7 +4849,10 @@ fn rational_arc_pcurve(
             let knot = if ordinary.is_finite() {
                 ordinary
             } else {
-                cadmpeg_ir::math::interpolate(start, end, fraction1)?.get()
+                let Some(knot) = cadmpeg_ir::math::interpolate(start, end, fraction1) else {
+                    return Ok(None);
+                };
+                knot.get()
             };
             distinct_knots.push(knot);
             multiplicities.push(2);
@@ -4826,19 +4860,16 @@ fn rational_arc_pcurve(
     }
     distinct_knots.push(end);
     multiplicities.push(3);
-    let distinct_knots = distinct_knots
-        .into_iter()
-        .map(FiniteReal::new)
-        .collect::<Option<Vec<_>>>()?;
-    let weights = weights
-        .into_iter()
-        .map(PositiveReal::new)
-        .collect::<Option<Vec<_>>>()?;
-    let control_points = control_points
-        .into_iter()
-        .map(FiniteVector::new)
-        .collect::<Option<Vec<_>>>()?;
-    Some(B5Pcurve {
+    let Some(distinct_knots) = crate::resource::collect_options(ctx,
+        distinct_knots.into_iter().map(FiniteReal::new),
+        "catia_b5_arc_finite_knots")? else { return Ok(None) };
+    let Some(weights) = crate::resource::collect_options(ctx,
+        weights.into_iter().map(PositiveReal::new),
+        "catia_b5_arc_positive_weights")? else { return Ok(None) };
+    let Some(control_points) = crate::resource::collect_options(ctx,
+        control_points.into_iter().map(FiniteVector::new),
+        "catia_b5_arc_finite_points")? else { return Ok(None) };
+    Ok(Some(B5Pcurve {
         object_id: record.object_id,
         surface,
         degree: 2,
@@ -4850,10 +4881,13 @@ fn rational_arc_pcurve(
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
-    })
+    }))
 }
 
 fn parse_opaque_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<B5OpaquePcurve>, CodecError> {
+    if parse_class_1a_pcurve(ctx, record)?.is_some() {
+        return Ok(None);
+    }
     let Some(surface) = parse_opaque_pcurve_surface(record) else { return Ok(None) };
     Ok(Some(B5OpaquePcurve {
         object_id: record.object_id,
@@ -4866,9 +4900,6 @@ fn parse_opaque_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Opt
 }
 
 fn parse_opaque_pcurve_surface(record: &B5Record) -> Option<u32> {
-    if parse_class_1a_pcurve(record).is_some() {
-        return None;
-    }
     if record.family != 0xb5 || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -5027,14 +5058,35 @@ fn circle_pcurves_from_frames(ctx: &DecodeContext<'_>, bytes: &[u8], frames: &[O
             payload: crate::resource::copy_retained_slice(ctx, &bytes[frame.start + 8..frame.end],
                 "catia_b5_circle_frame_payload")?,
         };
-        if let Some(pcurve) = parse_circle_pcurve(&record) {
+        if let Some(pcurve) = parse_circle_pcurve(ctx, &record)? {
             crate::resource::push(ctx, &mut pcurves, pcurve, "catia_b5_circle_frame_pcurves")?;
         }
     }
     Ok(pcurves)
 }
 
-fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_line_pcurve(ctx: &DecodeContext<'_>, record: &B5Record) -> Result<Option<B5Pcurve>, CodecError> {
+    let Some((surface, start, end, [Some(start_point), Some(end_point)])) =
+        parse_line_pcurve_fields(record) else { return Ok(None) };
+    Ok(Some(B5Pcurve {
+        object_id: record.object_id,
+        surface,
+        degree: 1,
+        distinct_knots: crate::resource::collect_vec(ctx, [start, end],
+            "catia_b5_line_pcurve_knots")?,
+        multiplicities: crate::resource::collect_vec(ctx, [2, 2],
+            "catia_b5_line_pcurve_multiplicities")?,
+        control_points: crate::resource::collect_vec(ctx, [start_point, end_point],
+            "catia_b5_line_pcurve_points")?,
+        weights: None,
+        parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
+    }))
+}
+
+fn parse_line_pcurve_fields(record: &B5Record) -> Option<(u32, FiniteReal, FiniteReal, [Option<FiniteVector<2>>; 2])> {
     if record.family != 0xb5 || record.class != 0x18 || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -5052,7 +5104,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
             (
                 start,
                 end,
-                vec![
+                [
                     FiniteVector::new([u + start.get() * du, v + start.get() * dv]),
                     FiniteVector::new([u + end.get() * du, v + end.get() * dv]),
                 ],
@@ -5063,7 +5115,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
             (
                 start,
                 end,
-                vec![
+                [
                     Some(FiniteVector::from([constant, start])),
                     Some(FiniteVector::from([constant, end])),
                 ],
@@ -5074,7 +5126,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
             (
                 start,
                 end,
-                vec![
+                [
                     Some(FiniteVector::from([start, constant])),
                     Some(FiniteVector::from([end, constant])),
                 ],
@@ -5085,20 +5137,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     if start >= end {
         return None;
     }
-    let control_points = control_points.into_iter().collect::<Option<Vec<_>>>()?;
-    Some(B5Pcurve {
-        object_id: record.object_id,
-        surface,
-        degree: 1,
-        distinct_knots: vec![start, end],
-        multiplicities: vec![2, 2],
-        control_points,
-        weights: None,
-        parameter_range: None,
-        parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None,
-        lifted_endpoints: None,
-    })
+    Some((surface, start, end, control_points))
 }
 
 #[cfg(test)]

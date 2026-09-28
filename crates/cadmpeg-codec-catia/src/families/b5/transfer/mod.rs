@@ -326,7 +326,7 @@ fn referenced_surface_ids(
                         .directrix
                         .supports()
                         .into_iter()
-                        .map(|(support, _, _)| support)
+                        .map(|(support, _, _)| *support)
                         .collect()
                 })
             })
