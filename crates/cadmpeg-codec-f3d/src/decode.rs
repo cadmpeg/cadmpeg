@@ -2819,6 +2819,7 @@ impl<'a> F3dDecodeSession<'a> {
         if let SessionPath::Geometry(geometry_path) = path {
             let geometry = &geometry_path.index;
             bind_mesh_feature_definitions(
+                ctx,
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
                 &geometry.mesh_projection,
@@ -3283,6 +3284,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                 )?;
                 bind_mesh_feature_definitions(
+                    ctx,
                     &mut self.ir.model.features,
                     &self.native.design_parameter_scopes,
                     &mesh_projection,
@@ -3919,7 +3921,28 @@ fn mesh_texture_assignments(
 
 /// Replace the native definition of each mesh-import scope with its exact
 /// tessellation identities.
+fn mesh_feature_tessellations<'a>(
+    ctx: &DecodeContext<'_>,
+    projection: &'a MeshProjection,
+    stream: &str,
+    record_index: u32,
+) -> Result<Option<&'a [String]>, CodecError> {
+    let operation = "look up F3D mesh feature tessellations";
+    let bytes = u64::try_from(stream.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut key = String::new();
+    key.try_reserve(stream.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    key.push_str(stream);
+    Ok(projection
+        .tessellations_by_scope
+        .get(&(key, record_index))
+        .map(Vec::as_slice))
+}
+
 fn bind_mesh_feature_definitions(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     projection: &MeshProjection,
@@ -3935,21 +3958,22 @@ fn bind_mesh_feature_definitions(
             continue;
         };
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let Some(tessellations) = projection
-            .tessellations_by_scope
-            .get(&(stream.to_owned(), scope.record_index))
-        else {
+        let Some(tessellations) = mesh_feature_tessellations(ctx, projection, stream, scope.record_index)? else {
             continue;
         };
         if tessellations.is_empty() {
             continue;
         }
+        let mut copies = Vec::new();
+        for tessellation in tessellations {
+            let copy = copy_decode_string(ctx, tessellation, "retain F3D mesh feature tessellation ID")?;
+            push_decode_item(ctx, &mut copies, copy, "collect F3D mesh feature tessellations")?;
+        }
         feature
             .evaluation
             .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::MeshImport {
-                    tessellations: tessellations
-                        .clone()
+                    tessellations: copies
                         .try_into()
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                 },
