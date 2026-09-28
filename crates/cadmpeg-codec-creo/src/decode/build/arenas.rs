@@ -569,7 +569,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     // Bespoke annotation: the arena payload drops the per-record source offset the
     // annotation needs, so the offset travels alongside each record in a tuple.
-    let pcurve_endpoints = pcurve_endpoint_records(scan);
+    let pcurve_endpoints = pcurve_endpoint_records(ctx, scan)?;
     for (record, offset) in &pcurve_endpoints {
         annotate(
             annotations,
@@ -580,10 +580,13 @@ pub(super) fn emit_geometry_arenas(
             Exactness::Derived,
         );
     }
-    let pcurve_endpoint_payload = pcurve_endpoints
-        .iter()
-        .map(|(record, _)| record)
-        .collect::<Vec<_>>();
+    let mut pcurve_endpoint_payload = Vec::new();
+    ctx.try_reserve_items(
+        &mut pcurve_endpoint_payload,
+        pcurve_endpoints.len(),
+        "creo native pcurve endpoint payload references",
+    )?;
+    pcurve_endpoint_payload.extend(pcurve_endpoints.iter().map(|(record, _)| record));
     store_arena(ctx, ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(scan);
     emit_uniform(
