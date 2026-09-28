@@ -921,8 +921,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         "1d8b67fc-c638-4af3-b13d-776dce4f472d",
     );
     let edge_identity =
-        crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-            .expect("fixed edge-treatment selection identity");
+        crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
+            .expect("fixed edge-treatment selection identity").unwrap();
     assert_eq!(edge_identity.local_id, 5890);
     assert!(!edge_identity.layout.is_compact());
     assert_eq!(edge_identity.layout.local_id_offset(), 24);
@@ -931,8 +931,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     edge_identity_bytes.remove(22);
     let compact_edge_identity =
-        crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-            .expect("compact fixed edge-treatment selection identity");
+        crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
+            .expect("compact fixed edge-treatment selection identity").unwrap();
     assert!(compact_edge_identity.layout.is_compact());
     assert_eq!(compact_edge_identity.local_id, 5890);
     assert_eq!(compact_edge_identity.layout.local_id_offset(), 23);
@@ -941,8 +941,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     edge_identity_bytes.remove(21);
     let shortest_edge_identity =
-        crate::design::decode::operands::parse_edge_identity_member(&edge_identity_bytes, 0)
-            .expect("short compact edge-treatment selection identity");
+        crate::design::decode::operands::parse_edge_identity_member(&ctx, &edge_identity_bytes, 0)
+            .expect("short compact edge-treatment selection identity").unwrap();
     assert!(shortest_edge_identity.layout.is_compact());
     assert_eq!(shortest_edge_identity.local_id, 5890);
     assert_eq!(shortest_edge_identity.layout.local_id_offset(), 22);
@@ -1309,6 +1309,32 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             ref profiles,
         }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
+}
+
+#[test]
+fn edge_identity_text_refuses_retained_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"278", 5887);
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.push(1);
+    bytes.extend_from_slice(&5890u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "ad3001bb-a0fc-44c2-9b7a-c8b8fb70bfc0");
+    lp_utf16(&mut bytes, "1d8b67fc-c638-4af3-b13d-776dce4f472d");
+
+    for limit in [35, 71] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::operands::parse_edge_identity_member(&ctx, &bytes, 0),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
 }
 
 fn counted_extrude_selection_fixture() -> (Vec<u8>, DesignParameterScope, DesignRecordHeader) {
