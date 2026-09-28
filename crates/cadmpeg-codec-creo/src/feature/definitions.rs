@@ -5627,7 +5627,7 @@ fn positional_relation_rows(
         if after_used <= after_id || after_used >= row_end {
             break;
         }
-        let mut suffixes = Vec::new();
+        let mut suffix = None;
         for suffix_start in after_used..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
             let (dimension_id, after_dimension) = psb::compact_int(payload, after_sign);
@@ -5637,21 +5637,25 @@ fn positional_relation_rows(
                 && after_type > after_dimension
                 && after_type == row_end
             {
-                suffixes.push((suffix_start, sign, dimension_id, relation_type));
+                if suffix.is_some() {
+                    suffix = None;
+                    break;
+                }
+                suffix = Some((suffix_start, sign, dimension_id, relation_type));
             }
         }
-        let [(suffix_start, sign, dimension_id, relation_type)] = suffixes.as_slice() else {
+        let Some((suffix_start, sign, dimension_id, relation_type)) = suffix else {
             break;
         };
-        let operands = payload[after_used..*suffix_start].to_vec();
+        let operands = payload[after_used..suffix_start].to_vec();
         rows.push(FeatureRelation {
             relation_id,
             used,
             operand_vectors: relation_operand_vectors(&operands),
             operands,
-            sign: *sign,
-            dimension_id: *dimension_id,
-            relation_type: *relation_type,
+            sign,
+            dimension_id,
+            relation_type,
             body: payload[cursor..row_end].to_vec(),
             offset: cursor,
         });
