@@ -2990,10 +2990,11 @@ pub(crate) fn scan_bytes<'a>(
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(ctx, &sections, &feature_rows)?;
     let feature_definitions = feature::definitions::bind_section_owners(
+        ctx,
         feature_definitions,
         &feature_operations,
         &section_owner_ranges,
-    );
+    )?;
     let mut relation_dimension_symbols = ExternalRelationSymbols::default();
     for dimension in feature_definitions
         .iter()
@@ -3612,14 +3613,18 @@ mod feature_row_definition_tests {
             Some(249)
         );
 
-        let definitions = feature::definitions::bind_section_owners(
-            definitions,
-            &[
-                operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
-                operation(248, None, 20),
-            ],
-            &section_owner_ranges(&[], &[row]),
-        );
+        let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+            feature::definitions::bind_section_owners(
+                ctx,
+                definitions,
+                &[
+                    operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+                    operation(248, None, 20),
+                ],
+                &section_owner_ranges(&[], &[row]),
+            )
+        })
+        .expect("service section owner binding");
 
         assert_eq!(definitions[0].identity.id(), 2);
         assert_eq!(definitions[0].identity.owner_feature_id(), Some(247));

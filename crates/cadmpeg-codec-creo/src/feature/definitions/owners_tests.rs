@@ -425,6 +425,57 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
 }
 
 #[test]
+fn section_owner_binding_refuses_each_collection_boundary() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut candidate = pending_replay(&[]);
+    candidate.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(249),
+        sketch_plane_flip: None,
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    });
+    let operations = [
+        operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+        operation(248, None, 20),
+    ];
+    let mut claimed = pending_replay(&[]);
+    claimed.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(247),
+        owner_feature_id: Some(247),
+    };
+    let arena = DecodeArena::new();
+    for (limit, definitions, operations, operation) in [
+        (0, vec![claimed], Vec::new(), "creo section claimed owner nodes"),
+        (0, vec![candidate.clone()], operations.to_vec(), "creo section plane count nodes"),
+        (1, vec![candidate.clone()], operations.to_vec(), "creo section ordered operations"),
+        (2, vec![candidate.clone()], operations.to_vec(), "creo section ordered operations"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::bind_section_owners(
+            &ctx,
+            definitions,
+            &operations,
+            &[(0, usize::MAX)],
+        )
+        .expect_err("collection limit refuses owner binding");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    let bound = crate::decode::with_test_decode_ctx(|ctx| {
+        super::bind_section_owners(ctx, vec![candidate], &operations, &[(0, usize::MAX)])
+    })
+    .expect("service section owner binding");
+    assert_eq!(bound[0].identity.owner_feature_id(), Some(247));
+}
+
+#[test]
 fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
     let mut definition = pending_replay(&[]);
     definition.section_3d = Some(FeatureSection3d {
@@ -441,7 +492,10 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         operation(248, None, 20),
     ];
 
-    let definition = bind_section_owners(vec![definition], &operations, &[(0, usize::MAX)])
+    let definition = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, vec![definition], &operations, &[(0, usize::MAX)])
+    })
+        .expect("service section owner binding")
         .pop()
         .expect("definition");
 
@@ -470,7 +524,10 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         operation(248, None, 20),
     ];
 
-    let definition = bind_section_owners(vec![definition], &operations, &[(0, usize::MAX)])
+    let definition = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, vec![definition], &operations, &[(0, usize::MAX)])
+    })
+        .expect("service section owner binding")
         .pop()
         .expect("definition");
 
@@ -579,7 +636,10 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
         operation(248, None, 20),
     ];
-    let repeated = bind_section_owners(repeated.into(), &consecutive, &[(0, usize::MAX)]);
+    let repeated = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, repeated.into(), &consecutive, &[(0, usize::MAX)])
+    })
+    .expect("service section owner binding");
     assert!(repeated
         .iter()
         .all(|definition| definition.identity.owner_feature_id().is_none()));
@@ -591,7 +651,10 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(900, None, 15),
         operation(248, None, 20),
     ];
-    let separated = bind_section_owners(vec![separated], &operations, &[(0, usize::MAX)])
+    let separated = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, vec![separated], &operations, &[(0, usize::MAX)])
+    })
+        .expect("service section owner binding")
         .pop()
         .expect("definition");
     assert_eq!(separated.identity.owner_feature_id(), None);
@@ -612,7 +675,10 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         offset: 0,
     });
     let definitions = [claimed, candidate];
-    let definitions = bind_section_owners(definitions.into(), &consecutive, &[(0, usize::MAX)]);
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, definitions.into(), &consecutive, &[(0, usize::MAX)])
+    })
+    .expect("service section owner binding");
     assert_eq!(definitions[1].identity.owner_feature_id(), None);
 }
 
@@ -637,7 +703,10 @@ fn section_owner_binding_does_not_cross_source_range_boundaries() {
         operation(248, None, 20),
     ];
 
-    let definitions = bind_section_owners(definitions.into(), &operations, &[(100, 150)]);
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+        bind_section_owners(ctx, definitions.into(), &operations, &[(100, 150)])
+    })
+    .expect("service section owner binding");
 
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(247));
     assert_eq!(definitions[1].identity.owner_feature_id(), None);

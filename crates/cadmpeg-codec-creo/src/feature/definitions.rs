@@ -7754,35 +7754,47 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
 /// plane remain unowned because the current regeneration snapshot is not
 /// established.
 pub(crate) fn bind_section_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     operations: &[FeatureOperation],
     section_ranges: &[(usize, usize)],
-) -> Vec<FeatureDefinition> {
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let in_section_range = |offset: usize| {
         section_ranges
             .iter()
             .any(|(start, end)| offset >= *start && offset < *end)
     };
-    let claimed_owner_ids = definitions
+    let mut claimed_owner_ids = BTreeSet::new();
+    for owner in definitions
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
-        .collect::<BTreeSet<_>>();
+    {
+        if !claimed_owner_ids.contains(&owner) {
+            ctx.charge_collection_items(1, "creo section claimed owner nodes")?;
+            claimed_owner_ids.insert(owner);
+        }
+    }
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
         (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
+        if !definitions_per_plane.contains_key(&plane_id) {
+            ctx.charge_collection_items(1, "creo section plane count nodes")?;
+        }
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
-    let mut ordered_operations = operations.iter().collect::<Vec<_>>();
+    let mut ordered_operations = crate::decode::collect_items(
+        ctx,
+        operations.iter(),
+        "creo section ordered operations",
+    )?;
     ordered_operations.sort_by_key(|operation| operation.offset);
-    definitions
-        .into_iter()
-        .map(|definition| {
+    for definition in &mut definitions {
             if definition.identity.owner_feature_id().is_some()
                 || !in_section_range(definition.offset)
             {
-                return definition;
+                continue;
             }
             let Some(plane_id) = definition
                 .section_3d
@@ -7790,15 +7802,15 @@ pub(crate) fn bind_section_owners(
                 .and_then(|section| section.sketch_plane_entity_id)
                 .filter(|plane_id| *plane_id >= 2)
             else {
-                return definition;
+                continue;
             };
             if definitions_per_plane.get(&plane_id) != Some(&1) {
-                return definition;
+                continue;
             }
             let owner_id = plane_id - 2;
             let datum_id = plane_id - 1;
             if claimed_owner_ids.contains(&owner_id) {
-                return definition;
+                continue;
             }
             let matches = ordered_operations
                 .windows(2)
@@ -7810,7 +7822,7 @@ pub(crate) fn bind_section_owners(
                 })
                 .count();
             if matches != 1 {
-                return definition;
+                continue;
             }
             let identity = match definition.identity.schema_id() {
                 Some(schema_id) => DefinitionIdentity::Parsed {
@@ -7822,12 +7834,9 @@ pub(crate) fn bind_section_owners(
                     owner_feature_id: owner_id,
                 },
             };
-            FeatureDefinition {
-                identity,
-                ..definition
-            }
-        })
-        .collect()
+            definition.identity = identity;
+    }
+    Ok(definitions)
 }
 
 #[cfg(test)]
