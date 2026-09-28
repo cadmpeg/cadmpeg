@@ -2124,7 +2124,7 @@ impl Display for HexDigest {
     }
 }
 
-fn render_retained_text(
+pub(super) fn render_retained_text(
     ctx: &DecodeContext<'_>,
     value: impl Display,
     operation: &'static str,

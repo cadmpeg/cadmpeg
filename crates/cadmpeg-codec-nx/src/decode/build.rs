@@ -3,7 +3,7 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
+    render_retained_text, retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
     unknown_stream_metadata,
 };
 use super::geometry_work::{
@@ -270,7 +270,11 @@ pub(super) fn try_decode_geometry(
             cadmpeg_core::decode::u64_from_index(body.as_str().len()),
             "nx emitted terminal body identity",
         )?;
-        emitted_body_ids.insert(body.clone());
+        emitted_body_ids.insert(copy_typed_id(
+            ctx,
+            body.as_str(),
+            "nx emitted terminal body identity",
+        )?);
     }
     let terminal_preselection = match terminal_lineage.as_ref() {
         Some(lineage) => crate::native::model::terminal_feature_body_ids(
@@ -334,7 +338,7 @@ pub(super) fn try_decode_geometry(
         if !stream.kind().is_parasolid() {
             continue;
         }
-        let scope = IdScope::stream(si);
+        let scope = IdScope::stream_charged(ctx, si)?;
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         support_uv_geometry_budget.clear_blend_frame_cache();
@@ -363,16 +367,35 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
-            )));
+            ctx.charge_collection_items(1, "nx carrier refusal losses")?;
+            carrier_refusals.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx carrier refusal losses", 0, 1)
+            })?;
+            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(render_retained_text(
+                ctx,
+                format_args!(
+                    "parasolid#{si} {} at byte {} states no carrier: {}",
+                    refusal.family, refusal.pos, refusal.error
+                ),
+                "nx carrier refusal loss text",
+            )?));
         }
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
-        let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
-        let source_stream =
-            StreamHandle::new(cadmpeg_ir::stream_name!("nx:").with_suffix(stream_name));
+        let stream_name = render_retained_text(
+            ctx,
+            format_args!("nx:parasolid#{si}:{}", stream.kind().label()),
+            "nx geometry stream name",
+        )?;
+        ctx.charge_collection_items(1, "nx geometry stream handles")?;
+        let source_stream = StreamHandle::new(
+            cadmpeg_ir::StreamName::try_from(stream_name)
+                .map_err(CodecError::malformed)?,
+        );
+        ctx.charge_collection_items(1, "nx completion streams")?;
+        completion_streams.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx completion streams", 0, 1)
+        })?;
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
@@ -397,20 +420,31 @@ pub(super) fn try_decode_geometry(
             .into_iter()
             .enumerate()
         {
-            let pid: PointId = scope.id(&cadmpeg_ir::identity_component!("pt"), pi);
-            let vid: VertexId = scope.id(&cadmpeg_ir::identity_component!("v"), pi);
+            let pid: PointId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("pt"), pi)?;
+            let vid: VertexId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("v"), pi)?;
             annotate_node(ctx, &mut annotations, pid.as_str(), &source_stream, node, "POINT")?;
             annotations
                 .derived(&pid, "position")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            ir.model
-                .points
-                .push(Point::new(pid.clone(), position, None));
+            ctx.charge_collection_items(1, "nx geometry points")?;
+            ir.model.points.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx geometry points", 0, 1)
+            })?;
+            ir.model.points.push(Point::new(
+                copy_typed_id(ctx, pid.as_str(), "nx geometry point identity")?,
+                position,
+                None,
+            ));
+            ctx.charge_collection_items(1, "nx geometry point vertices")?;
+            ir.model.vertices.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx geometry point vertices", 0, 1)
+            })?;
             ir.model.vertices.push(Vertex {
-                id: vid.clone(),
-                point: pid.clone(),
+                id: copy_typed_id(ctx, vid.as_str(), "nx point vertex identity")?,
+                point: copy_typed_id(ctx, pid.as_str(), "nx vertex point identity")?,
                 tolerance: None,
             });
+            ctx.charge_collection_items(1, "nx point node index")?;
             points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
@@ -434,7 +468,8 @@ pub(super) fn try_decode_geometry(
                 )
                 | SurfaceGeometry::Procedural { .. } => {}
             }
-            let id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("surf"), fi);
+            let id: SurfaceId =
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("surf"), fi)?;
             annotate_node(
                 ctx,
                 &mut annotations,
@@ -450,28 +485,39 @@ pub(super) fn try_decode_geometry(
             annotations
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.charge_collection_items(1, "nx geometry surfaces")?;
+            ir.model.surfaces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx geometry surfaces", 0, 1)
+            })?;
             ir.model.surfaces.push(Surface {
-                id: id.clone(),
+                id: copy_typed_id(ctx, id.as_str(), "nx geometry surface identity")?,
                 geometry,
                 source_object: None,
             });
+            ctx.charge_collection_items(1, "nx surface node index")?;
             surfaces_by_xmt.insert(node.xmt, id);
         }
         for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
-            let id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("nurbs-surf"), fi);
+            let id: SurfaceId =
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("nurbs-surf"), fi)?;
             annotations
                 .note(&id, &source_stream, surf.pos as u64)
                 .tag("B_SPLINE_SURFACE");
             annotations
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.charge_collection_items(1, "nx geometry surfaces")?;
+            ir.model.surfaces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx geometry surfaces", 0, 1)
+            })?;
             ir.model.surfaces.push(Surface {
-                id: id.clone(),
+                id: copy_typed_id(ctx, id.as_str(), "nx NURBS surface identity")?,
                 geometry: surf.geometry,
                 source_object: None,
             });
             if let Some(node) = graph.at_pos(surf.pos) {
+                ctx.charge_collection_items(1, "nx surface node index")?;
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
@@ -484,35 +530,48 @@ pub(super) fn try_decode_geometry(
             &adaptive_geometry_budget,
         )?;
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
-            let Some(support) = surfaces_by_xmt.get(&offset.state.support()).cloned() else {
+            let Some(support_ref) = surfaces_by_xmt.get(&offset.state.support()) else {
                 continue;
             };
+            let support: SurfaceId = copy_typed_id(ctx, support_ref.as_str(), "nx offset support")?;
             let procedural_id: ProceduralSurfaceId =
-                scope.id(&cadmpeg_ir::identity_component!("offset"), oi);
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset"), oi)?;
             let (surface_id, cache_fit_tolerance) =
                 if let Some((surface, fit_tolerance)) = saved_offset_carriers.get(&offset.xmt) {
-                    (surface.clone(), Some(*fit_tolerance))
+                    (
+                        copy_typed_id(ctx, surface.as_str(), "nx saved offset surface")?,
+                        Some(*fit_tolerance),
+                    )
                 } else {
                     let surface_id: SurfaceId =
-                        scope.id(&cadmpeg_ir::identity_component!("offset-surf"), oi);
+                        scope.id_charged(ctx, &cadmpeg_ir::identity_component!("offset-surf"), oi)?;
                     annotations
                         .note(&surface_id, &source_stream, offset.pos as u64)
                         .tag("OFFSET_SURF");
                     annotations
                         .derived(&surface_id, "geometry")
                         .map_err(cadmpeg_core::CodecError::malformed)?;
+                    ctx.charge_collection_items(1, "nx offset surfaces")?;
+                    ir.model.surfaces.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx offset surfaces", 0, 1)
+                    })?;
                     ir.model.surfaces.push(Surface {
-                        id: surface_id.clone(),
+                        id: copy_typed_id(ctx, surface_id.as_str(), "nx offset surface identity")?,
                         geometry: SurfaceGeometry::Procedural {
-                            construction: procedural_id.clone(),
+                            construction: copy_typed_id(
+                                ctx,
+                                procedural_id.as_str(),
+                                "nx offset construction identity",
+                            )?,
                             cache: None,
                         },
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Nx,
-                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                                "nx:s{si}:offset-surface-record#{}",
-                                offset.xmt
-                            ))
+                            object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
+                                ctx,
+                                format_args!("nx:s{si}:offset-surface-record#{}", offset.xmt),
+                                "nx offset source object identity",
+                            )?)
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "source object_id must not be empty",
@@ -553,37 +612,54 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
+            ctx.charge_collection_items(1, "nx offset constructions")?;
+            ir.model.procedural_surfaces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx offset constructions", 0, 1)
+            })?;
             let _attached = ir
                 .model
-                .add_procedural_surface(surface_id.clone(), procedural);
+                .add_procedural_surface(
+                    copy_typed_id(ctx, surface_id.as_str(), "nx offset construction owner")?,
+                    procedural,
+                );
 
+            ctx.charge_collection_items(1, "nx surface node index")?;
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
         }
 
         for (bi, blend) in view.blend_surfaces.iter().copied().enumerate() {
             let surface_id: SurfaceId =
-                scope.id(&cadmpeg_ir::identity_component!("blend-surf"), bi);
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend-surf"), bi)?;
             let procedural_id: ProceduralSurfaceId =
-                scope.id(&cadmpeg_ir::identity_component!("blend"), bi);
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("blend"), bi)?;
             annotations
                 .note(&surface_id, &source_stream, blend.pos as u64)
                 .tag("BLEND_SURF");
             annotations
                 .derived(&surface_id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.charge_collection_items(1, "nx blend surfaces")?;
+            ir.model.surfaces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx blend surfaces", 0, 1)
+            })?;
             ir.model.surfaces.push(Surface {
-                id: surface_id.clone(),
+                id: copy_typed_id(ctx, surface_id.as_str(), "nx blend surface identity")?,
                 geometry: SurfaceGeometry::Procedural {
-                    construction: procedural_id.clone(),
+                    construction: copy_typed_id(
+                        ctx,
+                        procedural_id.as_str(),
+                        "nx blend construction identity",
+                    )?,
                     cache: None,
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "nx:s{si}:blend-surface-record#{}",
-                        blend.xmt
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
+                        ctx,
+                        format_args!("nx:s{si}:blend-surface-record#{}", blend.xmt),
+                        "nx blend source object identity",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -601,8 +677,12 @@ pub(super) fn try_decode_geometry(
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural_index = ir.model.procedural_surfaces.len();
+            ctx.charge_collection_items(1, "nx blend constructions")?;
+            ir.model.procedural_surfaces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx blend constructions", 0, 1)
+            })?;
             let attached = ir.model.add_procedural_surface(
-                surface_id.clone(),
+                copy_typed_id(ctx, surface_id.as_str(), "nx blend construction owner")?,
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Blend(
@@ -623,28 +703,43 @@ pub(super) fn try_decode_geometry(
                 ),
             );
             if attached.is_ok() {
+                ctx.charge_collection_items(1, "nx pending blend supports")?;
+                pending_blend_supports.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx pending blend supports", 0, 1)
+                })?;
                 pending_blend_supports.push((
                     procedural_index,
                     blend.state.support_xmts(),
                     blend.state.offsets(),
                 ));
                 if blend.state.spine_xmt() > 1 {
+                    ctx.charge_collection_items(1, "nx pending blend spines")?;
+                    pending_blend_spines.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx pending blend spines", 0, 1)
+                    })?;
                     pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
                 }
             }
+            ctx.charge_collection_items(1, "nx surface node index")?;
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
         }
         for (procedural_index, support_xmts, offsets) in pending_blend_supports {
-            let supports = [0, 1].map(|side| {
+            let [first, second] = [0, 1].map(|side| {
                 surfaces_by_xmt
                     .get(&support_xmts[side])
-                    .cloned()
-                    .map(|surface| BlendSupport {
+                    .map(|surface| copy_typed_id::<SurfaceId>(
+                        ctx,
+                        surface.as_str(),
+                        "nx blend support identity",
+                    ))
+                    .transpose()
+                    .map(|surface| surface.map(|surface| BlendSupport {
                         surface,
                         reversed: offsets[side].is_sign_negative(),
-                    })
+                    }))
             });
+            let supports = [first?, second?];
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
@@ -673,7 +768,8 @@ pub(super) fn try_decode_geometry(
                 CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_)) => {}
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. }) => {}
             }
-            let id: CurveId = scope.id(&cadmpeg_ir::identity_component!("crv"), ci);
+            let id: CurveId =
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("crv"), ci)?;
             annotate_node(
                 ctx,
                 &mut annotations,
@@ -732,23 +828,23 @@ pub(super) fn try_decode_geometry(
                 pcurves_by_xmt.insert(node.xmt, id);
             }
         }
-        let intersection_scan = view.intersections.clone();
+        let intersection_scan = view.intersections.try_clone_for_decode(ctx)?;
         counts
             .intersection_rejections
             .extend(intersection_scan.rejected);
         let intersection_constructions = intersection_scan.constructions;
-        let charted_intersections: BTreeMap<_, _> = intersection_scan
-            .curves
-            .into_iter()
-            .map(|curve| (curve.xmt, curve))
-            .collect();
-        let uncharted_intersections: BTreeMap<_, _> = intersection_scan
-            .uncharted
-            .into_iter()
-            .map(|curve| (curve.xmt, curve))
-            .collect();
+        let mut charted_intersections = BTreeMap::new();
+        for curve in intersection_scan.curves {
+            ctx.charge_collection_items(1, "nx charted intersection index")?;
+            charted_intersections.insert(curve.xmt, curve);
+        }
+        let mut uncharted_intersections = BTreeMap::new();
+        for curve in intersection_scan.uncharted {
+            ctx.charge_collection_items(1, "nx uncharted intersection index")?;
+            uncharted_intersections.insert(curve.xmt, curve);
+        }
         let intersection_support_uv = {
-            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(&ir, ctx)?;
             intersection_constructions
                 .iter()
                 .map(
@@ -776,7 +872,10 @@ pub(super) fn try_decode_geometry(
                         )? {
                             for side in 0..2 {
                                 if support_uv[side].is_none() {
-                                    support_uv[side].clone_from(&ext_support_uv[side]);
+                                    support_uv[side] = ext_support_uv[side]
+                                        .as_ref()
+                                        .map(|lane| lane.clone_charged(ctx))
+                                        .transpose()?;
                                 }
                             }
                         }
@@ -785,6 +884,7 @@ pub(super) fn try_decode_geometry(
                 )
                 .try_fold(BTreeMap::new(), |mut values, admitted| {
                     if let Some((xmt, support_uv)) = admitted? {
+                        ctx.charge_collection_items(1, "nx intersection support UV index")?;
                         values.insert(xmt, support_uv);
                     }
                     Ok::<_, cadmpeg_core::CodecError>(values)
@@ -792,44 +892,75 @@ pub(super) fn try_decode_geometry(
         };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id: CurveId =
-                scope.id(&cadmpeg_ir::identity_component!("intersection-crv"), ci);
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("intersection-crv"), ci)?;
             let procedural_id: ProceduralCurveId =
-                scope.id(&cadmpeg_ir::identity_component!("intersection"), ci);
-            let unknown_id: UnknownId =
-                IdScope::container().id(&cadmpeg_ir::identity_component!("parasolid"), si);
+                scope.id_charged(ctx, &cadmpeg_ir::identity_component!("intersection"), ci)?;
+            let unknown_id: UnknownId = IdScope::container().id_charged(
+                ctx,
+                &cadmpeg_ir::identity_component!("parasolid"),
+                si,
+            )?;
             let charted = charted_intersections.get(&construction.xmt);
-            let uncharted = uncharted_intersections
-                .get(&construction.xmt)
-                .and_then(|uncharted| {
-                    let supports = uncharted
-                        .supports
-                        .references()
-                        .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
-                    let [Some(first), Some(second)] = supports else {
-                        return None;
-                    };
+            let uncharted = if let Some(uncharted) = uncharted_intersections.get(&construction.xmt) {
+                let [first, second] = uncharted
+                    .supports
+                    .references()
+                    .map(|xmt| surfaces_by_xmt.get(&u32::from(xmt)));
+                if let [Some(first), Some(second)] = [first, second] {
                     cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
-                        [first, second],
+                        [
+                            copy_typed_id(ctx, first.as_str(), "nx uncharted first support")?,
+                            copy_typed_id(ctx, second.as_str(), "nx uncharted second support")?,
+                        ],
                         uncharted.endpoints,
                         uncharted.tolerance.into(),
                     )
                     .ok()
-                });
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             if let Some(charted) = charted {
                 if let Some(support_uv) = intersection_support_uv.get(&construction.xmt) {
                     for (side, lane) in support_uv.iter().enumerate() {
                         if lane.is_some() {
-                            validated_support_uv_lanes.insert((procedural_id.clone(), side));
+                            ctx.charge_collection_items(1, "nx validated support UV lanes")?;
+                            validated_support_uv_lanes.insert((
+                                copy_typed_id(
+                                    ctx,
+                                    procedural_id.as_str(),
+                                    "nx validated support UV construction",
+                                )?,
+                                side,
+                            ));
                         }
                     }
                 }
+                let [value_first, value_second] = [0, 1].map(|side| {
+                    charted.support_uv[side]
+                        .as_ref()
+                        .map(|lane| lane.clone_charged(ctx))
+                        .transpose()
+                });
+                let [ext_first, ext_second] = [0, 1].map(|side| {
+                    charted.ext_support_uv[side]
+                        .as_ref()
+                        .map(|lane| lane.clone_charged(ctx))
+                        .transpose()
+                });
+                ctx.charge_collection_items(1, "nx pending EXT11 support UV")?;
+                pending_ext11_support_uv.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx pending EXT11 support UV", 0, 1)
+                })?;
                 pending_ext11_support_uv.push((
-                    procedural_id.clone(),
-                    charted.samples.clone(),
+                    copy_typed_id(ctx, procedural_id.as_str(), "nx pending EXT11 construction")?,
+                    charted.samples.clone_charged(ctx)?,
                     charted.fit_tolerance.get(),
                     SerializedSupportUv {
-                        values: charted.support_uv.clone(),
-                        ext11: charted.ext_support_uv.clone(),
+                        values: [value_first?, value_second?],
+                        ext11: [ext_first?, ext_second?],
                     },
                 ));
             }
@@ -843,8 +974,12 @@ pub(super) fn try_decode_geometry(
             } else {
                 annotations.exactness(&curve_id, Exactness::Unknown);
             }
+            ctx.charge_collection_items(1, "nx intersection curves")?;
+            ir.model.curves.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx intersection curves", 0, 1)
+            })?;
             ir.model.curves.push(Curve {
-                id: curve_id.clone(),
+                id: copy_typed_id(ctx, curve_id.as_str(), "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         NurbsCurve::from_lanes(
@@ -858,20 +993,29 @@ pub(super) fn try_decode_geometry(
                     ))
                 } else if uncharted.is_some() {
                     CurveGeometry::Procedural {
-                        construction: procedural_id.clone(),
+                        construction: copy_typed_id(
+                            ctx,
+                            procedural_id.as_str(),
+                            "nx intersection construction identity",
+                        )?,
                         cache: None,
                     }
                 } else {
                     CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
-                        record: Some(unknown_id.clone()),
+                        record: Some(copy_typed_id(
+                            ctx,
+                            unknown_id.as_str(),
+                            "nx unknown intersection record",
+                        )?),
                     })
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "nx:s{si}:intersection-record#{}",
-                        construction.xmt
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
+                        ctx,
+                        format_args!("nx:s{si}:intersection-record#{}", construction.xmt),
+                        "nx intersection source object identity",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
