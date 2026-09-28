@@ -1559,6 +1559,138 @@ fn used_brep_vertices(
     Ok(used_vertices)
 }
 
+fn brep_set_at<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    map: &'a mut BTreeMap<u32, BTreeSet<u32>>,
+    key: u32,
+    operation: &'static str,
+) -> Result<&'a mut BTreeSet<u32>, cadmpeg_core::CodecError> {
+    Ok(match map.entry(key) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, operation)?;
+            entry.insert(BTreeSet::new())
+        }
+    })
+}
+
+fn insert_brep_set_node(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    set: &mut BTreeSet<u32>,
+    value: u32,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !set.contains(&value) {
+        ctx.charge_collection_items(1, operation)?;
+        set.insert(value);
+    }
+    Ok(())
+}
+
+struct BrepComponentTopology {
+    component_face_curves: BTreeSet<u32>,
+    wire_curves: BTreeSet<u32>,
+    face_adjacency: BTreeMap<u32, BTreeSet<u32>>,
+    face_vertices: BTreeMap<u32, BTreeSet<u32>>,
+}
+
+impl BrepComponentTopology {
+    fn from_component(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        component_curves: &BTreeSet<u32>,
+        face_curves: &BTreeSet<u32>,
+        faces: &[u32],
+        eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
+        edge_vertices: &BTreeMap<u32, [u32; 2]>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut component_face_curves = BTreeSet::new();
+        for curve_id in component_curves.intersection(face_curves) {
+            ctx.charge_collection_items(1, "creo B-rep component face curve nodes")?;
+            component_face_curves.insert(*curve_id);
+        }
+        let mut wire_curves = BTreeSet::new();
+        for curve_id in component_curves.difference(face_curves) {
+            ctx.charge_collection_items(1, "creo B-rep component wire curve nodes")?;
+            wire_curves.insert(*curve_id);
+        }
+        let mut face_adjacency = BTreeMap::new();
+        let mut face_vertices = BTreeMap::new();
+        let mut faces_by_curve = BTreeMap::new();
+        let mut faces_by_vertex = BTreeMap::new();
+        for face_id in faces {
+            brep_set_at(ctx, &mut face_adjacency, *face_id, "creo B-rep adjacency face nodes")?;
+            let vertices =
+                brep_set_at(ctx, &mut face_vertices, *face_id, "creo B-rep face vertex map nodes")?;
+            for native_loop in &eligible_faces[face_id] {
+                for half_edge in &native_loop.half_edges {
+                    let curve_faces = brep_set_at(
+                        ctx,
+                        &mut faces_by_curve,
+                        half_edge.curve_id,
+                        "creo B-rep curve incidence map nodes",
+                    )?;
+                    insert_brep_set_node(
+                        ctx,
+                        curve_faces,
+                        *face_id,
+                        "creo B-rep curve incident face nodes",
+                    )?;
+                    let [start, end] = edge_vertices[&half_edge.curve_id];
+                    for vertex_id in [start, end] {
+                        insert_brep_set_node(
+                            ctx,
+                            vertices,
+                            vertex_id,
+                            "creo B-rep face vertex nodes",
+                        )?;
+                        let vertex_faces = brep_set_at(
+                            ctx,
+                            &mut faces_by_vertex,
+                            vertex_id,
+                            "creo B-rep vertex incidence map nodes",
+                        )?;
+                        insert_brep_set_node(
+                            ctx,
+                            vertex_faces,
+                            *face_id,
+                            "creo B-rep vertex incident face nodes",
+                        )?;
+                    }
+                }
+            }
+        }
+        for incident_faces in faces_by_curve.values().chain(faces_by_vertex.values()) {
+            for (index, first) in incident_faces.iter().enumerate() {
+                for second in incident_faces.iter().skip(index + 1) {
+                    insert_brep_set_node(
+                        ctx,
+                        brep_set_at(
+                            ctx,
+                            &mut face_adjacency,
+                            *first,
+                            "creo B-rep adjacency face nodes",
+                        )?,
+                        *second,
+                        "creo B-rep adjacency neighbour nodes",
+                    )?;
+                    insert_brep_set_node(
+                        ctx,
+                        brep_set_at(
+                            ctx,
+                            &mut face_adjacency,
+                            *second,
+                            "creo B-rep adjacency face nodes",
+                        )?,
+                        *first,
+                        "creo B-rep adjacency neighbour nodes",
+                    )?;
+                }
+            }
+        }
+        Ok(Self { component_face_curves, wire_curves, face_adjacency, face_vertices })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -2086,14 +2218,19 @@ pub(in super::super) fn transfer_native_brep(
         ] {
             annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
         }
-        let component_face_curves = component_curves
-            .intersection(&face_curves)
-            .copied()
-            .collect::<BTreeSet<_>>();
-        let wire_curves = component_curves
-            .difference(&face_curves)
-            .copied()
-            .collect::<BTreeSet<_>>();
+        let BrepComponentTopology {
+            component_face_curves,
+            wire_curves,
+            face_adjacency,
+            face_vertices,
+        } = BrepComponentTopology::from_component(
+            ctx,
+            component_curves,
+            &face_curves,
+            faces,
+            &eligible_faces,
+            &edge_vertices,
+        )?;
         let closed = component_is_closed(
             &component_face_curves,
             &emitted_half_edges,
@@ -2101,41 +2238,6 @@ pub(in super::super) fn transfer_native_brep(
             faces,
         );
 
-        let mut face_adjacency = faces
-            .iter()
-            .copied()
-            .map(|face_id| (face_id, BTreeSet::new()))
-            .collect::<BTreeMap<_, _>>();
-        let mut face_vertices = BTreeMap::<u32, BTreeSet<u32>>::new();
-        let mut faces_by_curve = BTreeMap::<u32, BTreeSet<u32>>::new();
-        let mut faces_by_vertex = BTreeMap::<u32, BTreeSet<u32>>::new();
-        for face_id in faces {
-            let vertices = face_vertices.entry(*face_id).or_default();
-            for native_loop in &eligible_faces[face_id] {
-                for half_edge in &native_loop.half_edges {
-                    faces_by_curve
-                        .entry(half_edge.curve_id)
-                        .or_default()
-                        .insert(*face_id);
-                    let [start, end] = edge_vertices[&half_edge.curve_id];
-                    vertices.extend([start, end]);
-                    faces_by_vertex.entry(start).or_default().insert(*face_id);
-                    faces_by_vertex.entry(end).or_default().insert(*face_id);
-                }
-            }
-        }
-        for incident_faces in faces_by_curve.values().chain(faces_by_vertex.values()) {
-            let incident_faces = incident_faces.iter().copied().collect::<Vec<_>>();
-            for (index, first) in incident_faces.iter().enumerate() {
-                face_adjacency
-                    .entry(*first)
-                    .or_default()
-                    .extend(incident_faces.iter().skip(index + 1).copied());
-                for second in incident_faces.iter().skip(index + 1) {
-                    face_adjacency.entry(*second).or_default().insert(*first);
-                }
-            }
-        }
         let shell_specs = split_neutral_component_shells(
             ctx,
             faces,

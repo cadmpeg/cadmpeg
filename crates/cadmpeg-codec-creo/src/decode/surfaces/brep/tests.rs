@@ -25,6 +25,7 @@ use super::{
 mod eligible_index;
 mod body_index;
 mod split_shells;
+mod component_topology;
 
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
