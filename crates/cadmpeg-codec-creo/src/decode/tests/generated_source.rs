@@ -1731,12 +1731,14 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = resolved_sketch_profiles(
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| resolved_sketch_profiles(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id,
         1,
-    )
+    ))
+    .expect("resource admission")
     .expect("one circle profile");
     assert_eq!(
         profiles,
