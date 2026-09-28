@@ -1482,11 +1482,13 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         .into_iter()
         .filter_map(|(surface_id, planes)| agreed_plane(&planes).map(|plane| (surface_id, plane)))
         .collect::<BTreeMap<_, _>>();
-    let frame_bound_outlines = crate::surface::frame_bound_outline_planes(
-        &scan.planes.envelopes,
-        &scan.planes.local_systems,
-    )
-    .into_iter()
+    let frame_bound_outlines = scan
+    .planes
+    .envelopes
+    .iter()
+    .filter_map(|record| {
+        crate::surface::frame_bound_outline_plane(record, &scan.planes.local_systems)
+    })
     .fold(
         BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new(),
         |mut outlines, outline| {

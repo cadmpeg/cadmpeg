@@ -2728,10 +2728,10 @@ pub(crate) fn positional_frame_planes(
 /// Place axis-aligned plane outlines whose support frame selects one proven
 /// held coordinate even when other outline-coordinate relations are unresolved.
 #[must_use]
-pub(crate) fn frame_bound_outline_planes(
-    envelopes: &[PlaneEnvelopeRecord],
+pub(crate) fn frame_bound_outline_plane(
+    record: &PlaneEnvelopeRecord,
     frames: &[PlaneLocalSystem],
-) -> Vec<OutlinePlane> {
+) -> Option<OutlinePlane> {
     let vectors_agree = |first: UnitVector3, second: UnitVector3| {
         let first: [f64; 3] = Vector3::from(first).into();
         let second: [f64; 3] = Vector3::from(second).into();
@@ -2739,66 +2739,53 @@ pub(crate) fn frame_bound_outline_planes(
             (first - second).abs() <= EPS_FRAME_AGREEMENT * first.abs().max(second.abs()).max(1.0)
         })
     };
-    let mut result = Vec::new();
-    for record in envelopes {
-        let support_frames = frames
-            .iter()
-            .filter(|frame| frame.surface_id == record.surface_id)
-            .filter_map(|frame| {
-                let frame = frame.frame();
-                Some((frame.normal?, frame.u_axis?))
-            })
-            .collect::<Vec<_>>();
-        let Some(&(normal, u_axis)) = support_frames.first() else {
-            continue;
-        };
-        if support_frames
-            .iter()
-            .any(|(candidate_normal, candidate_u_axis)| {
-                !vectors_agree(normal, *candidate_normal)
-                    || !vectors_agree(u_axis, *candidate_u_axis)
-            })
-        {
-            continue;
-        }
-        let normal_components: [f64; 3] = Vector3::from(normal).into();
-        let axes = normal_components
-            .iter()
-            .enumerate()
-            .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis))
-            .collect::<Vec<_>>();
-        let [axis] = axes.as_slice() else {
-            continue;
-        };
-        let shortened_held_coordinate = record.scalar_tokens.len() == 10
-            && record.scalar_tokens[..8]
-                .iter()
-                .all(|token| !token.is_empty())
-            && record.scalar_tokens[8..].iter().all(Vec::is_empty)
-            && !record.scalar_tokens[4 + *axis].is_empty()
-            && record.scalar_tokens[4 + *axis] == record.scalar_tokens[7];
-        if record.corner_coordinate_equal[*axis] != Some(true) && !shortened_held_coordinate {
-            continue;
-        }
-        let corners = match &record.envelope {
-            PlaneEnvelope::Standard { corners_3d, .. }
-            | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
-        };
-        let Some(coordinate) = corners[0][*axis] else {
-            continue;
-        };
-        let mut origin = [0.0; 3];
-        origin[*axis] = coordinate;
-        result.push(OutlinePlane {
-            surface_id: record.surface_id,
-            origin,
-            normal,
-            u_axis,
-            offset: record.offset,
+    let mut support_frames = frames
+        .iter()
+        .filter(|frame| frame.surface_id == record.surface_id)
+        .filter_map(|frame| {
+            let frame = frame.frame();
+            Some((frame.normal?, frame.u_axis?))
         });
+    let (normal, u_axis) = support_frames.next()?;
+    if support_frames.any(|(candidate_normal, candidate_u_axis)| {
+            !vectors_agree(normal, candidate_normal)
+                || !vectors_agree(u_axis, candidate_u_axis)
+    }) {
+        return None;
     }
-    result.sort_by_key(|plane| plane.offset);
-    result
+    let normal_components: [f64; 3] = Vector3::from(normal).into();
+    let mut axes = normal_components
+        .iter()
+        .enumerate()
+        .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis));
+    let axis = axes.next()?;
+    if axes.next().is_some() {
+        return None;
+    }
+    let shortened_held_coordinate = record.scalar_tokens.len() == 10
+        && record.scalar_tokens[..8]
+            .iter()
+            .all(|token| !token.is_empty())
+        && record.scalar_tokens[8..].iter().all(Vec::is_empty)
+        && !record.scalar_tokens[4 + axis].is_empty()
+        && record.scalar_tokens[4 + axis] == record.scalar_tokens[7];
+    if record.corner_coordinate_equal[axis] != Some(true) && !shortened_held_coordinate {
+        return None;
+    }
+    let corners = match &record.envelope {
+        PlaneEnvelope::Standard { corners_3d, .. }
+        | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+    };
+    let coordinate = corners[0][axis]?;
+    let mut origin = [0.0; 3];
+    origin[axis] = coordinate;
+    Some(OutlinePlane {
+        surface_id: record.surface_id,
+        origin,
+        normal,
+        u_axis,
+        offset: record.offset,
+    })
 }
 
 /// Derive outline plane equations and retain complete support-frame directions
@@ -2809,7 +2796,14 @@ pub(crate) fn placed_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
 ) -> Result<Vec<OutlinePlane>, cadmpeg_core::CodecError> {
-    let frame_bound = frame_bound_outline_planes(envelopes, frames);
+    let mut frame_bound = Vec::new();
+    for record in envelopes {
+        if let Some(plane) = frame_bound_outline_plane(record, frames) {
+            ctx.try_reserve_items(&mut frame_bound, 1, "creo frame-bound outline planes")?;
+            frame_bound.push(plane);
+        }
+    }
+    frame_bound.sort_by_key(|plane| plane.offset);
     let mut frame_bound_ids = BTreeSet::new();
     for plane in &frame_bound {
         if !frame_bound_ids.contains(&plane.surface_id) {
