@@ -11,6 +11,7 @@ mod draft;
 mod edge_operands;
 mod feature_outputs;
 mod feature_input_limits;
+mod vertex_recipe_limits;
 mod face_boundaries;
 mod hole;
 mod mirror;

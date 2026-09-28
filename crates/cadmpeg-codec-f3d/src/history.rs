@@ -3381,24 +3381,21 @@ fn project_input_members<T: Eq + std::hash::Hash>(
 /// Resolve persistent vertex recipes in the last history-bearing feature state
 /// that precedes their owning construction in authored timeline order.
 pub(crate) fn bind_vertex_recipe_history(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source_ordinals =
         crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
-    let input_states = scopes
-        .iter()
-        .filter(|scope| {
-            matches!(
-                scope.kind(),
-                crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                    | crate::records::feature::scope::DesignFeatureKind::WorkPoint
-            )
-        })
-        .filter_map(|scope| {
+    let mut input_states = HashMap::new();
+    for scope in scopes.iter().filter(|scope| {
+        matches!(scope.kind(),
+            crate::records::feature::scope::DesignFeatureKind::WorkPlane
+                | crate::records::feature::scope::DesignFeatureKind::WorkPoint)
+    }) {
             let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-            let ordinal = *source_ordinals.get(&(stream, scope.record_index))?;
+            let Some(&ordinal) = source_ordinals.get(&(stream, scope.record_index)) else { continue; };
             let mut predecessors = scopes.iter().filter_map(|candidate| {
                 let candidate_stream =
                     crate::ids::native_stream(&candidate.id).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -3407,7 +3404,7 @@ pub(crate) fn bind_vertex_recipe_history(
                 (candidate_stream == stream && candidate_ordinal < ordinal)
                     .then_some((candidate_ordinal, candidate.history_state_id()?))
             });
-            let predecessor = predecessors.next()?;
+            let Some(predecessor) = predecessors.next() else { continue; };
             let predecessor = predecessors.fold(predecessor, |latest, candidate| {
                 if candidate.0 > latest.0 {
                     candidate
@@ -3415,14 +3412,20 @@ pub(crate) fn bind_vertex_recipe_history(
                     latest
                 }
             });
-            Some((scope.id.clone(), predecessor.1))
-        })
-        .collect::<HashMap<_, _>>();
+            let id = copy_history_string(ctx, &scope.id,
+                "copy F3D vertex recipe scope identity")?;
+            if !input_states.contains_key(&id) {
+                ctx.charge_collection_items(1, "index F3D vertex recipe input states")?;
+                input_states.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index F3D vertex recipe input states", 0, 1))?;
+            }
+            input_states.insert(id, predecessor.1);
+    }
 
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint
     }) {
-        let scope_id = scope.id.clone();
+        let state_id = input_states.get(&scope.id).copied();
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
@@ -3433,7 +3436,7 @@ pub(crate) fn bind_vertex_recipe_history(
         );
         for recipe in construction.rule.vertex_recipes_mut() {
             recipe.resolution = None;
-            let Some(state_id) = input_states.get(&scope_id).copied() else {
+            let Some(state_id) = state_id else {
                 continue;
             };
             let Some((_, state)) = unique_history_state(histories, state_id) else {
@@ -3442,7 +3445,7 @@ pub(crate) fn bind_vertex_recipe_history(
             let Some(topology) = state.topology() else {
                 continue;
             };
-            let Some((vertex, position)) = vertex_recipe_candidate(recipe, topology) else {
+            let Some((vertex, position)) = vertex_recipe_candidate(ctx, recipe, topology)? else {
                 continue;
             };
             if !point_matches(position, solved_position) {
@@ -3458,12 +3461,12 @@ pub(crate) fn bind_vertex_recipe_history(
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
     }) {
         let transform = scope.work_plane_transform();
-        let scope_id = scope.id.clone();
+        let state_id = input_states.get(&scope.id).copied();
         let Some(construction) = scope.work_plane_construction_mut() else {
             continue;
         };
         construction.clear_resolution();
-        let Some(state_id) = input_states.get(&scope_id).copied() else {
+        let Some(state_id) = state_id else {
             continue;
         };
         let Some((_, state)) = unique_history_state(histories, state_id) else {
@@ -3472,19 +3475,15 @@ pub(crate) fn bind_vertex_recipe_history(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let candidates = construction
-            .inputs()
-            .iter()
-            .map(|recipe| vertex_recipe_candidate(recipe, topology))
-            .collect::<Option<Vec<_>>>();
-        let Some(candidates) = candidates else {
+        let [first, second, third] = construction.inputs();
+        let (Some(first), Some(second), Some(third)) = (
+            vertex_recipe_candidate(ctx, first, topology)?,
+            vertex_recipe_candidate(ctx, second, topology)?,
+            vertex_recipe_candidate(ctx, third, topology)?,
+        ) else {
             continue;
         };
-        let Ok(candidates): Result<[(i64, cadmpeg_ir::math::Point3); 3], _> = candidates.try_into()
-        else {
-            continue;
-        };
-        let [first, second, third] = candidates;
+        let candidates = [first, second, third];
         if !three_point_plane_matches(
             transform.map(crate::records::sketch_placement::SketchPlacementMatrix::rows),
             [first.1, second.1, third.1],
@@ -3556,33 +3555,33 @@ pub(crate) fn bind_edge_treatment_vertex_history(
 }
 
 fn vertex_recipe_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     recipe: &crate::records::feature::work_geometry::DesignVertexRecipe,
     topology: &AsmHistoricalTopology,
-) -> Option<(i64, cadmpeg_ir::math::Point3)> {
-    let face_slots = recipe
-        .recipe_references
-        .iter()
-        .map(|reference| {
-            let mut slots = reference
+) -> Result<Option<(i64, cadmpeg_ir::math::Point3)>, cadmpeg_core::CodecError> {
+    let mut face_slots = Vec::new();
+    for reference in &recipe.recipe_references {
+            let mut slots = history_collect(Some(ctx), reference
                 .candidate_faces
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
-                .filter(|face| topology.faces.contains(face))
-                .collect::<Vec<_>>();
+                .filter(|face| topology.faces.contains(face)),
+                "collect F3D vertex recipe candidate faces")?;
             slots.sort_unstable();
             slots.dedup();
             let [slot] = slots.as_slice() else {
-                return None;
+                return Ok(None);
             };
-            Some(*slot)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if face_slots.is_empty() {
-        return None;
+            ctx.charge_collection_items(1, "collect F3D vertex recipe face slots")?;
+            face_slots.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "collect F3D vertex recipe face slots", 0, 1))?;
+            face_slots.push(*slot);
     }
-    let vertex = common_face_vertex(&face_slots, topology)?;
-    let position = unique_historical_vertex_position(vertex, topology)?;
-    Some((vertex, position))
+    if face_slots.is_empty() {
+        return Ok(None);
+    }
+    let Some(vertex) = common_face_vertex(&face_slots, topology) else { return Ok(None); };
+    Ok(unique_historical_vertex_position(vertex, topology).map(|position| (vertex, position)))
 }
 
 fn three_point_plane_matches(
