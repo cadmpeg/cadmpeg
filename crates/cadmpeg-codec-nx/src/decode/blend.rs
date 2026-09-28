@@ -2767,7 +2767,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
 ) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates = Vec::new();
     for span in &homogeneous.spans {
-        let Some(derivative) = rational_squared_distance_derivative(&span.controls) else {
+        let Some(derivative) = rational_squared_distance_derivative(&span.controls, geometry_budget)? else {
             return Ok(None);
         };
         let Some(roots) = scalar_bezier_roots_with_budget(
@@ -2819,70 +2819,118 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
 
 fn rational_squared_distance_derivative<const DIMENSION: usize>(
     controls: &[[f64; DIMENSION]],
-) -> Option<Vec<f64>> {
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     // For residual R/W, half the squared-distance derivative has numerator
     // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
     // stationary parameters of the rational span.
     // A common homogeneous factor cannot change stationary parameters.
-    let scale = controls
+    let Some(scale) = controls
         .iter()
         .flatten()
         .try_fold(0.0_f64, |scale, value| {
             value.is_finite().then_some(scale.max(value.abs()))
-        })?;
-    let exponent = cadmpeg_ir::math::power_of_two_bound(scale)?;
-    let controls = controls
-        .iter()
-        .map(|control| {
+        }) else {
+            return Ok(None);
+        };
+    let Some(exponent) = cadmpeg_ir::math::power_of_two_bound(scale) else {
+        return Ok(None);
+    };
+    let mut normalized_controls = Vec::new();
+    let _normalized_reservation = geometry_budget.reserve_vec(
+        &mut normalized_controls,
+        controls.len(),
+        "nx rational derivative normalized controls",
+    )?;
+    for control in controls {
             let mut normalized = *control;
             for value in &mut normalized {
-                *value = cadmpeg_ir::math::scale_power_of_two(*value, -exponent)?.get();
+                let Some(scaled) = cadmpeg_ir::math::scale_power_of_two(*value, -exponent) else {
+                    return Ok(None);
+                };
+                *value = scaled.get();
             }
-            Some(normalized)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let weight = controls
-        .iter()
-        .map(|control| control[DIMENSION - 1])
-        .collect::<Vec<_>>();
-    let derivative = |values: &[f64]| {
-        values
-            .windows(2)
-            .map(|pair| pair[1] - pair[0])
-            .collect::<Vec<_>>()
+            normalized_controls.push(normalized);
+    }
+    let mut weight = Vec::new();
+    let _weight_reservation = geometry_budget.reserve_vec(&mut weight, controls.len(), "nx rational derivative weights")?;
+    for control in &normalized_controls {
+        weight.push(control[DIMENSION - 1]);
+    }
+    let weight_derivative = difference_controls(&weight, geometry_budget)?;
+    let mut residual_squared = None;
+    let mut residual_derivative = None;
+    for axis in 0..DIMENSION - 1 {
+        let mut residual = Vec::new();
+        let _residual_reservation = geometry_budget.reserve_vec(&mut residual, controls.len(), "nx rational derivative residuals")?;
+        for control in &normalized_controls {
+            residual.push(control[axis]);
+        }
+        let derivative = difference_controls(&residual, geometry_budget)?;
+        let Some(squared) = bernstein_product(&residual, &residual, geometry_budget)? else {
+            return Ok(None);
+        };
+        let Some(differentiated) = bernstein_product(&residual, &derivative, geometry_budget)? else {
+            return Ok(None);
+        };
+        residual_squared = match residual_squared {
+            Some(accumulated) => add_bernstein_polynomials(accumulated, squared),
+            None => Some(squared),
+        };
+        residual_derivative = match residual_derivative {
+            Some(accumulated) => add_bernstein_polynomials(accumulated, differentiated),
+            None => Some(differentiated),
+        };
+        if residual_squared.is_none() || residual_derivative.is_none() {
+            return Ok(None);
+        }
+    }
+    let (Some(residual_squared), Some(residual_derivative)) = (residual_squared, residual_derivative) else {
+        return Ok(None);
     };
-    let weight_derivative = derivative(&weight);
-    let residuals = (0..DIMENSION - 1)
-        .map(|axis| {
-            controls
-                .iter()
-                .map(|control| control[axis])
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let residual_squared = sum_bernstein_polynomials(
-        residuals
-            .iter()
-            .map(|residual| bernstein_product(residual, residual)),
-    )?;
-    let residual_derivative = sum_bernstein_polynomials(
-        residuals
-            .iter()
-            .map(|residual| bernstein_product(residual, &derivative(residual))),
-    )?;
-    let first = bernstein_product(&residual_derivative, &weight)?;
-    let second = bernstein_product(&residual_squared, &weight_derivative)?;
-    subtract_bernstein_polynomials(first, second)
+    let Some(first) = bernstein_product(&residual_derivative, &weight, geometry_budget)? else {
+        return Ok(None);
+    };
+    let Some(second) = bernstein_product(&residual_squared, &weight_derivative, geometry_budget)? else {
+        return Ok(None);
+    };
+    Ok(subtract_bernstein_polynomials(first, second))
 }
 
-fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
-    let first_degree = first.len().checked_sub(1)?;
-    let second_degree = second.len().checked_sub(1)?;
-    let degree = first_degree.checked_add(second_degree)?;
-    (0..=degree)
-        .map(|index| {
+fn difference_controls(
+    values: &[f64],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let mut differences = Vec::new();
+    let count = if values.is_empty() { 0 } else { values.len() - 1 };
+    let _reservation = geometry_budget.reserve_vec(&mut differences, count, "nx rational derivative differences")?;
+    for pair in values.windows(2) {
+        differences.push(pair[1] - pair[0]);
+    }
+    Ok(differences)
+}
+
+fn bernstein_product(
+    first: &[f64],
+    second: &[f64],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
+    let (Some(first_degree), Some(second_degree)) =
+        (first.len().checked_sub(1), second.len().checked_sub(1)) else {
+            return Ok(None);
+        };
+    let Some(degree) = first_degree.checked_add(second_degree) else {
+        return Ok(None);
+    };
+    let Some(count) = degree.checked_add(1) else {
+        return Ok(None);
+    };
+    let mut product = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut product, count, "nx Bernstein product")?;
+    for index in 0..=degree {
+        let value = (|| {
             let denominator = binomial_coefficient(degree, index)?;
-            let lower = index.saturating_sub(second_degree);
+            let lower = if index >= second_degree { index - second_degree } else { 0 };
             let upper = index.min(first_degree);
             (lower..=upper)
                 .map(|first_index| {
@@ -2897,8 +2945,13 @@ fn bernstein_product(first: &[f64], second: &[f64]) -> Option<Vec<f64>> {
                 })
                 .sum::<Option<f64>>()
                 .filter(|value| value.is_finite())
-        })
-        .collect()
+        })();
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        product.push(value);
+    }
+    Ok(Some(product))
 }
 
 fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
@@ -2910,39 +2963,23 @@ fn binomial_coefficient(n: usize, k: usize) -> Option<f64> {
 }
 
 fn add_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
-    let result = (first.len() == second.len()).then(|| {
-        first
-            .into_iter()
-            .zip(second)
-            .map(|(a, b)| a + b)
-            .collect::<Vec<_>>()
-    })?;
+    (first.len() == second.len()).then_some(())?;
+    let mut result = first;
+    for (value, addend) in result.iter_mut().zip(second) {
+        *value += addend;
+    }
     result
         .iter()
         .all(|value| value.is_finite())
         .then_some(result)
 }
 
-fn sum_bernstein_polynomials(
-    polynomials: impl IntoIterator<Item = Option<Vec<f64>>>,
-) -> Option<Vec<f64>> {
-    polynomials.into_iter().try_fold(None, |sum, polynomial| {
-        let polynomial = polynomial?;
-        Some(Some(match sum {
-            Some(sum) => add_bernstein_polynomials(sum, polynomial)?,
-            None => polynomial,
-        }))
-    })?
-}
-
 fn subtract_bernstein_polynomials(first: Vec<f64>, second: Vec<f64>) -> Option<Vec<f64>> {
-    let result = (first.len() == second.len()).then(|| {
-        first
-            .into_iter()
-            .zip(second)
-            .map(|(a, b)| a - b)
-            .collect::<Vec<_>>()
-    })?;
+    (first.len() == second.len()).then_some(())?;
+    let mut result = first;
+    for (value, subtrahend) in result.iter_mut().zip(second) {
+        *value -= subtrahend;
+    }
     result
         .iter()
         .all(|value| value.is_finite())
