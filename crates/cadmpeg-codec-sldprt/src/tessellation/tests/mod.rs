@@ -842,6 +842,29 @@ fn geometric_tessellation_assignment_refuses_work_limit() {
 }
 
 #[test]
+fn cylindrical_trim_angle_collection_refuses_caller_limit() {
+    let mut model = model_with_body();
+    let face_id = add_cylindrical_patch_face(&mut model, "limited-cylinder", 0.0, 2.0);
+    let face = model.faces.iter().find(|face| face.id == face_id).expect("face");
+    let surface = model.surfaces.iter().find(|surface| surface.id == face.surface).expect("surface");
+    let loops = model.loops.iter().map(|loop_| (&loop_.id, loop_)).collect();
+    let coedges = model.coedges.iter().map(|coedge| (&coedge.id, coedge)).collect();
+    let edges = model.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let vertices = model.vertices.iter().map(|vertex| (&vertex.id, vertex)).collect();
+    let points = model.points.iter().map(|point| (&point.id, point.position().get())).collect();
+    let curves = model.curves.iter().map(|curve| (&curve.id, &curve.geometry)).collect();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let error = super::cylindrical_trim(&ctx, face, &surface.geometry, &loops, &coedges, &edges, &vertices, &points, &curves)
+        .expect_err("angle collection exceeds the caller limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect SLDPRT cylindrical trim angles"));
+}
+
+#[test]
 fn bounded_planar_trim_selects_between_coincident_supports() {
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first", -4.0);
