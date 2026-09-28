@@ -2514,12 +2514,11 @@ pub(super) fn project_fixed_fillet_with_corners(
     let fixed = or_none!(scope.fixed_fillet_parameters());
     let stream = or_none!(native_stream(&scope.id));
     let radius_spec =
-        |group: &crate::records::feature::fixed_parameters::DesignFixedFilletGroup| match group
-            .law()
-        {
+        |group: &crate::records::feature::fixed_parameters::DesignFixedFilletGroup| -> Result<Option<RadiusSpec>, CodecError> { Ok(match group.law() {
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
+                let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(radius.value.get() * 10.0) else { return Ok(None); };
                 Some(RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value.get() * 10.0)?,
+                    radius,
                 })
             }
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
@@ -2527,40 +2526,41 @@ pub(super) fn project_fixed_fillet_with_corners(
                 end,
                 intermediate,
             } => {
-                let mut points = Vec::with_capacity(intermediate.len() + 2);
-                points.push(VariableRadius {
+                let mut points = Vec::new();
+                let Some(start_radius) = Length::new(start.value.get() * 10.0) else { return Ok(None); };
+                push_edge_item(ctx, &mut points, VariableRadius {
                     parameter: 0.0,
-                    radius: Length::new(start.value.get() * 10.0)?,
-                });
+                    radius: start_radius,
+                }, "f3d fixed fillet radius point")?;
                 for row in intermediate {
-                    points.push(VariableRadius {
+                    let Some(radius) = Length::new(row.radius.value.get() * 10.0) else { return Ok(None); };
+                    push_edge_item(ctx, &mut points, VariableRadius {
                         parameter: row.parameter.value.get(),
-                        radius: Length::new(row.radius.value.get() * 10.0)?,
-                    });
+                        radius,
+                    }, "f3d fixed fillet radius point")?;
                 }
-                points.push(VariableRadius {
+                let Some(end_radius) = Length::new(end.value.get() * 10.0) else { return Ok(None); };
+                push_edge_item(ctx, &mut points, VariableRadius {
                     parameter: 1.0,
-                    radius: Length::new(end.value.get() * 10.0)?,
-                });
+                    radius: end_radius,
+                }, "f3d fixed fillet radius point")?;
+                let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else { return Ok(None); };
                 Some(RadiusSpec::Variable {
-                    points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
-                        .ok()?,
+                    points,
                 })
             }
-        };
-    let mut scope_groups = construction_groups
-        .iter()
-        .filter(|group| {
+        }) };
+    let mut scope_groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
                 && !group.members().is_empty()
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_edge_item(ctx, &mut scope_groups, group, "f3d fixed fillet scope group")?;
+    }
     scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    let complete_edge_groups = scope_groups
-        .iter()
-        .copied()
-        .filter(|group| {
+    let mut complete_edge_groups = Vec::new();
+    for group in scope_groups.iter().copied().filter(|group| {
             group
                 .members()
                 .iter()
@@ -2572,8 +2572,9 @@ pub(super) fn project_fixed_fillet_with_corners(
                             && operand.record_index() == *member
                     })
                 })
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_edge_item(ctx, &mut complete_edge_groups, group, "f3d fixed fillet complete group")?;
+    }
     let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
         complete_edge_groups
     } else if fixed.groups.len() == 1 && complete_edge_groups.is_empty() {
@@ -2586,31 +2587,24 @@ pub(super) fn project_fixed_fillet_with_corners(
             let [group] = scope_groups.as_slice() else {
                 return Ok(None);
             };
-            let radius = radius_spec(&fixed.groups[0]);
+            let radius = radius_spec(&fixed.groups[0])?;
             let Some(RadiusSpec::Constant { radius }) = radius else {
                 return Ok(None);
             };
-            let identities = group
-                .members()
-                .iter()
-                .map(|member| &member.value)
-                .map(|member| {
-                    let matches = edge_identity_operands
-                        .iter()
-                        .filter(|operand| {
+            let mut identities = Vec::new();
+            for member in group.members().iter().map(|member| &member.value) {
+                    let mut matches = edge_identity_operands.iter().filter(|operand| {
                             native_stream(&operand.id) == Some(stream)
                                 && operand.scope_record_index == scope.record_index
                                 && operand.group_record_index == group.record_index
                                 && operand.record_index() == *member
-                        })
-                        .collect::<Vec<_>>();
-                    let [operand] = matches.as_slice() else {
-                        return None;
+                        });
+                    let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
+                        return Ok(None);
                     };
-                    operand.layout().is_compact().then_some(*operand)
-                })
-                .collect::<Option<Vec<_>>>();
-            let identities = or_none!(identities);
+                    if !operand.layout().is_compact() { return Ok(None); }
+                    push_edge_item(ctx, &mut identities, operand, "f3d fixed fillet identity")?;
+            }
             or_none!(radius_edge_identity_group_candidates(
                 &identities,
                 radius.get()
@@ -2623,7 +2617,7 @@ pub(super) fn project_fixed_fillet_with_corners(
     };
     let mut groups = Vec::new();
     for (fixed_group, edge_group) in fixed.groups.iter().zip(edge_groups) {
-        let radius = or_none!(radius_spec(fixed_group));
+        let radius = or_none!(radius_spec(fixed_group)?);
         let edge_radius = match radius {
             RadiusSpec::Constant { radius } => Some(radius.get()),
             RadiusSpec::Chordal { .. }
@@ -2643,11 +2637,11 @@ pub(super) fn project_fixed_fillet_with_corners(
             edge_radius,
             ctx,
         )?;
-        groups.push(FilletGroup {
+        push_edge_item(ctx, &mut groups, FilletGroup {
             edges,
             radius,
             tangency_weight: fixed_group.tangency_weight().map(|tangency| tangency.value),
-        });
+        }, "f3d fixed fillet output group")?;
     }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Fillet {
