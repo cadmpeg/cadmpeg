@@ -29,11 +29,17 @@ pub(super) fn merge_archive(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
+    ctx.charge_collection_items(1, "seed F3Z merge stack")?;
+    let mut stack = Vec::new();
+    stack
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("seed F3Z merge stack", 0, 1))?;
+    stack.push(model_root);
     MergeSession {
         ctx,
         scan,
         archive,
-        stack: vec![model_root],
+        stack,
     }
     .merge(ir, report, fidelity, &table)
 }
@@ -666,7 +672,7 @@ mod tests {
     mod occurrence;
 
     use super::{
-        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique,
+        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique, merge_archive,
         xref_table_from_ir,
     };
     use cadmpeg_ir::document::Model;
@@ -685,6 +691,43 @@ mod tests {
             link: None,
             native_ref: None,
         }
+    }
+
+    #[test]
+    fn f3z_merge_stack_refuses_collection_limit() {
+        let bytes = crate::test_support::zip_test::synthetic_f3d(false);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let normal_policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (normal, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &normal_policy)
+                .unwrap();
+        let scan = crate::container::scan(&normal, root).unwrap();
+        let archive = super::ArchiveSession {
+            members: std::collections::BTreeMap::new(),
+            layers: cadmpeg_core::dialect::DialectLayers::of(scan.kind.dialect().clone()),
+            losses: Vec::new(),
+        };
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (limited, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut report = cadmpeg_ir::codec::DecodeBody::new(
+            cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+        );
+        let mut fidelity = cadmpeg_ir::SourceFidelity::default();
+        let error = merge_archive(
+            &limited,
+            &scan,
+            &archive,
+            "root.f3d".into(),
+            &mut ir,
+            &mut report,
+            &mut fidelity,
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "seed F3Z merge stack"));
     }
 
     #[test]
