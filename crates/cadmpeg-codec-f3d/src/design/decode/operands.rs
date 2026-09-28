@@ -1758,6 +1758,7 @@ pub(crate) fn decode_construction_operand_groups(
                 continue;
             };
             match parse_construction_operand_group(
+                ctx,
                 bytes,
                 scope,
                 ordinal,
@@ -1770,6 +1771,7 @@ pub(crate) fn decode_construction_operand_groups(
                     push_unclosed_construction_operand(ctx, &mut unclosed, record_index)?;
                 }
                 ConstructionOperandGroupParse::NotAGroup => {}
+                ConstructionOperandGroupParse::Refused(error) => return Err(error),
             }
         }
         scope.unclosed_construction_operand_groups = unclosed;
@@ -2318,6 +2320,8 @@ pub(super) enum ConstructionOperandGroupParse {
     Unclosed,
     /// A complete group.
     Complete(Box<DesignConstructionOperandGroup>),
+    /// A caller resource limit refused the group.
+    Refused(CodecError),
 }
 
 impl ConstructionOperandGroupParse {
@@ -2326,7 +2330,7 @@ impl ConstructionOperandGroupParse {
     fn complete(self) -> Option<DesignConstructionOperandGroup> {
         match self {
             Self::Complete(group) => Some(*group),
-            Self::NotAGroup | Self::Unclosed => None,
+            Self::NotAGroup | Self::Unclosed | Self::Refused(_) => None,
         }
     }
 }
@@ -2423,12 +2427,13 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
 pub(super) fn parse_construction_operand_group(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &RecordFrame,
 ) -> ConstructionOperandGroupParse {
-    use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
+    use ConstructionOperandGroupParse::{Complete, NotAGroup, Refused, Unclosed};
 
     let Ok(start) = usize::try_from(header.byte_offset) else {
         return NotAGroup;
@@ -2452,6 +2457,12 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     }
     let mut members = Vec::new();
+    if let Err(error) = ctx.charge_collection_items(u64::from(member_count), "f3d construction operand members") {
+        return Refused(error);
+    }
+    if members.try_reserve(index_from_u32(member_count)).is_err() {
+        return Refused(ctx.refuse_codec_limit("f3d construction operand members allocation", 0, u64::from(member_count)));
+    }
     for _ in 0..member_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
@@ -2472,6 +2483,12 @@ pub(super) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
+        if let Err(error) = ctx.charge_collection_items(1, "f3d construction operand auxiliary record") {
+            return Refused(error);
+        }
+        if auxiliary_records.try_reserve(1).is_err() {
+            return Refused(ctx.refuse_codec_limit("f3d construction operand auxiliary record allocation", 0, 1));
+        }
         auxiliary_records.push(crate::records::identity::Located {
             value: record_index,
             offset,
@@ -2485,6 +2502,12 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     }
     let mut trailing_records = Vec::new();
+    if let Err(error) = ctx.charge_collection_items(u64::from(trailing_count), "f3d construction operand trailing records") {
+        return Refused(error);
+    }
+    if trailing_records.try_reserve(index_from_u32(trailing_count)).is_err() {
+        return Refused(ctx.refuse_codec_limit("f3d construction operand trailing record allocation", 0, u64::from(trailing_count)));
+    }
     for _ in 0..trailing_count {
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;

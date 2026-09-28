@@ -121,6 +121,7 @@ fn exact_surface_offset_face_groups(
         .skip(1)
     {
         let group = exact_construction_operand_group(
+            ctx,
             bytes,
             records,
             scope,
@@ -129,6 +130,10 @@ fn exact_surface_offset_face_groups(
         );
         let Some(group) = group else {
             continue;
+        };
+        let group = match group {
+            Ok(group) => group,
+            Err(error) => return Some(Err(error)),
         };
         if group.role() != DesignOperandRole::PROFILE
             || group.frame.opaque_index.get() != 252
@@ -188,12 +193,13 @@ fn exact_surface_offset_face_groups(
 }
 
 fn exact_construction_operand_group(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     record_index: u32,
-) -> Option<crate::records::topology::construction::DesignConstructionOperandGroup> {
+) -> Option<Result<crate::records::topology::construction::DesignConstructionOperandGroup, CodecError>> {
     let mut candidate = None;
     for (start, _) in records.frames(record_index) {
         let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
@@ -205,15 +211,17 @@ fn exact_construction_operand_group(
             class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             byte_offset: u64::try_from(start).ok()?,
         };
-        if let ConstructionOperandGroupParse::Complete(group) =
-            parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header)
-        {
-            if candidate.replace(*group).is_some() {
-                return None;
+        match parse_construction_operand_group(ctx, bytes, scope, scope_reference_ordinal, &header) {
+            ConstructionOperandGroupParse::Complete(group) => {
+                if candidate.replace(*group).is_some() {
+                    return None;
+                }
             }
+            ConstructionOperandGroupParse::Refused(error) => return Some(Err(error)),
+            ConstructionOperandGroupParse::NotAGroup | ConstructionOperandGroupParse::Unclosed => {}
         }
     }
-    candidate
+    candidate.map(Ok)
 }
 
 #[derive(Clone)]

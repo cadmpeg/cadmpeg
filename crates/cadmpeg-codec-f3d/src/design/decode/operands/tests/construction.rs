@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::operands::construction_operand_group_is_retained;
-use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::feature_project::project_parameter_design;
@@ -26,6 +25,76 @@ use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
+
+fn parse_construction_operand_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    ordinal: u32,
+    header: &RecordFrame,
+) -> ConstructionOperandGroupParse {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, scope, ordinal, header)
+}
+
+fn construction_group_parse_refuses_collection_limit(bytes: &[u8], operation: &str) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let scope = DesignParameterScope::empty(
+        "f3d:test:construction-group-scope#12",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        12,
+    );
+    let header = RecordFrame {
+        record_index: 100,
+        class_tag: crate::records::references::DesignClassTag::try_from("332".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    };
+    assert!(matches!(
+        crate::design::decode::operands::parse_construction_operand_group(&ctx, bytes, &scope, 0, &header),
+        ConstructionOperandGroupParse::Refused(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == operation
+    ));
+}
+
+#[test]
+fn construction_group_members_refuse_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand members");
+}
+
+#[test]
+fn construction_group_auxiliary_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand auxiliary record");
+}
+
+#[test]
+fn construction_group_trailing_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"332", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 101);
+    construction_group_parse_refuses_collection_limit(&bytes, "f3d construction operand trailing records");
+}
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
