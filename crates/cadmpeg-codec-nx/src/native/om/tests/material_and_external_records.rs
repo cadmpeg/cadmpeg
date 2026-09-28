@@ -400,6 +400,62 @@ fn native_external_empty_route_refuses_retained_limit() {
             && limit.operation == "nx native external reference empty records"), "{error:?}");
 }
 
+fn native_external_tail_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceTailReferencePair>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("handle-set record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_tail_reference_pairs(&ctx, &container, &records)
+}
+
+#[test]
+fn native_external_tail_route_preserves_pair() {
+    let pairs = native_external_tail_result(|_| {}).expect("external tail pair");
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].ordinal, 0);
+    assert_eq!(pairs[0].persistent_handle, 5);
+}
+
+#[test]
+fn native_external_tail_route_refuses_collection_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_collection_items = 1)
+        .expect_err("native pair exceeds parsed collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference tail pairs"), "{error:?}");
+}
+
+#[test]
+fn native_external_tail_route_refuses_retained_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("external pair exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+}
+
+#[test]
+fn native_external_tail_route_refuses_work_limit() {
+    let error = native_external_tail_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("external pair scan exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
