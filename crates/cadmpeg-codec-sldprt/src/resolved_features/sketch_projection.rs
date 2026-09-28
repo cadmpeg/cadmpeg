@@ -13,7 +13,41 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Write};
 use std::hash::Hash;
+
+fn retained_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    copy.push_str(text);
+    Ok(copy)
+}
+
+fn retained_format(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    args: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    struct ByteCount(usize);
+    impl Write for ByteCount {
+        fn write_str(&mut self, text: &str) -> fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut count = ByteCount(0);
+    fmt::write(&mut count, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    let mut result = String::new();
+    ctx.reserve_retained_string(&mut result, count.0, operation)?;
+    fmt::write(&mut result, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    Ok(result)
+}
 
 fn index_brep<'a, T, K: Eq + Hash, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -142,7 +176,7 @@ fn project_brep(
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
-        let mut used_vertices = HashSet::new();
+        let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
         for loop_id in &face.loops {
             let Some(loop_) = loops.get(loop_id) else {
@@ -156,10 +190,18 @@ fn project_brep(
                 let Some(edge) = edges.get(&coedge.edge) else {
                     continue;
                 };
-                used_vertices.insert(edge.start.clone());
-                used_vertices.insert(edge.end.clone());
+                for vertex_id in [&edge.start, &edge.end] {
+                    if !used_vertices.contains(vertex_id) {
+                        ctx.charge_collection_items(1, "collect SLDPRT sketch used vertices")?;
+                        used_vertices.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("collect SLDPRT sketch used vertices", 0, 1)
+                        })?;
+                        used_vertices.insert(vertex_id);
+                    }
+                }
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
-                    id.clone()
+                    let id = retained_text(ctx, id.as_str(), "retain SLDPRT sketch entity ID")?;
+                    SketchEntityId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?
                 } else {
                     let Ok(id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
@@ -181,9 +223,21 @@ fn project_brep(
                     )?;
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
-                        return Err(cadmpeg_core::CodecError::malformed(
-                            edge_refusals.join("; "),
-                        ));
+                        let operation = "retain SLDPRT sketch edge refusal";
+                        let message_len = edge_refusals.iter().try_fold(0usize, |len, record| {
+                            len.checked_add(record.len())
+                        }).and_then(|len| (edge_refusals.len() - 1).checked_mul(2)
+                            .and_then(|separators| len.checked_add(separators)))
+                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                        let mut message = String::new();
+                        ctx.reserve_retained_string(&mut message, message_len, operation)?;
+                        for (index, record) in edge_refusals.iter().enumerate() {
+                            if index != 0 {
+                                message.push_str("; ");
+                            }
+                            message.push_str(record);
+                        }
+                        return Err(cadmpeg_core::CodecError::Malformed(message));
                     }
                     let Some(geometry) = projected else {
                         continue;
@@ -202,22 +256,51 @@ fn project_brep(
                         "feature_input_profile_edge",
                         Exactness::Derived,
                     );
+                    let native_edge_ref = retained_format(
+                        ctx, format_args!("{stream_ordinal}:{}", edge.id.as_str()),
+                        "retain SLDPRT sketch native edge reference",
+                    )?;
+                    let geometry_ref = edge.curve().map(|curve_id| {
+                        retained_format(
+                            ctx, format_args!("{stream_ordinal}:{}", curve_id.as_str()),
+                            "retain SLDPRT sketch curve reference",
+                        )
+                    }).transpose()?;
+                    let mut endpoint_refs = Vec::new();
+                    ctx.reserve_collection_vec(
+                        &mut endpoint_refs, 2, "collect SLDPRT sketch edge endpoints",
+                    )?;
+                    for point in [start_point, end_point] {
+                        endpoint_refs.push(retained_format(
+                            ctx, format_args!("{stream_ordinal}:{}", point.as_str()),
+                            "retain SLDPRT sketch edge endpoint",
+                        )?);
+                    }
+                    let entity_id = SketchEntityId::mint(retained_text(
+                        ctx, id.as_str(), "retain SLDPRT sketch entity ID",
+                    )?).map_err(cadmpeg_core::CodecError::malformed)?;
+                    let entity_sketch_id = SketchId::mint(retained_text(
+                        ctx, sketch_id.as_str(), "retain SLDPRT entity sketch ID",
+                    )?).map_err(cadmpeg_core::CodecError::malformed)?;
+                    ctx.reserve_collection_vec(entities, 1, "collect SLDPRT sketch edge entities")?;
                     entities.push(
-                        SketchEntity::new(id.clone(), sketch_id.clone(), geometry)
-                            .with_native_ref(Some(format!("{stream_ordinal}:{}", edge.id.as_str())))
-                            .with_geometry_ref(
-                                edge.curve()
-                                    .map(|id| format!("{stream_ordinal}:{}", id.as_str())),
-                            )
-                            .with_endpoint_refs(vec![
-                                format!("{stream_ordinal}:{}", start_point.as_str()),
-                                format!("{stream_ordinal}:{}", end_point.as_str()),
-                            ]),
+                        SketchEntity::new(entity_id, entity_sketch_id, geometry)
+                            .with_native_ref(Some(native_edge_ref))
+                            .with_geometry_ref(geometry_ref)
+                            .with_endpoint_refs(endpoint_refs),
                     );
-                    edge_entities.insert(&edge.id, id.clone());
+                    ctx.charge_collection_items(1, "index SLDPRT sketch edge entities")?;
+                    edge_entities.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("index SLDPRT sketch edge entities", 0, 1)
+                    })?;
+                    let index_id = SketchEntityId::mint(retained_text(
+                        ctx, id.as_str(), "retain SLDPRT indexed sketch entity ID",
+                    )?).map_err(cadmpeg_core::CodecError::malformed)?;
+                    edge_entities.insert(&edge.id, index_id);
                     id
                 };
                 if edge.curve().is_some() || edge.start != edge.end {
+                    ctx.reserve_collection_vec(&mut profile, 1, "collect SLDPRT sketch profile uses")?;
                     profile.push(SketchEntityUse {
                         entity: entity_id,
                         reversed: coedge.sense == Sense::Reversed,
@@ -226,6 +309,7 @@ fn project_brep(
             }
             if !profile.is_empty() {
                 orient_closed_profile_by_topology(ctx, &mut profile, &entities[first_entity..])?;
+                ctx.reserve_collection_vec(&mut profiles, 1, "collect SLDPRT sketch profiles")?;
                 profiles.push(profile);
             }
         }
@@ -259,13 +343,24 @@ fn project_brep(
                 "feature_input_profile_point",
                 Exactness::Derived,
             );
+            let entity_sketch_id = SketchId::mint(retained_text(
+                ctx, sketch_id.as_str(), "retain SLDPRT point sketch ID",
+            )?).map_err(cadmpeg_core::CodecError::malformed)?;
+            let native_vertex_ref = retained_format(
+                ctx, format_args!("{stream_ordinal}:{}", vertex.id.as_str()),
+                "retain SLDPRT sketch native vertex reference",
+            )?;
+            let mut endpoint_refs = Vec::new();
+            ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT sketch point endpoints")?;
+            endpoint_refs.push(retained_format(
+                ctx, format_args!("{stream_ordinal}:{}", vertex.point.as_str()),
+                "retain SLDPRT sketch point endpoint",
+            )?);
+            ctx.reserve_collection_vec(entities, 1, "collect SLDPRT sketch point entities")?;
             entities.push(
-                SketchEntity::new(id, sketch_id.clone(), geometry)
-                    .with_native_ref(Some(format!("{stream_ordinal}:{}", vertex.id.as_str())))
-                    .with_endpoint_refs(vec![format!(
-                        "{stream_ordinal}:{}",
-                        vertex.point.as_str()
-                    )]),
+                SketchEntity::new(id, entity_sketch_id, geometry)
+                    .with_native_ref(Some(native_vertex_ref))
+                    .with_endpoint_refs(endpoint_refs),
             );
         }
         let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else {
@@ -293,14 +388,22 @@ fn project_brep(
             annotations,
             constraints,
         )?;
+        let name = (!sketch_name.is_empty())
+            .then(|| retained_text(ctx, sketch_name, "retain SLDPRT sketch name"))
+            .transpose()?;
+        let configuration = configuration
+            .map(|name| retained_text(ctx, name, "retain SLDPRT sketch configuration"))
+            .transpose()?;
+        let native_ref = retained_text(ctx, native_ref, "retain SLDPRT sketch native reference")?;
+        ctx.reserve_collection_vec(sketches, 1, "collect SLDPRT projected sketches")?;
         sketches.push(Sketch {
             id: sketch_id,
-            name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
-            configuration: configuration.map(str::to_string),
+            name,
+            configuration,
             visible: None,
             placement,
             profiles,
-            native_ref: Some(native_ref.to_string()),
+            native_ref: Some(native_ref),
         });
     }
     Ok(())
@@ -444,6 +547,94 @@ mod projected_profile_orientation_tests {
         orient_with_service(&mut profile, &entities);
 
         assert!(profile.iter().all(|use_| use_.reversed));
+    }
+}
+
+#[cfg(test)]
+mod projected_brep_output_tests {
+    use super::project_brep;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::geometry::{analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Face, FaceLoops, Point, Sense, Vertex};
+
+    fn point_brep() -> crate::brep::graph::Brep {
+        let surface_id = SurfaceId::mint("test:model:surface#plane").expect("surface ID");
+        let point_id = PointId::mint("test:model:point#free").expect("point ID");
+        crate::brep::graph::Brep {
+            surfaces: vec![Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    ).expect("plane frame"),
+                )),
+                source_object: None,
+            }],
+            faces: vec![Face {
+                id: FaceId::mint("test:model:face#plane").expect("face ID"),
+                shell: ShellId::mint("test:model:shell#one").expect("shell ID"),
+                surface: surface_id,
+                sense: Sense::Forward,
+                loops: FaceLoops::unspecified(Vec::new()),
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            vertices: vec![Vertex {
+                id: VertexId::mint("test:model:vertex#free").expect("vertex ID"),
+                point: point_id.clone(),
+                tolerance: None,
+            }],
+            points: vec![Point::new(
+                point_id,
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .expect("finite position"),
+                None,
+            )],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sketch_projection_output_refuses_retained_limit() {
+        let brep = point_brep();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits policy");
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        let mut constraints = Vec::new();
+        let error = project_brep(
+            &ctx, &brep, 0, 0, 0, &stream, "point sketch", None, "native:point",
+            &mut annotations, &mut sketches, &mut entities, &mut constraints,
+        ).expect_err("projected point identity exceeds retained limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+        ));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty root fits service policy");
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        let mut constraints = Vec::new();
+        project_brep(
+            &ctx, &brep, 0, 0, 0, &stream, "point sketch", None, "native:point",
+            &mut annotations, &mut sketches, &mut entities, &mut constraints,
+        ).expect("service policy admits the point sketch");
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(entities.len(), 1);
+        assert_eq!(sketches[0].name.as_deref(), Some("point sketch"));
+        assert_eq!(entities[0].endpoint_refs, ["0:test:model:point#free"]);
     }
 }
 
