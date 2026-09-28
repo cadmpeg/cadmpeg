@@ -2732,160 +2732,210 @@ fn arcs_intersect(
 pub(super) fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<Point3>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let (kind, entity_ref) = match &member.historical {
         Some(binding) => (binding.kind, binding.entity_ref),
         None => {
-            let kind = match member.resolved_geometry.as_ref()? {
+            let Some(geometry) = member.resolved_geometry.as_ref() else { return Ok(None); };
+            let kind = match geometry {
                 SketchRelationOperand::Point { .. } => AsmHistoricalEntityKind::Point,
                 SketchRelationOperand::Curve { .. } => AsmHistoricalEntityKind::Curve,
                 SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
-                    return None;
+                    return Ok(None);
                 }
             };
-            (kind, i64::try_from(member.local_id).ok()?)
+            let Ok(entity_ref) = i64::try_from(member.local_id) else { return Ok(None); };
+            (kind, entity_ref)
         }
     };
-    historical_entity_positions(kind, entity_ref, topology)
+    historical_entity_positions(kind, entity_ref, topology, ctx)
 }
 
 fn historical_entity_positions(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<Point3>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
     let mut positions = Vec::new();
-    let edge_refs = match kind {
-        AsmHistoricalEntityKind::Coedge => topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.coedge == local_id)
-            .map(|coedge| coedge.edge)
-            .collect::<Vec<_>>(),
-        AsmHistoricalEntityKind::Edge => vec![local_id],
-        AsmHistoricalEntityKind::Curve => topology
-            .edge_curves
-            .iter()
-            .filter(|binding| binding.carrier == Some(local_id))
-            .map(|binding| binding.entity)
-            .collect(),
-        AsmHistoricalEntityKind::Loop => topology
-            .coedge_topology
-            .iter()
-            .filter(|coedge| coedge.owner_loop == local_id)
-            .map(|coedge| coedge.edge)
-            .collect(),
-        AsmHistoricalEntityKind::Pcurve => topology
-            .coedge_pcurves
-            .iter()
-            .filter(|binding| binding.carrier == Some(local_id))
-            .filter_map(|binding| {
-                topology
-                    .coedge_topology
-                    .iter()
+    let mut edge_refs = Vec::new();
+    match kind {
+        AsmHistoricalEntityKind::Coedge => {
+            for coedge in topology.coedge_topology.iter().filter(|coedge| coedge.coedge == local_id) {
+                push_geometry_item(ctx, &mut edge_refs, coedge.edge,
+                    "f3d historical coedge edge reference")?;
+            }
+        }
+        AsmHistoricalEntityKind::Edge => {
+            push_geometry_item(ctx, &mut edge_refs, local_id,
+                "f3d historical direct edge reference")?;
+        }
+        AsmHistoricalEntityKind::Curve => {
+            for binding in topology.edge_curves.iter().filter(|binding| binding.carrier == Some(local_id)) {
+                push_geometry_item(ctx, &mut edge_refs, binding.entity,
+                    "f3d historical curve edge reference")?;
+            }
+        }
+        AsmHistoricalEntityKind::Loop => {
+            for coedge in topology.coedge_topology.iter().filter(|coedge| coedge.owner_loop == local_id) {
+                push_geometry_item(ctx, &mut edge_refs, coedge.edge,
+                    "f3d historical loop edge reference")?;
+            }
+        }
+        AsmHistoricalEntityKind::Pcurve => {
+            for binding in topology.coedge_pcurves.iter().filter(|binding| binding.carrier == Some(local_id)) {
+                if let Some(coedge) = topology.coedge_topology.iter()
                     .find(|coedge| coedge.coedge == binding.entity)
-                    .map(|coedge| coedge.edge)
-            })
-            .collect(),
+                {
+                    push_geometry_item(ctx, &mut edge_refs, coedge.edge,
+                        "f3d historical pcurve edge reference")?;
+                }
+            }
+        }
         AsmHistoricalEntityKind::Vertex => {
-            positions.extend(historical_vertex_positions(topology, local_id));
-            Vec::new()
+            for point in historical_vertex_positions(topology, local_id) {
+                push_geometry_item(ctx, &mut positions, point,
+                    "f3d historical vertex position")?;
+            }
         }
         AsmHistoricalEntityKind::Point => {
-            positions.extend(
-                topology
-                    .point_positions
-                    .iter()
-                    .filter(|point| point.point == local_id)
-                    .map(|point| point.position),
-            );
-            Vec::new()
+            for point in topology.point_positions.iter().filter(|point| point.point == local_id) {
+                push_geometry_item(ctx, &mut positions, point.position,
+                    "f3d historical point position")?;
+            }
         }
         AsmHistoricalEntityKind::Face => {
-            positions.extend(historical_face_points(local_id, topology)?);
-            Vec::new()
+            let Some(points) = historical_face_points(local_id, topology, ctx)? else {
+                return Ok(None);
+            };
+            for point in points {
+                push_geometry_item(ctx, &mut positions, point,
+                    "f3d historical face position")?;
+            }
         }
         AsmHistoricalEntityKind::Surface => {
-            let faces = topology
-                .face_surfaces
-                .iter()
-                .filter(|binding| binding.carrier == local_id)
-                .map(|binding| binding.entity)
-                .collect::<Vec<_>>();
-            if faces.is_empty() {
-                return None;
+            let mut found = false;
+            for binding in topology.face_surfaces.iter().filter(|binding| binding.carrier == local_id) {
+                found = true;
+                let Some(points) = historical_face_points(binding.entity, topology, ctx)? else {
+                    return Ok(None);
+                };
+                for point in points {
+                    push_geometry_item(ctx, &mut positions, point,
+                        "f3d historical surface position")?;
+                }
             }
-            for face in faces {
-                positions.extend(historical_face_points(face, topology)?);
-            }
-            Vec::new()
+            if !found { return Ok(None); }
         }
         AsmHistoricalEntityKind::Body
         | AsmHistoricalEntityKind::Region
         | AsmHistoricalEntityKind::Shell => {
-            let faces = historical_owned_faces(kind, local_id, topology)?;
+            let Some(faces) = historical_owned_faces(kind, local_id, topology, ctx)? else {
+                return Ok(None);
+            };
             for face in faces {
-                positions.extend(historical_face_points(face, topology)?);
+                let Some(points) = historical_face_points(face, topology, ctx)? else {
+                    return Ok(None);
+                };
+                for point in points {
+                    push_geometry_item(ctx, &mut positions, point,
+                        "f3d historical owned face position")?;
+                }
             }
-            Vec::new()
         }
-    };
+    }
     for edge_ref in edge_refs {
-        let edge = topology
+        let Some(edge) = topology
             .edge_vertices
             .iter()
-            .find(|edge| edge.edge == edge_ref)?;
-        let start = historical_vertex_positions(topology, edge.start_vertex).collect::<Vec<_>>();
-        let end = historical_vertex_positions(topology, edge.end_vertex).collect::<Vec<_>>();
-        if start.is_empty() || end.is_empty() {
-            return None;
+            .find(|edge| edge.edge == edge_ref) else { return Ok(None); };
+        let mut start = historical_vertex_positions(topology, edge.start_vertex).peekable();
+        let mut end = historical_vertex_positions(topology, edge.end_vertex).peekable();
+        if start.peek().is_none() || end.peek().is_none() {
+            return Ok(None);
         }
-        positions.extend(start);
-        positions.extend(end);
+        for point in start.chain(end) {
+            push_geometry_item(ctx, &mut positions, point,
+                "f3d historical edge position")?;
+        }
     }
-    (!positions.is_empty()).then_some(positions)
+    Ok((!positions.is_empty()).then_some(positions))
 }
 
 fn historical_owned_faces(
     kind: crate::records::topology::body_recipe::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 
-    let relation_members = |relations: &[crate::history_records::AsmHistoricalRelation], owner| {
-        let mut matches = relations
-            .iter()
-            .filter(|relation| relation.owner_ref == owner);
-        let members = matches.next()?.member_refs.clone();
-        matches.next().is_none().then_some(members)
-    };
-    let regions = match kind {
-        AsmHistoricalEntityKind::Body => relation_members(&topology.body_regions, local_id)?,
-        AsmHistoricalEntityKind::Region => vec![local_id],
-        AsmHistoricalEntityKind::Shell => Vec::new(),
-        _ => return None,
-    };
-    let shells = if kind == AsmHistoricalEntityKind::Shell {
-        vec![local_id]
-    } else {
-        let mut shells = Vec::new();
-        for region in regions {
-            shells.extend(relation_members(&topology.region_shells, region)?);
-        }
-        shells
-    };
     let mut faces = Vec::new();
-    for shell in shells {
-        faces.extend(relation_members(&topology.shell_faces, shell)?);
+    match kind {
+        AsmHistoricalEntityKind::Body => {
+            let Some(regions) = historical_relation_members(&topology.body_regions, local_id) else {
+                return Ok(None);
+            };
+            for region in regions {
+                let Some(shells) = historical_relation_members(&topology.region_shells, *region) else {
+                    return Ok(None);
+                };
+                for shell in shells {
+                    if !append_historical_shell_faces(*shell, topology, ctx, &mut faces)? {
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        AsmHistoricalEntityKind::Region => {
+            let Some(shells) = historical_relation_members(&topology.region_shells, local_id) else {
+                return Ok(None);
+            };
+            for shell in shells {
+                if !append_historical_shell_faces(*shell, topology, ctx, &mut faces)? {
+                    return Ok(None);
+                }
+            }
+        }
+        AsmHistoricalEntityKind::Shell => {
+            if !append_historical_shell_faces(local_id, topology, ctx, &mut faces)? {
+                return Ok(None);
+            }
+        }
+        _ => return Ok(None),
     }
     faces.sort_unstable();
     faces.dedup();
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
+}
+
+fn historical_relation_members(
+    relations: &[crate::history_records::AsmHistoricalRelation],
+    owner: i64,
+) -> Option<&[i64]> {
+    let mut matches = relations.iter().filter(|relation| relation.owner_ref == owner);
+    let members = &matches.next()?.member_refs;
+    matches.next().is_none().then_some(members)
+}
+
+fn append_historical_shell_faces(
+    shell: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+    ctx: Option<&DecodeContext<'_>>,
+    faces: &mut Vec<i64>,
+) -> Result<bool, CodecError> {
+    let Some(members) = historical_relation_members(&topology.shell_faces, shell) else {
+        return Ok(false);
+    };
+    for face in members {
+        push_geometry_item(ctx, faces, *face, "f3d historical owned face")?;
+    }
+    Ok(true)
 }
 
 fn historical_vertex_positions(

@@ -42,6 +42,7 @@ use cadmpeg_ir::sketches::{
 use std::collections::{HashMap, HashSet};
 
 mod spatial_transition;
+mod historical_allocation;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -339,7 +340,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             scoped_resolution,
             None,
             None,
-        ),
+        ).unwrap(),
         Some(1)
     );
 
@@ -369,7 +370,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             scoped_resolution,
             None,
             None,
-        ),
+        ).unwrap(),
         None
     );
 
@@ -383,7 +384,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             scoped_resolution,
             None,
             None,
-        ),
+        ).unwrap(),
         None
     );
     let single_profile = SpatialSketch {
@@ -399,7 +400,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
             scoped_resolution,
             None,
             None,
-        ),
+        ).unwrap(),
         Some(0)
     );
 }
@@ -1418,7 +1419,7 @@ fn historical_face_points_require_complete_boundary_topology() {
         ..crate::history_records::AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::design::profile_select::historical_face_points(10, &topology),
+        crate::design::profile_select::historical_face_points(10, &topology, None).unwrap(),
         Some(vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(2.0, 0.0, 0.0),
@@ -1428,7 +1429,7 @@ fn historical_face_points_require_complete_boundary_topology() {
 
     topology.point_positions.pop();
     assert_eq!(
-        crate::design::profile_select::historical_face_points(10, &topology),
+        crate::design::profile_select::historical_face_points(10, &topology, None).unwrap(),
         None
     );
 }
@@ -1577,7 +1578,8 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
             10,
             1.0e-6,
             1.0e-9,
-        ),
+            None,
+        ).unwrap(),
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0]))
     );
     let mut tilted = topology;
@@ -1590,7 +1592,8 @@ fn inserted_cylinder_selects_its_exact_circular_sketch_profile() {
             10,
             1.0e-6,
             1.0e-9,
-        ),
+            None,
+        ).unwrap(),
         None
     );
 }

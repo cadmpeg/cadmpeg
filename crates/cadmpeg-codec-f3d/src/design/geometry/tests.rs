@@ -8,6 +8,7 @@ use super::{
 };
 
 mod evaluator_refusal;
+mod historical_allocation;
 
 #[test]
 fn subdivision_count_requires_positive_target_error() {
@@ -993,7 +994,8 @@ fn historical_edge_positions_require_a_complete_state_chain() {
             crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
-        ),
+            None,
+        ).unwrap(),
         Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
     );
     topology.point_positions.pop();
@@ -1002,7 +1004,8 @@ fn historical_edge_positions_require_a_complete_state_chain() {
             crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
-        ),
+            None,
+        ).unwrap(),
         None
     );
 }
@@ -1038,24 +1041,27 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Body,
             1,
-            &topology
-        ),
+            &topology,
+            None,
+        ).unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Region,
             2,
-            &topology
-        ),
+            &topology,
+            None,
+        ).unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Shell,
             3,
-            &topology
-        ),
+            &topology,
+            None,
+        ).unwrap(),
         Some(vec![5, 7])
     );
 }
