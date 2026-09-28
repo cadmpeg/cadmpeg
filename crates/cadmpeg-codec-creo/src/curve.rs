@@ -821,29 +821,51 @@ pub(crate) fn prototypes(
 /// in the enclosing topology graph. The promotion remains withheld when the
 /// prototype, topology record, or face namespace is ambiguous.
 pub(crate) fn prototype_topology_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prototypes: &[CurvePrototype],
     prototype_topology: &[CurvePrototypeTopology],
     positional_rows: &[CurveTopologyRow],
     face_ids: &BTreeSet<u32>,
-) -> Vec<CurveTopologyRow> {
+) -> Result<Vec<CurveTopologyRow>, cadmpeg_core::CodecError> {
     let mut prototype_counts = BTreeMap::<u32, usize>::new();
     for prototype in prototypes {
-        *prototype_counts.entry(prototype.id).or_default() += 1;
+        match prototype_counts.entry(prototype.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo prototype ID count nodes")?;
+                entry.insert(1);
+            }
+        }
     }
     let mut topology_counts = BTreeMap::<u32, usize>::new();
     for topology in prototype_topology {
-        *topology_counts.entry(topology.curve_id).or_default() += 1;
+        match topology_counts.entry(topology.curve_id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo prototype topology count nodes")?;
+                entry.insert(1);
+            }
+        }
     }
-    let positional_ids = positional_rows
-        .iter()
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
-    let referenced_ids = positional_rows
+    let mut positional_ids = BTreeSet::new();
+    for row in positional_rows {
+        if !positional_ids.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo positional topology ID nodes")?;
+            positional_ids.insert(row.id);
+        }
+    }
+    let mut referenced_ids = BTreeSet::new();
+    for id in positional_rows
         .iter()
         .flat_map(|row| row.next_edges)
         .chain(prototype_topology.iter().flat_map(|row| row.next_edges))
         .filter(|id| *id != 0)
-        .collect::<BTreeSet<_>>();
+    {
+        if !referenced_ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo referenced topology ID nodes")?;
+            referenced_ids.insert(id);
+        }
+    }
     let mut rows = Vec::new();
     for topology in prototype_topology {
         if positional_ids.contains(&topology.curve_id)
@@ -866,6 +888,7 @@ pub(crate) fn prototype_topology_rows(
         let Some(directions) = prototype.directions else {
             continue;
         };
+        ctx.try_reserve_items(&mut rows, 1, "creo promoted prototype topology rows")?;
         rows.push(CurveTopologyRow {
             id: topology.curve_id,
             type_byte: prototype.type_byte,
@@ -877,7 +900,7 @@ pub(crate) fn prototype_topology_rows(
         });
     }
     rows.sort_by_key(|row| row.offset);
-    rows
+    Ok(rows)
 }
 
 /// Decode bounded curve-from-equation expression programs.

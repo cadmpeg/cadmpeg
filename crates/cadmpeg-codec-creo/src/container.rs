@@ -2876,11 +2876,12 @@ pub(crate) fn scan_bytes<'a>(
         curve_topology_rows(ctx, &model_geometry_sections, &topology_face_ids)?;
     let curve_prototype_topology = curve_prototype_topology(ctx, &model_geometry_sections)?;
     let prototype_topology_rows = curve::prototype_topology_rows(
+        ctx,
         &curve_prototypes,
         &curve_prototype_topology,
         &curve_topology_rows,
         &topology_face_ids,
-    );
+    )?;
     append_topology_rows(
         ctx,
         &mut curve_topology_rows,
