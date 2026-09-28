@@ -13,6 +13,18 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+fn tested_bind_sketch_graph(
+    entities: &[DesignEntityHeader],
+    points: &mut [SketchPoint],
+    curves: &mut [crate::records::sketch_geometry::SketchCurveIdentity],
+    surfaces: &mut [crate::records::sketch_geometry::SketchSurface],
+    relations: &mut [crate::records::sketch_relations::SketchRelation],
+) -> Result<(), cadmpeg_core::CodecError> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        bind_sketch_graph(ctx, entities, points, curves, surfaces, relations)
+    })
+}
+
 fn tested_parse_sketch_member_run(
     bytes: &[u8],
     from: usize,
@@ -995,6 +1007,136 @@ fn sketch_geometry_tail_names_its_owner_container() {
     );
 }
 
+fn sketch_graph_header(suffix: u64, members: Vec<u32>) -> DesignEntityHeader {
+    DesignEntityHeader {
+        id: format!("f3d:native:design-entity-header#{suffix}"),
+        byte_offset: suffix,
+
+        entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
+            .expect("valid entity ID"),
+        class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
+        optional_slot_present: false,
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::identity::ReferenceRun::located(
+                members
+                    .into_iter()
+                    .map(|value| crate::records::identity::Located { value, offset: 0 })
+                    .collect(),
+            ),
+        )
+        .expect("valid module registration"),
+    }
+}
+
+fn sketch_graph_point(record_index: u32) -> SketchPoint {
+        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
+            id: format!("f3d:native:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
+            byte_offset: u64::from(record_index),
+            coordinate_offset: 141,
+            companion: crate::records::sketch_geometry::SketchPointCompanion {
+                incident_curves: Vec::new(),
+            },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                u64::from(record_index),
+                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                Some(2),
+                0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+        })
+        .unwrap()
+}
+
+fn sketch_graph_relation() -> crate::records::sketch_relations::SketchRelation {
+    use crate::records::sketch_relations::{
+        SketchRelation, SketchRelationDraft, SketchRelationMember, SketchRelationReturnMember,
+    };
+
+    SketchRelation::try_new(SketchRelationDraft {
+        id: "f3d:native:sketch-relation#30".to_owned(),
+        record_index: 30,
+        class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
+        byte_offset: 0,
+        state_offset: 0,
+        owner_reference: 100,
+        owner_entity_id: None,
+        auxiliary_references: crate::records::identity::ReferenceRun::located(Vec::new()),
+        rectangular_counted_reference_count: None,
+        members: vec![SketchRelationMember::from_index(20)].try_into().unwrap(),
+        owner_reference_offset: 0,
+        definition: crate::records::sketch_relations::SketchRelationDefinition::new(0, None).unwrap(),
+        entity_genesis: None,
+        return_members: vec![SketchRelationReturnMember::from_index(20)].try_into().unwrap(),
+        raw_bytes: vec![0; 160],
+    })
+    .unwrap()
+}
+
+#[test]
+fn sketch_graph_collections_and_text_refuse_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    for (limit, operation) in [
+        (0, "f3d sketch graph owner key"),
+        (1, "f3d sketch graph scoped relations"),
+        (2, "f3d sketch graph typed record"),
+        (3, "f3d sketch graph record owner"),
+        (4, "f3d sketch graph operand key"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut points = [sketch_graph_point(20)];
+        let mut relations = [sketch_graph_relation()];
+        let error = bind_sketch_graph(
+            &ctx,
+            &[sketch_graph_header(100, vec![20])],
+            &mut points,
+            &mut [],
+            &mut [],
+            &mut relations,
+        )
+        .expect_err("collection limit must refuse sketch graph");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
+    }
+    for (limit, dimension, operation) in [
+        (4, ResourceDimension::RetainedBytes, "f3d sketch relation owner text"),
+        (5, ResourceDimension::MaterializedBytes, "f3d sketch relation scope text"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut points = [sketch_graph_point(20)];
+        let mut relations = [sketch_graph_relation()];
+        let error = bind_sketch_graph(
+            &ctx,
+            &[sketch_graph_header(100, vec![20])],
+            &mut points,
+            &mut [],
+            &mut [],
+            &mut relations,
+        )
+        .expect_err("text limit must refuse sketch graph");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == dimension && failure.operation == operation));
+    }
+}
+
 #[test]
 fn sketch_member_run_backfills_relation_free_owners() {
     let mut bytes = vec![0u8; 40];
@@ -1033,55 +1175,11 @@ fn sketch_member_run_backfills_relation_free_owners() {
         vec![]
     );
 
-    let header = |suffix: u64, members: Vec<u32>| DesignEntityHeader {
-        id: format!("f3d:native:design-entity-header#{suffix}"),
-        byte_offset: suffix,
-
-        entity_id: crate::records::identity::DesignEntityId::try_from(format!("0_{suffix}"))
-            .expect("valid entity ID"),
-        class_tag: crate::records::references::DesignClassTag::try_from("281".to_owned()).unwrap(),
-        optional_slot_present: false,
-        registration: crate::records::entity_header::DesignEntityRegistration::new(
-            Some(DESIGN_MODULE_SKETCH.to_owned()),
-            None,
-            crate::records::identity::ReferenceRun::located(
-                members
-                    .into_iter()
-                    .map(|value| crate::records::identity::Located { value, offset: 0 })
-                    .collect(),
-            ),
-        )
-        .expect("valid module registration"),
-    };
-    let point = |record_index: u32| {
-        SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-            id: format!("f3d:native:sketch-point#{record_index}"),
-            record_index,
-            owner_reference: None,
-            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
-                .unwrap(),
-            byte_offset: u64::from(record_index),
-            coordinate_offset: 141,
-            companion: crate::records::sketch_geometry::SketchPointCompanion {
-                incident_curves: Vec::new(),
-            },
-            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
-                u64::from(record_index),
-                crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
-                Some(2),
-                0.0,
-            ),
-            paired_reference: 0,
-            coordinates: Point2::new(0.0, 0.0),
-        })
-        .unwrap()
-    };
-
     // Relation-free geometry named by the container's member run binds to
     // that sketch; records the run does not name stay unowned.
-    let mut points = [point(20), point(21), point(22)];
-    bind_sketch_graph(
-        &[header(100, vec![20, 21, 99])],
+    let mut points = [sketch_graph_point(20), sketch_graph_point(21), sketch_graph_point(22)];
+    tested_bind_sketch_graph(
+        &[sketch_graph_header(100, vec![20, 21, 99])],
         &mut points,
         &mut [],
         &mut [],
@@ -1093,9 +1191,9 @@ fn sketch_member_run_backfills_relation_free_owners() {
     assert_eq!(points[2].owner_reference, None);
 
     // Two sketches claiming one record is a structural conflict.
-    let mut points = [point(20)];
-    assert!(bind_sketch_graph(
-        &[header(100, vec![20]), header(101, vec![20])],
+    let mut points = [sketch_graph_point(20)];
+    assert!(tested_bind_sketch_graph(
+        &[sketch_graph_header(100, vec![20]), sketch_graph_header(101, vec![20])],
         &mut points,
         &mut [],
         &mut [],
