@@ -1138,6 +1138,26 @@ fn ordered_native_parameter_face_loops<'a>(
 #[cfg(test)]
 mod tests;
 
+fn push_native_pcurve_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    candidates: &mut NativePcurveCandidates,
+    curve_id: u32,
+    face_id: u32,
+    endpoints: [[f64; 2]; 2],
+    offset: usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let values = match candidates.entry((curve_id, face_id)) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo B-rep pcurve candidate nodes")?;
+            entry.insert(Vec::new())
+        }
+    };
+    ctx.try_reserve_items(values, 1, "creo B-rep pcurve candidates")?;
+    values.push((endpoints, offset));
+    Ok(())
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -1220,10 +1240,9 @@ pub(in super::super) fn transfer_native_brep(
     {
         for (face, endpoints) in faces.into_iter().zip([face_0_endpoints, face_1_endpoints]) {
             if let Some(face) = face {
-                native_pcurves
-                    .entry((curve_id, face.get()))
-                    .or_default()
-                    .push((endpoints, offset));
+                push_native_pcurve_candidate(
+                    ctx, &mut native_pcurves, curve_id, face.get(), endpoints, offset,
+                )?;
             }
         }
     }
@@ -1238,10 +1257,9 @@ pub(in super::super) fn transfer_native_brep(
         };
         for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {
             if let Some(endpoints) = endpoints {
-                native_pcurves
-                    .entry((pcurve.curve_id, face_id))
-                    .or_default()
-                    .push((endpoints, pcurve.offset));
+                push_native_pcurve_candidate(
+                    ctx, &mut native_pcurves, pcurve.curve_id, face_id, endpoints, pcurve.offset,
+                )?;
             }
         }
     }
@@ -1256,10 +1274,14 @@ pub(in super::super) fn transfer_native_brep(
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
         );
-        native_pcurves
-            .entry((pcurve.curve_id, pcurve.faces[0]))
-            .or_default()
-            .push((face_0_endpoints, pcurve.offset));
+        push_native_pcurve_candidate(
+            ctx,
+            &mut native_pcurves,
+            pcurve.curve_id,
+            pcurve.faces[0],
+            face_0_endpoints,
+            pcurve.offset,
+        )?;
     }
     let native_edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
