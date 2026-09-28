@@ -748,13 +748,16 @@ pub(super) fn emit_pcurves(
                         parameter
                     }
                 });
-            occurrence_groups
-                .entry(object_id)
-                .or_default()
-                .entry(parameter_range.map(|parameter| parameter.get().to_bits()))
-                .or_insert_with(|| (parameter_range, Vec::new()))
-                .1
-                .push((loop_.object_id, index));
+            crate::resource::admit_btree_entry(admission.context(), &occurrence_groups, &object_id,
+                "catia_b5_pcurve_occurrence_objects")?;
+            let ranges = occurrence_groups.entry(object_id).or_default();
+            let key = parameter_range.map(|parameter| parameter.get().to_bits());
+            crate::resource::admit_btree_entry(admission.context(), ranges, &key,
+                "catia_b5_pcurve_occurrence_ranges")?;
+            let occurrences = &mut ranges.entry(key)
+                .or_insert_with(|| (parameter_range, Vec::new())).1;
+            crate::resource::push(admission.context(), occurrences, (loop_.object_id, index),
+                "catia_b5_pcurve_occurrences")?;
         }
     }
     let mut pcurve_uses = HashMap::new();
@@ -795,12 +798,17 @@ pub(super) fn emit_pcurves(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             for occurrence in occurrences {
-                pcurve_uses.insert(occurrence, (id.clone(), parameter_range));
+                let use_id = crate::resource::copy_id(admission.context(), id.as_str(), PcurveId::mint,
+                    "catia_b5_pcurve_use_id")?;
+                crate::resource::insert_map(admission.context(), &mut pcurve_uses, occurrence,
+                    (use_id, parameter_range), "catia_b5_pcurve_uses")?;
             }
+            let geometry = crate::resource::copy_pcurve_geometry(admission.context(), geometry,
+                "catia_b5_emitted_pcurve_geometry")?;
             admission.reserve_entity(&mut ir.model.pcurves, "catia_b5_emit_pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id,
-                geometry: geometry.clone(),
+                geometry,
                 metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     Some(cadmpeg_ir::units::FiniteVector::from(parameter_range)),
