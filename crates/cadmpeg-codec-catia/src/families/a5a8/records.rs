@@ -7,7 +7,7 @@ use super::knot_lane::A8KnotLane;
 use crate::math::distance;
 use crate::nurbs::pole_count;
 use crate::wire::bytes::{
-    compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array, u32_le_24,
+    compact_int, f64_le, f64_point, read_f64_array, u32_le_24,
 };
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
@@ -281,13 +281,16 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
     }
     let continuation_start = 71;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = finite_f64_lane(tail.get(continuation_start..continuation_end)?)?;
+    let continuation = tail.get(continuation_start..continuation_end)?;
+    for index in 0..continuation_bytes / 8 {
+        let value = f64_le(continuation, index * 8)?;
+        if tail_len == 133 && value.get() != 0.0 {
+            return None;
+        }
+    }
     let suffix = &tail[continuation_end..];
     let valid_suffix = match (tail_len, &tail[68..71]) {
-        (133, [0x01, 0x01, 0x01]) => {
-            continuation.iter().all(|value| value.get() == 0.0)
-                && suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
-        }
+        (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => matches!(
             suffix,
             [0x01, 0x00, 0x01, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
