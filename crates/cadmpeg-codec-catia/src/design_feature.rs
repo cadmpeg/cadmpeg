@@ -35,7 +35,7 @@ pub(crate) struct DesignFeatureTransfer {
 }
 
 impl DesignFeatureTransfer {
-    pub(crate) fn consumed_records(&self) -> HashSet<String> {
+    pub(crate) fn consumed_records(&self) -> impl Iterator<Item = &String> {
         self.principal_plane_records
             .union(&self.sketch_owner_records)
             .chain(self.reference_plane_records.iter())
@@ -43,8 +43,6 @@ impl DesignFeatureTransfer {
             .chain(self.native_operation_definition_value_records.iter())
             .chain(self.native_operation_definition_chain_value_records.iter())
             .chain(self.native_operation_range_records.iter())
-            .cloned()
-            .collect()
     }
 
     /// Bind parameters to a transferred feature only through their exact
@@ -137,10 +135,6 @@ impl DesignFeatureTransfer {
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         Ok(())
-    }
-
-    pub(crate) fn feature_parent_count(&self, ir: &CadIr, native: &CatiaNative) -> usize {
-        self.feature_parents(ir, native).len()
     }
 
     fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {

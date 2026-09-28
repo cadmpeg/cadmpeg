@@ -511,7 +511,7 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         HashSet::from(["parent-record".to_string(), "child-record".to_string()])
     );
     assert_eq!(
-        transfer.consumed_records(),
+        transfer.consumed_records().cloned().collect::<HashSet<_>>(),
         transfer.native_operation_records
     );
 }
@@ -1276,7 +1276,7 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
     })
     .unwrap();
     assert!(ir.model.features.is_empty());
-    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.consumed_records().next().is_none());
 }
 
 #[test]
@@ -1312,7 +1312,7 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
-    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.consumed_records().next().is_none());
 }
 
 #[test]
@@ -1484,7 +1484,7 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
 
     assert!(ir.model.features.is_empty());
     assert!(ir.model.sketches.is_empty());
-    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.consumed_records().next().is_none());
     assert!(transfer.feature_ids.is_empty());
 }
 
@@ -1675,7 +1675,7 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         })
         .unwrap();
         assert!(excluded_ir.model.features.is_empty());
-        assert!(excluded.consumed_records().is_empty());
+        assert!(excluded.consumed_records().next().is_none());
     }
 }
 

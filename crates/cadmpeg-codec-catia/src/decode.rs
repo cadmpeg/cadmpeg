@@ -1883,7 +1883,7 @@ fn finish_decode(
         ctx,
         design_feature_transfer
             .consumed_records()
-            .intersection(&structurally_owned_records)
+            .filter(|record| structurally_owned_records.contains(*record))
             .map(String::as_str),
         "catia_transferred_design_features",
     )?;
@@ -3377,7 +3377,9 @@ fn finish_decode(
         (crate::coverage::TRANSFERRED_FEATURE_COUNT, ir.model.features.len()),
         (
             crate::coverage::TRANSFERRED_FEATURE_PARENT_COUNT,
-            design_feature_transfer.feature_parent_count(&ir, &native),
+            design_feature_transfer.feature_ids.values().filter(|feature_id| {
+                ir.model.feature_regeneration_parent(feature_id).is_some()
+            }).count(),
         ),
         (
             crate::coverage::TRANSFERRED_PARAMETER_COUNT,
