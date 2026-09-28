@@ -139,7 +139,12 @@ pub(crate) fn placed_tabulated_nurbs_overflow_file() -> Vec<u8> {
     )
 }
 
-fn placed_tabulated_curve_file_with_transform(global: &[u8], entity_type: &str, directrix: &[u8], transform: &[u8]) -> Vec<u8> {
+fn placed_tabulated_curve_file_with_transform(
+    global: &[u8],
+    entity_type: &str,
+    directrix: &[u8],
+    transform: &[u8],
+) -> Vec<u8> {
     let tabulated = b"122,1,0,0,2;";
     let directrix_count = u32::try_from(parameter_fragment_count(directrix)).unwrap();
     let transform_start = 1 + directrix_count;

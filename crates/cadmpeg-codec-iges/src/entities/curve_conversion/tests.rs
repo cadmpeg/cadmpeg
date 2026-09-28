@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::CurveConversionError;
 use super::{
     angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
     ANGULAR_TOLERANCE,
 };
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::nurbs_curve_point_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_core::CodecError;
-use super::CurveConversionError;
 
 #[test]
 fn analytic_arc_conversion_refuses_each_decode_lane() {
@@ -21,24 +21,32 @@ fn analytic_arc_conversion_refuses_each_decode_lane() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         let result = if parabola {
             parabolic_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), PositiveLength::new(1.0).unwrap(),
-                [0.0, 1.0], Some(&ctx),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                PositiveLength::new(1.0).expect("test setup"),
+                [0.0, 1.0],
+                Some(&ctx),
             )
         } else {
             elliptical_arc_nurbs(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), PositiveLength::new(2.0).unwrap(),
-                PositiveLength::new(1.0).unwrap(),
-                [0.0, std::f64::consts::FRAC_PI_2], Some(&ctx),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                PositiveLength::new(2.0).expect("test setup"),
+                PositiveLength::new(1.0).expect("test setup"),
+                [0.0, std::f64::consts::FRAC_PI_2],
+                Some(&ctx),
             )
         };
-        assert!(matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
+        assert!(
+            matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == operation));
+                && limit.operation == operation)
+        );
     }
 }
 

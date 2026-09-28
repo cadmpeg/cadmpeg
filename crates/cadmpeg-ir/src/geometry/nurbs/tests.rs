@@ -23,7 +23,10 @@ fn in_place_curve_pole_map_reuses_storage_and_keeps_admitted_weights() {
     };
     assert_eq!(points.as_ptr(), original_storage);
     assert_eq!(curve.weights(), original_weights);
-    assert_eq!(curve.control_points(), [Point3::new(-1.0, -2.0, -3.0), Point3::new(-4.0, -5.0, -6.0)]);
+    assert_eq!(
+        curve.control_points(),
+        [Point3::new(-1.0, -2.0, -3.0), Point3::new(-4.0, -5.0, -6.0)]
+    );
 
     let mut visited = 0;
     let refusal = curve.map_control_points_in_place(|point| {
@@ -34,7 +37,10 @@ fn in_place_curve_pole_map_reuses_storage_and_keeps_admitted_weights() {
         Ok(point.negated())
     });
     assert_eq!(refusal, Err("second pole"));
-    assert_eq!(curve.control_points(), [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, -5.0, -6.0)]);
+    assert_eq!(
+        curve.control_points(),
+        [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, -5.0, -6.0)]
+    );
 }
 
 #[test]
@@ -89,8 +95,16 @@ fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
     let outer_storage = rows.as_ptr();
     let inner_storage = rows.iter().map(Vec::as_ptr).collect::<Vec<_>>();
     let rebuilt = NurbsSurface::new(
-        NurbsSurfaceAxis::new(original.u_degree(), original.u_knots().clone(), original.u_periodic()),
-        NurbsSurfaceAxis::new(original.v_degree(), original.v_knots().clone(), original.v_periodic()),
+        NurbsSurfaceAxis::new(
+            original.u_degree(),
+            original.u_knots().clone(),
+            original.u_periodic(),
+        ),
+        NurbsSurfaceAxis::new(
+            original.v_degree(),
+            original.v_knots().clone(),
+            original.v_periodic(),
+        ),
         grid,
         original.normal_reversed(),
     )
@@ -99,7 +113,10 @@ fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
         panic!("rebuilt surface must remain rational");
     };
     assert_eq!(rows.as_ptr(), outer_storage);
-    assert_eq!(rows.iter().map(Vec::as_ptr).collect::<Vec<_>>(), inner_storage);
+    assert_eq!(
+        rows.iter().map(Vec::as_ptr).collect::<Vec<_>>(),
+        inner_storage
+    );
     assert_eq!(rebuilt, original);
 }
 
@@ -649,18 +666,22 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])).expect("resource allocation did not fail"),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0]))
+            .expect("resource allocation did not fail"),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
             Some(&[1.0, 1.0, 2.0, 2.0])
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
     );
     assert_eq!(
         positive_controls(&surface.poles(), None).expect("resource allocation did not fail"),
-        positive_controls(&surface.poles(), Some(&[1.0; 4])).expect("resource allocation did not fail")
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+            .expect("resource allocation did not fail")
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])).expect("resource allocation did not fail"),
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0]))
+            .expect("resource allocation did not fail"),
         None
     );
     let mut mapped = surface.clone();

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeSet;
-use std::io::Cursor;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::collections::BTreeSet;
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
@@ -35,11 +35,16 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
         }
         match IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, dimension);
-                if limit.operation == operation { return; }
+                if limit.operation == operation {
+                    return;
+                }
                 let next = limit.used.checked_add(limit.additional).unwrap();
                 assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
                 cap = next;
@@ -53,7 +58,11 @@ fn assert_csg_refusal(bytes: &[u8], operation: &str, dimension: ResourceDimensio
 #[test]
 fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
     let primitive = primitive_solids_file();
-    assert_csg_refusal(&primitive, "iges csg decoded sequences", ResourceDimension::CollectionItems);
+    assert_csg_refusal(
+        &primitive,
+        "iges csg decoded sequences",
+        ResourceDimension::CollectionItems,
+    );
     let boolean = procedural_and_boolean_solids_file();
     for operation in [
         "iges Boolean postfix terms",
@@ -63,8 +72,16 @@ fn csg_boolean_terms_and_validation_nodes_refuse_collection_limits() {
     ] {
         assert_csg_refusal(&boolean, operation, ResourceDimension::CollectionItems);
     }
-    assert_csg_refusal(&boolean, "iges boolean tree validation", ResourceDimension::RecursionDepth);
-    assert_csg_refusal(&boolean, "iges boolean term validation", ResourceDimension::WorkUnits);
+    assert_csg_refusal(
+        &boolean,
+        "iges boolean tree validation",
+        ResourceDimension::RecursionDepth,
+    );
+    assert_csg_refusal(
+        &boolean,
+        "iges boolean term validation",
+        ResourceDimension::WorkUnits,
+    );
 }
 
 #[test]

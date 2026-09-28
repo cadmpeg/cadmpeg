@@ -8,15 +8,15 @@ use crate::test_support::test_owned::{
 };
 use crate::test_support::test_surface_fixtures::bounded_plane_entity_file;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{
-    analytic::LineCurve, CompositeCurveSegment, CompositeCurveTransition,
-    Curve, CurveGeometry, SolvedCurveGeometry,
+    analytic::LineCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -34,8 +34,16 @@ fn bounded_plane_refuses_boundary_edge_slot_before_draft() {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match crate::IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
                 if limit.operation == "iges bounded plane boundary edges" {
                     reached = true;
@@ -56,8 +64,16 @@ fn bounded_plane_identity_copies_refuse_before_retaining_text() {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
-            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match crate::IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 if limit.operation == "iges structure identity copy" {
                     decode(bytes);
@@ -338,7 +354,9 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
             curve: child,
             same_sense: true,
             transition: CompositeCurveTransition::Continuous,
-        }].try_into().unwrap(),
+        }]
+        .try_into()
+        .unwrap(),
         self_intersect: Some(false),
     };
     let index = ModelIndex::new(&ir);
@@ -354,18 +372,32 @@ fn bounded_plane_refuses_recursive_child_curve_identity_copy() {
         ctx: &ctx,
     };
     let result = super::super::bounded_plane_curve_is_simple(
-        &geometry, context, false, None, &mut BTreeSet::new(),
+        &geometry,
+        context,
+        false,
+        None,
+        &mut BTreeSet::new(),
     );
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "iges plane boundary child curve ID"));
+            && limit.operation == "iges plane boundary child curve ID")
+    );
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let context = super::super::PlaneBoundarySimplicity { ctx: &ctx, ..context };
+    let context = super::super::PlaneBoundarySimplicity {
+        ctx: &ctx,
+        ..context
+    };
     assert!(!super::super::bounded_plane_curve_is_simple(
-        &geometry, context, false, None, &mut BTreeSet::new(),
-    ).unwrap());
+        &geometry,
+        context,
+        false,
+        None,
+        &mut BTreeSet::new(),
+    )
+    .unwrap());
 }
 
 #[test]

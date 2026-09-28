@@ -1004,14 +1004,18 @@ impl Model {
                 )));
             }
             SurfaceGeometry::Solved(_) => {
-                let previous = std::mem::replace(&mut surface.geometry, SurfaceGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: None,
-                });
+                let previous = std::mem::replace(
+                    &mut surface.geometry,
+                    SurfaceGeometry::Procedural {
+                        construction: procedural.id.clone(),
+                        cache: None,
+                    },
+                );
                 if let (
                     SurfaceGeometry::Solved(geometry),
                     SurfaceGeometry::Procedural { cache, .. },
-                ) = (previous, &mut surface.geometry) {
+                ) = (previous, &mut surface.geometry)
+                {
                     *cache = Some(geometry);
                 }
             }
@@ -1073,14 +1077,16 @@ impl Model {
                 )));
             }
             CurveGeometry::Solved(_) => {
-                let previous = std::mem::replace(&mut curve.geometry, CurveGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: None,
-                });
-                if let (
-                    CurveGeometry::Solved(geometry),
-                    CurveGeometry::Procedural { cache, .. },
-                ) = (previous, &mut curve.geometry) {
+                let previous = std::mem::replace(
+                    &mut curve.geometry,
+                    CurveGeometry::Procedural {
+                        construction: procedural.id.clone(),
+                        cache: None,
+                    },
+                );
+                if let (CurveGeometry::Solved(geometry), CurveGeometry::Procedural { cache, .. }) =
+                    (previous, &mut curve.geometry)
+                {
                     *cache = Some(geometry);
                 }
             }

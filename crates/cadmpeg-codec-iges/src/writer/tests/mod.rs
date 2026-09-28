@@ -313,14 +313,8 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let scan = crate::card::scan(&written).expect("generated IGES cards scan");
     let (global, _) =
         crate::test_support::parse_global(&scan).expect("generated Global record parses");
-    assert_eq!(
-        global.sender_product(),
-        Some(WRITER_SENDER_PRODUCT)
-    );
-    assert_eq!(
-        global.native_file_name(),
-        Some(WRITER_NATIVE_FILE_NAME)
-    );
+    assert_eq!(global.sender_product(), Some(WRITER_SENDER_PRODUCT));
+    assert_eq!(global.native_file_name(), Some(WRITER_NATIVE_FILE_NAME));
     assert_eq!(global.units_name(), Some(WRITER_UNITS_NAME));
     assert_eq!(
         global

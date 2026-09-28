@@ -4,7 +4,10 @@
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
-use crate::decode_resource::{format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{
+    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec,
+    reserve_vec_growth,
+};
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -132,31 +135,57 @@ fn topology_vertex(
     vertex_ids: &mut BTreeMap<(u32, usize), VertexId>,
     vertex_lists: &BTreeMap<u32, Vec<Point3>>,
     stem: &crate::ids::Stem,
-    list: u32,
-    index: usize,
+    vertex_key: (u32, usize),
     sequences: &mut super::geometry::SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
+    let (list, index) = vertex_key;
     if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Ok(Some(crate::decode_resource::clone_optional_identity(Some(ctx), existing, "iges B-rep identity copy")?));
+        return Ok(Some(crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            existing,
+            "iges B-rep identity copy",
+        )?));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
     };
-    reserve_vec_growth(ctx, &mut candidate.model_mut().points, 1, "iges B-rep topology points")?;
-    reserve_vec_growth(ctx, &mut candidate.model_mut().vertices, 1, "iges B-rep topology vertices")?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().points,
+        1,
+        "iges B-rep topology points",
+    )?;
+    reserve_vec_growth(
+        ctx,
+        &mut candidate.model_mut().vertices,
+        1,
+        "iges B-rep topology vertices",
+    )?;
     if !vertex_ids.contains_key(&(list, index)) {
         ctx.charge_collection_items(1, "iges B-rep topology vertex index")?;
     }
     let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
-    let point = Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &point_id, "iges B-rep identity copy")?, position, None);
+    let point = Point::new(
+        crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &point_id,
+            "iges B-rep identity copy",
+        )?,
+        position,
+        None,
+    );
     sequences.record_point(&point_id, stem, Some(ctx))?;
     let vertex_id = crate::ids::vertex_admitted(&stem.child(list).slot(index + 1), ctx)?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
-        id: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex_id, "iges B-rep identity copy")?,
+        id: crate::decode_resource::clone_optional_identity(
+            Some(ctx),
+            &vertex_id,
+            "iges B-rep identity copy",
+        )?,
         point: point_id,
         tolerance: None,
     });
@@ -221,17 +250,30 @@ fn project_pcurve_uses(
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
     let mut projected = reserve_vec(ctx, resolved.len(), "iges B-rep projected pcurve uses")?;
     for (index, ((isoparametric, _), (geometry, range))) in uses.iter().zip(resolved).enumerate() {
-        let parameter_range = cadmpeg_ir::units::FiniteVector::new(range)
-            .ok_or(PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE))?;
+        let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
+            PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
+        )?;
         let checked_tolerance = fit_tolerance
-            .map(|value| cadmpeg_ir::geometry::FitTolerance::try_new(value)
-                .map_err(|_| PcurveProjectionError::Invalid(PcurveMetadata::INVALID_FIT_TOLERANCE)))
+            .map(|value| {
+                cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
+                    PcurveProjectionError::Invalid(PcurveMetadata::INVALID_FIT_TOLERANCE)
+                })
+            })
             .transpose()?;
-        reserve_vec_growth(ctx, &mut candidate.model_mut().pcurves, 1, "iges B-rep pcurve slots")?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().pcurves,
+            1,
+            "iges B-rep pcurve slots",
+        )?;
         let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &id,
+                "iges B-rep identity copy",
+            )?,
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
         });
@@ -275,7 +317,8 @@ fn resolve_pcurve_uses<'a>(
         return Ok(Some(Vec::new()));
     }
     if model_index.is_none() {
-        *model_index = Some(cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(source, ctx)?);
+        *model_index =
+            Some(cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(source, ctx)?);
     }
     let Some(index) = model_index.as_ref() else {
         return Ok(None);
@@ -345,14 +388,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut records, record.directory_sequence, record,
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges brep parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         crate::decode_resource::insert_optional_btree_map(
-            Some(ctx), &mut entries, entry.sequence, entry,
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges brep directory index",
         )?;
     }
@@ -370,15 +419,30 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 502 && entry.form == 1)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         if entry.transform != 0 {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex lists cannot carry a transformation"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "vertex lists cannot carry a transformation"),
+            )?;
             continue;
         }
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-list count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "vertex-list count is not positive"),
+            )?;
             continue;
         };
         let mut points = reserve_vec(ctx, count, "iges B-rep vertex-list points")?;
@@ -400,10 +464,21 @@ pub(super) fn project(
             points.push(Point3::new(x * factor, y * factor, z * factor));
         }
         if points.len() != count {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-list coordinates are truncated or non-finite"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "vertex-list coordinates are truncated or non-finite"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(Some(ctx), &mut vertex_lists, entry.sequence, points, "iges B-rep vertex-list nodes")?;
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut vertex_lists,
+            entry.sequence,
+            points,
+            "iges B-rep vertex-list nodes",
+        )?;
     }
 
     for entry in directory
@@ -411,15 +486,30 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge lists cannot carry a transformation"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "edge lists cannot carry a transformation"),
+            )?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge-list count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "edge-list count is not positive"),
+            )?;
             continue;
         };
         let mut edges = reserve_vec(ctx, count, "iges B-rep edge-list edges")?;
@@ -456,10 +546,21 @@ pub(super) fn project(
             edges.push(edge);
         }
         if edges.len() != count {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge-list tuple is invalid or names a missing vertex"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "edge-list tuple is invalid or names a missing vertex"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(Some(ctx), &mut edge_lists, entry.sequence, edges, "iges B-rep edge-list nodes")?;
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut edge_lists,
+            entry.sequence,
+            edges,
+            "iges B-rep edge-list nodes",
+        )?;
     }
 
     for entry in directory
@@ -467,15 +568,30 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loops cannot carry a transformation"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "loops cannot carry a transformation"),
+            )?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "loop edge-use count is not positive"),
+            )?;
             continue;
         };
         let mut index = 2;
@@ -570,10 +686,21 @@ pub(super) fn project(
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use tuple is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "loop edge-use tuple is invalid"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(Some(ctx), &mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut loops,
+            entry.sequence,
+            uses,
+            "iges B-rep loop nodes",
+        )?;
     }
 
     for entry in directory
@@ -581,31 +708,61 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
         if entry.transform != 0 {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "faces cannot carry a transformation"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "faces cannot carry a transformation"),
+            )?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(surface) = pointer(record, 1) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face surface pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "face surface pointer is invalid"),
+            )?;
             continue;
         };
         let Some(count) = record.count(2).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "face loop count is not positive"),
+            )?;
             continue;
         };
         let has_outer_loop = match record.integer(3) {
             Some(1) => true,
             Some(0) => false,
             _ => {
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face outer-loop flag is not logical"))?;
+                super::push_optional_entity_loss(
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "face outer-loop flag is not logical"),
+                )?;
                 continue;
             }
         };
         let Some(first) = pointer(record, 4) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "face loop pointer is invalid"),
+            )?;
             continue;
         };
         let mut rest = reserve_vec(ctx, count - 1, "iges B-rep face loop pointers")?;
@@ -618,7 +775,12 @@ pub(super) fn project(
             rest.push(sequence);
         }
         if !valid_pointers {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "face loop pointer is invalid"),
+            )?;
             continue;
         }
         let face_loops = if has_outer_loop {
@@ -633,10 +795,24 @@ pub(super) fn project(
             .iter()
             .any(|sequence| !loops.contains_key(&sequence))
         {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "face loop is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "face loop is missing"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(Some(ctx), &mut faces, entry.sequence, FaceDefinition { surface, loops: face_loops }, "iges B-rep face nodes")?;
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut faces,
+            entry.sequence,
+            FaceDefinition {
+                surface,
+                loops: face_loops,
+            },
+            "iges B-rep face nodes",
+        )?;
     }
 
     let mut shell_definitions = BTreeMap::new();
@@ -645,15 +821,30 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
         if entry.transform != 0 {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shells cannot carry a transformation"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "shells cannot carry a transformation"),
+            )?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell face count is not positive"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "shell face count is not positive"),
+            )?;
             continue;
         };
         let mut face_uses = reserve_vec(ctx, count, "iges B-rep shell face uses")?;
@@ -677,10 +868,24 @@ pub(super) fn project(
             face_uses.push((face, sense));
         }
         if face_uses.len() != count {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell face-use tuple is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "shell face-use tuple is invalid"),
+            )?;
             continue;
         }
-        insert_optional_btree_map(Some(ctx), &mut shell_definitions, entry.sequence, ShellDefinition { form: entry.form, faces: face_uses }, "iges B-rep shell nodes")?;
+        insert_optional_btree_map(
+            Some(ctx),
+            &mut shell_definitions,
+            entry.sequence,
+            ShellDefinition {
+                form: entry.form,
+                faces: face_uses,
+            },
+            "iges B-rep shell nodes",
+        )?;
     }
 
     let mut body_definitions = Vec::new();
@@ -707,26 +912,48 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 186 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(outer) = pointer(record, 1) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid outer-shell pointer is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid outer-shell pointer is invalid"),
+            )?;
             continue;
         };
         let outer_sense = match record.integer(2) {
             Some(1) => Sense::Forward,
             Some(0) => Sense::Reversed,
             _ => {
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid outer-shell orientation is not logical"))?;
+                super::push_optional_entity_loss(
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "solid outer-shell orientation is not logical"),
+                )?;
                 continue;
             }
         };
         let Some(void_count) = record.count(3) else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid void-shell count is invalid"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid void-shell count is invalid"),
+            )?;
             continue;
         };
-        let shell_count = void_count.checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1))?;
+        let shell_count = void_count.checked_add(1).ok_or_else(|| {
+            cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
+        })?;
         let mut shell_uses = reserve_vec(ctx, shell_count, "iges B-rep solid shell uses")?;
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
@@ -752,11 +979,21 @@ pub(super) fn project(
                     .is_none_or(|shell| shell.form != 1)
             })
         {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid shell-use tuple is invalid or not closed"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "solid shell-use tuple is invalid or not closed"),
+            )?;
             continue;
         }
         for (sequence, _) in &shell_uses {
-            insert_optional_btree_set(Some(ctx), &mut referenced_closed_shells, *sequence, "iges B-rep referenced closed shells")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut referenced_closed_shells,
+                *sequence,
+                "iges B-rep referenced closed shells",
+            )?;
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -770,7 +1007,12 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", message))?;
+                super::push_optional_entity_loss(
+                    Some(ctx),
+                    &mut losses,
+                    entry,
+                    format_args!("{message}"),
+                )?;
                 continue;
             }
         };
@@ -814,14 +1056,34 @@ pub(super) fn project(
     if !body_definitions.is_empty() {
         for (position, surface) in ir.model.surfaces.iter().enumerate() {
             if !surface_positions.contains_key(surface.id.as_str()) {
-                let key = format_retained(ctx, format_args!("{}", surface.id), "iges B-rep surface index keys")?;
-                insert_optional_btree_map(Some(ctx), &mut surface_positions, key, position, "iges B-rep surface index nodes")?;
+                let key = format_retained(
+                    ctx,
+                    format_args!("{}", surface.id),
+                    "iges B-rep surface index keys",
+                )?;
+                insert_optional_btree_map(
+                    Some(ctx),
+                    &mut surface_positions,
+                    key,
+                    position,
+                    "iges B-rep surface index nodes",
+                )?;
             }
         }
         for (position, curve) in ir.model.curves.iter().enumerate() {
             if !curve_positions.contains_key(curve.id.as_str()) {
-                let key = format_retained(ctx, format_args!("{}", curve.id), "iges B-rep curve index keys")?;
-                insert_optional_btree_map(Some(ctx), &mut curve_positions, key, position, "iges B-rep curve index nodes")?;
+                let key = format_retained(
+                    ctx,
+                    format_args!("{}", curve.id),
+                    "iges B-rep curve index keys",
+                )?;
+                insert_optional_btree_map(
+                    Some(ctx),
+                    &mut curve_positions,
+                    key,
+                    position,
+                    "iges B-rep curve index nodes",
+                )?;
             }
         }
     }
@@ -847,7 +1109,8 @@ pub(super) fn project(
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
-        let mut region_shells = reserve_vec(ctx, definition.shells.len(), "iges B-rep region shell ids")?;
+        let mut region_shells =
+            reserve_vec(ctx, definition.shells.len(), "iges B-rep region shell ids")?;
         let mut consumed = BTreeSet::new();
         let mut valid = true;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
@@ -858,12 +1121,18 @@ pub(super) fn project(
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
             let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
-            let mut shell_faces = reserve_vec(ctx, shell_definition.faces.len(), "iges B-rep shell face ids")?;
+            let mut shell_faces = reserve_vec(
+                ctx,
+                shell_definition.faces.len(),
+                "iges B-rep shell face ids",
+            )?;
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
-                let surface_id =
-                    crate::ids::surface_admitted(&crate::ids::Stem::directory(face_definition.surface), ctx)?;
+                let surface_id = crate::ids::surface_admitted(
+                    &crate::ids::Stem::directory(face_definition.surface),
+                    ctx,
+                )?;
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
@@ -874,24 +1143,43 @@ pub(super) fn project(
                 };
                 let face_id = crate::ids::face_admitted(&shell_stem.child(face_sequence), ctx)?;
                 sequences.record_face(&face_id, face_sequence, Some(ctx))?;
-                let loop_id_for = |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
+                let loop_id_for =
+                    |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
                 for loop_sequence in face_definition.loops.iter() {
                     let uses = &loops[&loop_sequence];
                     let loop_id = loop_id_for(loop_sequence)?;
-                    let edge_use_count = uses.iter().filter(|use_| matches!(use_, LoopUse::Edge { .. })).count();
-                    let mut edge_use_indices = reserve_vec(ctx, edge_use_count, "iges B-rep edge-use positions")?;
+                    let edge_use_count = uses
+                        .iter()
+                        .filter(|use_| matches!(use_, LoopUse::Edge { .. }))
+                        .count();
+                    let mut edge_use_indices =
+                        reserve_vec(ctx, edge_use_count, "iges B-rep edge-use positions")?;
                     let mut coedge_ids = reserve_vec(ctx, edge_use_count, "iges B-rep coedge ids")?;
                     let mut coedge_by_use = BTreeMap::new();
                     for (index, use_) in uses.iter().enumerate() {
                         if matches!(use_, LoopUse::Edge { .. }) {
                             edge_use_indices.push(index);
-                            let coedge_id = crate::ids::coedge_admitted(&shell_stem.child(loop_sequence).slot(index), ctx)?;
-                            insert_optional_btree_map(Some(ctx), &mut coedge_by_use, index, crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?, "iges B-rep coedge use nodes")?;
+                            let coedge_id = crate::ids::coedge_admitted(
+                                &shell_stem.child(loop_sequence).slot(index),
+                                ctx,
+                            )?;
+                            insert_optional_btree_map(
+                                Some(ctx),
+                                &mut coedge_by_use,
+                                index,
+                                crate::decode_resource::clone_optional_identity(
+                                    Some(ctx),
+                                    &coedge_id,
+                                    "iges B-rep identity copy",
+                                )?,
+                                "iges B-rep coedge use nodes",
+                            )?;
                             coedge_ids.push(coedge_id);
                         }
                     }
                     let vertex_use_count = uses.len() - edge_use_count;
-                    let mut loop_vertex_uses = reserve_vec(ctx, vertex_use_count, "iges B-rep loop vertex uses")?;
+                    let mut loop_vertex_uses =
+                        reserve_vec(ctx, vertex_use_count, "iges B-rep loop vertex uses")?;
                     for (use_index, use_) in uses.iter().enumerate() {
                         let LoopUse::Edge {
                             edge_list,
@@ -913,11 +1201,11 @@ pub(super) fn project(
                                 &mut vertex_ids,
                                 &vertex_lists,
                                 &stem,
-                                *vertex_list,
-                                *vertex_index,
+                                (*vertex_list, *vertex_index),
                                 sequences,
                                 ctx,
-                            )? else {
+                            )?
+                            else {
                                 continue;
                             };
                             let after = if coedge_ids.is_empty() {
@@ -934,7 +1222,7 @@ pub(super) fn project(
                                 pcurves,
                                 &SurfaceSupport {
                                     id: &surface_id,
-                                    geometry: &support_geometry,
+                                    geometry: support_geometry,
                                     factor,
                                 },
                                 expected,
@@ -946,14 +1234,27 @@ pub(super) fn project(
                                 Ok(resolved) => resolved,
                                 Err(error) => {
                                     let error = error.non_resource()?;
-                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!(
+                                    super::push_optional_entity_loss(
+                                        Some(ctx),
+                                        &mut losses,
+                                        entry,
+                                        format_args!(
                                             "a loop vertex-use pcurve states no carrier: {error}"
-                                        ))?;
+                                        ),
+                                    )?;
                                     valid = false;
                                     break;
                                 }
                             }) else {
-                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop vertex-use pcurves disagree with the pole vertex"))?;
+                                super::push_optional_entity_loss(
+                                    Some(ctx),
+                                    &mut losses,
+                                    entry,
+                                    format_args!(
+                                        "{}",
+                                        "loop vertex-use pcurves disagree with the pole vertex"
+                                    ),
+                                )?;
                                 valid = false;
                                 break;
                             };
@@ -967,7 +1268,12 @@ pub(super) fn project(
                             ) {
                                 Ok(projected) => projected,
                                 Err(PcurveProjectionError::Invalid(error)) => {
-                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
+                                    super::push_optional_entity_loss(
+                                        Some(ctx),
+                                        &mut losses,
+                                        entry,
+                                        format_args!("{error}"),
+                                    )?;
                                     valid = false;
                                     break;
                                 }
@@ -987,14 +1293,23 @@ pub(super) fn project(
                                 &mut vertex_ids,
                                 &vertex_lists,
                                 &stem,
-                                list,
-                                index,
+                                (list, index),
                                 sequences,
                                 ctx,
-                            )?.is_some() && placed;
+                            )?
+                            .is_some()
+                                && placed;
                         }
                         if !placed {
-                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "an edge vertex position states a non-finite coordinate"))?;
+                            super::push_optional_entity_loss(
+                                Some(ctx),
+                                &mut losses,
+                                entry,
+                                format_args!(
+                                    "{}",
+                                    "an edge vertex position states a non-finite coordinate"
+                                ),
+                            )?;
                             valid = false;
                             break;
                         }
@@ -1013,7 +1328,7 @@ pub(super) fn project(
                             pcurves,
                             &SurfaceSupport {
                                 id: &surface_id,
-                                geometry: &support_geometry,
+                                geometry: support_geometry,
                                 factor,
                             },
                             expected_start,
@@ -1025,36 +1340,68 @@ pub(super) fn project(
                             Ok(resolved) => resolved,
                             Err(error) => {
                                 let error = error.non_resource()?;
-                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("a loop edge-use pcurve states no carrier: {error}"))?;
+                                super::push_optional_entity_loss(
+                                    Some(ctx),
+                                    &mut losses,
+                                    entry,
+                                    format_args!(
+                                        "a loop edge-use pcurve states no carrier: {error}"
+                                    ),
+                                )?;
                                 valid = false;
                                 break;
                             }
                         }) else {
-                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "loop edge-use pcurves disagree with the edge vertices"))?;
+                            super::push_optional_entity_loss(
+                                Some(ctx),
+                                &mut losses,
+                                entry,
+                                format_args!(
+                                    "{}",
+                                    "loop edge-use pcurves disagree with the edge vertices"
+                                ),
+                            )?;
                             valid = false;
                             break;
                         };
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
-                            crate::decode_resource::clone_optional_identity(Some(ctx), id, "iges B-rep identity copy")?
+                            crate::decode_resource::clone_optional_identity(
+                                Some(ctx),
+                                id,
+                                "iges B-rep identity copy",
+                            )?
                         } else {
-                            let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(
-                                edge_definition.curve,
-                            ), ctx)?;
+                            let curve_id = crate::ids::curve_admitted(
+                                &crate::ids::Stem::directory(edge_definition.curve),
+                                ctx,
+                            )?;
                             if edges_by_curve.is_none() {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
                                     if let Some(curve) = edge.curve() {
                                         if !positions.contains_key(curve.as_str()) {
-                                            ctx.charge_collection_items(1, "iges B-rep source edge index nodes")?;
+                                            ctx.charge_collection_items(
+                                                1,
+                                                "iges B-rep source edge index nodes",
+                                            )?;
                                         }
                                         let indexed = positions.entry(curve.as_str()).or_default();
-                                        reserve_vec_growth(ctx, indexed, 1, "iges B-rep source edge positions")?;
+                                        reserve_vec_growth(
+                                            ctx,
+                                            indexed,
+                                            1,
+                                            "iges B-rep source edge positions",
+                                        )?;
                                         indexed.push(position);
                                     }
                                 }
                                 edges_by_curve = Some(positions);
                             }
-                            let curve_edges = edges_by_curve.as_ref().ok_or_else(|| CodecError::Malformed("IGES B-rep source edge index is absent".into()))?;
+                            let curve_edges = edges_by_curve.as_ref().ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "IGES B-rep source edge index is absent".into(),
+                                )
+                            })?;
                             let Some(candidates) = curve_edges.get(curve_id.as_str()) else {
                                 valid = false;
                                 break;
@@ -1063,7 +1410,15 @@ pub(super) fn project(
                                 .get(curve_id.as_str())
                                 .and_then(|position| ir.model.curves.get(*position))
                             else {
-                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge curve endpoints disagree with the vertex-list points"))?;
+                                super::push_optional_entity_loss(
+                                    Some(ctx),
+                                    &mut losses,
+                                    entry,
+                                    format_args!(
+                                        "{}",
+                                        "edge curve endpoints disagree with the vertex-list points"
+                                    ),
+                                )?;
                                 valid = false;
                                 break;
                             };
@@ -1090,7 +1445,10 @@ pub(super) fn project(
                                     return Err(limit.into());
                                 }
                             };
-                            let id = crate::ids::edge_admitted(&stem.child(edge_key.0).slot(edge_key.1 + 1), ctx)?;
+                            let id = crate::ids::edge_admitted(
+                                &stem.child(edge_key.0).slot(edge_key.1 + 1),
+                                ctx,
+                            )?;
                             let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 source_edge
@@ -1099,29 +1457,61 @@ pub(super) fn project(
                             ) {
                                 Ok(carrier) => carrier,
                                 Err(error) => {
-                                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
+                                    super::push_optional_entity_loss(
+                                        Some(ctx),
+                                        &mut losses,
+                                        entry,
+                                        format_args!("{error}"),
+                                    )?;
                                     valid = false;
                                     break;
                                 }
                             };
-                            reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges B-rep topology edges")?;
-                            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+                            reserve_vec_growth(
+                                ctx,
+                                &mut candidate.model_mut().edges,
+                                1,
+                                "iges B-rep topology edges",
+                            )?;
+                            crate::decode_resource::admit_optional_entities(
+                                Some(ctx),
+                                1,
+                                "iges_geometry_brep",
+                            )?;
                             candidate.model_mut().edges.push(Edge {
-                                id: crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?,
+                                id: crate::decode_resource::clone_optional_identity(
+                                    Some(ctx),
+                                    &id,
+                                    "iges B-rep identity copy",
+                                )?,
                                 carrier,
                                 start: crate::decode_resource::clone_optional_identity(
                                     Some(ctx),
-                                    &vertex_ids[&(edge_definition.start_list, edge_definition.start_index)],
+                                    &vertex_ids[&(
+                                        edge_definition.start_list,
+                                        edge_definition.start_index,
+                                    )],
                                     "iges B-rep identity copy",
                                 )?,
                                 end: crate::decode_resource::clone_optional_identity(
                                     Some(ctx),
-                                    &vertex_ids[&(edge_definition.end_list, edge_definition.end_index)],
+                                    &vertex_ids
+                                        [&(edge_definition.end_list, edge_definition.end_index)],
                                     "iges B-rep identity copy",
                                 )?,
                                 tolerance: None,
                             });
-                            insert_optional_btree_map(Some(ctx), &mut edge_ids, edge_key, crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?, "iges B-rep topology edge index")?;
+                            insert_optional_btree_map(
+                                Some(ctx),
+                                &mut edge_ids,
+                                edge_key,
+                                crate::decode_resource::clone_optional_identity(
+                                    Some(ctx),
+                                    &id,
+                                    "iges B-rep identity copy",
+                                )?,
+                                "iges B-rep topology edge index",
+                            )?;
                             id
                         };
                         let projected = match project_pcurve_uses(
@@ -1134,7 +1524,12 @@ pub(super) fn project(
                         ) {
                             Ok(projected) => projected,
                             Err(PcurveProjectionError::Invalid(error)) => {
-                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
+                                super::push_optional_entity_loss(
+                                    Some(ctx),
+                                    &mut losses,
+                                    entry,
+                                    format_args!("{error}"),
+                                )?;
                                 valid = false;
                                 break;
                             }
@@ -1148,7 +1543,9 @@ pub(super) fn project(
                             break;
                         };
                         let coedge_id = crate::decode_resource::clone_optional_identity(
-                            Some(ctx), &coedge_ids[coedge_position], "iges B-rep identity copy",
+                            Some(ctx),
+                            &coedge_ids[coedge_position],
+                            "iges B-rep identity copy",
                         )?;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
                         if !radial.contains_key(&radial_key) {
@@ -1156,14 +1553,39 @@ pub(super) fn project(
                         }
                         let ring = radial.entry(radial_key).or_default();
                         reserve_vec_growth(ctx, ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?);
-                        reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges B-rep topology coedges")?;
-                        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+                        ring.push(crate::decode_resource::clone_optional_identity(
+                            Some(ctx),
+                            &coedge_id,
+                            "iges B-rep identity copy",
+                        )?);
+                        reserve_vec_growth(
+                            ctx,
+                            &mut candidate.model_mut().coedges,
+                            1,
+                            "iges B-rep topology coedges",
+                        )?;
+                        crate::decode_resource::admit_optional_entities(
+                            Some(ctx),
+                            1,
+                            "iges_geometry_brep",
+                        )?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?,
-                            owner_loop: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges B-rep identity copy")?,
+                            id: crate::decode_resource::clone_optional_identity(
+                                Some(ctx),
+                                &coedge_id,
+                                "iges B-rep identity copy",
+                            )?,
+                            owner_loop: crate::decode_resource::clone_optional_identity(
+                                Some(ctx),
+                                &loop_id,
+                                "iges B-rep identity copy",
+                            )?,
                             edge: edge_id,
-                            radial_next: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?,
+                            radial_next: crate::decode_resource::clone_optional_identity(
+                                Some(ctx),
+                                &coedge_id,
+                                "iges B-rep identity copy",
+                            )?,
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1186,67 +1608,134 @@ pub(super) fn project(
                         }
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
-                        let Some(vertex_uses) = crate::decode_resource::collect_optional_vec(ctx, loop_vertex_uses
-                            .into_iter()
-                            .map(|(vertex, after, pcurves)| {
-                                let after = after?;
-                                coedge_ids.contains(&after).then_some(AnchoredVertexUse {
-                                    vertex,
-                                    after,
-                                    pcurves,
-                                })
-                            }), "iges B-rep anchored vertex uses")?
+                        let Some(vertex_uses) = crate::decode_resource::collect_optional_vec(
+                            ctx,
+                            loop_vertex_uses
+                                .into_iter()
+                                .map(|(vertex, after, pcurves)| {
+                                    let after = after?;
+                                    coedge_ids.contains(&after).then_some(AnchoredVertexUse {
+                                        vertex,
+                                        after,
+                                        pcurves,
+                                    })
+                                }),
+                            "iges B-rep anchored vertex uses",
+                        )?
                         else {
-                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge loop contains an unanchored vertex use"))?;
+                            super::push_optional_entity_loss(
+                                Some(ctx),
+                                &mut losses,
+                                entry,
+                                format_args!("{}", "edge loop contains an unanchored vertex use"),
+                            )?;
                             valid = false;
                             break;
                         };
-                        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(coedge_ids, vertex_uses, ctx) {
+                        let ring = match cadmpeg_ir::topology::LoopRing::new_admitted(
+                            coedge_ids,
+                            vertex_uses,
+                            ctx,
+                        ) {
                             Ok(ring) => ring,
                             Err(cadmpeg_ir::topology::LoopRingAdmissionError::Invalid(_)) => {
-                                super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "edge loop has no coedges"))?;
+                                super::push_optional_entity_loss(
+                                    Some(ctx),
+                                    &mut losses,
+                                    entry,
+                                    format_args!("{}", "edge loop has no coedges"),
+                                )?;
                                 valid = false;
                                 break;
                             }
-                            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => return Err(error),
+                            Err(cadmpeg_ir::topology::LoopRingAdmissionError::Resource(error)) => {
+                                return Err(error)
+                            }
                         };
                         LoopBoundary::Ring(ring)
                     };
-                    reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges B-rep topology loops")?;
-                    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+                    reserve_vec_growth(
+                        ctx,
+                        &mut candidate.model_mut().loops,
+                        1,
+                        "iges B-rep topology loops",
+                    )?;
+                    crate::decode_resource::admit_optional_entities(
+                        Some(ctx),
+                        1,
+                        "iges_geometry_brep",
+                    )?;
                     candidate.model_mut().loops.push(Loop {
-                        id: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges B-rep identity copy")?,
-                        face: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges B-rep identity copy")?,
+                        id: crate::decode_resource::clone_optional_identity(
+                            Some(ctx),
+                            &loop_id,
+                            "iges B-rep identity copy",
+                        )?,
+                        face: crate::decode_resource::clone_optional_identity(
+                            Some(ctx),
+                            &face_id,
+                            "iges B-rep identity copy",
+                        )?,
                         boundary,
                     });
-                    insert_optional_btree_set(Some(ctx), &mut consumed, loop_sequence, "iges B-rep consumed loop nodes")?;
+                    insert_optional_btree_set(
+                        Some(ctx),
+                        &mut consumed,
+                        loop_sequence,
+                        "iges B-rep consumed loop nodes",
+                    )?;
                 }
                 if !valid {
                     break;
                 }
-                    let face_loops = match &face_definition.loops {
-                        FaceLoopPointers::OuterFirst { outer, inner } => {
-                            let mut inner_ids = reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
-                            for sequence in inner.iter().copied() {
-                                inner_ids.push(loop_id_for(sequence)?);
-                            }
-                            cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
+                let face_loops = match &face_definition.loops {
+                    FaceLoopPointers::OuterFirst { outer, inner } => {
+                        let mut inner_ids =
+                            reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
+                        for sequence in inner.iter().copied() {
+                            inner_ids.push(loop_id_for(sequence)?);
                         }
-                        FaceLoopPointers::Unclassified { first, rest } => {
-                            let count = rest.len().checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep face unspecified loop ids", u64::MAX, 1))?;
-                            let mut loop_ids = reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
-                            loop_ids.push(loop_id_for(*first)?);
-                            for sequence in rest.iter().copied() {
-                                loop_ids.push(loop_id_for(sequence)?);
-                            }
+                        cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
+                    }
+                    FaceLoopPointers::Unclassified { first, rest } => {
+                        let count = rest.len().checked_add(1).ok_or_else(|| {
+                            cadmpeg_core::decode::refuse_local_limit(
+                                "iges B-rep face unspecified loop ids",
+                                u64::MAX,
+                                1,
+                            )
+                        })?;
+                        let mut loop_ids =
+                            reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
+                        loop_ids.push(loop_id_for(*first)?);
+                        for sequence in rest.iter().copied() {
+                            loop_ids.push(loop_id_for(sequence)?);
+                        }
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
                     }
                 };
-                reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges B-rep topology faces")?;
-                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
+                reserve_vec_growth(
+                    ctx,
+                    &mut candidate.model_mut().faces,
+                    1,
+                    "iges B-rep topology faces",
+                )?;
+                crate::decode_resource::admit_optional_entities(
+                    Some(ctx),
+                    1,
+                    "iges_geometry_brep",
+                )?;
                 candidate.model_mut().faces.push(Face {
-                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges B-rep identity copy")?,
-                    shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges B-rep identity copy")?,
+                    id: crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &face_id,
+                        "iges B-rep identity copy",
+                    )?,
+                    shell: crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &shell_id,
+                        "iges B-rep identity copy",
+                    )?,
                     surface: surface_id,
                     sense: face_sense,
                     loops: face_loops,
@@ -1255,17 +1744,35 @@ pub(super) fn project(
                     tolerance: None,
                 });
                 shell_faces.push(face_id);
-                insert_optional_btree_set(Some(ctx), &mut consumed, face_sequence, "iges B-rep consumed face nodes")?;
+                insert_optional_btree_set(
+                    Some(ctx),
+                    &mut consumed,
+                    face_sequence,
+                    "iges B-rep consumed face nodes",
+                )?;
             }
             if !valid {
                 break;
             }
-            reserve_vec_growth(ctx, &mut candidate.model_mut().shells, 1, "iges B-rep topology shells")?;
+            reserve_vec_growth(
+                ctx,
+                &mut candidate.model_mut().shells,
+                1,
+                "iges B-rep topology shells",
+            )?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
-                    crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges B-rep identity copy")?,
-                    crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges B-rep identity copy")?,
+                    crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &shell_id,
+                        "iges B-rep identity copy",
+                    )?,
+                    crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &region_id,
+                        "iges B-rep identity copy",
+                    )?,
                     shell_faces,
                     Vec::new(),
                     Vec::new(),
@@ -1278,10 +1785,20 @@ pub(super) fn project(
                 },
             );
             region_shells.push(shell_id);
-            insert_optional_btree_set(Some(ctx), &mut consumed, shell_sequence, "iges B-rep consumed shell nodes")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut consumed,
+                shell_sequence,
+                "iges B-rep consumed shell nodes",
+            )?;
         }
         if !valid {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell topology references missing geometry"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "shell topology references missing geometry"),
+            )?;
             continue;
         }
         if definition.closed
@@ -1289,23 +1806,29 @@ pub(super) fn project(
                 if ring.len() != 2 {
                     return true;
                 }
-                let mut senses = ring
-                    .iter()
-                    .filter_map(|id| {
-                        candidate
-                            .model()
-                            .coedges
-                            .iter()
-                            .find(|coedge| coedge.id == *id)
-                            .map(|coedge| coedge.sense)
-                    });
+                let mut senses = ring.iter().filter_map(|id| {
+                    candidate
+                        .model()
+                        .coedges
+                        .iter()
+                        .find(|coedge| coedge.id == *id)
+                        .map(|coedge| coedge.sense)
+                });
                 match (senses.next(), senses.next()) {
                     (Some(first), Some(second)) => first == second,
                     _ => true,
                 }
             })
         {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "closed shell does not use every edge exactly twice with opposite senses"))?;
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!(
+                    "{}",
+                    "closed shell does not use every edge exactly twice with opposite senses"
+                ),
+            )?;
             continue;
         }
         for ring in radial.values() {
@@ -1317,21 +1840,41 @@ pub(super) fn project(
                     .find(|coedge| coedge.id == *id)
                 {
                     coedge.radial_next = crate::decode_resource::clone_optional_identity(
-                        Some(ctx), &ring[(index + 1) % ring.len()], "iges B-rep identity copy",
+                        Some(ctx),
+                        &ring[(index + 1) % ring.len()],
+                        "iges B-rep identity copy",
                     )?;
                 }
             }
         }
-        reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges B-rep topology regions")?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().regions,
+            1,
+            "iges B-rep topology regions",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges B-rep identity copy")?,
-            body: crate::decode_resource::clone_optional_identity(Some(ctx), &body_id, "iges B-rep identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &region_id,
+                "iges B-rep identity copy",
+            )?,
+            body: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &body_id,
+                "iges B-rep identity copy",
+            )?,
             shells: region_shells,
         });
         let mut body_regions = reserve_vec(ctx, 1, "iges B-rep body region ids")?;
         body_regions.push(region_id);
-        reserve_vec_growth(ctx, &mut candidate.model_mut().bodies, 1, "iges B-rep topology bodies")?;
+        reserve_vec_growth(
+            ctx,
+            &mut candidate.model_mut().bodies,
+            1,
+            "iges B-rep topology bodies",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
@@ -1343,13 +1886,35 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        if commit_session.commit_model_admitted(candidate, ctx)?.is_err() {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "shell candidate failed neutral validation"))?;
+        if commit_session
+            .commit_model_admitted(candidate, ctx)?
+            .is_err()
+        {
+            super::push_optional_entity_loss(
+                Some(ctx),
+                &mut losses,
+                entry,
+                format_args!("{}", "shell candidate failed neutral validation"),
+            )?;
             continue;
         }
-        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges brep decoded sequences")?;
-        for sequence in consumed.into_iter().chain(edge_ids.keys().map(|key| key.0)).chain(vertex_ids.keys().map(|key| key.0)) {
-            insert_optional_btree_set(Some(ctx), &mut decoded, sequence, "iges B-rep decoded topology sequences")?;
+        insert_optional_btree_set(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges brep decoded sequences",
+        )?;
+        for sequence in consumed
+            .into_iter()
+            .chain(edge_ids.keys().map(|key| key.0))
+            .chain(vertex_ids.keys().map(|key| key.0))
+        {
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                sequence,
+                "iges B-rep decoded topology sequences",
+            )?;
         }
     }
 

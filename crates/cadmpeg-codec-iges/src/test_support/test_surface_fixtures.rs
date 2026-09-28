@@ -601,8 +601,8 @@ fn placed_exact_revolution_file(
 ) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let axis = b"110,0,0,0,0,0,1;";
-    let records: [(u32, &str, &str, &str, &str, &[u8]); 4] = [
-        (1, "110", "0", "AXIS", "00010000", axis),
+    let records = [
+        (1, "110", "0", "AXIS", "00010000", axis.as_slice()),
         (3, generatrix_type, "0", "GENERATX", "00010000", generatrix),
         (5, "124", "0", "PLACE", "00010000", transform),
         (7, "120", "5", "REVOLVE", "00000000", revolution),
@@ -613,11 +613,31 @@ fn placed_exact_revolution_file(
     for (sequence, entity_type, placement, label, status, parameters) in records {
         let count = u32::try_from(parameter_fragment_count(parameters)).unwrap();
         bytes.extend(directory_card(
-            [entity_type, &parameter_start.to_string(), "0", "0", "0", "0", placement, "0", status],
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                placement,
+                "0",
+                status,
+            ],
             sequence,
         ));
         bytes.extend(directory_card(
-            [entity_type, "0", "0", &count.to_string(), "0", "", "", label, "0"],
+            [
+                entity_type,
+                "0",
+                "0",
+                &count.to_string(),
+                "0",
+                "",
+                "",
+                label,
+                "0",
+            ],
             sequence + 1,
         ));
         parameter_start += count;
@@ -629,7 +649,11 @@ fn placed_exact_revolution_file(
     }
     let global_cards = global_card_count(global);
     bytes.extend(card(
-        format!("S0000001G{global_cards:07}D0000008P{:07}", parameter_start - 1).as_bytes(),
+        format!(
+            "S0000001G{global_cards:07}D0000008P{:07}",
+            parameter_start - 1
+        )
+        .as_bytes(),
         b'T',
         1,
     ));

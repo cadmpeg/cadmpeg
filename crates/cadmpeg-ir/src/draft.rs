@@ -154,8 +154,7 @@ fn copy_admitted_identity(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let copy = ctx.copy_retained(identity.as_bytes(), operation)?;
-    String::from_utf8(copy)
-        .map_err(|_| CodecError::Malformed("identity copy is not UTF-8".into()))
+    String::from_utf8(copy).map_err(|_| CodecError::Malformed("identity copy is not UTF-8".into()))
 }
 
 fn index_model_identities_admitted(
@@ -746,12 +745,14 @@ impl<'a> CommitSession<'a> {
                 Err(error) => return Ok(Err(error)),
             };
         }
-        let identities = self.identities.as_mut().ok_or_else(|| {
-            CodecError::Malformed("committed identity index is absent".into())
-        })?;
-        if let Err(error) = draft.validate_with_contains_admitted(|identity| {
-            committed_identity_contains(self.base, identities, identity)
-        }, ctx)? {
+        let identities = self
+            .identities
+            .as_mut()
+            .ok_or_else(|| CodecError::Malformed("committed identity index is absent".into()))?;
+        if let Err(error) = draft.validate_with_contains_admitted(
+            |identity| committed_identity_contains(self.base, identities, identity),
+            ctx,
+        )? {
             return Ok(Err(error));
         }
         macro_rules! reserve_arenas {
@@ -842,8 +843,8 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
-        let result = CommitSession::new(&mut ir)
-            .commit_model_admitted(directly_staged_point(), &ctx);
+        let result =
+            CommitSession::new(&mut ir).commit_model_admitted(directly_staged_point(), &ctx);
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -854,7 +855,8 @@ mod tests {
         assert!(ir.model.points.is_empty());
 
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         CommitSession::new(&mut ir)
             .commit_model_admitted(directly_staged_point(), &ctx)
             .unwrap()
@@ -870,10 +872,8 @@ mod tests {
         policy.limits.max_retained_bytes = u64::try_from(missing.len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = CadIr::empty();
-        let result = CommitSession::new(&mut ir).commit_model_admitted(
-            vertex_draft("test:model:vertex#new", missing),
-            &ctx,
-        );
+        let result = CommitSession::new(&mut ir)
+            .commit_model_admitted(vertex_draft("test:model:vertex#new", missing), &ctx);
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
@@ -883,11 +883,15 @@ mod tests {
         assert!(ir.model.vertices.is_empty());
 
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let result = CommitSession::new(&mut ir)
             .commit_model_admitted(vertex_draft("test:model:vertex#new", missing), &ctx)
             .unwrap();
-        assert!(matches!(result, Err(DraftError::UnresolvedReference { .. })));
+        assert!(matches!(
+            result,
+            Err(DraftError::UnresolvedReference { .. })
+        ));
     }
 
     #[test]

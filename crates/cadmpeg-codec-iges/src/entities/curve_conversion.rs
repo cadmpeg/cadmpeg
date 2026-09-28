@@ -105,9 +105,14 @@ pub(crate) fn elliptical_arc_nurbs(
             .translated(major_direction, major_radius * middle.cos() / middle_weight)
             .translated(transverse, minor_radius * middle.sin() / middle_weight);
         let weight = NonZeroReal::new(middle_weight).ok_or_else(|| NurbsError::UnusableWeight {
-            field: "poles".into(), index: poles.len(), weight: middle_weight,
+            field: "poles".into(),
+            index: poles.len(),
+            weight: middle_weight,
         })?;
-        poles.push(WeightedPole3 { point: finite_arc_point(middle_point)?, weight });
+        poles.push(WeightedPole3 {
+            point: finite_arc_point(middle_point)?,
+            weight,
+        });
         let end_point = center
             .translated(major_direction, major_radius * end.cos())
             .translated(transverse, minor_radius * end.sin());
@@ -119,13 +124,17 @@ pub(crate) fn elliptical_arc_nurbs(
             knots.extend([end, end, end]);
         }
     }
-    Ok(Some(NurbsCurve::new(2, knots, NurbsPoles3::Rational { points: poles }, false)?))
+    Ok(Some(NurbsCurve::new(
+        2,
+        knots,
+        NurbsPoles3::Rational { points: poles },
+        false,
+    )?))
 }
 
 fn finite_arc_point(point: Point3) -> Result<FinitePoint3, NurbsError> {
-    FinitePoint3::new(point).ok_or_else(|| {
-        NurbsError::Structure("control_points contains a non-finite point".into())
-    })
+    FinitePoint3::new(point)
+        .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
 }
 
 pub(crate) fn parabolic_arc_nurbs(
@@ -197,7 +206,12 @@ pub(crate) fn parabolic_arc_nurbs(
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }
-    Ok(Some(NurbsCurve::new(2, knots, NurbsPoles3::Polynomial { points }, false)?))
+    Ok(Some(NurbsCurve::new(
+        2,
+        knots,
+        NurbsPoles3::Polynomial { points },
+        false,
+    )?))
 }
 
 #[cfg(test)]

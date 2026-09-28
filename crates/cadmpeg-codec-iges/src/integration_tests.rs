@@ -50,7 +50,8 @@ use crate::test_support::test_surface_fixtures::{
 };
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
 }
@@ -284,7 +285,8 @@ fn decode_matrix(
             let (global, _global_losses) =
                 crate::test_support::parse_global(&scan).expect("integration global");
             let (directory, _quarantined) =
-                crate::directory::parse(&scan, global.global_table(), None).expect("integration directory");
+                crate::directory::parse(&scan, global.global_table(), None)
+                    .expect("integration directory");
             let subject_count = directory
                 .iter()
                 .filter(|entry| entry.entity_type == subject_type)
@@ -974,7 +976,8 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             result.ir(),
             result.source_fidelity(),
             Vec::new(),
-        ).expect("resource allocation did not fail");
+        )
+        .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }

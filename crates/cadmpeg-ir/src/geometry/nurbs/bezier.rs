@@ -186,8 +186,9 @@ pub fn homogeneous_spans_with_charge<const DIMENSION: usize, E: From<ResourceLim
         let interval = [knots[span], knots[span + 1]];
         if interval[0] < interval[1] && interval[0] >= domain[0] && interval[1] <= domain[1] {
             charge(degree + 1, "Bezier span controls")?;
-            let mut span_controls = scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")
-                .map_err(E::from)?;
+            let mut span_controls =
+                scratch::filled(degree + 1, [0.0; DIMENSION], "Bezier span controls")
+                    .map_err(E::from)?;
             span_controls.copy_from_slice(&controls[span - degree..=span]);
             spans.push(HomogeneousBezierSpan {
                 domain: interval,

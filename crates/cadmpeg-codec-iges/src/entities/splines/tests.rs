@@ -23,10 +23,18 @@ fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
-        match IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                if limit.operation == operation { return; }
+                if limit.operation == operation {
+                    return;
+                }
                 cap = limit.used + limit.additional;
             }
             other => panic!("expected spline collection refusal at {operation}: {other:?}"),
@@ -38,15 +46,25 @@ fn assert_spline_collection_refusal(bytes: &[u8], operation: &str) {
 #[test]
 fn spline_identity_copies_refuse_retained_byte_limit() {
     let bytes = parametric_spline_curve_file();
-    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
     let mut cap = 0_u64;
     for _ in 0..4096 {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-                if limit.operation == "iges splines identity copy" { return; }
+                if limit.operation == "iges splines identity copy" {
+                    return;
+                }
                 cap = limit.used.checked_add(limit.additional).unwrap();
             }
             Ok(_) => panic!("spline identity refusal was not reached at cap {cap}"),
@@ -181,7 +199,8 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -221,7 +240,8 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::SplineHeaderNotTransferred.kind()));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

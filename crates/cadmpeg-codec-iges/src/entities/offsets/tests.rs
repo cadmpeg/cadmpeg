@@ -37,7 +37,10 @@ fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
         policy.limits.max_collection_items = cap;
         match IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
@@ -59,7 +62,10 @@ fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
         policy.limits.max_retained_bytes = cap;
         match IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
@@ -106,7 +112,10 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
         assert_offset_collection_refusal(&linear, operation);
     }
     let function = function_offset_line_file();
-    for operation in ["iges function-offset controls", "iges function-offset knots"] {
+    for operation in [
+        "iges function-offset controls",
+        "iges function-offset knots",
+    ] {
         assert_offset_collection_refusal(&function, operation);
     }
     let placed = placed_uniform_offset_line_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
@@ -400,7 +409,8 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
     );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -451,7 +461,8 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
     assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
     assert!(vector_distance(normal.get(), Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -493,7 +504,8 @@ fn decode_places_uniform_offset_line_with_a_proper_transform() {
         .expect("placed line offset end point");
     assert!(end.position().get().distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -539,7 +551,8 @@ fn decode_corrects_offset_normal_handedness_for_a_reflection() {
         .expect("reflected offset start point");
     assert!(start.position().get().distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -583,7 +596,8 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         cadmpeg_ir::math::Point3::new(0.0, 1.5, 0.0)
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -698,7 +712,8 @@ fn decode_solves_a_parameter_linear_line_offset() {
         );
         assert_eq!(control_range.endpoints(), [0.0, 10.0]);
         assert!(result.report().losses.is_empty());
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -810,6 +825,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

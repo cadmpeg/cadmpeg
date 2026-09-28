@@ -122,10 +122,10 @@ pub(crate) enum DrawingPropertyValue<'a> {
     Units(i64, &'a [u8]),
 }
 
-pub(crate) fn drawing_property_value<'a>(
+pub(crate) fn drawing_property_value(
     form: i64,
-    record: &'a ParameterRecord,
-) -> Option<DrawingPropertyValue<'a>> {
+    record: &ParameterRecord,
+) -> Option<DrawingPropertyValue<'_>> {
     match form {
         15 => (record.integer(1) == Some(1))
             .then(|| record.string(2).filter(|value| !value.is_empty()))
@@ -141,8 +141,7 @@ pub(crate) fn drawing_property_value<'a>(
         17 => {
             let units = record.integer(2).filter(|value| (1..=11).contains(value))?;
             let name = record.string(3).filter(|value| !value.is_empty())?;
-            (record.integer(1) == Some(2))
-                .then_some(DrawingPropertyValue::Units(units, name))
+            (record.integer(1) == Some(2)).then_some(DrawingPropertyValue::Units(units, name))
         }
         _ => None,
     }
@@ -191,7 +190,10 @@ fn push_drawing_loss(
     reserve_vec_growth(ctx, losses, 1, "iges drawing loss slots")?;
     let message = format_retained(ctx, message, "iges drawing loss message")?;
     ctx.charge_retained(4 + code.code().len() as u64, "iges drawing loss kind")?;
-    losses.push(code.note(message).with_provenance(entry.admitted_loss_provenance(ctx)?));
+    losses.push(
+        code.note(message)
+            .with_provenance(entry.admitted_loss_provenance(ctx)?),
+    );
     Ok(())
 }
 
@@ -262,9 +264,19 @@ pub(super) fn project(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         };
         if valid {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
-            push_drawing_entity_loss(ctx, &mut losses, entry, "drawing size or unit property fields are invalid")?;
+            push_drawing_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "drawing size or unit property fields are invalid",
+            )?;
         }
     }
 
@@ -289,7 +301,9 @@ pub(super) fn project(
                     &mut losses,
                     entry,
                     IgesLossCode::DrawingPropertyAmbiguous,
-                    format_args!("IGES drawing has conflicting valid Type 406 Form {form} properties"),
+                    format_args!(
+                        "IGES drawing has conflicting valid Type 406 Form {form} properties"
+                    ),
                 )?;
             }
         }
@@ -330,9 +344,19 @@ pub(super) fn project(
         });
         if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
         {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
-            push_drawing_entity_loss(ctx, &mut losses, entry, "drawing view placements or drawing-space annotations are invalid")?;
+            push_drawing_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "drawing view placements or drawing-space annotations are invalid",
+            )?;
         }
     }
 
@@ -427,9 +451,19 @@ pub(super) fn project(
             && scale_valid
             && form_valid
         {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
-            push_drawing_entity_loss(ctx, &mut losses, entry, "view number, projection, transform, scale, or clipping fields are invalid")?;
+            push_drawing_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "view number, projection, transform, scale, or clipping fields are invalid",
+            )?;
         }
     }
 
@@ -529,9 +563,19 @@ pub(super) fn project(
             false
         };
         if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
-            push_drawing_entity_loss(ctx, &mut losses, entry, "segmented-view blocks, grouping, breakpoints, or display fields are invalid")?;
+            push_drawing_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "segmented-view blocks, grouping, breakpoints, or display fields are invalid",
+            )?;
         }
     }
 
@@ -617,9 +661,19 @@ pub(super) fn project(
             && views_valid
             && entities_valid
         {
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges drawing decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges drawing decoded sequences",
+            )?;
         } else {
-            push_drawing_entity_loss(ctx, &mut losses, entry, "view-visibility blocks, display overrides, entities, or back pointers are invalid")?;
+            push_drawing_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                "view-visibility blocks, display overrides, entities, or back pointers are invalid",
+            )?;
         }
     }
 

@@ -2,40 +2,78 @@
 #![allow(clippy::unwrap_used)]
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
-use std::io::Cursor;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
+use super::{AnalyticDirectionError, DirectionError};
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::test_support::test_surface_fixtures::{
     pointer_defined_surface_file, pointer_defined_surface_with_reference,
 };
 use crate::IgesCodec;
-use super::{AnalyticDirectionError, DirectionError};
 
 #[test]
 fn analytic_direction_refusals_render_without_intermediate_strings() {
     let reasons = [
-        (DirectionError::MissingEntry(7), "points to missing Directory entry D7"),
-        (DirectionError::WrongTypeForm { sequence: 7, entity_type: 124, form: 1 }, "points to type 124 form 1 at D7, not type 123 form 0"),
-        (DirectionError::NotDependent(7), "points to D7, which is not physically dependent"),
-        (DirectionError::Transformed(7), "points to D7, which has a prohibited transformation"),
-        (DirectionError::MissingParameters(7), "points to D7, whose Parameter Data record is missing"),
-        (DirectionError::NonNumeric(7), "points to D7, whose direction components are not numeric"),
-        (DirectionError::ZeroOrNonFinite(7), "points to D7, whose direction is zero or non-finite"),
+        (
+            DirectionError::MissingEntry(7),
+            "points to missing Directory entry D7",
+        ),
+        (
+            DirectionError::WrongTypeForm {
+                sequence: 7,
+                entity_type: 124,
+                form: 1,
+            },
+            "points to type 124 form 1 at D7, not type 123 form 0",
+        ),
+        (
+            DirectionError::NotDependent(7),
+            "points to D7, which is not physically dependent",
+        ),
+        (
+            DirectionError::Transformed(7),
+            "points to D7, which has a prohibited transformation",
+        ),
+        (
+            DirectionError::MissingParameters(7),
+            "points to D7, whose Parameter Data record is missing",
+        ),
+        (
+            DirectionError::NonNumeric(7),
+            "points to D7, whose direction components are not numeric",
+        ),
+        (
+            DirectionError::ZeroOrNonFinite(7),
+            "points to D7, whose direction is zero or non-finite",
+        ),
     ];
     for (reason, expected) in reasons {
         assert_eq!(reason.to_string(), expected);
         assert_eq!(
-            AnalyticDirectionError::Pointed { role: "plane axis", reason }.to_string(),
+            AnalyticDirectionError::Pointed {
+                role: "plane axis",
+                reason
+            }
+            .to_string(),
             format!("plane axis {expected}")
         );
     }
-    assert_eq!(AnalyticDirectionError::MissingPointer("plane axis").to_string(), "plane axis pointer is missing, even, or non-integer");
-    assert_eq!(AnalyticDirectionError::Collapse("plane axis").to_string(), "plane axis collapses under the surface transformation");
-    assert_eq!(AnalyticDirectionError::SphereAxisCollapse.to_string(), "sphere axis collapses under its transformation");
+    assert_eq!(
+        AnalyticDirectionError::MissingPointer("plane axis").to_string(),
+        "plane axis pointer is missing, even, or non-integer"
+    );
+    assert_eq!(
+        AnalyticDirectionError::Collapse("plane axis").to_string(),
+        "plane axis collapses under the surface transformation"
+    );
+    assert_eq!(
+        AnalyticDirectionError::SphereAxisCollapse.to_string(),
+        "sphere axis collapses under its transformation"
+    );
 }
 
 fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
@@ -49,11 +87,18 @@ fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
         }
         let result = IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         );
         match result {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+                let dimension = if retained {
+                    ResourceDimension::RetainedBytes
+                } else {
+                    ResourceDimension::CollectionItems
+                };
                 assert_eq!(limit.dimension, dimension);
                 if limit.operation == operation {
                     return;
@@ -177,7 +222,8 @@ fn decode_projects_all_pointer_defined_analytic_surface_forms() {
                 "{:#?}",
                 result.report().losses
             );
-            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+            let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail");
             assert!(validation.is_ok(), "{:#?}", validation.findings);
         }
     }

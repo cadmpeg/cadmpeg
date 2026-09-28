@@ -2,9 +2,9 @@
 #![allow(clippy::unwrap_used)]
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-use std::io::Cursor;
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
+use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
@@ -26,11 +26,18 @@ fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
         }
         let result = IgesCodec.decode(
             &mut Cursor::new(bytes),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         );
         match result {
             Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
-                let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+                let dimension = if retained {
+                    ResourceDimension::RetainedBytes
+                } else {
+                    ResourceDimension::CollectionItems
+                };
                 assert_eq!(limit.dimension, dimension);
                 if limit.operation == operation {
                     return;
@@ -48,14 +55,18 @@ fn assert_conic_refusal(bytes: &[u8], operation: &str, retained: bool) {
 #[test]
 fn conic_identity_copies_refuse_retained_byte_limit() {
     let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
-    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
     assert_conic_refusal(&bytes, "iges conics identity copy", true);
 }
 
 #[test]
 fn conic_generated_identity_refuses_before_minting() {
     let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
-    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
     assert_conic_refusal(&bytes, "iges generated identity", true);
 }
 
@@ -223,7 +234,8 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             (geometry, _) => panic!("unexpected form {form} geometry {geometry:?}"),
         }
         assert!(result.report().losses.is_empty(), "form {form}");
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(
             validation.is_ok(),
             "form {form}: {:#?}",
@@ -401,7 +413,8 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         Some(0.0)
     );
     assert!(result.report().losses.is_empty());
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -456,6 +469,8 @@ fn parabola_projection_preserves_common_large_coefficient_scale() {
         };
         assert_eq!(parabola.focal_distance().get(), 0.25);
         assert!(result.report().losses.is_empty());
-        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok());
     }
 }

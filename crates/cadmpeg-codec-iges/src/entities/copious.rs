@@ -62,13 +62,28 @@ impl CopiousProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            insert_optional_btree_set(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                decoded,
+                sequence,
+                "iges merged decoded sequences",
+            )?;
         }
         reserve_vec_growth(ctx, losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
-        reserve_vec_growth(ctx, wire_edges, self.wire_edges.len(), "iges merged wire edge slots")?;
+        reserve_vec_growth(
+            ctx,
+            wire_edges,
+            self.wire_edges.len(),
+            "iges merged wire edge slots",
+        )?;
         wire_edges.extend(self.wire_edges);
-        reserve_vec_growth(ctx, free_vertices, self.free_vertices.len(), "iges merged free vertex slots")?;
+        reserve_vec_growth(
+            ctx,
+            free_vertices,
+            self.free_vertices.len(),
+            "iges merged free vertex slots",
+        )?;
         free_vertices.extend(self.free_vertices);
         Ok(())
     }
@@ -123,9 +138,9 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points.try_reserve(1).map_err(|_| {
-                    refuse_local_limit("iges copious exact-point index", 1, 1)
-                })?;
+                exact_points
+                    .try_reserve(1)
+                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -147,9 +162,9 @@ fn has_forbidden_form_63_duplicate(
             let exact_points = exact_points.get_or_insert_with(HashMap::new);
             if !exact_points.contains_key(&exact_key(point)) {
                 ctx.charge_collection_items(1, "iges copious exact-point index")?;
-                exact_points.try_reserve(1).map_err(|_| {
-                    refuse_local_limit("iges copious exact-point index", 1, 1)
-                })?;
+                exact_points
+                    .try_reserve(1)
+                    .map_err(|_| refuse_local_limit("iges copious exact-point index", 1, 1))?;
             }
             if let Some(previous) = exact_points.insert(exact_key(point), index) {
                 if !allowed_endpoint_pair(previous, index) {
@@ -195,11 +210,14 @@ fn has_form_63_self_intersection(
     points: &[Point3],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let planar_points = collect_result_vec(ctx, points.len(), "iges copious planar points", |index| {
-        let point = points[index];
-        Ok([point.x, point.y])
-    })?;
-    Ok(super::geometry::planar_polyline_has_self_intersection(&planar_points))
+    let planar_points =
+        collect_result_vec(ctx, points.len(), "iges copious planar points", |index| {
+            let point = points[index];
+            Ok([point.x, point.y])
+        })?;
+    Ok(super::geometry::planar_polyline_has_self_intersection(
+        &planar_points,
+    ))
 }
 
 pub(super) fn project(
@@ -213,14 +231,20 @@ pub(super) fn project(
     let mut records = BTreeMap::new();
     for record in parameters {
         insert_optional_btree_map(
-            Some(ctx), &mut records, record.directory_sequence, record,
+            Some(ctx),
+            &mut records,
+            record.directory_sequence,
+            record,
             "iges copious parameter index",
         )?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
         insert_optional_btree_map(
-            Some(ctx), &mut entries, entry.sequence, entry,
+            Some(ctx),
+            &mut entries,
+            entry.sequence,
+            entry,
             "iges copious directory index",
         )?;
     }
@@ -234,20 +258,40 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
         if !presentation_use_flag_valid(entry.form, entry.status.use_flag(global.global_table())) {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("Type 106 presentation forms require Entity Use Flag 01"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("Type 106 presentation forms require Entity Use Flag 01"),
+            )?;
             continue;
         }
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("Parameter Data record is missing"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(interpretation) = record.integer(1) else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("interpretation is invalid"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("interpretation is invalid"),
+            )?;
             continue;
         };
         let Some(raw_tuple_count) = record.integer(2) else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is invalid"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple count is invalid"),
+            )?;
             continue;
         };
         if let Some(observed) = u64::try_from(raw_tuple_count)
@@ -261,15 +305,30 @@ pub(super) fn project(
             ));
         }
         let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is invalid"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple count is invalid"),
+            )?;
             continue;
         };
         if Some(interpretation) != expected_interpretation(entry.form) {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("interpretation flag disagrees with the entity form"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("interpretation flag disagrees with the entity form"),
+            )?;
             continue;
         }
         if tuple_count == 0 {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
+            )?;
             continue;
         }
         if matches!(entry.form, 11..=13) {
@@ -286,15 +345,30 @@ pub(super) fn project(
             }
         }
         if entry.form == 63 && tuple_count < 2 {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed paths require at least two tuples"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("simple closed paths require at least two tuples"),
+            )?;
             continue;
         }
         if matches!(entry.form, 20 | 21 | 31..=38) && tuple_count % 2 != 0 {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("paired presentation form has an odd tuple count"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("paired presentation form has an odd tuple count"),
+            )?;
             continue;
         }
         if entry.form == 40 && (tuple_count < 3 || tuple_count % 2 == 0) {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("witness lines require an odd tuple count of at least three"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("witness lines require an odd tuple count of at least three"),
+            )?;
             continue;
         }
         let transform = match resolve_transform(
@@ -316,7 +390,12 @@ pub(super) fn project(
         let (tuple_start, tuple_width, common_z) = match interpretation {
             1 => {
                 let Some(z) = record.number(3).and_then(FiniteReal::new) else {
-                    push_copious_loss(ctx, &mut losses, entry, format_args!("common z coordinate is invalid"))?;
+                    push_copious_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!("common z coordinate is invalid"),
+                    )?;
                     continue;
                 };
                 (4_usize, 2_usize, Some(z))
@@ -324,16 +403,31 @@ pub(super) fn project(
             2 => (3, 3, None),
             3 => (3, 6, None),
             _ => {
-                push_copious_loss(ctx, &mut losses, entry, format_args!("copious-data interpretation is invalid"))?;
+                push_copious_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("copious-data interpretation is invalid"),
+                )?;
                 continue;
             }
         };
         let Some(value_count) = tuple_count.checked_mul(tuple_width) else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple value count overflows"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple value count overflows"),
+            )?;
             continue;
         };
         let Some(tuple_end) = tuple_start.checked_add(value_count) else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple end offset overflows"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple end offset overflows"),
+            )?;
             continue;
         };
         let Some(values) = collect_optional_vec(
@@ -342,7 +436,12 @@ pub(super) fn project(
             "iges copious tuple values",
         )?
         else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("tuple array is truncated or non-finite"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("tuple array is truncated or non-finite"),
+            )?;
             continue;
         };
         let definition_points = collect_result_vec(
@@ -364,11 +463,19 @@ pub(super) fn project(
         )?;
         let Some(positions) = collect_optional_vec(
             ctx,
-            definition_points.iter().copied().map(|point| transform.apply_point(point)),
+            definition_points
+                .iter()
+                .copied()
+                .map(|point| transform.apply_point(point)),
             "iges copious positioned points",
         )?
         else {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("placement produces non-finite copious points"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("placement produces non-finite copious points"),
+            )?;
             continue;
         };
         if presentation_form(entry.form) {
@@ -392,35 +499,75 @@ pub(super) fn project(
             for (index, position) in positions.into_iter().enumerate() {
                 let point = crate::ids::point_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
-                 ctx)?;
-                sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
+                    ctx,
+                )?;
+                sequences.record_point(
+                    &point,
+                    &crate::ids::Stem::directory(entry.sequence),
+                    Some(ctx),
+                )?;
                 let vertex = crate::ids::vertex_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
-                 ctx)?;
+                    ctx,
+                )?;
                 reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
-                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
-                ir.model
-                    .points
-                    .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &point, "iges copious identity copy")?, position, None));
-                reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+                crate::decode_resource::admit_optional_entities(
+                    Some(ctx),
+                    1,
+                    "iges_geometry_copious",
+                )?;
+                ir.model.points.push(Point::new(
+                    crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &point,
+                        "iges copious identity copy",
+                    )?,
+                    position,
+                    None,
+                ));
+                reserve_vec_growth(
+                    ctx,
+                    &mut ir.model.vertices,
+                    1,
+                    "iges copious neutral vertices",
+                )?;
+                crate::decode_resource::admit_optional_entities(
+                    Some(ctx),
+                    1,
+                    "iges_geometry_copious",
+                )?;
                 ir.model.vertices.push(Vertex {
-                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex, "iges copious identity copy")?,
+                    id: crate::decode_resource::clone_optional_identity(
+                        Some(ctx),
+                        &vertex,
+                        "iges copious identity copy",
+                    )?,
                     point,
                     tolerance: None,
                 });
                 reserve_vec_growth(ctx, &mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
-            insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
+            insert_optional_btree_set(
+                Some(ctx),
+                &mut decoded,
+                entry.sequence,
+                "iges copious decoded sequences",
+            )?;
             continue;
         }
-        let points = collect_result_vec(ctx, positions.len(), "iges copious path points", |index| {
-            Ok(positions[index].get())
-        })?;
+        let points =
+            collect_result_vec(ctx, positions.len(), "iges copious path points", |index| {
+                Ok(positions[index].get())
+            })?;
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed path endpoints disagree beyond the minimum resolution"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("simple closed path endpoints disagree beyond the minimum resolution"),
+            )?;
             continue;
         }
         if entry.form == 63 && has_forbidden_form_63_duplicate(&points, resolution, ctx)? {
@@ -433,12 +580,22 @@ pub(super) fn project(
             continue;
         }
         if entry.form == 63 && has_form_63_self_intersection(&definition_points, ctx)? {
-            push_copious_loss(ctx, &mut losses, entry, format_args!("simple closed path intersects itself away from shared endpoints"))?;
+            push_copious_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("simple closed path intersects itself away from shared endpoints"),
+            )?;
             continue;
         }
         let topology_tolerance = if entry.form == 63 && resolution > 0.0 {
             let Some(value) = cadmpeg_ir::scalar::PositiveReal::new(resolution) else {
-                push_copious_loss(ctx, &mut losses, entry, format_args!("topology tolerance must be finite"))?;
+                push_copious_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("topology tolerance must be finite"),
+                )?;
                 continue;
             };
             Some(value)
@@ -446,9 +603,10 @@ pub(super) fn project(
             None
         };
         let parameter_end = (points.len() - 1) as f64;
-        let knot_count = points.len().checked_add(2).ok_or_else(|| {
-            refuse_local_limit("iges copious knots", u64::MAX, 1)
-        })?;
+        let knot_count = points
+            .len()
+            .checked_add(2)
+            .ok_or_else(|| refuse_local_limit("iges copious knots", u64::MAX, 1))?;
         let mut knots = reserve_vec(ctx, knot_count, "iges copious knots")?;
         knots.extend([0.0, 0.0]);
         knots.extend((1..points.len() - 1).map(|value| value as f64));
@@ -462,7 +620,11 @@ pub(super) fn project(
         sequences.record_point(&end_point, &stem, Some(ctx))?;
         let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         let end_vertex = if entry.form == 63 {
-            crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges copious identity copy")?
+            crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &start_vertex,
+                "iges copious identity copy",
+            )?
         } else {
             crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?
         };
@@ -470,26 +632,56 @@ pub(super) fn project(
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
-        ir.model
-            .points
-            .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &start_point, "iges copious identity copy")?, start, None));
-        reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
+        ir.model.points.push(Point::new(
+            crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &start_point,
+                "iges copious identity copy",
+            )?,
+            start,
+            None,
+        ));
+        reserve_vec_growth(
+            ctx,
+            &mut ir.model.vertices,
+            1,
+            "iges copious neutral vertices",
+        )?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges copious identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &start_vertex,
+                "iges copious identity copy",
+            )?,
             point: start_point,
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
             reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
-            ir.model
-                .points
-                .push(Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &end_point, "iges copious identity copy")?, end, None));
-            reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
+            ir.model.points.push(Point::new(
+                crate::decode_resource::clone_optional_identity(
+                    Some(ctx),
+                    &end_point,
+                    "iges copious identity copy",
+                )?,
+                end,
+                None,
+            ));
+            reserve_vec_growth(
+                ctx,
+                &mut ir.model.vertices,
+                1,
+                "iges copious neutral vertices",
+            )?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
-                id: crate::decode_resource::clone_optional_identity(Some(ctx), &end_vertex, "iges copious identity copy")?,
+                id: crate::decode_resource::clone_optional_identity(
+                    Some(ctx),
+                    &end_vertex,
+                    "iges copious identity copy",
+                )?,
                 point: end_point,
                 tolerance: topology_tolerance,
             });
@@ -510,7 +702,11 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges copious neutral curves")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &curve, "iges copious identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &curve,
+                "iges copious identity copy",
+            )?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
             )?)),
@@ -519,7 +715,11 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges copious neutral edges")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
-            id: crate::decode_resource::clone_optional_identity(Some(ctx), &edge, "iges copious identity copy")?,
+            id: crate::decode_resource::clone_optional_identity(
+                Some(ctx),
+                &edge,
+                "iges copious identity copy",
+            )?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve),
                 Some([0.0, parameter_end]),
@@ -531,7 +731,12 @@ pub(super) fn project(
         });
         reserve_vec_growth(ctx, &mut wire_edges, 1, "iges copious wire edges")?;
         wire_edges.push(edge);
-        insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges copious decoded sequences")?;
+        insert_optional_btree_set(
+            Some(ctx),
+            &mut decoded,
+            entry.sequence,
+            "iges copious decoded sequences",
+        )?;
     }
 
     Ok(CopiousProjectionOutcome {

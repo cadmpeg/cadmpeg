@@ -122,7 +122,8 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let mut ir = CadIr::empty();
     ir.model.feature_input_topologies.push(state);
     ir.model.features.push(feature);
-    assert!(!validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(!validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| finding.check == Check::ReferentialIntegrity));
@@ -139,7 +140,8 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
             .try_into()
             .unwrap();
     });
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail")
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(|finding| {
