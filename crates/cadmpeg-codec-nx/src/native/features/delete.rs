@@ -3,7 +3,7 @@
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    copy_operation_text, offset_data_block_bytes, unique_offset_data_block,
+    copy_operation_text, format_feature_history_id, offset_data_block_bytes, unique_offset_data_store,
     visit_feature_history_operation_records,
 };
 use crate::container::Container;
@@ -169,29 +169,61 @@ pub(in crate::native) fn feature_delete_reference_fields(
 ) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut fields = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(field) = DeleteReferences::read(record.payload_view()) else {
+            if failure.is_some() {
                 return;
-            };
-            let Ok(references) = field.resolve(entry_offset, |token| {
-                unique_offset_data_block(&indexed, token.value())
-            }) else {
-                return;
-            };
-            fields.push(FeatureDeleteReferenceField {
-                id: format!(
-                    "nx:feature-history:delete-reference-field#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                references,
-            });
+            }
+            let projected = (|| -> Result<Option<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
+                let Some(field) = DeleteReferences::read(record.payload_view()) else {
+                    return Ok(None);
+                };
+                let Some(references) = field.resolve(entry_offset, |token| {
+                    let object_index = token.value();
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(indexed.len()), "resolve NX DELETE source block")?;
+                    let Some(section_ordinal) = unique_offset_data_store(&indexed, &[object_index]) else {
+                        return Ok(None);
+                    };
+                    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+                    let section_digits = digits(section_ordinal);
+                    let object_digits = digits(usize::try_from(object_index)
+                        .map_err(|_| ctx.refuse_codec_limit("NX DELETE block index", 0, u64::from(object_index)))?);
+                    let length = "nx:om-data-blocks-".len()
+                        .checked_add(section_digits)
+                        .and_then(|length| length.checked_add(":block#".len()))
+                        .and_then(|length| length.checked_add(object_digits))
+                        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE source block identity", 0, 1))?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX DELETE source block identity")?;
+                    let mut id = String::new();
+                    id.try_reserve_exact(length)
+                        .map_err(|_| ctx.refuse_codec_limit("allocate NX DELETE source block identity", 0, 1))?;
+                    write!(&mut id, "nx:om-data-blocks-{section_ordinal}:block#{object_index}")
+                        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE source block identity", 0, 1))?;
+                    Ok(Some(id))
+                })? else {
+                    return Ok(None);
+                };
+                let id = format_feature_history_id(ctx, "delete-reference-field", section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX DELETE reference fields")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDeleteReferenceField>()), "NX DELETE reference field")?;
+                fields.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX DELETE reference fields", 0, 1))?;
+                Ok(Some(FeatureDeleteReferenceField { id, operation_label, references }))
+            })();
+            match projected {
+                Ok(Some(field)) => fields.push(field),
+                Ok(None) => {}
+                Err(error) => failure = Some(error),
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(fields)
 }
 
