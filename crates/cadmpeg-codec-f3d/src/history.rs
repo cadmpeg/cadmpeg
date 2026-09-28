@@ -3700,52 +3700,49 @@ pub(crate) fn hem_geometry_semantics(
     else {
         return unresolved;
     };
-    let Some(cylinders) = hem_inserted_cylinders(state, previous_topology, transition, edge_slot)
-    else {
+    let Some(current_topology) = state.topology() else {
         return unresolved;
     };
+    let inserted_surfaces = &transition.topology.surfaces.inserted;
+    if !current_topology
+        .surface_cylinders
+        .iter()
+        .any(|cylinder| inserted_surfaces.contains(&cylinder.surface))
+    {
+        return unresolved;
+    }
+    let edge_direction = historical_edge_axis(edge_slot, previous_topology)
+        .map(|(_, direction)| direction);
+    let cylinders = || {
+        current_topology.surface_cylinders.iter().filter(|cylinder| {
+            inserted_surfaces.contains(&cylinder.surface)
+                && edge_direction.is_none_or(|direction| {
+                    parallel_directions(direction, cylinder.axis)
+                })
+        })
+    };
+    if cylinders().next().is_none() {
+        return unresolved;
+    }
     HemGeometrySemantics {
         direction: hem_direction_from_transition(
             edge_slot,
-            &cylinders,
+            cylinders(),
             previous_topology,
             transition,
         ),
-        gap_length_form: hem_gap_length_form(&cylinders),
+        gap_length_form: hem_gap_length_form(cylinders()),
     }
 }
 
-fn hem_inserted_cylinders<'a>(
-    state: &'a AsmDeltaState,
-    previous: &AsmHistoricalTopology,
-    transition: &AsmHistoricalTransition,
-    edge_slot: i64,
-) -> Option<Vec<&'a AsmHistoricalCylinder>> {
-    let topology = state.topology()?;
-    let inserted_surfaces = &transition.topology.surfaces.inserted;
-    let cylinders = topology
-        .surface_cylinders
-        .iter()
-        .filter(|cylinder| inserted_surfaces.contains(&cylinder.surface))
-        .collect::<Vec<_>>();
-    if cylinders.is_empty() {
-        return Some(Vec::new());
-    }
-    let edge_direction = historical_edge_axis(edge_slot, previous).map(|(_, direction)| direction);
-    Some(
-        cylinders
-            .into_iter()
-            .filter(|cylinder| {
-                edge_direction.is_none_or(|direction| parallel_directions(direction, cylinder.axis))
-            })
-            .collect(),
-    )
-}
-
-fn hem_gap_length_form(cylinders: &[&AsmHistoricalCylinder]) -> Option<HemGapLengthForm> {
-    let [first, second] = cylinders else {
+fn hem_gap_length_form<'a>(
+    mut cylinders: impl Iterator<Item = &'a AsmHistoricalCylinder>,
+) -> Option<HemGapLengthForm> {
+    let first = cylinders.next()?;
+    let second = cylinders.next()?;
+    if cylinders.next().is_some() {
         return None;
-    };
+    }
     if !same_axis_line((first.origin, first.axis), (second.origin, second.axis)) {
         return None;
     }
@@ -3768,22 +3765,25 @@ fn hem_gap_length_form(cylinders: &[&AsmHistoricalCylinder]) -> Option<HemGapLen
     }
 }
 
-fn hem_direction_from_transition(
+fn hem_direction_from_transition<'a>(
     edge_slot: i64,
-    cylinders: &[&AsmHistoricalCylinder],
+    cylinders: impl Iterator<Item = &'a AsmHistoricalCylinder> + Clone,
     previous: &AsmHistoricalTopology,
     transition: &AsmHistoricalTransition,
 ) -> Option<cadmpeg_ir::features::SheetMetalHemDirection> {
-    if cylinders.is_empty() {
+    if cylinders.clone().next().is_none() {
         return None;
     }
-    let incident_faces = historical_edge_context(edge_slot, previous)
-        .incident_loops
-        .into_iter()
-        .map(|context| context.face_slot)
-        .collect::<BTreeSet<_>>();
-    let mut candidates = Vec::new();
-    for face in incident_faces {
+    let edge_context = historical_edge_context(edge_slot, previous);
+    let mut candidate = None;
+    for (ordinal, incident) in edge_context.incident_loops.iter().enumerate() {
+        let face = incident.face_slot;
+        if edge_context.incident_loops[..ordinal]
+            .iter()
+            .any(|earlier| earlier.face_slot == face)
+        {
+            continue;
+        }
         if transition.topology.faces.deleted.contains(&face) {
             continue;
         }
@@ -3812,13 +3812,10 @@ fn hem_direction_from_transition(
             continue;
         }
         let normal = plane.normal.scale(1.0 / length);
-        let offsets = cylinders
-            .iter()
-            .map(|cylinder| normal.dot(cylinder.origin.vector_from(plane.origin)))
-            .collect::<Vec<_>>();
-        let Some(first) = offsets.first().copied() else {
+        let Some(first_cylinder) = cylinders.clone().next() else {
             continue;
         };
+        let first = normal.dot(first_cylinder.origin.vector_from(plane.origin));
         if !first.is_finite() {
             continue;
         }
@@ -3827,14 +3824,15 @@ fn hem_direction_from_transition(
                 + plane.origin.x.abs()
                 + plane.origin.y.abs()
                 + plane.origin.z.abs()
-                + cylinders.iter().fold(0.0_f64, |scale, cylinder| {
+                + cylinders.clone().fold(0.0_f64, |scale, cylinder| {
                     scale
                         .max(cylinder.origin.x.abs())
                         .max(cylinder.origin.y.abs())
                         .max(cylinder.origin.z.abs())
                 }));
         if first.abs() <= sign_tolerance
-            || offsets.iter().any(|offset| {
+            || cylinders.clone().any(|cylinder| {
+                let offset = normal.dot(cylinder.origin.vector_from(plane.origin));
                 !offset.is_finite()
                     || offset.abs() <= sign_tolerance
                     || offset.is_sign_positive() != first.is_sign_positive()
@@ -3842,12 +3840,11 @@ fn hem_direction_from_transition(
         {
             continue;
         }
-        candidates.push(first.is_sign_positive());
+        if candidate.replace(first.is_sign_positive()).is_some() {
+            return None;
+        }
     }
-    let [positive] = candidates.as_slice() else {
-        return None;
-    };
-    Some(if *positive {
+    Some(if candidate? {
         cadmpeg_ir::features::SheetMetalHemDirection::Forward
     } else {
         cadmpeg_ir::features::SheetMetalHemDirection::Reverse
