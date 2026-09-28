@@ -545,12 +545,12 @@ fn feature_history_links_follow_unique_physical_section_order() {
         )
         .unwrap(),
     };
-    let links = canonical_feature_history_links([
+    let links = crate::test_support::with_decode_context(|ctx| canonical_feature_history_links(ctx, vec![
         link("late", OmSchemaRole::FeatureHistory, 300, 300),
         link("model", OmSchemaRole::Model, 50, 50),
         link("duplicate", OmSchemaRole::FeatureHistory, 100, 100),
         link("early", OmSchemaRole::FeatureHistory, 100, 100),
-    ]);
+    ])).unwrap();
 
     assert_eq!(
         links
