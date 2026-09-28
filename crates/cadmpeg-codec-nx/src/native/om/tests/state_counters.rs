@@ -500,6 +500,94 @@ fn native_operation_state_message_route_refuses_retained_bytes() {
 }
 
 #[test]
+fn state_message_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_message_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        segment_om_record_area_with_state_groups_and_counter_map(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_messages(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn state_status_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_status_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_status_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_statuses(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_collection_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_retained_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_slot_lane_route_refuses_work_limit() {
+    let error = state_projection_limit_error(
+        composed_feature_history_payload_with_operation_state_statuses(),
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| operation_state_slot_lanes(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
 fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let payload = composed_feature_history_payload_with_operation_state_statuses();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
