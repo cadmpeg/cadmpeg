@@ -102,6 +102,7 @@ fn name_only_feature_definition(
     }
     if matches!(kind, "Protrusion" | "Cut") {
         return Ok(Some(extrude_feature_definition_with_profile(
+            ctx,
             scan,
             ir,
             source_carriers,
@@ -112,7 +113,7 @@ fn name_only_feature_definition(
                 false,
                 preceding_features_establish_body(ir),
             ),
-        )));
+        )?));
     }
     let tree_node_role = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
@@ -156,12 +157,13 @@ fn name_only_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Ok(Some(extrude_feature_definition_with_profile(
+            ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
             op,
-        )));
+        )?));
     }
     if kind == "Revolve" || numbered_feature_name_has_family(kind, "Revolve") {
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
@@ -214,12 +216,13 @@ pub(in super::super) fn named_or_referenced_feature_definition(
 }
 
 pub(super) fn extrude_feature_definition_with_profile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
-) -> IrFeatureDefinition {
+) -> Result<IrFeatureDefinition, CodecError> {
     let profile = unique_feature_profile_ref(scan, ir, feature_id).unwrap_or_else(|| {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(format!(
             "creo:model:feature#{feature_id}"
@@ -232,7 +235,7 @@ pub(super) fn extrude_feature_definition_with_profile(
         op
     };
     let (direction, extent) =
-        linear_extrusion_extent_and_direction(scan, ir, source_carriers, feature_id).map_or(
+        linear_extrusion_extent_and_direction(ctx, scan, ir, source_carriers, feature_id)?.map_or(
             (
                 ExtrudeDirection::ProfileNormal {},
                 unresolved_extrude_extent(),
@@ -250,7 +253,7 @@ pub(super) fn extrude_feature_definition_with_profile(
                 )
             },
         );
-    IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
+    Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         profile,
         direction,
         start: cadmpeg_ir::features::ExtrudeStart::default(),
@@ -261,7 +264,7 @@ pub(super) fn extrude_feature_definition_with_profile(
         inner_wire_taper: None,
         length_along_profile_normal: None,
         allow_multi_profile_faces: None,
-    })
+    }))
 }
 
 fn revolve_feature_definition_with_profile(

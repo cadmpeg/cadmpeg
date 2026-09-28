@@ -237,11 +237,12 @@ fn admitted_hole_placements(
 }
 
 pub(super) fn linear_extrusion_extent_and_direction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, cadmpeg_core::CodecError> {
     let mut transforms = scan
         .features
         .section_transforms
@@ -270,25 +271,29 @@ pub(super) fn linear_extrusion_extent_and_direction(
                 extrusion_extent_and_direction(transform.origin(), transform.normal(), planes)
             })
         }) {
-            return Some(extent);
+            return Ok(Some(extent));
         }
     }
-    generated_cap_plane_extent(scan, ir, source_carriers, feature_id)
-        .or_else(|| {
-            unique_transform.and_then(|transform| {
-                generated_bounded_cylinder_extent(scan, ir, source_carriers, feature_id, transform)
-            })
+    let mut extent = generated_cap_plane_extent(scan, ir, source_carriers, feature_id);
+    if extent.is_none() {
+        if let Some(transform) = unique_transform {
+            extent = generated_bounded_cylinder_extent(
+                ctx, scan, ir, source_carriers, feature_id, transform,
+            )?;
+        }
+    }
+    if extent.is_none() {
+        if let Some(transform) = unique_transform {
+            extent = generated_nurbs_translation_extent(
+                ctx, scan, ir, source_carriers, feature_id, transform,
+            )?;
+        }
+    }
+    Ok(extent.or_else(|| {
+        matches!(unique_transform, Some(None)).then_some(()).and_then(|()| {
+            generated_rectilinear_plane_extent(scan, ir, source_carriers, feature_id, section)
         })
-        .or_else(|| {
-            unique_transform.and_then(|transform| {
-                generated_nurbs_translation_extent(scan, ir, source_carriers, feature_id, transform)
-            })
-        })
-        .or_else(|| {
-            matches!(unique_transform, Some(None)).then_some(()).and_then(|()| {
-                generated_rectilinear_plane_extent(scan, ir, source_carriers, feature_id, section)
-            })
-        })
+    }))
 }
 
 pub(in super::super) fn schema_feature_definition(
@@ -754,7 +759,7 @@ pub(in super::super) fn schema_feature_definition(
             preceding_features_establish_body(ir),
         );
         let extent_and_direction =
-            linear_extrusion_extent_and_direction(scan, ir, source_carriers, feature_id);
+            linear_extrusion_extent_and_direction(ctx, scan, ir, source_carriers, feature_id)?;
         let construction = extent_and_direction
             .map(|(extent, direction)| (Some(Vector3::from(direction)), extent));
         let (direction, extent) = construction.unwrap_or((None, unresolved_extrude_extent()));
@@ -918,12 +923,13 @@ pub(in super::super) fn schema_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Ok(extrude_feature_definition_with_profile(
+            ctx,
             scan,
             ir,
             source_carriers,
             feature_id,
             op,
-        ));
+        )?);
     }
     if schema_class == Some(SchemaClass::Surface)
         && class_942_boundary_surface_entity_graph(

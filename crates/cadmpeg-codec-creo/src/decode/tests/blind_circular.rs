@@ -1555,6 +1555,7 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
 
 #[test]
 fn bounded_generated_cylinders_define_a_blind_extrusion() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         kind,
@@ -1638,13 +1639,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         [0.0, -1.0, 0.0],
     ));
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         expected
     );
 
@@ -1655,23 +1656,23 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 31,
     });
-    let conflicting_extent = generated_bounded_cylinder_extent(
+    let conflicting_extent = generated_bounded_cylinder_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None,
-    );
+    ).expect("admitted extent");
     assert!(conflicting_extent.is_none());
     scan.planes.outlines[0].origin[1] = 4.0;
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         expected
     );
 
@@ -1684,13 +1685,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         source_object: None,
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         expected
     );
 
@@ -1703,13 +1704,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         source_object: None,
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         expected
     );
     scan.surfaces.rows.truncate(3);
@@ -1721,20 +1722,20 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             == SurfaceId::mint("creo:visibgeom:surface#33".to_string()).expect("identity grammar")
     });
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &untransferred_caps,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
-        generated_bounded_cylinder_extent(
+        ).expect("admitted extent"),
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        )
+        ).expect("admitted extent")
     );
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
@@ -1752,13 +1753,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     )
     .expect("valid positional cylinder frame");
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -1772,24 +1773,24 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             [0.0, -1.0, 0.0],
         ))
     );
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &untransferred_caps,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
     let lengthless = scan.surfaces.parameters[0]
         .positional_cylinder_frame()
         .expect("cylinder frame");
-    assert!(bounded_cylinder_span(
+    assert!(bounded_cylinder_span(ctx,
         lengthless,
         &[
             ([0.0, -4.0, 0.0], [0.0, 1.0, 0.0]),
             ([0.0, -6.0, 0.0], [0.0, 1.0, 0.0]),
         ],
-    )
+    ).expect("admitted extent")
     .is_none());
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1816,20 +1817,20 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     )
     .expect("valid section frame");
     assert_eq!(
-        generated_bounded_cylinder_extent(
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &untransferred_caps,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             Some(&transform)
-        ),
-        generated_bounded_cylinder_extent(
+        ).expect("admitted extent"),
+        generated_bounded_cylinder_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        )
+        ).expect("admitted extent")
     );
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1865,13 +1866,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         .cloned()
         .collect();
     assert_eq!(
-        resolved_feature_extrusion_span(
+        resolved_feature_extrusion_span(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &definition,
             &transform
-        ),
+        ).expect("admitted extent"),
         Some(ExtrusionSpan::new(0.0, 8.0).expect("valid span fixture"))
     );
     scan.surfaces.rows = surface_rows;
@@ -1885,13 +1886,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         transform.offset,
     )
     .expect("valid section frame");
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &untransferred_caps,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&displaced)
-    )
+    ).expect("admitted extent")
     .is_none());
     let perpendicular = crate::placement::FeatureSectionTransform::new(
         transform.definition_id,
@@ -1902,13 +1903,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         transform.offset,
     )
     .expect("valid section frame");
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &untransferred_caps,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         Some(&perpendicular)
-    )
+    ).expect("admitted extent")
     .is_none());
 
     let mut oblique = ir.clone();
@@ -1927,13 +1928,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let u_axis = Vector3::new(1.0, 0.0, 0.0);
     *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(*origin, normal, u_axis)
         .expect("valid PlaneSurface fixture");
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &oblique,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
 
     let crate::surface::SurfaceParameterCarrier::Resolved(
@@ -1950,13 +1951,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         Some(7.0),
     )
     .expect("valid positional cylinder frame");
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
     let crate::surface::SurfaceParameterCarrier::Resolved(
         crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
@@ -1974,37 +1975,38 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     .expect("valid positional cylinder frame");
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
     scan.surfaces.rows.pop();
 
     scan.surfaces
         .parameters
         .push(scan.surfaces.parameters[0].clone());
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
     scan.surfaces.parameters.pop();
 
     let mut missing_transfer = ir.clone();
     missing_transfer.model.surfaces.pop();
-    assert!(generated_bounded_cylinder_extent(
+    assert!(generated_bounded_cylinder_extent(ctx,
         &scan,
         &missing_transfer,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         7,
         None
-    )
+    ).expect("admitted extent")
     .is_none());
+    });
 }

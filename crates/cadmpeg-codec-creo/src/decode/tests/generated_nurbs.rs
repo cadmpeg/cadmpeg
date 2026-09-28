@@ -45,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn generated_nurbs_translations_define_a_blind_extrusion() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let translated_surface = |last_z| {
         NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
@@ -65,13 +66,13 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         )
         .expect("valid translated surface")
     };
-    let span = nurbs_translation_span(&translated_surface(2.0)).expect("translation");
+    let span = nurbs_translation_span(ctx, &translated_surface(2.0)).expect("admitted extent").expect("translation");
     assert_eq!(span.vector, [0.0, 0.0, 2.0]);
     assert_eq!(
         span.starts,
         vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0], [2.0, 0.0, 0.0]]
     );
-    assert!(nurbs_translation_span(&translated_surface(3.0)).is_none());
+    assert!(nurbs_translation_span(ctx, &translated_surface(3.0)).expect("admitted extent").is_none());
 
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
@@ -141,13 +142,13 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         },
     ]);
     assert_eq!(
-        generated_nurbs_translation_extent(
+        generated_nurbs_translation_extent(ctx,
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             7,
             None
-        ),
+        ).expect("admitted extent"),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -176,7 +177,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         false,
     )
     .expect("valid ambiguous translation surface");
-    assert!(nurbs_translation_span(&ambiguous).is_none());
+    assert!(nurbs_translation_span(ctx, &ambiguous).expect("admitted extent").is_none());
+    });
 }
 
 #[test]

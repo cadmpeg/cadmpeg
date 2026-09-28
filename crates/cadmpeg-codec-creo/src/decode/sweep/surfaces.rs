@@ -730,7 +730,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 .then_some((surface_id, internal_id, spline))
             });
         let Some(span) =
-            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+            resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
             continue;
         };
