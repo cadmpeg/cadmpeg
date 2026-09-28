@@ -8149,58 +8149,68 @@ fn historical_mirror_face_operand_plane(
     history: &AsmHistory,
     previous_state_id: i64,
 ) -> Option<HistoricalMirrorPlane> {
-    let mut slots = if operand.resolved_face_slots.is_empty() {
-        let candidates = if operand.preceding_candidate_faces.is_empty() {
-            crate::design::face_resolve::historical_face_operand_candidates(operand)
-        } else {
-            operand.preceding_candidate_faces.clone()
-        };
-        candidates
+    if !operand.resolved_face_slots.is_empty() {
+        return coincident_mirror_plane(
+            operand.resolved_face_slots.iter().copied(), previous_state_id, history,
+        );
+    }
+    if !operand.preceding_candidate_faces.is_empty() {
+        return coincident_mirror_plane(
+            operand.preceding_candidate_faces.iter().filter_map(|face| stable_ref(face.as_str())),
+            previous_state_id, history,
+        );
+    }
+    let referenced = || operand.recipe_references.iter().flat_map(|reference| {
+        reference.candidate_faces.iter().chain(&reference.alternate_selector_faces)
+    });
+    if operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::Face
+        && referenced().next().is_some()
+    {
+        return coincident_mirror_plane(
+            referenced().filter_map(|face| stable_ref(face.as_str())),
+            previous_state_id, history,
+        );
+    }
+    coincident_mirror_plane(
+        crate::design::face_resolve::face_operand_candidates(operand)
             .iter()
-            .filter_map(|face| stable_ref(face.as_str()))
-            .collect::<Vec<_>>()
-    } else {
-        operand.resolved_face_slots.clone()
-    };
-    slots.sort_unstable();
-    slots.dedup();
-    let planes = slots
-        .iter()
-        .map(|face_slot| {
-            historical_mirror_plane_for_face_slot(*face_slot, previous_state_id, history)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let first = planes.first()?.clone();
-    planes
-        .iter()
-        .all(|candidate| mirror_planes_coincident(&first, candidate))
-        .then_some(first)
+            .filter_map(|face| stable_ref(face.as_str())),
+        previous_state_id, history,
+    )
+}
+
+fn coincident_mirror_plane(
+    slots: impl Iterator<Item = i64> + Clone,
+    previous_state_id: i64,
+    history: &AsmHistory,
+) -> Option<HistoricalMirrorPlane> {
+    let first_slot = slots.clone().min()?;
+    let first = historical_mirror_plane_for_face_slot(first_slot, previous_state_id, history)?;
+    for slot in slots {
+        let candidate = historical_mirror_plane_for_face_slot(slot, previous_state_id, history)?;
+        if !mirror_planes_coincident(&first, &candidate) {
+            return None;
+        }
+    }
+    Some(first)
 }
 
 fn unique_mirror_plane_candidate(
     mut primary: Vec<
         crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     >,
-    persistent: Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
+    mut persistent: Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate>,
 ) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     primary.dedup();
-    let context_histories = primary
-        .iter()
-        .map(|candidate| candidate.history_id.as_str())
-        .collect::<HashSet<_>>();
-    let mut persistent = persistent
-        .into_iter()
-        .filter(|candidate| context_histories.contains(candidate.history_id.as_str()))
-        .collect::<Vec<_>>();
+    persistent.retain(|candidate| {
+        primary.iter().any(|context| context.history_id == candidate.history_id)
+    });
     persistent.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     persistent.dedup();
-    match persistent.as_slice() {
-        [candidate] => Some(candidate.clone()),
-        [] => match primary.as_slice() {
-            [candidate] => Some(candidate.clone()),
-            _ => None,
-        },
+    match persistent.len() {
+        1 => persistent.pop(),
+        0 if primary.len() == 1 => primary.pop(),
         _ => None,
     }
 }
