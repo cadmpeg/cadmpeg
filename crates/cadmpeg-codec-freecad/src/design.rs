@@ -36,7 +36,7 @@ use cadmpeg_ir::{
         LinearTermination, ParameterId, ParameterValue, PathRef, PlanarProfileRef, PrimitiveSolid,
         PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolutionFuseOrder, RevolveConstruction,
         RevolveExtent, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-        SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+        SurfaceProjectionMode, SweepOrientation, SweepTransformation, SweepTransition,
         TreeChildren,
     },
     scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal},
@@ -178,7 +178,7 @@ pub(crate) fn transfer(
                 .or_else(|| cached_shape_definition(&owned))
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sweep(&object.type_name) {
-            sweep_definition(&object.type_name, &owned, &sketch_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            sweep_definition(ctx, &object.type_name, &owned, &sketch_ids)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
                 ctx,
@@ -5523,49 +5523,56 @@ fn loft_definition(
 }
 
 fn sweep_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-) -> Option<FeatureDefinition> {
-    let profile_ref = |object: &str| {
-        sketches.get(object).cloned().map_or_else(
-            || ProfileRef::Planar(PlanarProfileRef::Native(object.to_owned())),
-            |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
-        )
-    };
-    let mut profiles = property(properties, "Profile")
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let linked_objects = || property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
         .flat_map(PropertyRecord::links)
-        .filter_map(|link| link.as_ref()?.object())
-        .map(profile_ref)
-        .collect::<Vec<_>>();
+        .filter_map(|link| link.as_ref()?.object());
+    let mut profiles = collection_vec(ctx, linked_objects().count(), "fcstd sweep profiles")?;
+    for object in linked_objects() {
+        let profile = match sketches.get(object) {
+            Some(sketch) => PlanarProfileRef::Sketch(SketchId::mint(retained_string(ctx, sketch.as_str(), "fcstd sweep sketch identity")?).map_err(CodecError::malformed)?),
+            None => PlanarProfileRef::Native(retained_string(ctx, object, "fcstd sweep native profile identity")?),
+        };
+        profiles.push(ProfileRef::Planar(profile));
+    }
+    ctx.charge_work(profiles.len() as u64, "fcstd sweep profile deduplication")?;
     profiles.dedup();
     if profiles.is_empty() {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(profiles.len() as u64, "fcstd sweep primary profile removal")?;
     let profile = profiles.remove(0);
-    let path_property = property(properties, "Spine")
+    let Some(path_property) = property(properties, "Spine")
         .or_else(|| property(properties, "Path"))
-        .filter(|property| singular_operand(properties, &property.name).is_some())?;
+        .filter(|property| singular_operand(properties, &property.name).is_some()) else { return Ok(None); };
     let part_design = kind.starts_with("PartDesign::");
     let solid = if part_design {
         true
     } else {
-        bool_selector(properties, "Solid", true)?
+        let Some(value) = bool_selector(properties, "Solid", true) else { return Ok(None); };
+        value
     };
     let path_tangent = if part_design {
-        bool_selector(properties, "SpineTangent", false)?
+        let Some(value) = bool_selector(properties, "SpineTangent", false) else { return Ok(None); };
+        value
     } else {
         false
     };
     let auxiliary_spine_tangent = if part_design {
-        bool_selector(properties, "AuxiliarySpineTangent", false)?
+        let Some(value) = bool_selector(properties, "AuxiliarySpineTangent", false) else { return Ok(None); };
+        value
     } else {
         false
     };
     let auxiliary_curvilinear = if part_design {
-        bool_selector(properties, "AuxiliaryCurvilinear", true)?
+        let Some(value) = bool_selector(properties, "AuxiliaryCurvilinear", true) else { return Ok(None); };
+        value
     } else {
         true
     };
@@ -5575,10 +5582,11 @@ fn sweep_definition(
         0 => SweepTransition::Transformed,
         1 => SweepTransition::RightCorner,
         2 => SweepTransition::RoundCorner,
-        _ => return None,
+        _ => return Ok(None),
     };
     let orientation = if kind == "Part::Sweep" {
-        if bool_selector(properties, "Frenet", true)? {
+        let Some(frenet) = bool_selector(properties, "Frenet", true) else { return Ok(None); };
+        if frenet {
             SweepOrientation::Frenet {}
         } else {
             SweepOrientation::CorrectedFrenet {}
@@ -5589,20 +5597,21 @@ fn sweep_definition(
             1 => SweepOrientation::Fixed {},
             2 => SweepOrientation::Frenet {},
             3 => {
-                let auxiliary = property(properties, "AuxiliarySpine")?;
-                singular_operand(properties, "AuxiliarySpine")?;
+                let Some(auxiliary) = singular_operand(properties, "AuxiliarySpine") else { return Ok(None); };
                 SweepOrientation::Auxiliary {
-                    path: PathRef::Native(auxiliary.id.clone()),
+                    path: PathRef::Native(retained_string(ctx, &auxiliary.id, "fcstd sweep auxiliary spine identity")?),
                     tangent: auxiliary_spine_tangent,
                     curvilinear: auxiliary_curvilinear,
                 }
             }
             4 => SweepOrientation::Binormal {
-                direction: cadmpeg_ir::units::UnitVector3::normalized(
-                    vector_property(properties, "Binormal")?.get(),
-                )?,
+                direction: match vector_property(properties, "Binormal")
+                    .and_then(|value| cadmpeg_ir::units::UnitVector3::normalized(value.get())) {
+                    Some(direction) => direction,
+                    None => return Ok(None),
+                },
             },
-            _ => return None,
+            _ => return Ok(None),
         }
     };
     let transformation = if kind == "Part::Sweep" {
@@ -5614,52 +5623,58 @@ fn sweep_definition(
             2 => SweepTransformation::Linear,
             3 => SweepTransformation::SShape,
             4 => SweepTransformation::Interpolation,
-            _ => return None,
+            _ => return Ok(None),
         }
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
-        shape: cadmpeg_ir::features::SweepShape::sheet_sections(
-            if solid {
-                SweepMode::Solid {
-                    op: operation_boolean(kind).try_into().ok()?,
-                }
-            } else {
-                SweepMode::Surface {}
-            },
-            cadmpeg_ir::features::SweepSection::Profile(profile.planar().cloned()?),
-            profiles
-                .into_iter()
-                .map(|profile| {
-                    profile
-                        .planar()
-                        .cloned()
-                        .map(cadmpeg_ir::features::SweepSection::Profile)
-                })
-                .collect::<Option<Vec<_>>>()?,
-        ),
-
-        path: Some(PathRef::Native(path_property.id.clone())),
-
+    let linearize = if kind == "Part::Sweep" {
+        let Some(value) = bool_selector(properties, "Linearize", false) else { return Ok(None); };
+        value
+    } else { false };
+    let allow_multi_profile_faces = if part_design {
+        let Some(value) = bool_selector(properties, "AllowMultiFace", false) else { return Ok(None); };
+        Some(value)
+    } else { None };
+    let ProfileRef::Planar(primary) = profile else { return Ok(None); };
+    let shape = if solid {
+        let Some(op) = operation_boolean(kind).try_into().ok() else { return Ok(None); };
+        let mut sections: Vec<cadmpeg_ir::features::SweepSection> =
+            collection_vec(ctx, profiles.len(), "fcstd solid sweep sections")?;
+        for profile in profiles {
+            let ProfileRef::Planar(planar) = profile else { return Ok(None); };
+            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+        }
+        cadmpeg_ir::features::SweepShape::Solid {
+            op,
+            section: cadmpeg_ir::features::SweepSection::Profile(primary),
+            sections,
+        }
+    } else {
+        let mut sections: Vec<cadmpeg_ir::features::SheetSweepSection> =
+            collection_vec(ctx, profiles.len(), "fcstd sheet sweep sections")?;
+        for profile in profiles {
+            let ProfileRef::Planar(planar) = profile else { return Ok(None); };
+            sections.push(cadmpeg_ir::features::SweepSection::Profile(planar));
+        }
+        cadmpeg_ir::features::SweepShape::Surface {
+            section: cadmpeg_ir::features::SweepSection::Profile(primary),
+            sections,
+        }
+    };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Sweep {
+        shape,
+        path: Some(PathRef::Native(retained_string(ctx, &path_property.id, "fcstd sweep path identity")?)),
         orientation: Some(orientation),
         transition: Some(transition),
         transformation: Some(transformation),
         path_tangent,
-        linearize: if kind == "Part::Sweep" {
-            bool_selector(properties, "Linearize", false)?
-        } else {
-            false
-        },
+        linearize,
         twist: None,
         path_extent: None,
         guide_rail: None,
         taper: None,
         scale: None,
-        allow_multi_profile_faces: if part_design {
-            Some(bool_selector(properties, "AllowMultiFace", false)?)
-        } else {
-            None
-        },
-    }))
+        allow_multi_profile_faces,
+    })))
 }
 
 fn hole_definition(

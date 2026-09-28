@@ -12,6 +12,38 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn sweep_profiles_and_paths_refuse_at_matching_limits() {
+    let profile = linked_property("sweep", "Profile", "sweep-profile");
+    let section = linked_property_count_to("sweep", "Sections", "sweep-section", 1, "other");
+    let path = linked_property("sweep", "Spine", "sweep-path");
+    let properties = [&profile, &section, &path];
+    for operation in ["fcstd sweep profiles", "fcstd solid sweep sections"] {
+        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+            super::sweep_definition(ctx, "Part::Sweep", &properties, &std::collections::HashMap::new())
+        });
+    }
+    for operation in ["fcstd sweep native profile identity", "fcstd sweep path identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::sweep_definition(ctx, "Part::Sweep", &properties, &std::collections::HashMap::new())
+        });
+    }
+    let mut sketches = std::collections::HashMap::new();
+    sketches.insert("base", cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#sweep").expect("valid sketch id"));
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd sweep sketch identity", |ctx| {
+        super::sweep_definition(ctx, "Part::Sweep", &properties, &sketches)
+    });
+    let sheet = bool_property("sweep", "Solid", false);
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd sheet sweep sections", |ctx| {
+        super::sweep_definition(ctx, "Part::Sweep", &[&profile, &section, &path, &sheet], &std::collections::HashMap::new())
+    });
+    let mode = integer_property("pipe", "Mode", 3);
+    let auxiliary = linked_property("pipe", "AuxiliarySpine", "auxiliary-path");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd sweep auxiliary spine identity", |ctx| {
+        super::sweep_definition(ctx, "PartDesign::AdditivePipe", &[&profile, &section, &path, &mode, &auxiliary], &std::collections::HashMap::new())
+    });
+}
+
+#[test]
 fn loft_profiles_refuse_at_matching_limits() {
     let profiles = linked_property_count("loft", "Sections", "loft-sections", 2);
     let sketches = std::collections::HashMap::new();
@@ -161,8 +193,12 @@ fn linked_property(owner: &str, name: &str, id: &str) -> crate::native::Property
 }
 
 fn linked_property_count(owner: &str, name: &str, id: &str, count: usize) -> crate::native::PropertyRecord {
+    linked_property_count_to(owner, name, id, count, "base")
+}
+
+fn linked_property_count_to(owner: &str, name: &str, id: &str, count: usize, target: &str) -> crate::native::PropertyRecord {
     let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
-        document: None, document_attribute: None, object: Some("base".into()),
+        document: None, document_attribute: None, object: Some(target.into()),
         subelements: Vec::new(),
     }).expect("valid link");
     crate::native::PropertyRecord {
@@ -175,6 +211,30 @@ fn linked_property_count(owner: &str, name: &str, id: &str, count: usize) -> cra
         order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
             .expect("valid XML span"),
+    }
+}
+
+fn bool_property(owner: &str, name: &str, value: bool) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("{owner}:{name}"), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyBool".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><Bool value=\"{value}\"/></Property>"), 0,
+        ).expect("valid XML span"),
+    }
+}
+
+fn integer_property(owner: &str, name: &str, value: i64) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("{owner}:{name}"), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyInteger".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><Integer value=\"{value}\"/></Property>"), 0,
+        ).expect("valid XML span"),
     }
 }
 
