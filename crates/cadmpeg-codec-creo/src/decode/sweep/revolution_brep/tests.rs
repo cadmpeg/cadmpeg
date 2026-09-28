@@ -298,6 +298,7 @@ revolution_collection_limit_test!(revolution_boundary_rows_refuse_limit, "creo r
 revolution_collection_limit_test!(revolution_face_senses_refuse_limit, "creo revolution face senses");
 revolution_collection_limit_test!(revolution_profile_edges_refuse_limit, "creo revolution profile edges");
 revolution_collection_limit_test!(revolution_ring_coedges_refuse_limit, "creo revolution ring coedges");
+revolution_collection_limit_test!(revolution_ring_validation_nodes_refuse_limit, "creo revolution loop validation nodes");
 revolution_collection_limit_test!(revolution_loops_refuse_limit, "creo model revolution loops");
 revolution_collection_limit_test!(revolution_coedge_pcurves_refuse_limit, "creo revolution coedge pcurves");
 revolution_collection_limit_test!(revolution_face_loop_ids_refuse_limit, "creo revolution face loop IDs");
