@@ -492,29 +492,28 @@ pub(crate) struct CircularHelixCache {
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.
 ///
-/// Every `return None` here states that the construction is not an exact
-/// circular helix this cache covers, not that the record is refused: the curve
-/// still transfers, without a solved cache. Two answers are refusals and do
-/// reach the sink: the source-stated angle interval, which must be finite and
-/// increasing, and the lane refusal from `NurbsCurve::from_lanes`.
+/// `Ok(None)` states that the construction has no exact circular helix cache;
+/// the curve still transfers. Source interval and IR lane refusals reach the
+/// sink. Resource refusals propagate to the decode caller.
 pub(crate) fn circular_helix_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     construction: &ProceduralCurveDefinition,
     requested_tolerance: PositiveReal,
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Option<CircularHelixCache> {
+) -> Result<Option<CircularHelixCache>, cadmpeg_core::CodecError> {
     let requested_tolerance = requested_tolerance.get();
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
-        return None;
+        return Ok(None);
     };
     let angle_range = helix_payload.angle_range();
     if !readable_range(angle_range.get(), true, refusal, record) {
-        return None;
+        return Ok(None);
     }
     let [angle_start, angle_end] = angle_range.get();
     if !(angle_end - angle_start).is_finite() {
         refusal.push_range(record, angle_range.get());
-        return None;
+        return Ok(None);
     }
     let major = helix_payload.major();
     let minor = helix_payload.minor();
@@ -544,7 +543,7 @@ pub(crate) fn circular_helix_cache(
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
         || apex_factor.get() != 0.0
     {
-        return None;
+        return Ok(None);
     }
     let normalized_dot_major_minor = normalized_dot(major, minor);
     let normalized_dot_major_axis = normalized_dot(major, axis);
@@ -563,11 +562,11 @@ pub(crate) fn circular_helix_cache(
         || !normalized_dot_pitch_axis.is_finite()
         || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_PITCH_ALIGNMENT
     {
-        return None;
+        return Ok(None);
     }
     let sweep = angle_range[1] - angle_range[0];
     if !sweep.is_finite() || sweep <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let relative_tolerance = requested_tolerance / radius;
     // The step whose chord sagitta is the requested tolerance is
@@ -586,56 +585,75 @@ pub(crate) fn circular_helix_cache(
         2.0 * std::f64::consts::PI
     };
     if !max_step.is_finite() || max_step <= 0.0 {
-        return None;
+        return Ok(None);
     }
     // Both refusals above bound the quotient: `sweep` and `max_step` are each
     // finite and positive, so the quotient is positive and ceils to at least
     // one segment. No floor stands here.
     let segment_count = (sweep / max_step).ceil();
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
+        return Ok(None);
     }
     let segment_count = segment_count as usize;
     let step = sweep / segment_count as f64;
-    let samples = (0..=segment_count)
-        .map(|index| {
-            let parameter = if index == segment_count {
-                angle_range[1]
-            } else {
-                angle_range[0] + index as f64 * step
-            };
-            if !parameter.is_finite() {
-                return None;
-            }
-            Some((parameter, circular_helix_point(construction, parameter)?))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let sample_count = segment_count.checked_add(1).ok_or_else(||
+        ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX)
+    )?;
+    let sample_bytes = sample_count.checked_mul(std::mem::size_of::<(f64, Point3)>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
+    let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
+    let mut samples = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut samples, sample_count, "catia_helix_samples")?;
+    for index in 0..=segment_count {
+        let parameter = if index == segment_count {
+            angle_range[1]
+        } else {
+            angle_range[0] + index as f64 * step
+        };
+        if !parameter.is_finite() {
+            return Ok(None);
+        }
+        let Some(point) = circular_helix_point(construction, parameter) else {
+            return Ok(None);
+        };
+        samples.push((parameter, point));
+    }
     if !samples
         .windows(2)
         .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
     {
-        return None;
+        return Ok(None);
     }
     let sine = (step * 0.25).sin();
     let fit_tolerance = (radius * sine) * (2.0 * sine);
-    let mut knots = Vec::with_capacity(samples.len() + 2);
+    let knot_count = sample_count.checked_add(2).ok_or_else(||
+        ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX)
+    )?;
+    let knot_bytes = knot_count.checked_mul(std::mem::size_of::<f64>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, knot_count, "catia_helix_knots")?;
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
-    let curve = match NurbsCurve::from_lanes(
-        1,
-        knots,
-        samples.into_iter().map(|(_, point)| point).collect(),
-        None,
-        false,
-    ) {
+    let control_bytes = sample_count.checked_mul(std::mem::size_of::<Point3>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(control_bytes, "catia_helix_controls")?;
+    let mut controls = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut controls, sample_count, "catia_helix_controls")?;
+    controls.extend(samples.into_iter().map(|(_, point)| point));
+    let curve = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
         Ok(curve) => curve,
-        Err(error) => return note_refusal(Err(error), refusal, record),
+        Err(error) => return Ok(note_refusal(Err(error), refusal, record)),
     };
-    Some(CircularHelixCache {
+    Ok(FitTolerance::try_new(fit_tolerance).ok().map(|fit_tolerance| CircularHelixCache {
         curve,
-        fit_tolerance: FitTolerance::try_new(fit_tolerance).ok()?,
-    })
+        fit_tolerance,
+    }))
 }
 
 fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) -> Option<Point3> {
@@ -1089,6 +1107,10 @@ mod tests {
 
     #[test]
     fn circular_helix_cache_preserves_exact_interval_endpoints() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         let range = [0.125, 1.570_797_917_999_999_6];
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
@@ -1107,15 +1129,54 @@ mod tests {
         );
 
         let cache = circular_helix_cache(
+            &ctx,
             &definition,
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
         )
+        .expect("service resource budget")
         .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.get() > 0.0);
+    }
+
+    #[test]
+    fn circular_helix_cache_refuses_samples_before_allocation() {
+        let definition = ProceduralCurveDefinition::Helix(
+            cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                cadmpeg_ir::geometry::HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(0.0, 0.0, 1.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("valid helix fixture"),
+        );
+        let tolerance = PositiveReal::new(2.0).expect("positive fixture tolerance");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(circular_helix_cache(&ctx, &definition, tolerance, &mut LaneRefusals::new(), "test record")
+            .expect("service resource budget")
+            .is_some());
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
+        assert!(matches!(
+            circular_helix_cache(&ctx, &definition, tolerance, &mut LaneRefusals::new(), "test record"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
     }
 
     /// A tolerance at or past the diameter bounds every chord, so the step it
@@ -1127,6 +1188,10 @@ mod tests {
     /// This test states the value the whole-turn arm answers.
     #[test]
     fn a_relative_tolerance_at_or_past_the_diameter_states_the_whole_turn() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         // The sweep is longer than a half turn and shorter than a whole one,
         // so a step of the whole turn states one segment and any shorter step
         // states more than one.
@@ -1150,11 +1215,13 @@ mod tests {
         // requested tolerance is the relative tolerance.
         let cache = |tolerance| {
             circular_helix_cache(
+            &ctx,
                 &definition,
                 PositiveReal::new(tolerance).expect("positive fixture tolerance"),
                 &mut crate::nurbs::LaneRefusals::new(),
                 "test record",
             )
+            .expect("service resource budget")
             .expect("a stated step")
         };
         let fine = cache(1.0e-4);
@@ -1171,6 +1238,10 @@ mod tests {
 
     #[test]
     fn circular_helix_frame_validation_is_scale_independent() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         const SMALL_ADMITTED_HELIX_RADIUS: f64 = 1.0e-10;
         let radius = SMALL_ADMITTED_HELIX_RADIUS;
         let definition = |minor| {
@@ -1192,30 +1263,40 @@ mod tests {
         };
 
         assert!(circular_helix_cache(
+            &ctx,
             &definition(Vector3::new(0.0, radius, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
+        .expect("service resource budget")
         .is_some());
         assert!(circular_helix_cache(
+            &ctx,
             &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
+        .expect("service resource budget")
         .is_none());
         assert!(circular_helix_cache(
+            &ctx,
             &definition(Vector3::new(radius, 0.0, 0.0)),
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
+        .expect("service resource budget")
         .is_none());
     }
 
     #[test]
     fn circular_helix_cache_rejects_invalid_frame_and_output() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits input limit");
         let definition = ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
                 [0.0, 1.0],
@@ -1254,11 +1335,13 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture");
         }
         assert!(circular_helix_cache(
+            &ctx,
             &non_axial_pitch,
             PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
+        .expect("service resource budget")
         .is_none());
 
         let overflowing_points = ProceduralCurveDefinition::Helix(
@@ -1277,11 +1360,13 @@ mod tests {
             .expect("valid HelixCurveConstruction fixture"),
         );
         assert!(circular_helix_cache(
+            &ctx,
             &overflowing_points,
             PositiveReal::new(f64::MAX).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
+        .expect("service resource budget")
         .is_none());
     }
 

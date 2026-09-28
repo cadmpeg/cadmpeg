@@ -653,7 +653,7 @@ pub(super) fn cylinder_helix(
     }
     let Some(first) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[0])? else { return Ok(None) };
     let Some(second) = evaluate_pcurve(ctx, pcurve, endpoint_parameters[1])? else { return Ok(None) };
-    Ok((|| -> Option<HelixPlan> {
+    let Some((definition, sweep)) = (|| -> Option<_> {
     let endpoints = [first, second];
     let lifted = endpoints
         .map(|uv| cylinder_point(origin, reference_x, axis, radius, angular_scale.get(), uv));
@@ -692,27 +692,29 @@ pub(super) fn cylinder_helix(
         )
         .ok()?,
     );
-    let cache = crate::nurbs::circular_helix_cache(
+    Some((definition, sweep))
+    })() else { return Ok(None) };
+    let Some(cache) = crate::nurbs::circular_helix_cache(
+        ctx,
         &definition,
         FIT_TOLERANCE,
         refusal,
         "b5 helix edge construction",
-    )?;
+    )? else { return Ok(None) };
     let cache_points = cache.curve.control_points();
-    let cache_start = cache_points.first()?;
-    let cache_end = cache_points.last()?;
+    let Some(cache_start) = cache_points.first() else { return Ok(None) };
+    let Some(cache_end) = cache_points.last() else { return Ok(None) };
     if distance([cache_start.x, cache_start.y, cache_start.z], edge_start) > POINT_TOLERANCE
         || distance([cache_end.x, cache_end.y, cache_end.z], edge_end) > POINT_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
-    Some(HelixPlan {
+    Ok(Some(HelixPlan {
         definition,
         cache: cache.curve,
         parameter_range: [0.0, sweep],
         fit_tolerance: cache.fit_tolerance,
-    })
-    })())
+    }))
 }
 
 /// Emitted pcurve carriers and intervals indexed by native loop and member.
