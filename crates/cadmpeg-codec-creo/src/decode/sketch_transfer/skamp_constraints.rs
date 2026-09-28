@@ -42,31 +42,35 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
         .skamps
         .as_ref()
         .is_none_or(SolverSubtable::is_complete);
-    let skamp_id_counts =
-        relations
+    let mut skamp_id_counts = BTreeMap::<u32, usize>::new();
+    for skamp in relations.skamps() {
+        if !skamp_id_counts.contains_key(&skamp.id) {
+            ctx.charge_collection_items(1, "creo skamp ID count nodes")?;
+        }
+        *skamp_id_counts.entry(skamp.id).or_default() += 1;
+    }
+    let available_entities = if let Some(geometry) = geometry {
+        let mut ids = std::collections::BTreeSet::new();
+        for entity_id in relations
             .skamps()
             .iter()
-            .fold(BTreeMap::<u32, usize>::new(), |mut counts, skamp| {
-                *counts.entry(skamp.id).or_default() += 1;
-                counts
-            });
-    let section_entities = section_entity_external_ids(ctx, definition)?;
-    let available_entities = geometry.map_or_else(
-        || section_entities.clone(),
-        |geometry| {
-            relations
-                .skamps()
-                .iter()
-                .flat_map(|skamp| &skamp.items)
-                .map(|item| item.entity_id)
-                .filter(|entity_id| {
-                    sketch_entity_id(sketch, *entity_id)
-                        .is_some_and(|id| geometry.contains_key(&id))
-                })
-                .collect()
-        },
-    );
-    let constraints = relations
+            .flat_map(|skamp| &skamp.items)
+            .map(|item| item.entity_id)
+        {
+            if sketch_entity_id(sketch, entity_id)
+                .is_some_and(|id| geometry.contains_key(&id))
+            {
+                if !ids.contains(&entity_id) {
+                    ctx.charge_collection_items(1, "creo skamp available entity nodes")?;
+                }
+                ids.insert(entity_id);
+            }
+        }
+        ids
+    } else {
+        section_entity_external_ids(ctx, definition)?
+    };
+    crate::decode::collect_items(ctx, relations
         .skamps()
         .iter()
         .filter_map(|skamp| {
@@ -556,8 +560,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 skamp.offset,
             ))
         })
-        .collect();
-    Ok(constraints)
+    , "creo skamp constraints")
 }
 
 #[cfg(test)]
@@ -716,6 +719,91 @@ mod tests {
         SketchLocus,
     };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn skamp_count_available_and_result_nodes_refuse_at_named_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::definitions::FeatureRelationTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+                    header: crate::feature::definitions::FeatureSolverTableHeader {
+                        declared_count: 1,
+                        entity_ref: 1,
+                        offset: 0,
+                    },
+                    rows: vec![crate::feature::definitions::FeatureSkamp {
+                        id: 3,
+                        kind: 99,
+                        flags: 0,
+                        status: 1,
+                        items: vec![crate::feature::definitions::FeatureSkampItem {
+                            entity_id: 7,
+                            sense: 0,
+                        }],
+                        offset: 0,
+                    }],
+                }),
+                triples: None,
+                offset: 0,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#1")
+            .expect("valid sketch identity");
+        let entity = crate::decode::sketch_ids::sketch_entity_id(&sketch, 7)
+            .expect("valid entity identity");
+        let geometry = BTreeMap::from([(
+            entity,
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            })
+            .expect("valid point geometry"),
+        )]);
+        let arena = DecodeArena::new();
+        for (limit, operation) in [
+            (0, "creo skamp ID count nodes"),
+            (1, "creo skamp available entity nodes"),
+            (2, "creo skamp constraints"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let error = super::section_skamp_constraints_for_geometry(
+                &ctx,
+                &definition,
+                &sketch,
+                Some(&geometry),
+            )
+            .expect_err("skamp collection exceeds its limit");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let constraints = crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_skamp_constraints_for_geometry(ctx, &definition, &sketch, Some(&geometry))
+        })
+        .expect("service skamp collection");
+        assert_eq!(constraints.len(), 1);
+    }
 
     #[test]
     fn typed_entity_relations_require_every_entity_in_the_emitted_geometry() {
