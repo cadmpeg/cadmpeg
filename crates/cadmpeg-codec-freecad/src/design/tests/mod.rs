@@ -12,6 +12,50 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn binder_sources_and_selectors_refuse_at_matching_limits() {
+    let mut support = linked_property("binder", "Support", "binder-support");
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None, document_attribute: None, object: Some("base".into()),
+        subelements: vec!["Face1".into()],
+    }).expect("valid link");
+    if let crate::native::PropertyBody::Persisted { links, .. } = &mut support.body {
+        links[0] = link;
+    }
+    let mut features = std::collections::HashMap::new();
+    features.insert("base", cadmpeg_ir::features::FeatureId::mint("test:test:feature#binder").expect("valid feature id"));
+    for operation in ["fcstd binder sources", "fcstd binder subelements"] {
+        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+            super::binder_definition(ctx, "PartDesign::ShapeBinder", &[&support], &features)
+        });
+    }
+    for operation in ["fcstd binder feature target", "fcstd binder subelement selector"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::binder_definition(ctx, "PartDesign::ShapeBinder", &[&support], &features)
+        });
+    }
+}
+
+#[test]
+fn binder_native_and_external_targets_refuse_at_retained_limits() {
+    let native = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None, document_attribute: None, object: Some("native-object".into()),
+        subelements: Vec::new(),
+    }).expect("valid link").expect("present link");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd binder native target", |ctx| {
+        super::binder_target(ctx, &native, &std::collections::HashMap::new())
+    });
+    let external = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: Some("other-document".into()), document_attribute: None,
+        object: Some("external-object".into()), subelements: Vec::new(),
+    }).expect("valid link").expect("present link");
+    for operation in ["fcstd external binder document", "fcstd external binder object"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::binder_target(ctx, &external, &std::collections::HashMap::new())
+        });
+    }
+}
+
+#[test]
 fn feature_base_source_refuses_at_retained_limit() {
     let base = linked_property("feature-base", "BaseFeature", "base-property");
     let mut features = std::collections::HashMap::new();
