@@ -5838,10 +5838,10 @@ fn validate_body_recipe_operands<'a>(
         &native.design_parameter_scopes,
         &native.asm_histories,
     )?;
-    let expected_operands = expected_operands
+    let expected_operands = collect_index(decode, expected_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))
-        .collect::<HashMap<_, _>>();
+        , "index F3D expected body recipe operands")?;
     let mut member_slots = HashSet::new();
     let mut operand_records = HashSet::new();
     for operand in &native.design_body_recipe_operands {
@@ -5919,15 +5919,16 @@ fn validate_body_recipe_operands<'a>(
                     && selector_is_valid
             })
             && expected_operands.get(operand.id.as_str()) == Some(&operand)
-            && member_slots.insert((native_stream, operand.scope_record_index, operand.owner))
-            && operand_records.insert((native_stream, operand.record_index()));
+            && ctx.insert_unique(&mut member_slots,
+                (native_stream, operand.scope_record_index, operand.owner),
+                "index F3D body recipe member slots")?
+            && ctx.insert_unique(&mut operand_records,
+                (native_stream, operand.record_index()),
+                "index F3D body recipe records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design body recipe operand has an invalid nested frame".into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design body recipe operand has an invalid nested frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
     Ok(operand_records)
