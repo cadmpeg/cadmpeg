@@ -52,6 +52,43 @@ fn assert_offset_collection_refusal(bytes: &[u8], operation: &str) {
     panic!("offset collection refusal was not reached: {operation}");
 }
 
+fn assert_offset_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..8192 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                cap = limit.used + limit.additional;
+            }
+            other => panic!("expected offset retained refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("offset retained refusal was not reached: {operation}");
+}
+
+#[test]
+fn offset_identity_copies_refuse_before_retaining_text() {
+    let bytes = placed_uniform_offset_circle_file(0, b"124,0,-1,0,5,1,0,0,0,0,0,1,0;");
+    for operation in [
+        "iges offset source identity copy",
+        "iges offset placed source identity",
+        "iges offset edge carrier identity",
+    ] {
+        assert_offset_retained_refusal(&bytes, operation);
+    }
+    IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+}
+
 #[test]
 fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
     let linear = linear_offset_line_file(1);

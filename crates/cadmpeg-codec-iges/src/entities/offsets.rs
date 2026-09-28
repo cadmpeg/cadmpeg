@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{admit, declared_unit_vector, resolve_transform, source_object, WireProjectionOutcome};
-use crate::decode_resource::{reserve_optional_vec, reserve_optional_vec_growth};
+use crate::decode_resource::{clone_optional_identity, reserve_optional_vec, reserve_optional_vec_growth};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -22,6 +22,7 @@ use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
 use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
+use std::borrow::Cow;
 
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
@@ -44,23 +45,23 @@ fn placed_offset_normal(
 }
 
 fn placed_offset_source(
-    geometry: &CurveGeometry,
+    geometry: &SolvedCurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
-) -> Option<CurveGeometry> {
+) -> Option<SolvedCurveGeometry> {
     let orientation = transform_orientation(transform)?;
     match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
+        SolvedCurveGeometry::Line(line_curve) => {
             let direction = *line_curve.direction().as_raw();
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            Some(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transform.apply_point(line_curve.origin().get())?,
                     UnitVector3::normalized_by_reciprocal(
                         transform.apply_vector(direction)?.get(),
                     )?,
                 ),
-            )))
+            ))
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
+        SolvedCurveGeometry::Circle(circle_curve) => {
             let center = transform.apply_point(circle_curve.center().get())?;
             let axis = UnitVector3::normalized_by_reciprocal(
                 transform
@@ -78,13 +79,13 @@ fn placed_offset_source(
                     .get(),
             )?;
             let frame = OrthonormalFrame3::from_units(axis, reference)?;
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            Some(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
                     frame,
                     circle_curve.radius(),
                 ),
-            )))
+            ))
         }
         _ => None,
     }
@@ -336,7 +337,7 @@ pub(super) fn project(
             .curves
             .iter()
             .find(|curve| curve.id == source_id)
-            .and_then(|curve| curve.geometry.solved().cloned())
+            .and_then(|curve| curve.geometry.solved())
         else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset source curve is missing"))?;
             continue;
@@ -370,8 +371,8 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset parameter interval lies outside the source curve domain"))?;
             continue;
         }
-        let mut offset_source_id = source_id.clone();
-        let mut offset_source_geometry = source_geometry.clone();
+        let mut offset_source_id = clone_optional_identity(ctx, &source_id, "iges offset source identity copy")?;
+        let mut offset_source_geometry = Cow::Borrowed(source_geometry);
         if entry.transform != 0 {
             let transform = match resolve_transform(
                 entry.transform,
@@ -390,7 +391,7 @@ pub(super) fn project(
                 }
             };
             let Some(placed_source_geometry) =
-                placed_offset_source(&CurveGeometry::Solved(source_geometry.clone()), transform)
+                placed_offset_source(source_geometry, transform)
             else {
                 super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset source has no exact line or circle carrier"))?;
                 continue;
@@ -403,11 +404,7 @@ pub(super) fn project(
             offset_source_id = crate::ids::curve(
                 &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
             );
-            let Some(placed_solved) = placed_source_geometry.solved() else {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placed offset source has no solved carrier"))?;
-                continue;
-            };
-            offset_source_geometry = placed_solved.clone();
+            offset_source_geometry = Cow::Owned(placed_source_geometry);
         }
         let normal_direction = *normal.as_raw();
         let start = parameter_map.to_neutral(native_interval.lower());
@@ -432,7 +429,7 @@ pub(super) fn project(
                     continue;
                 };
                 let distance = distance.get() * factor;
-                let geometry = match &offset_source_geometry {
+                let geometry = match offset_source_geometry.as_ref() {
                     SolvedCurveGeometry::Line(line_curve)
                         if {
                             let direction = *line_curve.direction().as_raw();
@@ -550,7 +547,7 @@ pub(super) fn project(
                     control_origin + native_control_range.lower() * control_factor,
                     control_origin + native_control_range.upper() * control_factor,
                 ];
-                let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
+                let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source has no exact neutral carrier"))?;
                     continue;
                 };
@@ -588,16 +585,16 @@ pub(super) fn project(
                     }
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let Some(source_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                    &CurveGeometry::Solved(offset_source_geometry.clone()),
+                let Some(source_start) = finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(
+                    &offset_source_geometry,
                     start,
                 ))?
                 else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "linear offset source start cannot be evaluated"))?;
                     continue;
                 };
-                let Some(source_end) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                    &CurveGeometry::Solved(offset_source_geometry.clone()),
+                let Some(source_end) = finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(
+                    &offset_source_geometry,
                     end,
                 ))?
                 else {
@@ -678,7 +675,7 @@ pub(super) fn project(
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function is rational or degree zero"))?;
                     continue;
                 }
-                let SolvedCurveGeometry::Line(line_curve) = &offset_source_geometry else {
+                let SolvedCurveGeometry::Line(line_curve) = offset_source_geometry.as_ref() else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "function offset source has no exact neutral carrier"))?;
                     continue;
                 };
@@ -736,8 +733,8 @@ pub(super) fn project(
                         break;
                     };
                     let independent = inverse_parameter(function_parameter);
-                    let Some(base) = finite_or_refusal(cadmpeg_ir::eval::curve_point(
-                        &CurveGeometry::Solved(offset_source_geometry.clone()),
+                    let Some(base) = finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(
+                        &offset_source_geometry,
                         source_parameter(independent),
                     ))?
                     else {
@@ -857,12 +854,18 @@ pub(super) fn project(
             }
         };
         if offset_source_id != source_id {
+            let placed_geometry = match offset_source_geometry {
+                Cow::Owned(geometry) => geometry,
+                Cow::Borrowed(_) => {
+                    return Err(CodecError::Malformed("placed offset source is absent".into()));
+                }
+            };
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
             reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset source curve slots")?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
-                id: offset_source_id.clone(),
-                geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
+                id: clone_optional_identity(ctx, &offset_source_id, "iges offset placed source identity")?,
+                geometry: CurveGeometry::Solved(placed_geometry),
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
@@ -875,19 +878,19 @@ pub(super) fn project(
         reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges offset neutral point slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start_position, None),
-            Point::new(end_point.clone(), end_position, None),
+            Point::new(clone_optional_identity(ctx, &start_point, "iges offset start point identity")?, start_position, None),
+            Point::new(clone_optional_identity(ctx, &end_point, "iges offset end point identity")?, end_position, None),
         ]);
         reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges offset neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: clone_optional_identity(ctx, &start_vertex, "iges offset start vertex identity")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: clone_optional_identity(ctx, &end_vertex, "iges offset end vertex identity")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -896,7 +899,7 @@ pub(super) fn project(
         reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
-            id: curve_id.clone(),
+            id: clone_optional_identity(ctx, &curve_id, "iges offset curve identity")?,
             geometry,
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
@@ -907,7 +910,7 @@ pub(super) fn project(
             }),
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
-            Some(curve_id.clone()),
+            Some(clone_optional_identity(ctx, &curve_id, "iges offset edge carrier identity")?),
             Some([start, end]),
         ) {
             Ok(carrier) => carrier,
@@ -919,7 +922,7 @@ pub(super) fn project(
         reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges offset neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
-            id: edge_id.clone(),
+            id: clone_optional_identity(ctx, &edge_id, "iges offset edge identity")?,
             carrier,
             start: start_vertex,
             end: end_vertex,
