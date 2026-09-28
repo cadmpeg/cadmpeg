@@ -3473,12 +3473,9 @@ fn endpoint_candidates(
             .iter()
             .filter(|candidate| available.contains(&candidate.entity))
             .count();
-        ctx.charge_collection_items(match_count as u64, "FCStd profile candidates")?;
-        let matches = explicit
-            .iter()
-            .copied()
-            .filter(|candidate| available.contains(&candidate.entity))
-            .collect::<Vec<_>>();
+        let mut matches = collection_vec(ctx, match_count, "FCStd profile candidates")?;
+        matches.extend(explicit.iter().copied()
+            .filter(|candidate| available.contains(&candidate.entity)));
         return Ok(matches);
     }
     let Some(point) = endpoint_point(endpoint, entities) else {
@@ -3802,13 +3799,11 @@ fn revolution_definition(
     if reversed {
         axis.direction = axis.direction.reversed();
     }
-    let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
-        .iter()
-        .filter_map(|name| property(properties, name))
-        .collect::<Vec<_>>();
-    axis.reference = match axis_reference_properties.as_slice() {
-        [] => None,
-        [property] => {
+    let axis_link = property(properties, "AxisLink");
+    let reference_axis = property(properties, "ReferenceAxis");
+    axis.reference = match (axis_link, reference_axis) {
+        (None, None) => None,
+        (Some(property), None) | (None, Some(property)) => {
             if property.links().iter().any(|link| nonempty_link(link.as_ref())) {
                 if singular_reference_link(property).is_none() {
                     return Ok(None);
@@ -3820,7 +3815,7 @@ fn revolution_definition(
                 None
             }
         }
-        _ => return Ok(None),
+        (Some(_), Some(_)) => return Ok(None),
     };
     let face_maker = if kind == "Part::Revolution"
         && property(properties, "FaceMakerClass").is_some()
@@ -7283,6 +7278,20 @@ mod profile_tests {
                 super::EndpointIndex::new(ctx, &profile_entities, &entities)
             });
         }
+    }
+
+    #[test]
+    fn explicit_profile_candidates_refuse_at_matching_collection_limit() {
+        let source = super::EndpointLocus { entity: 0, start: true };
+        let target = super::EndpointLocus { entity: 1, start: true };
+        let available = std::collections::BTreeSet::from([1]);
+        let relations = std::collections::BTreeMap::from([(
+            source, std::collections::BTreeSet::from([target]),
+        )]);
+        let index = super::EndpointIndex { by_scale: std::collections::BTreeMap::new() };
+        crate::test_support::assert_collection_refusal_at(&[], "FCStd profile candidates", |ctx| {
+            super::endpoint_candidates(ctx, source, &available, &relations, &[], &index)
+        });
     }
 
     #[test]
