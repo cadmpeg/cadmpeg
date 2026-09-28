@@ -166,7 +166,7 @@ pub(crate) fn transfer(
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_boolean(&object.type_name) {
-            boolean_definition(&object.type_name, &owned)
+            boolean_definition(ctx, &object.type_name, &owned)?
                 .or_else(|| {
                     (object.type_name != "PartDesign::Boolean")
                         .then(|| cached_shape_definition(&owned))
@@ -5396,13 +5396,14 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
     })
 }
 
-fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+fn boolean_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
     let op = if kind == "PartDesign::Boolean" {
-        match enumeration_selector(properties, "Type", 0)? {
+        let Some(selector) = enumeration_selector(properties, "Type", 0) else { return Ok(None); };
+        match selector {
             0 => cadmpeg_ir::features::BooleanKind::Join,
             1 => cadmpeg_ir::features::BooleanKind::Cut,
             2 => cadmpeg_ir::features::BooleanKind::Intersect,
-            _ => return None,
+            _ => return Ok(None),
         }
     } else if kind.ends_with("Cut") {
         cadmpeg_ir::features::BooleanKind::Cut
@@ -5411,12 +5412,12 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
     } else if kind.ends_with("Fuse") || kind.ends_with("MultiFuse") {
         cadmpeg_ir::features::BooleanKind::Join
     } else {
-        return None;
+        return Ok(None);
     };
     let (target, tools) = if kind == "PartDesign::Boolean" {
-        let group = property(properties, "Group")?;
+        let Some(group) = property(properties, "Group") else { return Ok(None); };
         if group.links().is_empty() {
-            return None;
+            return Ok(None);
         }
         if property(properties, "BaseFeature").is_some_and(|property| {
             property
@@ -5424,41 +5425,41 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
                 .iter()
                 .any(|link| nonempty_link(link.as_ref()))
         }) {
-            let base = singular_operand(properties, "BaseFeature")?;
+            let Some(base) = singular_operand(properties, "BaseFeature") else { return Ok(None); };
             (
-                BodySelection::Native(base.id.clone()),
-                BodySelection::Native(group.id.clone()),
+                BodySelection::Native(retained_string(ctx, &base.id, "fcstd boolean base feature identity")?),
+                BodySelection::Native(retained_string(ctx, &group.id, "fcstd boolean group identity")?),
             )
         } else {
             let last = group.links().len() - 1;
             (
-                BodySelection::Native(format!("{}:link:{last}", group.id)),
-                BodySelection::Native(format!("{}:links:0..{last}", group.id)),
+                BodySelection::Native(retained_format(ctx, format_args!("{}:link:{last}", group.id), "fcstd boolean final group link")?),
+                BodySelection::Native(retained_format(ctx, format_args!("{}:links:0..{last}", group.id), "fcstd boolean preceding group links")?),
             )
         }
     } else if property(properties, "Base").is_some() || property(properties, "Tool").is_some() {
-        let base = singular_operand(properties, "Base")?;
-        let tool = singular_operand(properties, "Tool")?;
+        let Some(base) = singular_operand(properties, "Base") else { return Ok(None); };
+        let Some(tool) = singular_operand(properties, "Tool") else { return Ok(None); };
         (
-            BodySelection::Native(base.id.clone()),
-            BodySelection::Native(tool.id.clone()),
+            BodySelection::Native(retained_string(ctx, &base.id, "fcstd boolean base identity")?),
+            BodySelection::Native(retained_string(ctx, &tool.id, "fcstd boolean tool identity")?),
         )
     } else {
-        let shapes = property(properties, "Shapes")?;
+        let Some(shapes) = property(properties, "Shapes") else { return Ok(None); };
         if shapes.links().len() < 2 {
-            return None;
+            return Ok(None);
         }
         (
-            BodySelection::Native(format!("{}:link:0", shapes.id)),
-            BodySelection::Native(format!("{}:links:1..{}", shapes.id, shapes.links().len())),
+            BodySelection::Native(retained_format(ctx, format_args!("{}:link:0", shapes.id), "fcstd boolean first shape link")?),
+            BodySelection::Native(retained_format(ctx, format_args!("{}:links:1..{}", shapes.id, shapes.links().len()), "fcstd boolean remaining shape links")?),
         )
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(target, tools).ok()?,
-
+    let Some(operands) = cadmpeg_ir::features::CombineOperands::new(target, tools).ok() else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
         op,
         keep_tools: false,
-    }))
+    })))
 }
 
 fn loft_definition(
