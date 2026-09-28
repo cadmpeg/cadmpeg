@@ -2,6 +2,7 @@
 //! Feature-history record extractors and their record types.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
 
@@ -3639,25 +3640,27 @@ fn operation_header_block_identities(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<BTreeMap<u32, Option<String>>, CodecError> {
-    let mut candidates = BTreeMap::<u32, Vec<Option<String>>>::new();
+    let mut identities = BTreeMap::<u32, Option<String>>::new();
     for block in data_blocks(ctx, container)? {
         if block.role == DataBlockRole::Column {
-            candidates
-                .entry(block.block_ordinal)
-                .or_default()
-                .push(block.stable_identity);
+            match identities.entry(block.block_ordinal) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX operation block identity ordinals")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<(u32, Option<String>)>() * 4,
+                        ),
+                        "retain NX operation block identity ordinals",
+                    )?;
+                    entry.insert(block.stable_identity);
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+            }
         }
     }
-    Ok(candidates
-        .into_iter()
-        .map(|(ordinal, identities)| {
-            let identity = match identities.as_slice() {
-                [Some(identity)] => Some(identity.clone()),
-                _ => None,
-            };
-            (ordinal, identity)
-        })
-        .collect())
+    Ok(identities)
 }
 
 /// Return the record-order-independent identity encoded by one operation
@@ -3667,40 +3670,107 @@ fn operation_header_block_identities(
 /// An all-null tuple, an unresolved slot, or a duplicated content identity has
 /// no operation identity witness.
 fn operation_header_identity_key(
+    ctx: &DecodeContext<'_>,
     object_indices: [Option<u32>; 4],
     block_identities: &BTreeMap<u32, Option<String>>,
-) -> Option<String> {
+) -> Result<Option<String>, CodecError> {
     if !object_indices.iter().any(Option::is_some) {
-        return None;
+        return Ok(None);
     }
-    let slots = object_indices
-        .iter()
-        .map(|index| match index {
-            None => Some("null".to_string()),
-            Some(index) => block_identities.get(index)?.clone(),
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(format!(
-        "nx:feature-history:operation-header-identity#content:{}",
-        slots.join("-")
-    ))
+    let mut slots = ["null"; 4];
+    for (slot, index) in slots.iter_mut().zip(object_indices) {
+        if let Some(index) = index {
+            let Some(Some(identity)) = block_identities.get(&index) else {
+                return Ok(None);
+            };
+            *slot = identity;
+        }
+    }
+    let prefix = "nx:feature-history:operation-header-identity#content:";
+    let length = slots.iter().try_fold(prefix.len() + 3, |length, slot| {
+        length.checked_add(slot.len())
+    }).ok_or_else(|| ctx.refuse_codec_limit("retain NX operation header identity", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain NX operation header identity",
+    )?;
+    let mut identity = String::new();
+    identity.try_reserve_exact(length).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX operation header identity", 0, 1)
+    })?;
+    identity.push_str(prefix);
+    identity.push_str(slots[0]);
+    for slot in slots.iter().skip(1) {
+        identity.push('-');
+        identity.push_str(slot);
+    }
+    Ok(Some(identity))
 }
 
 fn assign_operation_header_identities(
+    ctx: &DecodeContext<'_>,
     labels: &mut [FeatureOperationLabel],
     block_identities: &BTreeMap<u32, Option<String>>,
-) {
-    let keys = labels
-        .iter()
-        .map(|label| operation_header_identity_key(label.objects.values(), block_identities))
-        .collect::<Vec<_>>();
+) -> Result<(), CodecError> {
+    let key_bytes = labels.len().checked_mul(std::mem::size_of::<Option<String>>())
+        .ok_or_else(|| ctx.refuse_codec_limit("reserve NX operation header keys", 0, 1))?;
+    let _keys_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(key_bytes),
+        "reserve NX operation header keys",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(labels.len()),
+        "NX operation header keys",
+    )?;
+    let mut keys = Vec::new();
+    keys.try_reserve_exact(labels.len()).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX operation header keys", 0, cadmpeg_core::decode::u64_from_index(labels.len()))
+    })?;
+    for label in labels.iter() {
+        keys.push(operation_header_identity_key(ctx, label.objects.values(), block_identities)?);
+    }
+    let map_bytes = labels.len().checked_mul(std::mem::size_of::<(String, usize)>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("reserve NX operation header counts", 0, 1))?;
+    let mut counts_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(map_bytes),
+        "reserve NX operation header counts",
+    )?;
     let mut counts = BTreeMap::<String, usize>::new();
     for key in keys.iter().flatten() {
-        *counts.entry(key.clone()).or_default() += 1;
+        if !counts.contains_key(key.as_str()) {
+            ctx.charge_collection_items(1, "NX operation header counts")?;
+            counts_guard.grow(cadmpeg_core::decode::u64_from_index(key.len()))?;
+            let mut copy = String::new();
+            copy.try_reserve_exact(key.len()).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX operation header count key", 0, 1)
+            })?;
+            copy.push_str(key);
+            counts.insert(copy, 0);
+        }
+        let count = counts.get_mut(key.as_str()).ok_or_else(|| {
+            ctx.refuse_codec_limit("NX operation header count key", 0, 1)
+        })?;
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("count NX operation headers", 0, 1)
+        })?;
     }
     for (label, key) in labels.iter_mut().zip(keys) {
-        label.stable_identity = key.filter(|key| counts.get(key) == Some(&1));
+        label.stable_identity = key.filter(|key| counts.get(key.as_str()) == Some(&1));
     }
+    Ok(())
+}
+
+fn copy_operation_text(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+    text.push_str(value);
+    Ok(text)
 }
 
 /// Decode ordered operation labels from feature-history record areas.
@@ -3724,27 +3794,52 @@ pub(super) fn feature_operation_labels(
         };
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        labels.extend(
-            section
-                .operation_records_with_label_ordinals(ctx)?
-                .into_iter()
-                .map(|(ordinal, record)| {
-                    let label = record.label();
-                    FeatureOperationLabel {
-                        id: format!(
-                            "nx:feature-history:operation-label#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: label.value.to_string(),
-                        objects: label.header.objects(),
-                        stable_identity: None,
-                        source_offset: entry_offset + label.header.end_offset() as u64,
-                    }
-                }),
-        );
+        let records = section.operation_records_with_label_ordinals(ctx)?;
+        let record_count = cadmpeg_core::decode::u64_from_index(records.len());
+        ctx.charge_collection_items(record_count, "NX feature operation labels")?;
+        let retained_bytes = records.len()
+            .checked_mul(std::mem::size_of::<FeatureOperationLabel>())
+            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature operation labels", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(retained_bytes),
+            "retain NX feature operation labels",
+        )?;
+        labels.try_reserve(records.len()).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX feature operation labels", 0, record_count)
+        })?;
+        for (ordinal, record) in records {
+            let label = record.label();
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX feature operation ordinal", 0, 1))?;
+            let prefix = "nx:feature-history:operation-label#";
+            let id_len = prefix.len()
+                .checked_add(section_key.len())
+                .and_then(|length| length.checked_add(1 + 10))
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature operation label id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_len),
+                "retain NX feature operation label id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX feature operation label id", 0, 1)
+            })?;
+            write!(&mut id, "{prefix}{section_key}-{ordinal:010}")
+                .map_err(|_| ctx.refuse_codec_limit("write NX feature operation label id", 0, 1))?;
+            let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(label.header.end_offset()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
+            labels.push(FeatureOperationLabel {
+                id,
+                section_link: copy_operation_text(ctx, &link.id, "retain NX feature operation section link")?,
+                ordinal: ordinal_u32,
+                value: copy_operation_text(ctx, label.value, "retain NX feature operation label text")?,
+                objects: label.header.objects(),
+                stable_identity: None,
+                source_offset,
+            });
+        }
     }
-    assign_operation_header_identities(&mut labels, &block_identities);
+    assign_operation_header_identities(ctx, &mut labels, &block_identities)?;
     Ok(labels)
 }
 
@@ -3816,16 +3911,27 @@ pub(super) fn feature_operation_records(
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let stable_identity = operation_header_identity_key(
+            let stable_identity = match operation_header_identity_key(
+                ctx,
                 record.label().header.objects().values(),
                 &block_identities,
-            );
+            ) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
+            };
             let Some(span) = entry_offset
                 .checked_add(record.offset() as u64)
                 .zip(entry_offset.checked_add(record.payload_offset() as u64))
@@ -3854,6 +3960,9 @@ pub(super) fn feature_operation_records(
             ));
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(records
         .into_iter()
         .map(|(mut record, stable_identity)| {
