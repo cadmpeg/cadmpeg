@@ -1738,6 +1738,75 @@ impl BrepShellReferences {
     }
 }
 
+struct BrepFaceReferences {
+    face: FaceId,
+    shell_id: ShellId,
+    loop_ids: Vec<LoopId>,
+    face_loops: cadmpeg_ir::topology::FaceLoops,
+}
+
+impl BrepFaceReferences {
+    fn from_loops(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        face_id: u32,
+        shell_id: &ShellId,
+        loop_count: usize,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let face = crate::identity::compose_checked(
+            ctx,
+            &crate::identity::VISIBGEOM_FACE,
+            face_id,
+            "creo B-rep face identity",
+        )?;
+        let shell_id = crate::identity::copy_checked_id(
+            ctx,
+            shell_id.as_str(),
+            "creo B-rep face shell identity copy",
+        )?;
+        let mut loop_ids = Vec::new();
+        for index in 0..loop_count {
+            ctx.try_reserve_items(&mut loop_ids, 1, "creo B-rep face loop IDs")?;
+            let id: LoopId = if index == 0 {
+                crate::identity::compose_checked(
+                    ctx,
+                    &crate::identity::VISIBGEOM_LOOP,
+                    face_id,
+                    "creo B-rep loop identities",
+                )?
+            } else {
+                crate::identity::compose_checked(
+                    ctx,
+                    &crate::identity::VISIBGEOM_LOOP,
+                    format_args!("{face_id}:{index}"),
+                    "creo B-rep loop identities",
+                )?
+            };
+            loop_ids.push(id);
+        }
+        let face_loops = match loop_ids.split_first() {
+            Some((outer, inner)) => {
+                let outer = crate::identity::copy_checked_id(
+                    ctx,
+                    outer.as_str(),
+                    "creo B-rep outer loop ID copy",
+                )?;
+                let mut inner_ids = Vec::new();
+                for id in inner {
+                    ctx.try_reserve_items(&mut inner_ids, 1, "creo B-rep inner loop IDs")?;
+                    inner_ids.push(crate::identity::copy_checked_id(
+                        ctx,
+                        id.as_str(),
+                        "creo B-rep inner loop ID copies",
+                    )?);
+                }
+                cadmpeg_ir::topology::FaceLoops::classified(outer, inner_ids)
+            }
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        };
+        Ok(Self { face, shell_id, loop_ids, face_loops })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -2382,20 +2451,13 @@ pub(in super::super) fn transfer_native_brep(
         });
         for face_id in faces {
             let native_loops = &eligible_faces[face_id];
-            let face = FaceId::compose(&crate::identity::VISIBGEOM_FACE, *face_id);
-            let shell_id = face_shell_ids[face_id].clone();
-            let loop_ids = (0..native_loops.len())
-                .map(|index| {
-                    if index == 0 {
-                        LoopId::compose(&crate::identity::VISIBGEOM_LOOP, *face_id)
-                    } else {
-                        LoopId::compose(
-                            &crate::identity::VISIBGEOM_LOOP,
-                            cadmpeg_ir::ids::IdentityKey::from(*face_id).colon(index),
-                        )
-                    }
-                })
-                .collect::<Vec<_>>();
+            let BrepFaceReferences { face, shell_id, loop_ids, face_loops } =
+                BrepFaceReferences::from_loops(
+                    ctx,
+                    *face_id,
+                    &face_shell_ids[face_id],
+                    native_loops.len(),
+                )?;
             let visible_row = crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id);
             let active_datum = scan
                 .planes
@@ -2477,18 +2539,11 @@ pub(in super::super) fn transfer_native_brep(
                 ctx,
                 ir,
                 Face {
-                    id: face.clone(),
-                    shell: shell_id.clone(),
+                    id: crate::identity::copy_checked_id(ctx, face.as_str(), "creo B-rep face entity ID copy")?,
+                    shell: shell_id,
                     surface,
                     sense: face_sense,
-                    loops: match loop_ids.split_first() {
-                        // The source states the outer boundary first.
-                        Some((outer, inner)) => cadmpeg_ir::topology::FaceLoops::classified(
-                            outer.clone(),
-                            inner.to_vec(),
-                        ),
-                        None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-                    },
+                    loops: face_loops,
                     name: None,
                     color: None,
                     tolerance: None,
