@@ -391,23 +391,36 @@ pub(in crate::decode) fn unique_decoded_section_segment(
     definition.segments.as_ref()?.unique_segment(external_id)
 }
 
-pub(in crate::decode) fn section_segment_rows(
-    definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<&crate::feature::definitions::FeatureSegment> {
-    definition
-        .segments
-        .as_ref()
-        .map_or_else(Vec::new, |table| table.rows.ordinary().collect())
+pub(in crate::decode) fn section_segment_rows<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
+    let mut rows = Vec::new();
+    if let Some(table) = definition.segments.as_ref() {
+        ctx.try_reserve_items(
+            &mut rows,
+            table.rows.ordinary().count(),
+            "creo section segment rows",
+        )?;
+        rows.extend(table.rows.ordinary());
+    }
+    Ok(rows)
 }
 
-pub(in crate::decode) fn complete_section_segment_rows(
-    definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<&crate::feature::definitions::FeatureSegment> {
-    definition
-        .segments
-        .as_ref()
-        .filter(|table| table.is_complete())
-        .map_or_else(Vec::new, |table| table.rows.ordinary().collect())
+pub(in crate::decode) fn complete_section_segment_rows<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &'a crate::feature::definitions::FeatureDefinition,
+) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
+    let mut rows = Vec::new();
+    if let Some(table) = definition.segments.as_ref().filter(|table| table.is_complete()) {
+        ctx.try_reserve_items(
+            &mut rows,
+            table.rows.ordinary().count(),
+            "creo complete section segment rows",
+        )?;
+        rows.extend(table.rows.ordinary());
+    }
+    Ok(rows)
 }
 
 pub(super) fn section_skamp_point_entity_id(
@@ -607,6 +620,50 @@ mod tests {
             body: Vec::new(),
             offset,
         }
+    }
+
+    #[test]
+    fn section_segment_rows_refuse_before_vector_growth() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let definition = point_definition(2, vec![ordinary_point(7, 42, 1)], Vec::new());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = super::section_segment_rows(&ctx, &definition)
+            .expect_err("one ordinary row exceeds the collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo section segment rows"), "{error:?}");
+        let rows = crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_segment_rows(ctx, &definition)
+        })
+        .expect("service profile admits the ordinary row");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].external_id, 7);
+    }
+
+    #[test]
+    fn complete_section_segment_rows_refuse_before_vector_growth() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let definition = point_definition(1, vec![ordinary_point(7, 42, 1)], Vec::new());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = super::complete_section_segment_rows(&ctx, &definition)
+            .expect_err("one complete ordinary row exceeds the collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo complete section segment rows"), "{error:?}");
+        let rows = crate::decode::with_test_decode_ctx(|ctx| {
+            super::complete_section_segment_rows(ctx, &definition)
+        })
+        .expect("service profile admits the complete ordinary row");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].external_id, 7);
     }
 
     #[test]

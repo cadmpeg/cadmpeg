@@ -124,7 +124,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 .iter()
                 .filter(|sketch| sketch.id == sketch_id),
         ) {
-            let segments = complete_section_segment_rows(definition);
+            let segments = complete_section_segment_rows(ctx, definition)?;
             for id in profile_segment_ids(
                 ctx,
                 definition.identity.id(),
@@ -142,7 +142,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     feature_id,
                     &scan.features.entity_tables,
                     order,
-                    complete_section_segment_rows(definition)
+                    complete_section_segment_rows(ctx, definition)?
                         .iter()
                         .filter(|segment| {
                             generating_ids.contains(&segment.external_id)
@@ -172,7 +172,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     crate::surface::SurfaceKind::Spline,
                 )?,
         };
-        for segment in complete_section_segment_rows(definition)
+        for segment in complete_section_segment_rows(ctx, definition)?
             .iter()
             .filter(|segment| generating_ids.contains(&segment.external_id))
         {

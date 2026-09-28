@@ -109,7 +109,7 @@ pub(in super::super) fn transfer_sketches(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        let segments = section_segment_rows(definition);
+        let segments = section_segment_rows(ctx, definition)?;
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
         let unique_saved_ids = unique_saved_section_internal_ids(definition);

@@ -557,7 +557,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             .flat_map(|trim_entities| &trim_entities.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        for segment in complete_section_segment_rows(definition)
+        for segment in complete_section_segment_rows(ctx, definition)?
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
         {
