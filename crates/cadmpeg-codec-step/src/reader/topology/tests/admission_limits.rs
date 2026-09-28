@@ -716,3 +716,52 @@ fn topology_distinct_roots_refuse_collection_limit() {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_distinct_topology_roots"));
 }
+
+fn geometric_set_refusal(collection_limit: u64, has_surface: bool) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#2),#3);#2=GEOMETRIC_SET('',(#4));#3=DUMMY();#4=DUMMY();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid geometric set references");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let mut carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+        .expect("empty carrier index fits policy");
+    if has_surface {
+        carriers.surfaces.insert(4, crate::reader::index::SurfaceIndex(0));
+    }
+    super::super::build_geometric_set(
+        1,
+        exchange.records().get(&1).expect("representation"),
+        &exchange,
+        &carriers,
+        &mut Vec::new(),
+        &ctx,
+    )
+    .err()
+    .expect("geometric set exceeds collection limit")
+}
+
+#[test]
+fn geometric_set_typed_refuses_collection_limit() {
+    assert!(matches!(geometric_set_refusal(0, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_geometric_set_typed"));
+}
+
+#[test]
+fn geometric_set_shell_faces_refuse_collection_limit() {
+    assert!(matches!(geometric_set_refusal(2, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_geometric_set_shell_faces"));
+}
+
+#[test]
+fn geometric_set_faces_refuse_collection_limit() {
+    assert!(matches!(geometric_set_refusal(3, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_geometric_set_faces"));
+}

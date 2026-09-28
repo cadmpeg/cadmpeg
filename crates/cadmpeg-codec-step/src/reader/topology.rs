@@ -525,14 +525,6 @@ fn shape_representation_relationships(
     Ok(related)
 }
 
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    named_refs(record, "REPRESENTATION", 1).or_else(|| {
-        record
-            .simple_name()
-            .and_then(|name| named_refs(record, name, 1))
-    })
-}
-
 fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
     if record.partials.len() == 1 {
         return entity_parameter(record, "REPRESENTATION", 1)
@@ -913,7 +905,7 @@ pub(super) fn decode(
             )?;
             push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(note), ctx, "step_topology_losses")?;
         }
-        let Some(mut built) = build_geometric_set(id, record, exchange, carrier_index, &mut losses)
+        let Some(mut built) = build_geometric_set(id, record, exchange, carrier_index, &mut losses, ctx)?
         else {
             if mark_standalone_geometric_set(
                 id,
@@ -1774,21 +1766,21 @@ fn mark_standalone_geometric_set(
     typed: &mut HashSet<u64>,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(set_ids) = representation_items(representation) else {
+    let Some(set_ids) = representation_item_values(representation) else {
         return Ok(false);
     };
     let mut decoded = false;
-    for set_id in set_ids {
+    for set_id in set_ids.iter().filter_map(ValueExt::reference) {
         let Some(set) = exchange.records().get(&set_id) else {
             continue;
         };
         let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
-        let Some(items) = named_refs(set, set_type, 1) else {
+        let Some(items) = named_reference_values(set, set_type, 1) else {
             continue;
         };
-        let has_decoded_member = items.into_iter().any(|item| {
+        let has_decoded_member = items.iter().filter_map(ValueExt::reference).any(|item| {
             carrier_index.points.contains_key(&item)
                 || carrier_index.curves.contains_key(&item)
                 || carrier_index.surfaces.contains_key(&item)
@@ -1810,43 +1802,45 @@ fn build_geometric_set(
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
     losses: &mut Vec<LossNote>,
-) -> Option<Built> {
-    let Some(set_ids) = representation_items(representation) else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Built>, CodecError> {
+    let Some(set_ids) = representation_item_values(representation) else {
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
-        )));
-        return None;
+        )), ctx, "step_topology_losses")?;
+        return Ok(None);
     };
-    let mut typed = HashSet::from([id]);
+    let mut typed = HashSet::new();
+    insert_topology_hash_set(&mut typed, id, ctx, "step_geometric_set_typed")?;
     let body = BodyId::from(ids::data(kind!("body"), id));
     let region = RegionId::from(ids::data(kind!("region"), id));
     let shell_id = ShellId::from(ids::data(
         kind!("shell"),
         key_word!("geometric").dash(key_word!("set")).dash(id),
     ));
-    let mut shell: Option<Shell> = None;
+    let mut shell_faces = Vec::new();
     let mut faces = Vec::new();
-    for set_id in set_ids {
+    for set_id in set_ids.iter().filter_map(ValueExt::reference) {
         let Some(set) = exchange.records().get(&set_id) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped missing set #{set_id}"
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
         let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped non-set member #{set_id}"
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
-        let Some(items) = named_refs(set, set_type, 1) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
+        let Some(items) = named_reference_values(set, set_type, 1) else {
+            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
-            )));
+            )), ctx, "step_topology_losses")?;
             continue;
         };
-        typed.insert(set_id);
-        for surface_step in items {
+        insert_topology_hash_set(&mut typed, set_id, ctx, "step_geometric_set_typed")?;
+        for surface_step in items.iter().filter_map(ValueExt::reference) {
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
                 let face = Face {
@@ -1865,27 +1859,20 @@ fn build_geometric_set(
                     color: None,
                     tolerance: None,
                 };
-                match &mut shell {
-                    Some(shell) => shell.add_face(face.id.clone()),
-                    None => {
-                        shell = Some(Shell::with_face(
-                            shell_id.clone(),
-                            region.clone(),
-                            face.id.clone(),
-                        ));
-                    }
-                }
-                faces.push(face);
+                push_topology_vec(&mut shell_faces, copy_topology_id(face.id.as_str(), ctx, "step_geometric_set_shell_faces")?, ctx, "step_geometric_set_shell_faces")?;
+                push_topology_vec(&mut faces, face, ctx, "step_geometric_set_faces")?;
             }
         }
     }
-    let Some(shell) = shell else {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
+    if shell_faces.is_empty() {
+        push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
-        )));
-        return None;
-    };
-    staged_topology(
+        )), ctx, "step_topology_losses")?;
+        return Ok(None);
+    }
+    let shell = Shell::new(shell_id.clone(), region.clone(), shell_faces, Vec::new(), Vec::new())
+        .map_err(CodecError::malformed)?;
+    let staged = staged_topology(
         typed,
         Vec::new(),
         Vec::new(),
@@ -1893,28 +1880,31 @@ fn build_geometric_set(
         Vec::new(),
         faces,
         Vec::new(),
-        vec![shell],
+        one_topology_vec(shell, ctx, "step_geometric_set_shells")?,
         Region {
             id: region.clone(),
             body: body.clone(),
-            shells: vec![shell_id],
+            shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
         },
         Body {
             id: body,
             kind: BodyKind::Sheet,
-            regions: vec![region],
+            regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
             transform: None,
             name: None,
             color: None,
             visible: None,
         },
-    )
-    .map_err(|error| {
-        losses.push(StepLossCode::DecodeWarning.note(format!(
-            "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
-        )));
-    })
-    .ok()
+    );
+    match staged {
+        Ok(built) => Ok(Some(built)),
+        Err(error) => {
+            push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
+                "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
+            )), ctx, "step_topology_losses")?;
+            Ok(None)
+        }
+    }
 }
 
 #[derive(Clone)]
