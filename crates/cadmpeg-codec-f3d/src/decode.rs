@@ -2263,28 +2263,30 @@ fn report_design_projection_gaps(
     Ok(())
 }
 
-fn model_brep_candidates(
-    scan: &ContainerScan,
+fn model_brep_candidates<'s>(
+    ctx: &DecodeContext<'_>,
+    scan: &'s ContainerScan<'_>,
     blob_names: &[String],
-) -> Result<Vec<BrepFacts>, CodecError> {
+) -> Result<Vec<&'s BrepFacts>, CodecError> {
     let mut candidates = Vec::new();
     for blob_name in blob_names {
-        let matches = container::design_breps(scan)
-            .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()))
-            .collect::<Vec<_>>();
-        match matches.as_slice() {
-            [brep] => candidates.push((**brep).clone()),
-            [] => {
-                return Err(CodecError::malformed(format_args!(
-                    "Design body map references missing BREP entry {blob_name}"
-                )));
-            }
-            _ => {
-                return Err(CodecError::malformed(format_args!(
-                    "Design body map BREP basename is ambiguous: {blob_name}"
-                )));
-            }
+        let mut matches = container::design_breps(scan)
+            .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
+        let Some(brep) = matches.next() else {
+            return Err(CodecError::malformed(format_args!(
+                "Design body map references missing BREP entry {blob_name}"
+            )));
+        };
+        if matches.next().is_some() {
+            return Err(CodecError::malformed(format_args!(
+                "Design body map BREP basename is ambiguous: {blob_name}"
+            )));
         }
+        ctx.charge_collection_items(1, "collect F3D model BREP candidates")?;
+        candidates
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("collect F3D model BREP candidates", 0, 1))?;
+        candidates.push(brep);
     }
     Ok(candidates)
 }
@@ -3390,12 +3392,12 @@ fn decode_scanned_document<'a>(
     let model_blob_names = crate::design::decode::body::design_model_blob_names(ctx, scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(ctx, scan, None, &[])?;
-    let model_breps = model_brep_candidates(scan, &model_blob_names)?;
+    let model_breps = model_brep_candidates(ctx, scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
     // arbitrary `.smbh` entry.
-    if let Some(primary_model_brep) = model_breps.first().cloned() {
+    if let Some(primary_model_brep) = model_breps.first().copied() {
         let qualify_ids = model_breps.len() > 1;
         let mut brep = Brep::default();
         let mut body_visibilities = Vec::new();
@@ -3409,7 +3411,7 @@ fn decode_scanned_document<'a>(
                 .or_default()
                 .insert(binding.asm_body_key);
         }
-        for candidate in &model_breps {
+        for &candidate in &model_breps {
             let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
                 continue;
             };
@@ -3473,7 +3475,7 @@ fn decode_scanned_document<'a>(
             return finish_model_decode(
                 ctx,
                 scan,
-                &primary_model_brep,
+                primary_model_brep,
                 brep,
                 body_visibilities,
                 model_breps.len() - decoded_brep_count,
