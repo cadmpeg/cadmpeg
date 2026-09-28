@@ -1641,14 +1641,17 @@ fn decode_sketch_points_from_stream(
                     && design_type.version == SKETCH_POINT_COMPANION_TYPE.1
                     && design_type.module == SKETCH_POINT_COMPANION_TYPE.2
             })
-            .and_then(|companion_frame| {
+            .map(|companion_frame| {
                 decode_sketch_point_companion(
+                    ctx,
                     &bytes[companion_frame.start..companion_frame.end],
                     record_index,
                     decoded.record_form.clone(),
                     &types_by_entity,
                 )
             })
+            .transpose()?
+            .flatten()
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
@@ -2831,11 +2834,13 @@ fn point_target_has_guid(
 }
 
 fn decode_sketch_point_companion(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     point_record_index: u32,
     record_form: SketchPointRecordForm,
     types_by_entity: &HashMap<u32, (&str, u32, &str)>,
-) -> Option<(SketchPointRecordForm, SketchPointCompanion)> {
+) -> Result<Option<(SketchPointRecordForm, SketchPointCompanion)>, CodecError> {
+    let parsed = (|| {
     let reference_encoding = SketchPointCompanionReferenceEncoding::for_form(&record_form);
     let (prefix_present_zero, mut cursor) = if payload.get(11..21) == Some(&[0; 10][..]) {
         (false, 21)
@@ -2852,7 +2857,17 @@ fn decode_sketch_point_companion(
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let mut incident_curves = Vec::with_capacity(count);
+    Some((reference_encoding, record_form, cursor, count))
+    })();
+    let Some((reference_encoding, record_form, mut cursor, count)) = parsed else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(count as u64, "f3d sketch point incident curves")?;
+    let mut incident_curves = Vec::new();
+    incident_curves.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch point incident curve allocation", 0, count as u64)
+    })?;
+    let parsed = (|| {
     for _ in 0..count {
         let (target, type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
         let registered_type = types_by_entity.get(&target)?;
@@ -2882,6 +2897,8 @@ fn decode_sketch_point_companion(
         return None;
     }
     Some((record_form, SketchPointCompanion { incident_curves }))
+    })();
+    Ok(parsed)
 }
 
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
