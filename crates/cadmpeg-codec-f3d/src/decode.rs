@@ -5405,6 +5405,7 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     );
     crate::history::bind_vertex_recipe_history(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.design_feature_timelines,
         &native.asm_histories,
