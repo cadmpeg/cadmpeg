@@ -832,7 +832,7 @@ pub(super) fn emit_geometry_arenas(
             );
         },
     )?;
-    let feature_reference_names = feature_reference_name_records(scan);
+    let feature_reference_names = feature_reference_name_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
