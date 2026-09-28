@@ -91,27 +91,46 @@ pub(crate) fn decode_edge_operands(
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignEdgeOperand>, CodecError> {
     let record_headers = headers;
-    let headers = record_headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
-    let terminal_group_members = groups
-        .iter()
-        .filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.scope_record_index,
-                group.members().last()?.value,
-            ))
-        })
-        .collect::<HashSet<_>>();
+    let mut headers = HashMap::new();
+    for header in record_headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !headers.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d edge operand header index")?;
+            headers.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge operand header index allocation", 0, 1)
+            })?;
+        }
+        headers.insert(key, header);
+    }
+    let mut terminal_group_members = HashSet::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else { continue; };
+        let Some(member) = group.members().last() else { continue; };
+        let key = (stream, group.scope_record_index, member.value);
+        if !terminal_group_members.contains(&key) {
+            ctx.charge_collection_items(1, "f3d edge operand terminal member")?;
+            terminal_group_members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge operand terminal member allocation", 0, 1)
+            })?;
+            terminal_group_members.insert(key);
+        }
+    }
     let mut stream_offsets: HashMap<&str, Vec<u64>> = HashMap::new();
     for header in record_headers {
         if let Some(stream) = native_stream(&header.id) {
-            stream_offsets
-                .entry(stream)
-                .or_default()
-                .push(header.byte_offset);
+            if !stream_offsets.contains_key(stream) {
+                ctx.charge_collection_items(1, "f3d edge operand offset stream")?;
+                stream_offsets.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d edge operand offset stream allocation", 0, 1)
+                })?;
+            }
+            let offsets = stream_offsets.entry(stream).or_default();
+            ctx.charge_collection_items(1, "f3d edge operand stream offset")?;
+            offsets.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge operand stream offset allocation", 0, 1)
+            })?;
+            offsets.push(header.byte_offset);
         }
     }
     for offsets in stream_offsets.values_mut() {
@@ -123,16 +142,19 @@ pub(crate) fn decode_edge_operands(
         .iter()
         .filter(|scope| has_edge_recipe_operands(&scope.kind()))
     {
-        let mut member_indices = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == native_stream(&scope.id)
-                    && group.scope_record_index == scope.record_index
-            })
-            .flat_map(|group| group.members().iter().map(|member| member.value))
-            .collect::<HashSet<_>>();
+        let mut member_indices = HashSet::new();
+        for group in groups.iter().filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+        }) {
+            for member in group.members() {
+                insert_edge_member_index(ctx, &mut member_indices, member.value)?;
+            }
+        }
         if let Some(operation) = scope.surface_extend_operation() {
-            member_indices.extend(operation.edge_record_indices.iter().copied());
+            for &index in &operation.edge_record_indices {
+                insert_edge_member_index(ctx, &mut member_indices, index)?;
+            }
         }
         if let Some(operation) = scope.surface_offset_operation() {
             if let DesignSurfaceOffsetSupport::BoundaryCarrier {
@@ -140,15 +162,15 @@ pub(crate) fn decode_edge_operands(
                 ..
             } = &operation.support
             {
-                member_indices.extend(edge_record_indices.iter().copied());
+                for &index in edge_record_indices {
+                    insert_edge_member_index(ctx, &mut member_indices, index)?;
+                }
             }
         }
         if let Some(construction) = scope.work_point_construction() {
-            member_indices.extend(
-                construction.rule.inputs().iter().map(
-                    crate::records::feature::work_geometry::DesignWorkPointInput::record_index,
-                ),
-            );
+            for input in construction.rule.inputs() {
+                insert_edge_member_index(ctx, &mut member_indices, input.record_index())?;
+            }
         }
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -170,7 +192,7 @@ pub(crate) fn decode_edge_operands(
                 continue;
             };
             let terminal_group_member = terminal_group_members.contains(&(
-                stream.to_owned(),
+                stream,
                 scope.record_index,
                 header.record_index,
             ));
@@ -197,11 +219,30 @@ pub(crate) fn decode_edge_operands(
             ) else {
                 continue;
             };
+            ctx.charge_collection_items(1, "f3d edge operand output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge operand output allocation", 0, 1)
+            })?;
             out.push(operand);
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn insert_edge_member_index(
+    ctx: &DecodeContext<'_>,
+    indices: &mut HashSet<u32>,
+    index: u32,
+) -> Result<(), CodecError> {
+    if !indices.contains(&index) {
+        ctx.charge_collection_items(1, "f3d edge operand member index")?;
+        indices.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d edge operand member index allocation", 0, 1)
+        })?;
+        indices.insert(index);
+    }
+    Ok(())
 }
 
 /// Decode vertex-recipe members retained inside edge-treatment groups.
