@@ -649,3 +649,145 @@ fn placement_contiguous_visibility_has_no_finding() {
     super::super::validate_sketch_placements(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
 }
+
+fn validation_parameter_owner() -> crate::records::parameters::DesignParameterOwner {
+    use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+    DesignParameterOwner::try_from(DesignParameterOwnerWire {
+        id: "f3d:Design/BulkStream.dat:parameter-owner#100".into(),
+        byte_offset: 1_000,
+        frame_length: 99,
+        class_tag: crate::records::references::DesignClassTag::try_from("268".to_owned()).unwrap(),
+        record_index: 100,
+        scope_record_index: 200,
+        local_ordinal: 1,
+        evaluated_value: 6.0,
+        evaluated_value_offset: 1_040,
+        parameter_record_index: 101,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 102,
+    }).unwrap()
+}
+
+fn parameter_owner_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_parameter_owners.push(validation_parameter_owner());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_parameter_owners(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn parameter_owner_index_refuses_collection_limit() {
+    let error = parameter_owner_error(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D parameter owners"));
+}
+
+#[test]
+fn parameter_owner_ordinal_index_refuses_collection_limit() {
+    let error = parameter_owner_error(1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D parameter owner local ordinals"));
+}
+
+#[test]
+fn parameter_owner_finding_refuses_collection_limit() {
+    let error = parameter_owner_error(2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn parameter_owner_entity_refuses_retained_limit() {
+    let error = parameter_owner_error(u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+fn validation_companion(with_recipe: bool) -> crate::native::F3dNative {
+    use crate::records::parameters::{DesignCompanionPayload, DesignParameterCompanion};
+    let mut companion = DesignParameterCompanion::unbound(
+        "f3d:Design/BulkStream.dat:parameter-companion#102".into(),
+        1_200,
+        crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap(),
+        102,
+        100,
+        std::num::NonZeroU64::new(1).unwrap(),
+        1_242,
+    );
+    let mut native = crate::native::F3dNative::default();
+    if with_recipe {
+        let recipe_id = "f3d:Design/BulkStream.dat:construction-recipe#1".to_owned();
+        companion = companion.bound(DesignCompanionPayload::new(
+            1_258,
+            100,
+            vec![recipe_id.clone()],
+        ));
+        native.construction_recipes.push(crate::records::recipes::ConstructionRecipe {
+            id: recipe_id,
+            byte_offset: 1_260,
+            kind: crate::records::recipes::ConstructionRecipeKind::Face,
+            design: None,
+            recipe_index: 1,
+            record_index: None,
+        });
+    }
+    native.design_parameter_companions.push(companion);
+    native
+}
+
+fn companion_error(native: crate::native::F3dNative, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_parameter_companions(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn companion_recipe_collection_refuses_collection_limit() {
+    let error = companion_error(validation_companion(true), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D companion expected recipes"));
+}
+
+#[test]
+fn companion_index_refuses_collection_limit() {
+    let error = companion_error(validation_companion(false), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D parameter companions"));
+}
+
+#[test]
+fn companion_owner_index_refuses_collection_limit() {
+    let error = companion_error(validation_companion(false), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D companion owners"));
+}
+
+#[test]
+fn companion_finding_refuses_collection_limit() {
+    let error = companion_error(validation_companion(false), 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn companion_entity_refuses_retained_limit() {
+    let error = companion_error(validation_companion(false), u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}

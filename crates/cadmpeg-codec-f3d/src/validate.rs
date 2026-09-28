@@ -1005,8 +1005,8 @@ fn validate_loaded(
     );
     validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings)?;
-    validate_parameter_owners(&ctx, &mut findings);
-    validate_parameter_companions(&ctx, &mut findings);
+    validate_parameter_owners(&ctx, &mut findings)?;
+    validate_parameter_companions(&ctx, &mut findings)?;
     let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings);
     validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
     let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
@@ -7148,7 +7148,7 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) ->
 }
 
 /// Validate parameter owner frames and their indexed parameter links.
-fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let parameters_by_index = &ctx.parameters_by_index;
@@ -7157,7 +7157,11 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut owner_local_ordinals = HashSet::new();
     for owner in &native.design_parameter_owners {
         let native_stream = design_stream(owner.id());
-        let unique_index = owner_indices.insert((native_stream, owner.record_index()));
+        let unique_index = ctx.insert_unique(
+            &mut owner_indices,
+            (native_stream, owner.record_index()),
+            "index F3D parameter owners",
+        )?;
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index()));
         let legacy_68_frame = owner.frame_length() == 68;
         let frame_layout = !matches!(owner.frame_length(), 68 | 88)
@@ -7166,12 +7170,15 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             });
         let scope_resolves = legacy_68_frame
             || records_by_index.contains_key(&(native_stream, owner.scope_record_index()));
-        let unique_local_ordinal = legacy_68_frame
-            || owner_local_ordinals.insert((
+        let unique_local_ordinal = if legacy_68_frame {
+            true
+        } else {
+            ctx.insert_unique(&mut owner_local_ordinals, (
                 native_stream,
                 owner.scope_record_index(),
                 owner.local_ordinal(),
-            ));
+            ), "index F3D parameter owner local ordinals")?
+        };
         let valid = frame_layout
             && scope_resolves
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
@@ -7187,19 +7194,19 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && unique_index
             && unique_local_ordinal;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design parameter owner has an invalid frame or indexed link"
-                    .into(),
-                entity: Some(owner.id().clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design parameter owner has an invalid frame or indexed link",
+                Some(ctx.copy_entity(owner.id())?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate parameter companion prefixes and owned recipe runs.
-fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7210,25 +7217,28 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let payload = companion.payload();
         let payload_end =
             payload.and_then(|payload| payload.byte_offset().checked_add(payload.byte_length()));
-        let mut expected_recipes = native
-            .construction_recipes
-            .iter()
-            .filter(|recipe| {
+        let mut expected_recipes = ctx.collect_vec(
+            native.construction_recipes.iter().filter(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && payload.is_some_and(|payload| {
                         payload_end.is_some_and(|end| {
                             recipe.byte_offset >= payload.byte_offset() && recipe.byte_offset < end
                         })
                     })
-            })
-            .collect::<Vec<_>>();
+            }),
+            "collect F3D companion expected recipes",
+        )?;
         expected_recipes.sort_by_key(|recipe| recipe.byte_offset);
-        let expected_recipe_ids = expected_recipes
-            .into_iter()
-            .map(|recipe| recipe.id.as_str())
-            .collect::<Vec<_>>();
-        let unique_index = companion_indices.insert((native_stream, companion.record_index()));
-        let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index()));
+        let unique_index = ctx.insert_unique(
+            &mut companion_indices,
+            (native_stream, companion.record_index()),
+            "index F3D parameter companions",
+        )?;
+        let unique_owner = ctx.insert_unique(
+            &mut companion_owners,
+            (native_stream, companion.owner_record_index()),
+            "index F3D companion owners",
+        )?;
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
         let valid = companion.timestamp_micros_offset()
             == companion.byte_offset().saturating_add(42)
@@ -7243,22 +7253,22 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 )
                 .iter()
                 .map(String::as_str)
-                .eq(expected_recipe_ids)
+                .eq(expected_recipes.iter().map(|recipe| recipe.id.as_str()))
             && records_by_index.contains_key(&(native_stream, companion.record_index()))
             && owner
                 .is_some_and(|owner| owner.companion_record_index() == companion.record_index())
             && unique_index
             && unique_owner;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design parameter companion has an invalid prefix or owner link"
-                    .into(),
-                entity: Some(companion.id().to_owned()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design parameter companion has an invalid prefix or owner link",
+                Some(ctx.copy_entity(companion.id())?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate dimension recipe records; returns the owned recipe ids.
