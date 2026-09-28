@@ -18,8 +18,104 @@ use super::{
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
     model_typed_nonlinear_curve_ids, push_native_pcurve_candidate, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
-    NativePcurveCandidates, NeutralShellSpec,
+    BrepSourceIndexes, NativePcurveCandidates, NeutralShellSpec,
 };
+
+fn source_index_limit_error(kind: &str) -> CodecError {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut carriers = BTreeMap::new();
+    let half_edge = crate::topology::HalfEdgeId {
+        curve_id: 10,
+        side: crate::topology::Side::Zero,
+    };
+    match kind {
+        "plane" => {
+            carriers.insert(
+                5,
+                crate::decode::analytic::equations::CarrierEquation::Plane(
+                    crate::decode::analytic::equations::PlaneEquation {
+                        origin: [0.0; 3],
+                        normal: [0.0, 0.0, 1.0],
+                    },
+                ),
+            );
+        }
+        "half_edge" => scan.topology.half_edges.push(crate::topology::HalfEdge {
+            id: half_edge,
+            face_id: std::num::NonZeroU32::new(5),
+            next: None,
+        }),
+        "incidence" => scan.topology.half_edge_vertex_incidence.push(
+            crate::topology::HalfEdgeVertexIncidence {
+                half_edge,
+                start_vertex_id: 1,
+                end_vertex_id: Some(2),
+            },
+        ),
+        _ => panic!("unsupported source-index fixture"),
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    BrepSourceIndexes::from_scan(&ctx, &carriers, &scan)
+        .err()
+        .expect("source-index node refused")
+}
+
+#[test]
+fn brep_plane_index_nodes_refuse_collection_limit() {
+    let error = source_index_limit_error("plane");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep plane index nodes"));
+}
+
+#[test]
+fn brep_half_edge_index_nodes_refuse_collection_limit() {
+    let error = source_index_limit_error("half_edge");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep half-edge index nodes"));
+}
+
+#[test]
+fn brep_incidence_index_nodes_refuse_collection_limit() {
+    let error = source_index_limit_error("incidence");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep incidence index nodes"));
+}
+
+#[test]
+fn brep_source_indexes_keep_last_duplicate_half_edge_and_incidence() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let id = crate::topology::HalfEdgeId {
+        curve_id: 10,
+        side: crate::topology::Side::Zero,
+    };
+    for face_id in [5, 6] {
+        scan.topology.half_edges.push(crate::topology::HalfEdge {
+            id,
+            face_id: std::num::NonZeroU32::new(face_id),
+            next: None,
+        });
+        scan.topology.half_edge_vertex_incidence.push(
+            crate::topology::HalfEdgeVertexIncidence {
+                half_edge: id,
+                start_vertex_id: face_id,
+                end_vertex_id: None,
+            },
+        );
+    }
+    let indexes = crate::decode::with_test_decode_ctx(|ctx| {
+        BrepSourceIndexes::from_scan(ctx, &BTreeMap::new(), &scan)
+    })
+    .expect("service source indexes admitted");
+    assert_eq!(indexes.half_edges[&id].face_id.map(std::num::NonZeroU32::get), Some(6));
+    assert_eq!(indexes.incidence[&id].start_vertex_id, 6);
+}
 
 fn pcurve_candidate_limit_error(limit: u64, second_on_same_key: bool) -> CodecError {
     let arena = DecodeArena::new();
