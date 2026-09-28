@@ -306,6 +306,129 @@ fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParamete
 }
 
 #[test]
+fn feature_transfer_lookup_refuses_collection_limit() {
+    let native = CatiaNative {
+        design_objects: vec![design_object("synthetic:test:object#one", None)],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer_design_features(ctx, &mut ir, &native,
+            &crate::decode::ModelingGraphScope::Unscoped)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_transfer_objects"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(ctx, &mut ir, &native,
+            &crate::decode::ModelingGraphScope::Unscoped)
+    }).expect("service profile admits feature lookup");
+    assert!(service.feature_ids.is_empty());
+}
+
+#[test]
+fn feature_parameter_name_indexes_refuse_collection_limit() {
+    let mut ir = CadIr::empty();
+    let mut value = parameter("one", "native");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        normalize_parameter_names(ctx, &mut ir)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_parameter_reserved_scopes"));
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir))
+        .expect("service profile admits name indexes");
+    assert_eq!(ir.model.parameters[0].name, "Length");
+}
+
+#[test]
+fn native_operation_parameter_map_refuses_retained_limit() {
+    let mut ir = CadIr::empty();
+    let mut owner = feature("owner", "native");
+    owner.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: cadmpeg_ir::features::NativeFeatureKind::Other("Custom".to_string()),
+        parameters: BTreeMap::new(),
+    }));
+    ir.model.features.push(owner);
+    let mut value = parameter("one", "native-parameter");
+    value.name = "Length".to_string();
+    ir.model.parameters.push(value);
+    let owners = HashMap::from([(
+        ir.model.parameters[0].id.clone(), ir.model.features[0].id.clone(),
+    )]);
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_operation_parameter_name"));
+    crate::test_support::with_service_context(|ctx| {
+        assign_native_operation_parameter_values(ctx, &mut ir, &owners)
+    }).expect("service profile admits operation values");
+    let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
+        ir.model.features[0].evaluation.definition() else { panic!("expected native operation") };
+    assert_eq!(parameters.get("Length").map(String::as_str), Some("1 mm"));
+}
+
+#[test]
+fn exact_parameter_owner_lookup_refuses_collection_limit() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "owner-record", Some(object_id), Some(1), None, None, None,
+            )],
+        }],
+        entity_records: vec![entity_record("owner-entity", "owner-record", 0, 1)],
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let feature_id = FeatureId::mint("synthetic:test:id#owner").expect("identity grammar");
+    let transfer = DesignFeatureTransfer {
+        feature_ids: HashMap::from([(object_id.to_string(), feature_id.clone())]),
+        ..DesignFeatureTransfer::default()
+    };
+    let mut ir = CadIr::empty();
+    ir.model.parameters.push(parameter("one", "owner-entity"));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_owner_entities"));
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_parameter_owners(ctx, &mut ir, &native)
+    }).expect("service profile admits owner indexes");
+    assert_eq!(ir.model.parameters[0].owner.as_ref(), Some(&feature_id));
+}
+
+#[test]
+fn feature_dependency_lookup_refuses_collection_limit() {
+    let object_id = "synthetic:test:object#owner";
+    let native = CatiaNative {
+        design_objects: vec![design_object(object_id, None)],
+        ..CatiaNative::default()
+    };
+    let transfer = DesignFeatureTransfer::default();
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature("owner", object_id));
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_dependency_objects"));
+    crate::test_support::with_service_context(|ctx| {
+        transfer.assign_feature_dependencies(ctx, &mut ir, &native)
+    }).expect("service profile admits dependency indexes");
+    assert!(ir.model.features[0].dependencies.is_empty());
+}
+
+#[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
@@ -392,7 +515,7 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
         ..DesignFeatureTransfer::default()
     };
 
-    transfer.assign_feature_dependencies(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| transfer.assign_feature_dependencies(ctx, &mut ir, &native)).unwrap();
 
     let source = ir
         .model
@@ -899,7 +1022,7 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
         )
     })
     .unwrap();
-    transfer.assign_parameter_owners(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| transfer.assign_parameter_owners(ctx, &mut ir, &native)).unwrap();
 
     assert_eq!(
         ir.model
@@ -1029,7 +1152,7 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         )
     })
     .unwrap();
-    transfer.assign_parameter_owners(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| transfer.assign_parameter_owners(ctx, &mut ir, &native)).unwrap();
 
     let child_feature =
         FeatureId::mint("synthetic:test:feature#child-operation").expect("identity grammar");
@@ -1077,8 +1200,9 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     second.name = "Length".to_string();
     ir.model.parameters.extend([first, second]);
 
-    normalize_parameter_names(&mut ir);
-    assign_native_operation_parameter_values(
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir)).unwrap();
+    crate::test_support::with_service_context(|ctx| assign_native_operation_parameter_values(
+        ctx,
         &mut ir,
         &HashMap::from([
             (
@@ -1091,7 +1215,7 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
                 FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
             ),
         ]),
-    );
+    )).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Native { parameters, .. }) =
         ir.model.features[0].evaluation.definition()
@@ -1140,15 +1264,16 @@ fn native_parameter_map_retains_circular_pattern_values_in_source_properties() {
     value.expression = "3".to_string();
     ir.model.parameters.push(value);
 
-    normalize_parameter_names(&mut ir);
-    assign_native_operation_parameter_values(
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir)).unwrap();
+    crate::test_support::with_service_context(|ctx| assign_native_operation_parameter_values(
+        ctx,
         &mut ir,
         &HashMap::from([(
             ParameterId::mint("synthetic:test:id#pattern-parameter".to_string())
                 .expect("identity grammar"),
             FeatureId::mint("synthetic:test:id#pattern-feature").expect("identity grammar"),
         )]),
-    );
+    )).unwrap();
 
     assert_eq!(
         ir.model.features[0]
@@ -1176,7 +1301,7 @@ fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
         .parameters
         .extend([first, second, later_source_name]);
 
-    normalize_parameter_names(&mut ir);
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir)).unwrap();
 
     assert_eq!(
         ir.model
@@ -1402,7 +1527,7 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
             pmi: None,
             native_ref: Some(parameter_entity.id.clone()),
         });
-    transfer.assign_parameter_owners(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| transfer.assign_parameter_owners(ctx, &mut ir, &native)).unwrap();
 
     assert_eq!(ir.model.sketches.len(), 1);
     assert!(matches!(
@@ -1599,7 +1724,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
             native_ref: Some(child_entity_id),
         });
 
-    transfer.assign_parameter_owners(&mut ir, &native);
+    crate::test_support::with_service_context(|ctx| transfer.assign_parameter_owners(ctx, &mut ir, &native)).unwrap();
 
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
@@ -1883,7 +2008,7 @@ fn normalizes_scopes_containing_only_unnamed_parameters() {
             ir.model.parameters.push(value);
         }
     }
-    normalize_parameter_names(&mut ir);
+    crate::test_support::with_service_context(|ctx| normalize_parameter_names(ctx, &mut ir)).unwrap();
     assert_eq!(
         ir.model
             .parameters

@@ -295,7 +295,7 @@ fn finish_decode(
         &mut annotations,
         &modeling_graph_scope,
     )?;
-    design_feature_transfer.assign_parameter_owners(&mut ir, &native);
+    design_feature_transfer.assign_parameter_owners(ctx, &mut ir, &native)?;
     let appearance_transfer = crate::appearance::transfer(
         ctx,
         &mut ir,

@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId,
@@ -18,6 +20,7 @@ use crate::native::{
     CatiaRangeInterval, CatiaRangeNominalFraming,
 };
 use crate::object_graph::{PayloadField, PayloadSubtype};
+use crate::resource;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -48,23 +51,28 @@ impl DesignFeatureTransfer {
     /// Bind parameters to a transferred feature only through their exact
     /// entity-record and object-record ownership chain. The same exact
     /// incidences populate feature-local parameter ordinals.
-    pub(crate) fn assign_parameter_owners(&self, ir: &mut CadIr, native: &CatiaNative) {
-        let entities = native
+    pub(crate) fn assign_parameter_owners(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        native: &CatiaNative,
+    ) -> Result<(), CodecError> {
+        let entities = resource::collect_map(ctx, native
             .entity_records
             .iter()
-            .map(|entity| (entity.id.as_str(), entity))
-            .collect::<HashMap<_, _>>();
-        let object_records = native
+            .map(|entity| (entity.id.as_str(), entity)),
+            "catia_feature_owner_entities")?;
+        let object_records = resource::collect_map(ctx, native
             .object_graphs
             .iter()
             .flat_map(|graph| &graph.records)
-            .map(|record| (record.id.as_str(), record))
-            .collect::<HashMap<_, _>>();
-        let design_objects = native
+            .map(|record| (record.id.as_str(), record)),
+            "catia_feature_owner_records")?;
+        let design_objects = resource::collect_map(ctx, native
             .design_objects
             .iter()
-            .map(|object| (object.id.as_str(), object))
-            .collect::<HashMap<_, _>>();
+            .map(|object| (object.id.as_str(), object)),
+            "catia_feature_owner_objects")?;
         let mut exact_feature_owners = HashMap::new();
 
         for parameter in &mut ir.model.parameters {
@@ -81,30 +89,39 @@ impl DesignFeatureTransfer {
                 continue;
             };
             let Some(feature_id) = nearest_feature_for_design_object(
+                ctx,
                 design_object,
                 &design_objects,
                 &self.feature_ids,
-            ) else {
+            )? else {
                 continue;
             };
             if parameter.owner.is_none() {
-                parameter.owner = Some(feature_id.clone());
+                parameter.owner = Some(resource::copy_id(ctx, feature_id.as_str(),
+                    FeatureId::mint, "catia_feature_parameter_owner")?);
             }
-            if parameter.owner.as_ref() == Some(&feature_id) {
-                exact_feature_owners.insert(parameter.id.clone(), feature_id);
+            if parameter.owner.as_ref() == Some(feature_id) {
+                let parameter_id = resource::copy_id(ctx, parameter.id.as_str(),
+                    ParameterId::mint, "catia_feature_owner_parameter_id")?;
+                let feature_id = resource::copy_id(ctx, feature_id.as_str(),
+                    FeatureId::mint, "catia_feature_owner_feature_id")?;
+                resource::insert_map(ctx, &mut exact_feature_owners, parameter_id,
+                    feature_id, "catia_feature_exact_owners")?;
             }
         }
 
         assign_feature_parameter_ordinals(
+            ctx,
             ir,
             &entities,
             &object_records,
             &exact_feature_owners,
             &self.feature_ids,
-        );
-        assign_document_parameter_ordinals(ir);
-        normalize_parameter_names(ir);
-        assign_native_operation_parameter_values(ir, &exact_feature_owners);
+        )?;
+        assign_document_parameter_ordinals(ctx, ir)?;
+        normalize_parameter_names(ctx, ir)?;
+        assign_native_operation_parameter_values(ctx, ir, &exact_feature_owners)?;
+        Ok(())
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -118,10 +135,11 @@ impl DesignFeatureTransfer {
     /// invalid neutral history.
     fn assign_feature_parents(
         &self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         native: &CatiaNative,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let parents = self.feature_parents(ir, native);
+    ) -> Result<(), CodecError> {
+        let parents = self.feature_parents(ctx, ir, native)?;
         for feature in &mut ir.model.features {
             feature.dependencies.retain(|dependency| {
                 parents
@@ -130,6 +148,7 @@ impl DesignFeatureTransfer {
             });
         }
         for (child, parent) in parents {
+            ctx.charge_collection_items(1, "catia_feature_regeneration_parents")?;
             ir.model
                 .set_feature_regeneration_parent(child, parent)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -137,61 +156,72 @@ impl DesignFeatureTransfer {
         Ok(())
     }
 
-    fn feature_parents(&self, ir: &CadIr, native: &CatiaNative) -> HashMap<FeatureId, FeatureId> {
-        let design_objects = native
+    fn feature_parents(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &CadIr,
+        native: &CatiaNative,
+    ) -> Result<HashMap<FeatureId, FeatureId>, CodecError> {
+        let design_objects = resource::collect_map(ctx, native
             .design_objects
             .iter()
-            .map(|object| (object.id.as_str(), object))
-            .collect::<HashMap<_, _>>();
-        let feature_ordinals = ir
+            .map(|object| (object.id.as_str(), object)),
+            "catia_feature_parent_objects")?;
+        let feature_ordinals = resource::collect_map(ctx, ir
             .model
             .features
             .iter()
-            .map(|feature| (feature.id.clone(), feature.ordinal))
-            .collect::<HashMap<_, _>>();
-        let mut parents = ir
-            .model
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let native_ref = feature.native_ref.as_deref()?;
-                let object = design_objects.get(native_ref)?;
-                let parent_object = object.owner_design_object.as_deref()?;
-                let parent = nearest_feature_for_design_object(
-                    parent_object,
-                    &design_objects,
-                    &self.feature_ids,
-                )?;
-                let parent_ordinal = feature_ordinals.get(&parent)?;
-                (parent != feature.id && *parent_ordinal < feature.ordinal)
-                    .then(|| (feature.id.clone(), parent))
-            })
-            .collect::<HashMap<_, _>>();
-        let acyclic = parents
-            .keys()
-            .filter(|feature| feature_parent_chain_is_acyclic(feature, &parents))
-            .cloned()
-            .collect::<HashSet<_>>();
-        parents.retain(|feature, _| acyclic.contains(feature));
-        parents
+            .map(|feature| (&feature.id, feature.ordinal)),
+            "catia_feature_parent_ordinals")?;
+        let mut parents = HashMap::new();
+        for feature in &ir.model.features {
+            let Some(native_ref) = feature.native_ref.as_deref() else { continue };
+            let Some(object) = design_objects.get(native_ref) else { continue };
+            let Some(parent_object) = object.owner_design_object.as_deref() else { continue };
+            let Some(parent) = nearest_feature_for_design_object(ctx, parent_object,
+                &design_objects, &self.feature_ids)? else { continue };
+            let Some(parent_ordinal) = feature_ordinals.get(parent) else { continue };
+            if parent == &feature.id || *parent_ordinal >= feature.ordinal { continue }
+            let child = resource::copy_id(ctx, feature.id.as_str(), FeatureId::mint,
+                "catia_feature_parent_child")?;
+            let parent = resource::copy_id(ctx, parent.as_str(), FeatureId::mint,
+                "catia_feature_parent_id")?;
+            resource::insert_map(ctx, &mut parents, child, parent,
+                "catia_feature_parent_map")?;
+        }
+        let mut cyclic = Vec::new();
+        for feature in parents.keys() {
+            if !feature_parent_chain_is_acyclic(ctx, feature, &parents)? {
+                let id = resource::copy_id(ctx, feature.as_str(), FeatureId::mint,
+                    "catia_feature_cyclic_id")?;
+                resource::push(ctx, &mut cyclic, id, "catia_feature_cyclic_ids")?;
+            }
+        }
+        for feature in cyclic { parents.remove(&feature); }
+        Ok(parents)
     }
 
     /// Bind exact payload references to earlier transferred features as
     /// structural dependencies. A target may resolve through its complete
     /// owner-design-object chain. Storage selectors, unresolved targets,
     /// self-links, and forward targets do not establish history edges.
-    fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
-        let design_objects = native
+    fn assign_feature_dependencies(
+        &self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut CadIr,
+        native: &CatiaNative,
+    ) -> Result<(), CodecError> {
+        let design_objects = resource::collect_map(ctx, native
             .design_objects
             .iter()
-            .map(|object| (object.id.as_str(), object))
-            .collect::<HashMap<_, _>>();
-        let feature_ordinals = ir
+            .map(|object| (object.id.as_str(), object)),
+            "catia_feature_dependency_objects")?;
+        let feature_ordinals = resource::collect_map(ctx, ir
             .model
             .features
             .iter()
-            .map(|feature| (feature.id.clone(), feature.ordinal))
-            .collect::<HashMap<_, _>>();
+            .map(|feature| (&feature.id, feature.ordinal)),
+            "catia_feature_dependency_ordinals")?;
         let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
 
         for feature in &ir.model.features {
@@ -201,7 +231,8 @@ impl DesignFeatureTransfer {
             let Some(object) = design_objects.get(native_ref) else {
                 continue;
             };
-            let mut seen = feature.dependencies.iter().cloned().collect::<HashSet<_>>();
+            let mut seen = resource::collect_set(ctx, feature.dependencies.iter(),
+                "catia_feature_dependency_seen")?;
             for relation in &object.relations {
                 if !matches!(
                     &relation.source,
@@ -213,45 +244,61 @@ impl DesignFeatureTransfer {
                     continue;
                 };
                 let Some(target) = nearest_feature_for_design_object(
+                    ctx,
                     target_object,
                     &design_objects,
                     &self.feature_ids,
-                ) else {
+                )? else {
                     continue;
                 };
-                if target == feature.id || seen.contains(&target) {
+                if target == &feature.id || seen.contains(target) {
                     continue;
                 }
-                let Some(target_ordinal) = feature_ordinals.get(&target) else {
+                let Some(target_ordinal) = feature_ordinals.get(target) else {
                     continue;
                 };
                 if *target_ordinal >= feature.ordinal {
                     continue;
                 }
-                seen.insert(target.clone());
-                dependencies_by_feature
-                    .entry(feature.id.clone())
-                    .or_default()
-                    .push(target.clone());
+                resource::insert_set(ctx, &mut seen, target,
+                    "catia_feature_dependency_seen")?;
+                if !dependencies_by_feature.contains_key(&feature.id) {
+                    let id = resource::copy_id(ctx, feature.id.as_str(), FeatureId::mint,
+                        "catia_feature_dependency_owner")?;
+                    resource::insert_map(ctx, &mut dependencies_by_feature, id, Vec::new(),
+                        "catia_feature_dependency_map")?;
+                }
+                let target = resource::copy_id(ctx, target.as_str(), FeatureId::mint,
+                    "catia_feature_dependency_target")?;
+                if let Some(dependencies) = dependencies_by_feature.get_mut(&feature.id) {
+                    resource::push(ctx, dependencies, target,
+                        "catia_feature_dependency_values")?;
+                }
             }
         }
 
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
+                feature.dependencies.try_reserve(dependencies.len()).map_err(|_|
+                    resource::allocation_failed(feature.dependencies.len(), 0,
+                        dependencies.len(), "catia_feature_dependency_values"))?;
                 feature.dependencies.extend(dependencies);
             }
         }
+        Ok(())
     }
 }
 
 fn assign_feature_parameter_ordinals(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     entities: &HashMap<&str, &crate::native::entity_record::CatiaEntityRecord>,
     object_records: &HashMap<&str, &CatiaObjectRecord>,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
     feature_ids: &HashMap<String, FeatureId>,
-) {
-    let transferred_features = feature_ids.values().cloned().collect::<HashSet<_>>();
+) -> Result<(), CodecError> {
+    let transferred_features = resource::collect_set(ctx, feature_ids.values(),
+        "catia_feature_transferred_ids")?;
     let mut parameters_by_feature = HashMap::<FeatureId, Vec<(u64, u64, ParameterId)>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
@@ -269,19 +316,27 @@ fn assign_feature_parameter_ordinals(
         let Some(object_record) = object_records.get(entity.object_record.as_str()) else {
             continue;
         };
-        parameters_by_feature
-            .entry(feature_id.clone())
-            .or_default()
-            .push((
-                object_record.byte_offset,
-                entity.byte_offset,
-                parameter.id.clone(),
-            ));
+        if !parameters_by_feature.contains_key(feature_id) {
+            let id = resource::copy_id(ctx, feature_id.as_str(), FeatureId::mint,
+                "catia_feature_parameter_bucket_id")?;
+            resource::insert_map(ctx, &mut parameters_by_feature, id, Vec::new(),
+                "catia_feature_parameter_buckets")?;
+        }
+        let id = resource::copy_id(ctx, parameter.id.as_str(), ParameterId::mint,
+            "catia_feature_parameter_ordinal_id")?;
+        if let Some(parameters) = parameters_by_feature.get_mut(feature_id) {
+            resource::push(ctx, parameters,
+                (object_record.byte_offset, entity.byte_offset, id),
+                "catia_feature_parameter_rows")?;
+        }
     }
 
     let mut parameter_ordinals = HashMap::new();
     for parameters in parameters_by_feature.values_mut() {
-        parameters.sort_by(|left, right| {
+        ctx.charge_work(u64::try_from(parameters.len()).map_err(|_|
+            ctx.refuse_codec_limit("catia_feature_parameter_sort", u64::MAX, u64::MAX))?,
+            "catia_feature_parameter_sort")?;
+        parameters.sort_unstable_by(|left, right| {
             left.0
                 .cmp(&right.0)
                 .then(left.1.cmp(&right.1))
@@ -291,7 +346,10 @@ fn assign_feature_parameter_ordinals(
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
-            parameter_ordinals.insert(parameter.2.clone(), ordinal);
+            let id = resource::copy_id(ctx, parameter.2.as_str(), ParameterId::mint,
+                "catia_feature_ordinal_map_id")?;
+            resource::insert_map(ctx, &mut parameter_ordinals, id, ordinal,
+                "catia_feature_ordinal_map")?;
         }
     }
 
@@ -300,6 +358,7 @@ fn assign_feature_parameter_ordinals(
             parameter.ordinal = *ordinal;
         }
     }
+    Ok(())
 }
 
 /// Normalize the document scope after feature ownership is known.
@@ -308,26 +367,33 @@ fn assign_feature_parameter_ordinals(
 /// established. Feature-owned parameters receive a feature-local ordinal
 /// above; document parameters must receive their own contiguous scope instead
 /// of retaining gaps left by those feature parameters.
-fn assign_document_parameter_ordinals(ir: &mut CadIr) {
-    let mut parameters = ir
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.owner.is_none())
-        .map(|parameter| (parameter.ordinal, parameter.id.clone()))
-        .collect::<Vec<_>>();
-    parameters.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+fn assign_document_parameter_ordinals(
+    ctx: &DecodeContext<'_>, ir: &mut CadIr,
+) -> Result<(), CodecError> {
+    let mut parameters = Vec::new();
+    for parameter in ir.model.parameters.iter().filter(|parameter| parameter.owner.is_none()) {
+        let id = resource::copy_id(ctx, parameter.id.as_str(), ParameterId::mint,
+            "catia_document_parameter_sort_id")?;
+        resource::push(ctx, &mut parameters, (parameter.ordinal, id),
+            "catia_document_parameter_sort_rows")?;
+    }
+    ctx.charge_work(u64::try_from(parameters.len()).map_err(|_|
+        ctx.refuse_codec_limit("catia_document_parameter_sort", u64::MAX, u64::MAX))?,
+        "catia_document_parameter_sort")?;
+    parameters.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
 
-    let parameter_ordinals = parameters
-        .into_iter()
-        .enumerate()
-        .filter_map(|(ordinal, (_, parameter))| Some((parameter, u32::try_from(ordinal).ok()?)))
-        .collect::<HashMap<_, _>>();
+    let mut parameter_ordinals = HashMap::new();
+    for (ordinal, (_, parameter)) in parameters.into_iter().enumerate() {
+        let Some(ordinal) = u32::try_from(ordinal).ok() else { continue };
+        resource::insert_map(ctx, &mut parameter_ordinals, parameter, ordinal,
+            "catia_document_parameter_ordinals")?;
+    }
     for parameter in &mut ir.model.parameters {
         if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
             parameter.ordinal = *ordinal;
         }
     }
+    Ok(())
 }
 
 /// Expose exact feature-owned parameter expressions without assigning
@@ -338,22 +404,33 @@ fn assign_document_parameter_ordinals(ir: &mut CadIr) {
 /// source properties because their neutral definitions have no generic
 /// parameter map.
 fn assign_native_operation_parameter_values(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
-) {
+) -> Result<(), CodecError> {
     let mut values_by_feature =
         HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
             continue;
         };
-        let Some(name) = cadmpeg_core::text::NonBlankString::new(parameter.name.clone()) else {
+        let Some(name) = cadmpeg_core::text::NonBlankString::new(
+            resource::copy_retained_str(ctx, &parameter.name,
+                "catia_feature_operation_parameter_name")?) else {
             continue;
         };
-        values_by_feature
-            .entry(feature_id.clone())
-            .or_default()
-            .insert(name, parameter.expression.clone());
+        if !values_by_feature.contains_key(feature_id) {
+            let id = resource::copy_id(ctx, feature_id.as_str(), FeatureId::mint,
+                "catia_feature_operation_owner")?;
+            resource::insert_map(ctx, &mut values_by_feature, id, BTreeMap::new(),
+                "catia_feature_operation_values")?;
+        }
+        let expression = resource::copy_retained_str(ctx, &parameter.expression,
+            "catia_feature_operation_expression")?;
+        if let Some(values) = values_by_feature.get_mut(feature_id) {
+            resource::insert_btree_map(ctx, values, name, expression,
+                "catia_feature_operation_parameters")?;
+        }
     }
 
     for feature in &mut ir.model.features {
@@ -363,10 +440,17 @@ fn assign_native_operation_parameter_values(
         match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Native { kind, parameters }) => {
                 if parameters.is_empty() {
+                    let kind = match kind {
+                        cadmpeg_ir::features::NativeFeatureKind::Other(name) =>
+                            cadmpeg_ir::features::NativeFeatureKind::Other(
+                                resource::copy_retained_str(ctx, name,
+                                    "catia_feature_operation_kind")?),
+                        other => other.clone(),
+                    };
                     feature
                         .evaluation
                         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
-                            kind: kind.clone(),
+                            kind,
                             parameters: values,
                         }));
                 }
@@ -380,15 +464,19 @@ fn assign_native_operation_parameter_values(
                 | FeatureOperation::Sweep { .. },
             ) => {
                 for (name, expression) in values {
-                    feature.source_properties.insert(
-                        cadmpeg_core::nonblank_literal!("catia_parameter_{name}"),
-                        expression,
-                    );
+                    let key = resource::format_retained(ctx,
+                        format_args!("catia_parameter_{name}"),
+                        "catia_feature_source_parameter_key")?;
+                    let key = cadmpeg_core::text::NonBlankString::new(key).ok_or_else(||
+                        CodecError::malformed("CATIA source parameter key is blank"))?;
+                    resource::insert_btree_map(ctx, &mut feature.source_properties,
+                        key, expression, "catia_feature_source_parameters")?;
                 }
             }
             _ => {}
         }
     }
+    Ok(())
 }
 
 /// Give every neutral parameter a unique name within its ownership scope.
@@ -396,24 +484,52 @@ fn assign_native_operation_parameter_values(
 /// Keep the first source name; suffix later collisions. Reserve every source
 /// name before choosing a suffix. Original spelling stays in
 /// `properties["source_name"]` when the neutral name changes.
-fn normalize_parameter_names(ir: &mut CadIr) {
+fn copy_feature_scope(
+    ctx: &DecodeContext<'_>, owner: Option<&FeatureId>,
+) -> Result<Option<FeatureId>, CodecError> {
+    owner.map(|id| resource::copy_id(ctx, id.as_str(), FeatureId::mint,
+        "catia_parameter_scope_id")).transpose()
+}
+
+fn normalize_parameter_names(
+    ctx: &DecodeContext<'_>, ir: &mut CadIr,
+) -> Result<(), CodecError> {
     let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &ir.model.parameters {
         if !parameter.name.is_empty() {
-            reserved_by_scope
-                .entry(parameter.owner.clone())
-                .or_default()
-                .insert(parameter.name.clone());
+            if !reserved_by_scope.contains_key(&parameter.owner) {
+                let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+                resource::insert_map(ctx, &mut reserved_by_scope, scope, HashSet::new(),
+                    "catia_parameter_reserved_scopes")?;
+            }
+            let name = resource::copy_retained_str(ctx, &parameter.name,
+                "catia_parameter_reserved_name")?;
+            if let Some(reserved) = reserved_by_scope.get_mut(&parameter.owner) {
+                resource::insert_set(ctx, reserved, name,
+                    "catia_parameter_reserved_names")?;
+            }
         }
     }
 
     let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
     for parameter in &mut ir.model.parameters {
-        let scope = parameter.owner.clone();
-        let reserved = reserved_by_scope.entry(scope.clone()).or_default();
-        let used = used_by_scope.entry(scope).or_default();
-        let source_name = parameter.name.clone();
-        if !source_name.is_empty() && used.insert(source_name.clone()) {
+        if !reserved_by_scope.contains_key(&parameter.owner) {
+            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+            resource::insert_map(ctx, &mut reserved_by_scope, scope, HashSet::new(),
+                "catia_parameter_reserved_scopes")?;
+        }
+        if !used_by_scope.contains_key(&parameter.owner) {
+            let scope = copy_feature_scope(ctx, parameter.owner.as_ref())?;
+            resource::insert_map(ctx, &mut used_by_scope, scope, HashSet::new(),
+                "catia_parameter_used_scopes")?;
+        }
+        let Some(reserved) = reserved_by_scope.get(&parameter.owner) else { continue };
+        let Some(used) = used_by_scope.get_mut(&parameter.owner) else { continue };
+        let source_name = resource::copy_retained_str(ctx, &parameter.name,
+            "catia_parameter_source_name")?;
+        if !source_name.is_empty() && resource::insert_set(ctx, used,
+            resource::copy_retained_str(ctx, &source_name,
+                "catia_parameter_used_name")?, "catia_parameter_used_names")? {
             continue;
         }
 
@@ -424,32 +540,44 @@ fn normalize_parameter_names(ir: &mut CadIr) {
         };
         let mut suffix = 1u32;
         let neutral_name = loop {
-            let candidate = format!("{base}#{suffix}");
-            suffix = suffix.saturating_add(1);
-            if !reserved.contains(&candidate) && used.insert(candidate.clone()) {
+            ctx.charge_work(1, "catia_parameter_name_collision")?;
+            let candidate = resource::format_retained(ctx, format_args!("{base}#{suffix}"),
+                "catia_parameter_neutral_name")?;
+            suffix = suffix.checked_add(1).ok_or_else(||
+                ctx.refuse_codec_limit("catia_parameter_name_collision", u64::MAX, u64::MAX))?;
+            if !reserved.contains(&candidate) &&
+                resource::insert_set(ctx, used,
+                    resource::copy_retained_str(ctx, &candidate,
+                        "catia_parameter_used_name")?,
+                    "catia_parameter_used_names")? {
                 break candidate;
             }
         };
         parameter.name = neutral_name;
-        parameter
-            .properties
-            .insert(cadmpeg_core::nonblank_literal!("source_name"), source_name);
+        resource::insert_btree_map(ctx, &mut parameter.properties,
+            cadmpeg_core::nonblank_literal!("source_name"), source_name,
+            "catia_parameter_source_property")?;
     }
+    Ok(())
 }
 
 fn feature_parent_chain_is_acyclic(
+    ctx: &DecodeContext<'_>,
     feature_id: &FeatureId,
     parents: &HashMap<FeatureId, FeatureId>,
-) -> bool {
-    let mut current = Some(feature_id);
-    let mut visited = HashSet::new();
-    while let Some(id) = current {
-        if !visited.insert(id) {
-            return false;
+) -> Result<bool, CodecError> {
+    let mut current = feature_id;
+    let mut traversed = 0usize;
+    while let Some(parent) = parents.get(current) {
+        ctx.charge_work(1, "catia_feature_parent_chain")?;
+        traversed = traversed.checked_add(1).ok_or_else(||
+            ctx.refuse_codec_limit("catia_feature_parent_chain", u64::MAX, u64::MAX))?;
+        if traversed > parents.len() {
+            return Ok(false);
         }
-        current = parents.get(id);
+        current = parent;
     }
-    true
+    Ok(true)
 }
 
 /// Resolve the nearest transferred feature on one exact owner chain.
@@ -458,21 +586,25 @@ fn feature_parent_chain_is_acyclic(
 /// feature object. Stop at the first transferred feature so a nested feature
 /// keeps its immediate structural parent. A missing link or a cycle rejects
 /// the chain instead of inferring a relationship from field vocabulary.
-fn nearest_feature_for_design_object(
+fn nearest_feature_for_design_object<'a>(
+    ctx: &DecodeContext<'_>,
     start: &str,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
-    feature_ids: &HashMap<String, FeatureId>,
-) -> Option<FeatureId> {
+    feature_ids: &'a HashMap<String, FeatureId>,
+) -> Result<Option<&'a FeatureId>, CodecError> {
     let mut current = Some(start);
-    let mut visited = HashSet::new();
+    let mut traversed = 0usize;
 
     while let Some(current_id) = current {
-        if !visited.insert(current_id) {
-            return None;
+        ctx.charge_work(1, "catia_feature_owner_chain")?;
+        traversed = traversed.checked_add(1).ok_or_else(||
+            ctx.refuse_codec_limit("catia_feature_owner_chain", u64::MAX, u64::MAX))?;
+        if traversed > design_objects.len() {
+            return Ok(None);
         }
-        let object = design_objects.get(current_id).copied()?;
+        let Some(object) = design_objects.get(current_id).copied() else { return Ok(None) };
         if let Some(feature) = feature_ids.get(current_id) {
-            return Some(feature.clone());
+            return Ok(Some(feature));
         }
         current = object
             .owner_design_object
@@ -480,7 +612,7 @@ fn nearest_feature_for_design_object(
             .filter(|parent| *parent != current_id);
     }
 
-    None
+    Ok(None)
 }
 
 /// Transfer exact owner-bound reference history nodes.
@@ -490,28 +622,28 @@ pub(crate) fn transfer_design_features(
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<DesignFeatureTransfer, cadmpeg_core::CodecError> {
-    let records = native
+    let records = resource::collect_map(ctx, native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect::<HashMap<_, _>>();
-    let entities = native
+        .map(|record| (record.id.as_str(), record)),
+        "catia_feature_transfer_records")?;
+    let entities = resource::collect_map(ctx, native
         .entity_records
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
-        .collect::<HashMap<_, _>>();
-    let design_objects = native
+        .map(|entity| (entity.id.as_str(), entity)),
+        "catia_feature_transfer_entities")?;
+    let design_objects = resource::collect_map(ctx, native
         .design_objects
         .iter()
-        .map(|object| (object.id.as_str(), object))
-        .collect::<HashMap<_, _>>();
-    let native_operation_object_ids = native
+        .map(|object| (object.id.as_str(), object)),
+        "catia_feature_transfer_objects")?;
+    let native_operation_object_ids = resource::collect_set(ctx, native
         .design_objects
         .iter()
         .filter(|object| native_operation_candidate(object, &records).is_some())
-        .map(|object| object.id.as_str())
-        .collect::<HashSet<_>>();
+        .map(|object| object.id.as_str()),
+        "catia_feature_operation_object_ids")?;
     let operation_sources = NativeOperationSources {
         object_records: &records,
         entities: &entities,
@@ -555,8 +687,8 @@ pub(crate) fn transfer_design_features(
         }
     }
 
-    transfer.assign_feature_parents(ir, native)?;
-    transfer.assign_feature_dependencies(ir, native);
+    transfer.assign_feature_parents(ctx, ir, native)?;
+    transfer.assign_feature_dependencies(ctx, ir, native)?;
     Ok(transfer)
 }
 
