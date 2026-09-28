@@ -74,6 +74,16 @@ fn push_project_item<T>(
     Ok(())
 }
 
+fn copy_project_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
+    String::from_utf8(bytes).map_err(|_| CodecError::malformed("validated sketch text is not UTF-8"))
+}
+
 fn record_spline_segment<'a>(
     ctx: Option<&DecodeContext<'_>>,
     segments: &mut HashMap<(&'a str, u32), Option<[Point3; 2]>>,
@@ -287,74 +297,74 @@ pub(crate) fn project_sketch_design(
         )?;
     }
     let spatial_owners = spatial_geometry_owners(ctx, points, curves)?;
-    let mut sketches = placements
-        .iter()
-        .filter(|placement| {
-            !u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
-                native_stream(&placement.id)
-                    .is_some_and(|scope| spatial_owners.contains(&(scope, owner)))
-            })
-        })
-        .filter_map(|placement| {
-            Some(Sketch {
+    let mut sketches = Vec::new();
+    for placement in placements {
+        if u32::try_from(placement.entity_id.suffix()).is_ok_and(|owner| {
+            native_stream(&placement.id)
+                .is_some_and(|scope| spatial_owners.contains(&(scope, owner)))
+        }) {
+            continue;
+        }
+        let Ok(resolved) = cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(
+                placement.transform()[0][3] * placement_origin_scale(placement),
+                placement.transform()[1][3] * placement_origin_scale(placement),
+                placement.transform()[2][3] * placement_origin_scale(placement),
+            ),
+            Vector3::new(
+                placement.transform()[0][2],
+                placement.transform()[1][2],
+                placement.transform()[2][2],
+            ),
+            Vector3::new(
+                placement.transform()[0][0],
+                placement.transform()[1][0],
+                placement.transform()[2][0],
+            ),
+        ) else { continue; };
+        let name = copy_project_text(ctx, placement.entity_id.as_str(), "f3d planar sketch name")?;
+        let native_ref = copy_project_text(ctx, &placement.id, "f3d planar sketch native reference")?;
+        push_project_item(ctx, &mut sketches,
+            Sketch {
                 id: neutral_sketch_id(placement),
-                name: Some(placement.entity_id.as_str().to_owned()),
+                name: Some(name),
                 configuration: None,
                 visible: placement
                     .visibility
                     .as_ref()
                     .map(|visibility| visibility.visible),
-                placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
-                    Point3::new(
-                        placement.transform()[0][3] * placement_origin_scale(placement),
-                        placement.transform()[1][3] * placement_origin_scale(placement),
-                        placement.transform()[2][3] * placement_origin_scale(placement),
-                    ),
-                    Vector3::new(
-                        placement.transform()[0][2],
-                        placement.transform()[1][2],
-                        placement.transform()[2][2],
-                    ),
-                    Vector3::new(
-                        placement.transform()[0][0],
-                        placement.transform()[1][0],
-                        placement.transform()[2][0],
-                    ),
-                )
-                .ok()?,
+                placement: resolved,
                 profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-                native_ref: Some(placement.id.clone()),
-            })
-        })
-        .collect::<Vec<_>>();
+                native_ref: Some(native_ref),
+            },
+            "f3d planar sketch",
+        )?;
+    }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
 
-    let mut entities = points
-        .iter()
-        .filter_map(|point| {
-            let owner = point.owner_reference?;
-            let scope = native_stream(&point.id)?;
-            if spatial_owners.contains(&(scope, owner)) {
-                return None;
-            }
-            let placement = placements_by_suffix.get(&(scope, owner))?;
-            let sketch = neutral_sketch_id(placement);
-            Some(
-                SketchEntity::new(
+    let mut entities = Vec::new();
+    for point in points {
+        let Some(owner) = point.owner_reference else { continue; };
+        let Some(scope) = native_stream(&point.id) else { continue; };
+        if spatial_owners.contains(&(scope, owner)) { continue; }
+        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else { continue; };
+        let sketch = neutral_sketch_id(placement);
+        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: point.coordinates(),
+        }) else { continue; };
+        let native_ref = copy_project_text(ctx, &point.id, "f3d planar sketch point native reference")?;
+        push_project_item(ctx, &mut entities,
+            SketchEntity::new(
                     point.persistent_id().map_or_else(
                         || neutral_sketch_record_id(&sketch, point.record_index),
                         |persistent_id| neutral_sketch_point_id(&sketch, persistent_id),
                     ),
                     sketch,
-                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                        position: point.coordinates(),
-                    })
-                    .ok()?,
-                )
-                .with_native_ref(Some(point.id.clone())),
-            )
-        })
-        .collect::<Vec<_>>();
+                    geometry,
+            ).with_native_ref(Some(native_ref)),
+            "f3d planar sketch point entity",
+        )?;
+    }
     for curve in curves {
         let Some(owner) = curve.owner_reference else {
             continue;
@@ -461,51 +471,59 @@ pub(crate) fn project_sketch_design(
             _ => continue,
         };
         let sketch = neutral_sketch_id(placement);
-        entities.push(
+        let native_ref = copy_project_text(ctx, &curve.id, "f3d planar sketch curve native reference")?;
+        push_project_item(ctx, &mut entities,
             SketchEntity::new(
                 neutral_sketch_curve_id(&sketch, curve.primary_id.get(), curve.secondary_id),
                 sketch,
                 geometry,
             )
             .with_construction(text_frame_curves.contains(&(scope, curve.record_index)))
-            .with_native_ref(Some(curve.id.clone())),
-        );
+            .with_native_ref(Some(native_ref)),
+            "f3d planar sketch curve entity",
+        )?;
     }
-    entities.extend(texts.iter().filter_map(|text| {
-        let scope = native_stream(&text.id)?;
-        let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
+    for text in texts {
+        let Some(scope) = native_stream(&text.id) else { continue; };
+        let Some(placement) = placements_by_suffix.get(&(scope, text.owner_reference)) else { continue; };
         let sketch = neutral_sketch_id(placement);
-        Some(
+        let Some(text_value) = cadmpeg_core::text::NonBlankString::new(
+            copy_project_text(ctx, &text.text, "f3d planar sketch text")?,
+        ) else { continue; };
+        let Some(font_family) = cadmpeg_core::text::NonBlankString::new(
+            copy_project_text(ctx, &text.font_family, "f3d planar sketch font family")?,
+        ) else { continue; };
+        let Ok(font_weight) = text.font_weight.try_into() else { continue; };
+        let Ok(geometry) = SketchGeometry::from_parts(SketchGeometryDefinition::Text {
+            text: text_value,
+            font_family,
+            font_weight,
+            height: text.height,
+            width_factor: text
+                .width_factor()
+                .and_then(|factor| cadmpeg_ir::scalar::PositiveReal::try_from(factor).ok()),
+            placement: text.placement(),
+            horizontal_alignment: sketch_text_horizontal_alignment(
+                text.alignment().map(|alignment| alignment.horizontal),
+            ),
+            vertical_alignment: sketch_text_vertical_alignment(
+                text.alignment().map(|alignment| alignment.vertical),
+            ),
+        }) else { continue; };
+        let native_ref = copy_project_text(ctx, &text.id, "f3d planar sketch text native reference")?;
+        push_project_item(ctx, &mut entities,
             SketchEntity::new(
                 text.persistent_id.map_or_else(
                     || neutral_sketch_record_id(&sketch, text.record_index),
                     |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
                 ),
                 sketch,
-                SketchGeometry::from_parts(SketchGeometryDefinition::Text {
-                    text: cadmpeg_core::text::NonBlankString::new(text.text.clone())?,
-                    font_family: cadmpeg_core::text::NonBlankString::new(text.font_family.clone())?,
-                    font_weight: text.font_weight.try_into().ok()?,
-                    height: text.height,
-                    // The record's `0` does not scale glyph advance to zero, so it
-                    // is not a neutral horizontal scale of zero; only a positive
-                    // factor carries one.
-                    width_factor: text
-                        .width_factor()
-                        .and_then(|factor| cadmpeg_ir::scalar::PositiveReal::try_from(factor).ok()),
-                    placement: text.placement(),
-                    horizontal_alignment: sketch_text_horizontal_alignment(
-                        text.alignment().map(|alignment| alignment.horizontal),
-                    ),
-                    vertical_alignment: sketch_text_vertical_alignment(
-                        text.alignment().map(|alignment| alignment.vertical),
-                    ),
-                })
-                .ok()?,
+                geometry,
             )
-            .with_native_ref(Some(text.id.clone())),
-        )
-    }));
+            .with_native_ref(Some(native_ref)),
+            "f3d planar sketch text entity",
+        )?;
+    }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
     for sketch in &mut sketches {
         let inferred = closed_sketch_profiles(ctx, &sketch.id, &entities, linear_tolerance)?;
@@ -779,7 +797,8 @@ pub(crate) fn project_spatial_sketch_design(
                 }
             };
         let sketch = neutral_spatial_sketch_id(placement);
-        entities.push(
+        let native_ref = copy_project_text(ctx, &curve.id, "f3d spatial sketch curve native reference")?;
+        push_project_item(ctx, &mut entities,
             SpatialSketchEntity::new(
                 neutral_spatial_sketch_curve_id(
                     &sketch,
@@ -789,36 +808,39 @@ pub(crate) fn project_spatial_sketch_design(
                 sketch,
                 geometry,
             )
-            .with_native_ref(Some(curve.id.clone())),
-        );
+            .with_native_ref(Some(native_ref)),
+            "f3d spatial sketch curve entity",
+        )?;
     }
-    entities.extend(points.iter().filter_map(|point| {
-        let scope = native_stream(&point.id)?;
-        let owner = point.owner_reference?;
+    for point in points {
+        let Some(scope) = native_stream(&point.id) else { continue; };
+        let Some(owner) = point.owner_reference else { continue; };
         if !spatial_owners.contains(&(scope, owner)) {
-            return None;
+            continue;
         }
-        let placement = placements_by_suffix.get(&(scope, owner))?;
+        let Some(placement) = placements_by_suffix.get(&(scope, owner)) else { continue; };
         let sketch = neutral_spatial_sketch_id(placement);
         let depth = point.depth();
-        Some(
+        let Ok(geometry) = SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+            position: transform_point(
+                placement,
+                &Point3::new(point.coordinates().u, point.coordinates().v, depth),
+            ),
+        }) else { continue; };
+        let native_ref = copy_project_text(ctx, &point.id, "f3d spatial sketch point native reference")?;
+        push_project_item(ctx, &mut entities,
             SpatialSketchEntity::new(
                 point.persistent_id().map_or_else(
                     || neutral_spatial_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| neutral_spatial_sketch_point_id(&sketch, persistent_id),
                 ),
                 sketch,
-                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
-                    position: transform_point(
-                        placement,
-                        &Point3::new(point.coordinates().u, point.coordinates().v, depth),
-                    ),
-                })
-                .ok()?,
+                geometry,
             )
-            .with_native_ref(Some(point.id.clone())),
-        )
-    }));
+            .with_native_ref(Some(native_ref)),
+            "f3d spatial sketch point entity",
+        )?;
+    }
     for surface in surfaces {
         let Some(scope) = native_stream(&surface.id) else {
             continue;
@@ -856,7 +878,8 @@ pub(crate) fn project_spatial_sketch_design(
             )?;
             control_points.push(points);
         }
-        entities.push(
+        let native_ref = copy_project_text(ctx, &surface.id, "f3d spatial sketch surface native reference")?;
+        push_project_item(ctx, &mut entities,
             SpatialSketchEntity::new(
                 entity_id,
                 sketch,
@@ -877,32 +900,42 @@ pub(crate) fn project_spatial_sketch_design(
                 })
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             )
-            .with_native_ref(Some(surface.id.clone())),
-        );
+            .with_native_ref(Some(native_ref)),
+            "f3d spatial sketch surface entity",
+        )?;
     }
     entities.sort_by(|a, b| a.id().cmp(b.id()));
-    let spatial_ids = entities
-        .iter()
-        .map(|entity| entity.sketch.clone())
-        .collect::<HashSet<_>>();
-    let mut sketches = placements
-        .iter()
-        .filter(|placement| spatial_ids.contains(&neutral_spatial_sketch_id(placement)))
-        .map(|placement| {
-            let id = neutral_spatial_sketch_id(placement);
-            SpatialSketch {
-                profiles: closed_spatial_sketch_profiles(&id, &entities, linear_tolerance),
-                id,
-                name: Some(placement.entity_id.as_str().to_owned()),
-                configuration: None,
-                visible: placement
-                    .visibility
-                    .as_ref()
-                    .map(|visibility| visibility.visible),
-                native_ref: Some(placement.id.clone()),
+    let mut spatial_ids = HashSet::new();
+    for entity in &entities {
+        if !spatial_ids.contains(&entity.sketch) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d spatial sketch id index")?;
+                spatial_ids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d spatial sketch id index allocation", 0, 1)
+                })?;
             }
-        })
-        .collect::<Vec<_>>();
+            spatial_ids.insert(entity.sketch.clone());
+        }
+    }
+    let mut sketches = Vec::new();
+    for placement in placements {
+        let id = neutral_spatial_sketch_id(placement);
+        if !spatial_ids.contains(&id) { continue; }
+        let profiles = closed_spatial_sketch_profiles(&id, &entities, linear_tolerance);
+        let name = copy_project_text(ctx, placement.entity_id.as_str(), "f3d spatial sketch name")?;
+        let native_ref = copy_project_text(ctx, &placement.id, "f3d spatial sketch native reference")?;
+        push_project_item(ctx, &mut sketches,
+            SpatialSketch {
+                profiles,
+                id,
+                name: Some(name),
+                configuration: None,
+                visible: placement.visibility.as_ref().map(|visibility| visibility.visible),
+                native_ref: Some(native_ref),
+            },
+            "f3d spatial sketch",
+        )?;
+    }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
     Ok((sketches, entities))
 }

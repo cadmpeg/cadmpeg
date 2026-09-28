@@ -1709,3 +1709,65 @@ fn sketch_nurbs_refuses_nonpositive_weight_before_projection() {
         "{error}"
     );
 }
+
+#[test]
+fn projected_sketch_text_copies_refuse_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for operation in [
+        "f3d planar sketch name",
+        "f3d planar sketch native reference",
+        "f3d planar sketch point native reference",
+        "f3d planar sketch curve native reference",
+        "f3d planar sketch text",
+        "f3d planar sketch font family",
+        "f3d planar sketch text native reference",
+        "f3d spatial sketch curve native reference",
+        "f3d spatial sketch point native reference",
+        "f3d spatial sketch surface native reference",
+        "f3d spatial sketch name",
+        "f3d spatial sketch native reference",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::copy_project_text(Some(&ctx), "input", operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ), "operation {operation}");
+    }
+}
+
+#[test]
+fn projected_sketch_entries_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for operation in [
+        "f3d planar sketch",
+        "f3d planar sketch point entity",
+        "f3d planar sketch curve entity",
+        "f3d planar sketch text entity",
+        "f3d spatial sketch curve entity",
+        "f3d spatial sketch point entity",
+        "f3d spatial sketch surface entity",
+        "f3d spatial sketch",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut entries = Vec::new();
+        assert!(matches!(
+            super::push_project_item(Some(&ctx), &mut entries, 1, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "operation {operation}");
+        assert!(entries.is_empty());
+    }
+}
