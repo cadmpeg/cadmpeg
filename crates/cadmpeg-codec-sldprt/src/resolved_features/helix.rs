@@ -18,6 +18,13 @@ pub(super) fn fit_helix_polyline(
     if points.len() < 6 {
         return Ok(None);
     }
+    let point_count = u64::try_from(points.len()).map_err(|_| {
+        ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX)
+    })?;
+    let work = point_count.checked_mul(4).ok_or_else(|| {
+        ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(work, "fit SLDPRT helix work")?;
     let revolutions = revolutions.get();
     let mut parameters = ctx.alloc_filled(points.len(), 0.0, "fit SLDPRT helix parameters")?;
     for (index, pair) in points.windows(2).enumerate() {
@@ -244,6 +251,42 @@ fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64
 mod tests {
     fn revolutions(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
         cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive revolutions")
+    }
+
+    #[test]
+    fn helix_fit_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let points = [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 6];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false)
+            .expect_err("parameter lane exceeds collection limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "fit SLDPRT helix parameters"
+        ));
+    }
+
+    #[test]
+    fn helix_fit_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let points = [cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 6];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 23;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let error = super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false)
+            .expect_err("fit exceeds work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "fit SLDPRT helix work"
+        ));
     }
 
     // Four points of the exact circle of radius 5 about `(-5, 0, 0)` in the
