@@ -1373,6 +1373,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
+    let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let points = object_stream_vertices_from_records(ctx, data, records)?;
     let embedded = crate::resource::collect_vec(ctx, b2_embedded_cylinders_from_records(data, records), "catia_resolved_embedded_cylinders")?;
     let standalone = crate::resource::collect_vec(ctx, b2_cylinders_from_records(data, records), "catia_resolved_standalone_cylinders")?;
@@ -1385,7 +1386,6 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     let tori = crate::resource::collect_vec(ctx, b2_tori_from_records(data, records),
         "catia_resolved_tori")?;
     let planes = b2_plane_carriers_from_records(ctx, data, records)?;
-    let surfaces = a5_surfaces_from_records(ctx, data, records, refusal)?;
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,

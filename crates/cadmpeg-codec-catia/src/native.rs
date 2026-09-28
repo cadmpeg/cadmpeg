@@ -8656,63 +8656,75 @@ fn consolidated_edge_runs(
     nodes: &[CatiaConsolidatedEdgeNode],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
-    let pcurve_ids = pcurves
-        .iter()
-        .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
-        .collect::<HashMap<_, _>>();
-    let resolved =
-        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            ctx, bytes, records, refusal,
-        )?
-        .into_iter()
-        .map(|block| (block.block.pcurves[0].pos, block))
-        .collect::<HashMap<_, _>>();
-    let nodes_by_offset = nodes
-        .iter()
-        .map(|node| (node.byte_offset, node))
-        .collect::<HashMap<_, _>>();
-    Ok(crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+    let mut pcurve_ids = HashMap::new();
+    for pcurve in pcurves {
+        let id = crate::resource::copy_retained_str(ctx, &pcurve.id,
+            "catia_native_edge_run_pcurve_index_id")?;
+        crate::resource::insert_map(ctx, &mut pcurve_ids, pcurve.byte_offset, id,
+            "catia_native_edge_run_pcurve_index")?;
+    }
+    let mut resolved = HashMap::new();
+    for block in crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+        ctx, bytes, records, refusal,
+    )? {
+        crate::resource::insert_map(ctx, &mut resolved, block.block.pcurves[0].pos, block,
+            "catia_native_edge_run_resolved_index")?;
+    }
+    let mut nodes_by_offset = HashMap::new();
+    for node in nodes {
+        crate::resource::insert_map(ctx, &mut nodes_by_offset, node.byte_offset, node,
+            "catia_native_edge_run_node_index")?;
+    }
+    let mut output = Vec::new();
+    for (index, run) in crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
         ctx, bytes, records,
-    )?
-    .into_iter()
-    .map(|run| {
+    )?.into_iter().enumerate() {
         let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
-        (run, pcurve_offsets)
-    })
-    .enumerate()
-    .filter_map(|(index, (run, pcurve_offsets))| {
         let resolved = resolved.get(&run.edge.pcurves[0].pos);
-        let node = nodes_by_offset.get(&(run.node.pos as u64))?;
-        node.uses.as_ref()?;
-        Some(CatiaConsolidatedEdgeRun {
-            id: format!("catia:consolidated:edge-run#{index}"),
+        let Some(node) = nodes_by_offset.get(&(run.node.pos as u64)) else { continue };
+        if node.uses.is_none() { continue; }
+        let (Some(first), Some(second)) = (pcurve_ids.get(&pcurve_offsets[0]),
+            pcurve_ids.get(&pcurve_offsets[1])) else { continue };
+        let shared_loci = resolved
+            .and_then(|resolved| resolved.shared_loci.as_ref())
+            .map(|points| crate::resource::collect_vec(ctx, points.iter().map(point_coordinates),
+                "catia_native_edge_run_shared_loci"))
+            .transpose()?;
+        let value = CatiaConsolidatedEdgeRun {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:edge-run#",
+                index, 1, "catia_native_edge_run_id")?,
             byte_offset: pcurve_offsets[0],
             pcurves: [
-                pcurve_ids.get(&pcurve_offsets[0])?.clone(),
-                pcurve_ids.get(&pcurve_offsets[1])?.clone(),
+                crate::resource::copy_retained_str(ctx, first,
+                    "catia_native_edge_run_first_pcurve_id")?,
+                crate::resource::copy_retained_str(ctx, second,
+                    "catia_native_edge_run_second_pcurve_id")?,
             ],
             parameter_range: run.edge.parameters.range,
             tolerance: run.edge.parameters.tolerance,
-            node: node.id.clone(),
+            node: crate::resource::copy_retained_str(ctx, &node.id,
+                "catia_native_edge_run_node_id")?,
             support_bindings: resolved.map_or([None, None], |resolved| {
                 resolved
                     .supports
                     .each_ref()
                     .map(|binding| binding.as_ref().map(native_consolidated_support_binding))
             }),
-            shared_loci: resolved
-                .and_then(|resolved| resolved.shared_loci.as_ref())
-                .map(|points| points.iter().map(point_coordinates).collect()),
+            shared_loci,
             endpoint_loci: resolved
                 .and_then(|resolved| resolved.endpoint_loci.as_ref())
                 .map(|points| points.map(|point| point_coordinates(&point))),
-        })
-    })
-    .collect())
+        };
+        crate::resource::push(ctx, &mut output, value,
+            "catia_native_edge_runs")?;
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
 mod consolidated_edge_run_limit_tests {
+    use std::collections::HashSet;
+
     #[test]
     fn native_edge_runs_propagate_a5_surface_limit() {
         let bytes = crate::test_support::test_a5a8::a5_surface_stream();
@@ -8732,6 +8744,68 @@ mod consolidated_edge_run_limit_tests {
         })
         .expect("service collection budget");
         assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn native_edge_run_indexes_loci_and_ids_refuse_limits() {
+        let mut supported = crate::test_support::test_b2::b2_cylinder_stream();
+        for point in [
+            [1.0f32, 4.0, 3.0],
+            [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+        ] {
+            supported.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in point {
+                supported.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        supported.extend_from_slice(&crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 139, 142));
+        let fixtures = [
+            crate::test_support::test_a5_bound::a5_native_edge_run_stream(6, 139, 142),
+            supported,
+        ];
+        let mut collection_refusals = HashSet::new();
+        let mut retained_refusals = HashSet::new();
+        for bytes in fixtures {
+            let native = super::CatiaNative::decode(&bytes);
+            assert_eq!(native.consolidated_edge_runs.len(), 1);
+            let records = crate::wire::records::consolidated_records(&bytes);
+            for limit in 0..1024 {
+                let result = crate::test_support::with_collection_limit(limit, |ctx| {
+                    super::consolidated_edge_runs(ctx, &bytes, &records,
+                        &native.consolidated_pcurves, &native.consolidated_edge_nodes,
+                        &mut crate::nurbs::LaneRefusals::new())
+                });
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                    collection_refusals.insert(error.operation);
+                }
+                let result = crate::test_support::with_retained_limit(limit, |ctx| {
+                    super::consolidated_edge_runs(ctx, &bytes, &records,
+                        &native.consolidated_pcurves, &native.consolidated_edge_nodes,
+                        &mut crate::nurbs::LaneRefusals::new())
+                });
+                if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                    retained_refusals.insert(error.operation);
+                }
+            }
+        }
+        for operation in [
+            "catia_native_edge_run_pcurve_index",
+            "catia_native_edge_run_resolved_index",
+            "catia_native_edge_run_node_index",
+            "catia_native_edge_run_shared_loci",
+            "catia_native_edge_runs",
+        ] {
+            assert!(collection_refusals.contains(operation), "{operation} did not refuse");
+        }
+        for operation in [
+            "catia_native_edge_run_pcurve_index_id",
+            "catia_native_edge_run_id",
+            "catia_native_edge_run_first_pcurve_id",
+            "catia_native_edge_run_second_pcurve_id",
+            "catia_native_edge_run_node_id",
+        ] {
+            assert!(retained_refusals.contains(operation), "{operation} did not refuse");
+        }
     }
 }
 
