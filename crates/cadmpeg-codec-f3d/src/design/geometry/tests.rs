@@ -1688,6 +1688,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
 
 mod predicates;
 mod arrangement_allocation;
+mod region_allocation;
 
 macro_rules! geometry_collection_refusal_test {
     ($name:ident, $operation:literal) => {

@@ -1582,29 +1582,25 @@ pub(super) fn region_containing_points(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d profile boundaries")?;
-        }
-        boundaries.push(boundary);
+        push_geometry_item(ctx, &mut boundaries, boundary, "f3d profile boundaries")?;
     }
-    let containment = boundaries
-        .iter()
-        .enumerate()
-        .map(|(outer_index, outer)| {
-            boundaries
-                .iter()
-                .enumerate()
-                .map(|(inner_index, inner)| {
-                    outer_index != inner_index && outer.strictly_contains(inner)
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let projected = points
-        .iter()
-        .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>();
-    let projected = geometric!(projected);
+    let mut containment = Vec::new();
+    for (outer_index, outer) in boundaries.iter().enumerate() {
+        let mut row = Vec::new();
+        for (inner_index, inner) in boundaries.iter().enumerate() {
+            push_geometry_item(ctx, &mut row,
+                outer_index != inner_index && outer.strictly_contains(inner),
+                "f3d profile containment cell")?;
+        }
+        push_geometry_item(ctx, &mut containment, row,
+            "f3d profile containment row")?;
+    }
+    let mut projected = Vec::new();
+    for point in points {
+        let projected_point = geometric!(project_to_sketch(sketch, *point));
+        push_geometry_item(ctx, &mut projected, projected_point,
+            "f3d profile projected point")?;
+    }
     let mut incidences = Vec::new();
     for point in &projected {
         let mut incident = HashSet::new();
@@ -1615,16 +1611,18 @@ pub(super) fn region_containing_points(
                     continue;
                 };
                 if point_on_sketch_entity(*point, entity, tolerance)? {
-                    incident.insert(index);
+                    insert_geometry_set(ctx, &mut incident, index,
+                        "f3d profile incident boundary")?;
                     break;
                 }
             }
         }
-        incidences.push(incident);
+        push_geometry_item(ctx, &mut incidences, incident,
+            "f3d profile incidence row")?;
     }
-    let region = |outer: usize| {
-        let holes = immediate_containment_children(outer, &containment);
-        projected
+    let region = |outer: usize| -> Result<Option<(usize, Vec<usize>)>, CodecError> {
+        let holes = immediate_containment_children(outer, &containment, ctx)?;
+        Ok(projected
             .iter()
             .zip(&incidences)
             .all(|(point, incident)| {
@@ -1636,29 +1634,34 @@ pub(super) fn region_containing_points(
                             .iter()
                             .all(|hole| !boundaries[*hole].contains_point(*point))
             })
-            .then_some((outer, holes))
+            .then_some((outer, holes)))
     };
-    let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
+    let mut closure_matches = Vec::new();
+    for outer in 0..boundaries.len() {
+        if let Some(candidate) = region(outer)? {
+            push_geometry_item(ctx, &mut closure_matches, candidate,
+                "f3d profile closure match")?;
+        }
+    }
     if let [(outer, holes)] = closure_matches.as_slice() {
-        let holes = geometric!(holes
-            .iter()
-            .map(|hole| u32::try_from(*hole).ok())
-            .collect::<Option<Vec<_>>>());
-        return Ok(SketchProfileRegion::loops(geometric!(u32::try_from(*outer).ok()), holes).ok());
+        let mut converted_holes = Vec::new();
+        for hole in holes {
+            let hole = geometric!(u32::try_from(*hole).ok());
+            push_geometry_item(ctx, &mut converted_holes, hole,
+                "f3d profile hole index")?;
+        }
+        return Ok(SketchProfileRegion::loops(geometric!(u32::try_from(*outer).ok()), converted_holes).ok());
     }
     if incidences.iter().any(|incident| !incident.is_empty()) {
         return Ok(None);
     }
-    let containing = boundaries
-        .iter()
-        .enumerate()
-        .filter(|(_, boundary)| {
-            projected
-                .iter()
-                .all(|point| boundary.contains_point(*point))
-        })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+    let mut containing = Vec::new();
+    for (index, boundary) in boundaries.iter().enumerate() {
+        if projected.iter().all(|point| boundary.contains_point(*point)) {
+            push_geometry_item(ctx, &mut containing, index,
+                "f3d profile containing boundary")?;
+        }
+    }
     if containing.iter().enumerate().any(|(left_index, left)| {
         containing
             .iter()
@@ -1672,11 +1675,14 @@ pub(super) fn region_containing_points(
             .iter()
             .all(|other| other == *candidate || containment[*other][**candidate])
     }));
-    let holes = immediate_containment_children(outer, &containment)
-        .into_iter()
-        .map(|candidate| u32::try_from(candidate).ok())
-        .collect::<Option<Vec<_>>>();
-    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), geometric!(holes)).ok())
+    let holes = immediate_containment_children(outer, &containment, ctx)?;
+    let mut converted_holes = Vec::new();
+    for hole in holes {
+        let hole = geometric!(u32::try_from(hole).ok());
+        push_geometry_item(ctx, &mut converted_holes, hole,
+            "f3d profile hole index")?;
+    }
+    Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes).ok())
 }
 
 /// Return true when every selected closed profile bounds a disjoint region.
@@ -1699,10 +1705,8 @@ pub(super) fn profile_loops_are_independent(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(false);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d independent profile boundaries")?;
-        }
-        boundaries.push(boundary);
+        push_geometry_item(ctx, &mut boundaries, boundary,
+            "f3d independent profile boundaries")?;
     }
     Ok(boundaries.iter().enumerate().all(|(left_index, left)| {
         boundaries
@@ -1712,19 +1716,27 @@ pub(super) fn profile_loops_are_independent(
     }))
 }
 
-fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Vec<usize> {
-    (0..containment.len())
-        .filter(|candidate| {
-            *candidate != outer
-                && containment[outer][*candidate]
+fn immediate_containment_children(
+    outer: usize,
+    containment: &[Vec<bool>],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<usize>, CodecError> {
+    let mut children = Vec::new();
+    for candidate in 0..containment.len() {
+        if candidate != outer
+                && containment[outer][candidate]
                 && !(0..containment.len()).any(|intermediate| {
                     intermediate != outer
-                        && intermediate != *candidate
+                        && intermediate != candidate
                         && containment[outer][intermediate]
-                        && containment[intermediate][*candidate]
+                        && containment[intermediate][candidate]
                 })
-        })
-        .collect()
+        {
+            push_geometry_item(ctx, &mut children, candidate,
+                "f3d profile immediate hole")?;
+        }
+    }
+    Ok(children)
 }
 
 enum ProfileBoundary {
