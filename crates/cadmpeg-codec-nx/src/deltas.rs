@@ -1993,7 +1993,7 @@ fn merge_records(
         }
         Ok((merged, reservation))
     };
-    if !graph.body_shape_shells().is_empty() {
+    if graph.body_shape_shells().next().is_some() {
         let (merged, reservation) = build(false)?;
         reservation.commit()?;
         return Ok(merged);
