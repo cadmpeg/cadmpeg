@@ -266,7 +266,7 @@ fn expected_lanes_charged<'a>(
             &lane.id,
             &lane.names,
         )?;
-        rebuild_scalar_relations(lane, scalars);
+        rebuild_scalar_relations_charged(ctx, lane, scalars)?;
     }
     let mut expected = Vec::new();
     ctx.reserve_precharged_vec(
@@ -351,4 +351,23 @@ fn rebuild_scalar_relations(
     );
     lane.references =
         crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes);
+}
+
+fn rebuild_scalar_relations_charged(
+    ctx: &DecodeContext<'_>,
+    lane: &mut FeatureInputLane,
+    scalars: Vec<crate::records::FeatureInputScalar>,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    lane.scalars = scalars;
+    lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+        &lane.id,
+        &lane.classes,
+        &lane.scalars,
+    );
+    lane.references = crate::resolved_features::markers::reference_cells_charged(
+        ctx,
+        &lane.scalars,
+        &lane.classes,
+    )?;
+    Ok(())
 }
