@@ -264,6 +264,113 @@ fn dependency_lookup_refuses_on_collection_limit() {
     );
 }
 
+fn assert_persistence_collection_at_operation(document: &str, operation: &str) {
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count").0;
+    for limit in nodes..nodes + 24 {
+        let error = parse_with_item_limit(document, limit);
+        if matches!(&error,
+            cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+                if refusal.operation == operation
+                    && refusal.used + refusal.additional == limit + 1)
+        {
+            return;
+        }
+    }
+    panic!("{operation} was not reached under a matching collection limit");
+}
+
+#[test]
+fn extension_type_set_refuses_at_matching_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension type set");
+}
+
+#[test]
+fn extension_identity_lookup_refuses_at_matching_collection_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    assert_persistence_collection_at_operation(document, "FCStd extension identity lookup");
+}
+
+#[test]
+fn extension_owner_refuses_at_matching_retained_limit() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
+    crate::test_support::assert_retained_refusal_at(
+        document.as_bytes(), "FCStd extension owner", |ctx| {
+            super::parse_with_context(document.as_bytes(), "4", Some(ctx))
+        },
+    );
+}
+
+fn assert_link_collection_at_operation(xml: &str, type_name: &str, operation: &str) {
+    let document = roxmltree::Document::parse(xml).expect("valid link XML");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    for limit in 0..12 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            xml.as_bytes(), &arena, &policy,
+        ).expect("link XML fits input policy");
+        let result = super::parse_link_targets(document.root_element(), type_name, Some(&ctx));
+        if matches!(result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation
+                    && refusal.used + refusal.additional == limit + 1)
+        {
+            return;
+        }
+    }
+    panic!("{operation} was not reached under a matching link limit");
+}
+
+#[test]
+fn singleton_link_target_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><Link value=\"A\"/></Property>",
+        "App::PropertyLink", "FCStd link target records",
+    );
+}
+
+#[test]
+fn link_list_nodes_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkList count=\"1\"><Link value=\"A\"/></LinkList></Property>",
+        "App::PropertyLinkList", "FCStd link nodes",
+    );
+}
+
+#[test]
+fn link_list_targets_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkList count=\"1\"><Link value=\"A\"/></LinkList></Property>",
+        "App::PropertyLinkList", "FCStd link target or subelement records",
+    );
+}
+
+#[test]
+fn link_sub_subelements_refuse_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><LinkSub value=\"A\" count=\"1\"><Sub value=\"Face1\"/></LinkSub></Property>",
+        "App::PropertyLinkSub", "FCStd link target or subelement records",
+    );
+}
+
+#[test]
+fn cross_document_link_target_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><XLink/></Property>",
+        "App::PropertyXLink", "FCStd link target records",
+    );
+}
+
+#[test]
+fn cross_document_link_list_refuses_at_matching_collection_limit() {
+    assert_link_collection_at_operation(
+        "<Property><XLinkSubList count=\"1\"><XLink/></XLinkSubList></Property>",
+        "App::PropertyXLinkSubList", "FCStd link target or subelement records",
+    );
+}
+
 #[test]
 fn extension_name_set_refuses_on_collection_limit() {
     let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions></Object></ObjectData></Document>"#;
