@@ -8,7 +8,8 @@ use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 use super::shared_frames::marked_record_reference;
 
@@ -680,25 +681,62 @@ use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::records::feature::scope;
 
+fn reserve_base_feature_rows<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    ctx.charge_collection_items(u64_from_index(count), operation)?;
+    let mut rows = Vec::new();
+    rows.try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(rows)
+}
+
+fn read_base_feature_entry_at(
+    bytes: &[u8],
+    cursor: &mut usize,
+) -> Option<DesignBaseFeatureEntry<u64>> {
+    let at = *cursor;
+    if bytes.get(at) != Some(&1) {
+        return None;
+    }
+    let entry = DesignBaseFeatureEntry {
+        value: View::u64_le_at(bytes, at.checked_add(result_body_entry::REFERENCE_VALUE)?)?,
+        offset: u64::try_from(at.checked_add(result_body_entry::REFERENCE_VALUE)?).ok()?,
+        field: bytes
+            .get(
+                at.checked_add(result_body_entry::REFERENCE_FIELD)?
+                    ..at.checked_add(result_body_entry::LEN)?,
+            )?
+            .try_into()
+            .ok()?,
+    };
+    *cursor = at.checked_add(result_body_entry::LEN)?;
+    Some(entry)
+}
+
 pub(super) fn exact_base_feature_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
     use crate::records::feature::base_feature::{
         DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults,
     };
     if scope.kind() != scope::DesignFeatureKind::BaseFeature {
-        return None;
+        return Ok(None);
     }
-    if let Some(snapshot) = exact_base_feature_body_snapshot(bytes, scope) {
-        return Some(snapshot);
+    if let Some(snapshot) = exact_base_feature_body_snapshot(ctx, bytes, scope)? {
+        return Ok(Some(snapshot));
     }
+    (|| {
     if let Some(body_based_on_faces) = exact_base_feature_body_based_on_faces(bytes, scope) {
-        return Some(body_based_on_faces);
+        return Some(Ok(body_based_on_faces));
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
     if scope.frame_length() == 267 {
-        return Some(DesignBaseFeatureConstruction::ResultBodies {
+        return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record: View::u32_le_at(
                 bytes,
@@ -706,7 +744,7 @@ pub(super) fn exact_base_feature_construction(
             )?,
             metadata_record_offset: scope.byte_offset() + 37,
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
-        });
+        }));
     }
     let legacy_290_261 =
         scope.class_tag.as_str() == "290" && scope.paired_class_tag.as_str() == "261";
@@ -756,7 +794,7 @@ pub(super) fn exact_base_feature_construction(
         {
             return None;
         }
-        return Some(DesignBaseFeatureConstruction::ResultBodies {
+        return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
             metadata_record_offset: scope.byte_offset()
@@ -767,7 +805,7 @@ pub(super) fn exact_base_feature_construction(
                         ..start + legacy_zero_body::ZERO_PADDING_8,
                 )?
                 .to_vec(),
-        });
+        }));
     }
     if legacy_444_263 && scope.frame_length() == 258 {
         if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
@@ -841,7 +879,7 @@ pub(super) fn exact_base_feature_construction(
         {
             return None;
         }
-        return Some(DesignBaseFeatureConstruction::ResultBodies {
+        return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
             bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
             metadata_record,
             metadata_record_offset: scope.byte_offset()
@@ -852,7 +890,7 @@ pub(super) fn exact_base_feature_construction(
                         ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
                 )?
                 .to_vec(),
-        });
+        }));
     }
     if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
         || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
@@ -889,38 +927,29 @@ pub(super) fn exact_base_feature_construction(
         return None;
     }
     let mut cursor = start + result_body::LEN;
-    let mut read_u64_run = |count: usize| {
-        let mut entries = Vec::with_capacity(count);
-        for _ in 0..count {
-            if bytes.get(cursor) != Some(&1) {
-                return None;
-            }
-            entries.push(DesignBaseFeatureEntry {
-                value: View::u64_le_at(bytes, cursor + result_body_entry::REFERENCE_VALUE)?,
-                offset: u64::try_from(cursor + result_body_entry::REFERENCE_VALUE).ok()?,
-                field: bytes
-                    .get(
-                        cursor + result_body_entry::REFERENCE_FIELD
-                            ..cursor + result_body_entry::LEN,
-                    )?
-                    .try_into()
-                    .ok()?,
-            });
-            cursor += result_body_entry::LEN;
-        }
-        Some(entries)
+    let mut entities = match reserve_base_feature_rows(ctx, body_count, "f3d BaseFeature entities") {
+        Ok(rows) => rows,
+        Err(error) => return Some(Err(error)),
     };
-    let entities = read_u64_run(body_count)?;
-    let references = read_u64_run(body_count)?
-        .into_iter()
-        .map(|entry| {
-            Some(DesignBaseFeatureEntry {
-                value: u32::try_from(entry.value).ok()?,
-                offset: entry.offset,
-                field: entry.field,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+    for _ in 0..body_count {
+        entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
+    }
+    let mut references = match reserve_base_feature_rows(
+        ctx,
+        body_count,
+        "f3d BaseFeature references",
+    ) {
+        Ok(rows) => rows,
+        Err(error) => return Some(Err(error)),
+    };
+    for _ in 0..body_count {
+        let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
+        references.push(DesignBaseFeatureEntry {
+            value: u32::try_from(entry.value).ok()?,
+            offset: entry.offset,
+            field: entry.field,
+        });
+    }
     if expanded {
         if bytes.get(cursor) != Some(&1)
             || bytes.get(cursor + 1..cursor + 7) != Some(&[0; 6])
@@ -961,7 +990,14 @@ pub(super) fn exact_base_feature_construction(
         }
         cursor += 4;
     }
-    let mut repeated_reference_fields = Vec::with_capacity(body_count);
+    let mut repeated_reference_fields = match reserve_base_feature_rows(
+        ctx,
+        body_count,
+        "f3d BaseFeature repeated reference fields",
+    ) {
+        Ok(rows) => rows,
+        Err(error) => return Some(Err(error)),
+    };
     for ordinal in 0..body_count {
         let expected = if compact {
             u32::try_from(entities[ordinal].value).ok()?
@@ -1003,7 +1039,15 @@ pub(super) fn exact_base_feature_construction(
         return None;
     }
     cursor += 4;
-    let mut result_rows = Vec::with_capacity(body_count);
+    let mut first = None;
+    let mut rest = match reserve_base_feature_rows(
+        ctx,
+        body_count.checked_sub(1)?,
+        "f3d BaseFeature remaining result bodies",
+    ) {
+        Ok(rows) => rows,
+        Err(error) => return Some(Err(error)),
+    };
     for ((entity, reference), field) in entities
         .into_iter()
         .zip(references)
@@ -1017,14 +1061,19 @@ pub(super) fn exact_base_feature_construction(
             offset: u64::try_from(cursor + 1).ok()?,
             field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
         };
-        result_rows.push((
+        let row = (
             DesignBaseFeatureResultBody {
                 entity,
                 reference,
                 result,
             },
             field,
-        ));
+        );
+        if first.is_none() {
+            first = Some(row);
+        } else {
+            rest.push(row);
+        }
         cursor += 11;
     }
     let uuid_offset = usize::try_from(scope.kind_offset())
@@ -1034,23 +1083,25 @@ pub(super) fn exact_base_feature_construction(
         && bytes
             .get(cursor..uuid_offset)
             .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
-    let mut result_rows = result_rows.into_iter();
-    let first = result_rows.next()?;
-    admitted.then_some(DesignBaseFeatureConstruction::ResultBodies {
+    let first = first?;
+    admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
         bodies: DesignBaseFeatureResults::WithRepeatedFields {
             first,
-            rest: result_rows.collect(),
+            rest,
         },
         metadata_record,
         metadata_record_offset,
         metadata_field,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_base_feature_body_snapshot(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    (|| {
     // Fixed prefix, linkage and GUID blocks, generic scope prefix, kind
     // prefix, ordinal, and closing tail; the kind payload adds 2L bytes.
     const FIXED_FRAME_LENGTH: u64 = 431;
@@ -1074,7 +1125,10 @@ fn exact_base_feature_body_snapshot(
         return None;
     }
     let mut cursor = start + snapshot::LEN;
-    let mut bodies = Vec::with_capacity(body_count);
+    let mut bodies = match reserve_base_feature_rows(ctx, body_count, "f3d BaseFeature snapshot bodies") {
+        Ok(rows) => rows,
+        Err(error) => return Some(Err(error)),
+    };
     for _ in 0..body_count {
         if bytes.get(cursor) != Some(&1) {
             return None;
@@ -1191,8 +1245,14 @@ fn exact_base_feature_body_snapshot(
         None if View::u32_le_at(bytes, state_at)? != u32::MAX => return None,
         _ => {}
     }
-    let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
-    if kind != scope.kind_name()
+    let kind_count = usize::try_from(View::u32_le_at(bytes, kind_at)?).ok()?;
+    if !(1..=256).contains(&kind_count) {
+        return None;
+    }
+    let kind_start = kind_at.checked_add(4)?;
+    let kind_end = kind_start.checked_add(kind_count.checked_mul(2)?)?;
+    let mut kind_view = View::over_retained(bytes.get(kind_start..kind_end)?);
+    if !std::iter::from_fn(|| kind_view.u16_le()).eq(scope.kind_name().encode_utf16())
         || View::u32_le_at(bytes, kind_end)? != scope.feature_ordinal.get()
         || scope.feature_ordinal_offset() != u64::try_from(kind_end).ok()?
         || scope.previous_history_state_id().is_some()
@@ -1205,7 +1265,7 @@ fn exact_base_feature_body_snapshot(
     {
         return None;
     }
-    Some(DesignBaseFeatureConstruction::BodySnapshot {
+    Some(Ok(DesignBaseFeatureConstruction::BodySnapshot {
         bodies,
         related_guids: [first_guid, second_guid, third_guid],
         related_guid_offsets: [
@@ -1218,5 +1278,9 @@ fn exact_base_feature_body_snapshot(
         auxiliary_record,
         auxiliary_record_offset: u64::try_from(after_guids + snapshot_tail::AUXILIARY_RECORD)
             .ok()?,
-    })
+    }))
+    })().transpose()
 }
+
+#[cfg(test)]
+mod tests;
