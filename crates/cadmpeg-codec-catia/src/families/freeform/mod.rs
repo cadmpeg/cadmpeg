@@ -100,13 +100,13 @@ pub(super) fn append_consolidated_revolutions(
             profile.radius,
         );
         annotate(
+            admission.context(),
             annotations,
             &directrix,
             "consolidated_b2_03_19",
             profile.pos as u64,
-            format!("circle:{}", profile.record_id),
-            Exactness::ByteExact,
-        );
+            format_args!("circle:{}", profile.record_id),
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id: directrix.clone(),
@@ -166,13 +166,13 @@ pub(super) fn append_consolidated_revolutions(
                 )))
             });
         annotate(
+            admission.context(),
             annotations,
             &surface,
             "consolidated_b2_03_2d",
             revolution.pos as u64,
-            format!("profile-allocation:{}", revolution.profile_allocation_id),
-            Exactness::ByteExact,
-        );
+            format_args!("profile-allocation:{}", revolution.profile_allocation_id),
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
@@ -645,14 +645,14 @@ pub(super) fn try_decode_freeform_surfaces(
                     &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
                     index,
                 );
-                annotate(
+                admitted!(annotate(
+                    ctx,
                     &mut annotations,
                     &id,
                     "object_stream_a8_03",
                     surface.pos as u64,
                     &surface.source_tag,
-                    Exactness::ByteExact,
-                );
+                    Exactness::ByteExact));
                 if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
@@ -697,14 +697,14 @@ pub(super) fn try_decode_freeform_surfaces(
                 ir.model.curves.len(),
             );
             let parameter_range = curve.geometry.full_knot_endpoints();
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &id,
                 "consolidated_b2_03_16",
                 curve.pos as u64,
-                format!("header_token:{:08x}", curve.header_token),
-                Exactness::ByteExact,
-            );
+                format_args!("header_token:{:08x}", curve.header_token),
+                Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
@@ -724,14 +724,14 @@ pub(super) fn try_decode_freeform_surfaces(
                 ir.model.curves.len(),
             );
             let parameter_range = curve.geometry.full_knot_endpoints();
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &id,
                 "consolidated_a5_13_16",
                 curve.pos as u64,
-                format!("header_token:{:08x}", curve.header_token),
-                Exactness::ByteExact,
-            );
+                format_args!("header_token:{:08x}", curve.header_token),
+                Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
@@ -754,19 +754,19 @@ pub(super) fn try_decode_freeform_surfaces(
                 circle.range.lower() / circle.radius.get(),
                 circle.range.upper() / circle.radius.get(),
             ];
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &id,
                 "consolidated_b2_03_0f",
                 circle.pos as u64,
-                format!(
+                format_args!(
                     "header_token:{:08x}:range:{:?}:chart_shift:{}",
                     circle.header_token,
                     circle.range.endpoints(),
                     circle.chart_shift.get()
                 ),
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
@@ -1113,13 +1113,13 @@ fn attach_standalone_wires(
     };
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
+            admission.context(),
             annotations,
             id,
             "consolidated_curve_wire",
             0,
             "standalone_wire_owner",
-            Exactness::Inferred,
-        );
+            Exactness::Inferred)?;
     }
     for (index, carrier, pos, start, end) in plans {
         let point_ids = [
@@ -1154,13 +1154,13 @@ fn attach_standalone_wires(
             edge_id.as_str(),
         ] {
             annotate(
+                admission.context(),
                 annotations,
                 id,
                 "consolidated_curve_wire",
                 pos as u64,
                 "curve_domain_endpoint",
-                Exactness::Derived,
-            );
+                Exactness::Derived)?;
         }
         admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
         admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
@@ -1418,13 +1418,13 @@ fn append_consolidated_line_profiles(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for profile in profiles {
         annotate(
+            admission.context(),
             annotations,
             &profile.curve.id,
             "consolidated_b2_03_0e",
             profile.pos as u64,
             "line_profile_carrier",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(profile.curve);
     }
@@ -1460,13 +1460,13 @@ pub(super) fn append_freeform_surface_pools(
         );
         carrier_ids.push(id.clone());
         annotate(
+            admission.context(),
             annotations,
             &id,
             "object_stream_a8_03_or_consolidated_a5_03",
             surface.pos as u64,
             source_tag,
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
@@ -1490,13 +1490,13 @@ pub(super) fn append_freeform_surface_pools(
             surface_index,
         );
         annotate(
+            admission.context(),
             annotations,
             &surface_id,
             "consolidated_b2_03_31_cache",
             offset.pos as u64,
-            format!("support_ref:{:08x}", offset.support_id),
-            Exactness::Unknown,
-        );
+            format_args!("support_ref:{:08x}", offset.support_id),
+            Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -1509,13 +1509,13 @@ pub(super) fn append_freeform_surface_pools(
             ir.model.procedural_surfaces.len(),
         );
         annotate(
+            admission.context(),
             annotations,
             &procedural_id,
             "consolidated_b2_03_31",
             offset.pos as u64,
-            format!("support_ref:{:08x}", offset.support_id),
-            Exactness::ByteExact,
-        );
+            format_args!("support_ref:{:08x}", offset.support_id),
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
@@ -1607,13 +1607,13 @@ pub(super) fn append_freeform_surface_pools(
             ir.model.curves.len(),
         );
         annotate(
+            admission.context(),
             annotations,
             &id,
             "consolidated_a5_03_39",
             guide.pos as u64,
-            format!("header_token:{:08x}", guide.header_token),
-            Exactness::Derived,
-        );
+            format_args!("header_token:{:08x}", guide.header_token),
+            Exactness::Derived)?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,
@@ -1643,13 +1643,13 @@ pub(super) fn append_freeform_surface_pools(
                 cadmpeg_ir::ids::IdentityKey::from(jet.pos).colon(side),
             );
             annotate(
+                admission.context(),
                 annotations,
                 &id,
                 "consolidated_a5_03_32",
                 jet.pos as u64,
-                format!("limit_{}", side + 1),
-                Exactness::Derived,
-            );
+                format_args!("limit_{}", side + 1),
+                Exactness::Derived)?;
             admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
             ir.model.curves.push(Curve {
                 id,
@@ -1680,13 +1680,13 @@ pub(super) fn append_freeform_surface_pools(
             ir.model.procedural_surfaces.len(),
         );
         annotate(
+            admission.context(),
             annotations,
             &surface_id,
             "consolidated_a5_03_32_cache",
             jet.pos as u64,
-            format!("header_token:{:08x}", jet.header_token),
-            Exactness::Unknown,
-        );
+            format_args!("header_token:{:08x}", jet.header_token),
+            Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -1698,13 +1698,13 @@ pub(super) fn append_freeform_surface_pools(
         });
 
         annotate(
+            admission.context(),
             annotations,
             &procedural_id,
             "consolidated_a5_03_32",
             jet.pos as u64,
-            format!("header_token:{:08x}", jet.header_token),
-            Exactness::ByteExact,
-        );
+            format_args!("header_token:{:08x}", jet.header_token),
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
@@ -2295,13 +2295,13 @@ fn append_resolved_consolidated_surface_curves(
                             "catia_freeform_nurbs_offset_id",
                         )?;
                         annotate(
+                            admission.context(),
                             annotations,
                             &id,
                             "consolidated_a5_03_34_offset_cache",
                             *pos as u64,
                             "resolved_pcurve_support",
-                            Exactness::Unknown,
-                        );
+                            Exactness::Unknown)?;
                         admission.reserve_entity(
                             &mut ir.model.surfaces,
                             "catia_freeform_offset_surfaces",
@@ -2331,13 +2331,13 @@ fn append_resolved_consolidated_surface_curves(
                             "catia_freeform_nurbs_offset_construction_id",
                         )?;
                         annotate(
+                            admission.context(),
                             annotations,
                             &procedural_id,
                             "consolidated_a5_03_34_constant_normal_offset",
                             *pos as u64,
                             "resolved_pcurve_support",
-                            Exactness::Derived,
-                        );
+                            Exactness::Derived)?;
                         admission.reserve_entity(
                             &mut ir.model.procedural_surfaces,
                             "catia_freeform_offset_procedural_surfaces",
@@ -2509,13 +2509,13 @@ fn append_resolved_consolidated_surface_curves(
                     "catia_freeform_carrier_surface_id",
                 )?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &id,
                     annotation_kind,
                     key.0 as u64,
                     "resolved_pcurve_support",
-                    Exactness::ByteExact,
-                );
+                    Exactness::ByteExact)?;
                 admission
                     .reserve_entity(&mut ir.model.surfaces, "catia_freeform_carrier_surfaces")?;
                 let surface_owner_id = crate::resource::copy_id(
@@ -3100,13 +3100,13 @@ fn append_resolved_consolidated_surface_curves(
                         "catia_freeform_standard_pcurve_id",
                     )?;
                     annotate(
+                        admission.context(),
                         annotations,
                         &pcurve_id,
                         "consolidated_edge_run",
                         run.edge.pcurves[0].pos as u64,
                         "resolved_face_side_pcurve",
-                        Exactness::Derived,
-                    );
+                        Exactness::Derived)?;
                     admission
                         .reserve_entity(&mut ir.model.pcurves, "catia_freeform_standard_pcurves")?;
                     let pcurve_owner_id = crate::resource::copy_id(
@@ -3147,13 +3147,13 @@ fn append_resolved_consolidated_surface_curves(
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             procedural.replace_definition(definition);
             annotate(
+                admission.context(),
                 annotations,
                 &procedural.id,
                 "consolidated_edge_run",
                 run.edge.pcurves[0].pos as u64,
                 "resolved_surface_curve_bound_to_standard_edge",
-                Exactness::Derived,
-            );
+                Exactness::Derived)?;
             annotations
                 .derived(&procedural.id, "curve")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -3168,13 +3168,13 @@ fn append_resolved_consolidated_surface_curves(
                 "catia_freeform_resolved_curve_id",
             )?;
             annotate(
+                admission.context(),
                 annotations,
                 &curve_id,
                 "consolidated_edge_run",
                 run.edge.pcurves[0].pos as u64,
                 "procedural_curve_cache",
-                Exactness::Unknown,
-            );
+                Exactness::Unknown)?;
             admission.reserve_entity(&mut ir.model.curves, "catia_freeform_resolved_curves")?;
             let curve_owner_id = crate::resource::copy_id(
                 admission.context(),
@@ -3195,13 +3195,13 @@ fn append_resolved_consolidated_surface_curves(
                 "catia_freeform_resolved_construction_id",
             )?;
             annotate(
+                admission.context(),
                 annotations,
                 &procedural_id,
                 "consolidated_edge_run",
                 run.edge.pcurves[0].pos as u64,
                 "resolved_surface_curve",
-                Exactness::Derived,
-            );
+                Exactness::Derived)?;
             annotations
                 .derived(&procedural_id, "curve")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -3662,13 +3662,13 @@ fn append_a8_rolling_ball_pools(
             ir.model.procedural_surfaces.len(),
         );
         annotate(
+            admission.context(),
             annotations,
             &surface_id,
             "object_stream_a8_03_32_cache",
             jet.pos as u64,
-            format!("object_id:{:08x}", jet.object_id),
-            Exactness::Unknown,
-        );
+            format_args!("object_id:{:08x}", jet.object_id),
+            Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
@@ -3680,17 +3680,17 @@ fn append_a8_rolling_ball_pools(
         });
 
         annotate(
+            admission.context(),
             annotations,
             &procedural_id,
             "object_stream_a8_03_32",
             jet.pos as u64,
-            format!(
+            format_args!(
                 "object_id:{:08x}:multiplicities:{:?}",
                 jet.object_id,
                 jet.multiplicities(admission.context())?
             ),
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model
             .procedural_surfaces

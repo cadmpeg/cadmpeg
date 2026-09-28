@@ -144,13 +144,13 @@ fn append_oriented_wire_curve(
             ),
         );
         annotate(
+            admission.context(),
             annotations,
             &construction_id,
             "zero_entity_a9_03",
             source_pos as u64,
             "oriented_support_model_curve_construction",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotations
             .derived(&construction_id, "curve")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -193,13 +193,13 @@ fn append_oriented_wire_curve(
         geometry
     };
     annotate(
+        admission.context(),
         annotations,
         &curve_id,
         "zero_entity_a9_03",
         source_pos as u64,
         "oriented_support_model_curve",
-        Exactness::Derived,
-    );
+        Exactness::Derived)?;
     annotations
         .derived(&curve_id, "geometry")
         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -279,29 +279,29 @@ fn transfer_closed_wire_loops(
             );
             if !root_owns_support_runs {
                 annotate(
+                    admission.context(),
                     annotations,
                     &body_id,
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_owner",
-                    Exactness::Inferred,
-                );
+                    Exactness::Inferred)?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &region_id,
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_region",
-                    Exactness::Inferred,
-                );
+                    Exactness::Inferred)?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &shell_id,
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_shell",
-                    Exactness::Inferred,
-                );
+                    Exactness::Inferred)?;
             }
 
             let mut vertex_ids = Vec::new();
@@ -322,21 +322,21 @@ fn transfer_closed_wire_loops(
                     identity.clone().dash(index),
                 );
                 annotate(
+                    admission.context(),
                     annotations,
                     &point_id,
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_point",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived)?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &vertex_id,
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_vertex",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived)?;
                 annotations
                     .derived(&point_id, "position")
                     .map_err(cadmpeg_core::CodecError::malformed)?
@@ -592,13 +592,13 @@ fn transfer_closed_wire_loops(
                     None => None,
                 };
                 annotate(
+                    admission.context(),
                     annotations,
                     &edge_id,
                     "zero_entity_a9_03",
                     support.pos as u64,
                     "standalone_wire_edge",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived)?;
                 annotations
                     .derived(&edge_id, "curve")
                     .map_err(cadmpeg_core::CodecError::malformed)?
@@ -698,29 +698,29 @@ fn transfer_closed_wire_loops(
             identity,
         );
         annotate(
+            admission.context(),
             annotations,
             &body_id,
             "zero_entity_a9_03",
             root.body_pos as u64,
             "owned_wire_body",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotate(
+            admission.context(),
             annotations,
             &region_id,
             "zero_entity_a9_03",
             root.shell_pos as u64,
             "owned_wire_region",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotate(
+            admission.context(),
             annotations,
             &shell_id,
             "zero_entity_a9_03",
             root.shell_pos as u64,
             "owned_wire_shell",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         let mut regions = Vec::new();
         crate::resource::reserve_vec(
             admission.context(),
@@ -775,6 +775,14 @@ pub(in crate::families) fn try_decode_zero_entity(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+    macro_rules! admitted {
+        ($value:expr) => {
+            match $value {
+                Ok(value) => value,
+                Err(error) => return Some(Err(error)),
+            }
+        };
+    }
     let preamble = container::outer_preamble_range(&scan.data)?;
     let surfaces = match crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         ctx, &scan.data, preamble.clone(), refusal,
@@ -822,14 +830,14 @@ pub(in crate::families) fn try_decode_zero_entity(
             &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "surf"),
             index,
         );
-        annotate(
+        admitted!(annotate(
+            ctx,
             &mut annotations,
             &id,
             "zero_entity_a9_03",
             surface.pos as u64,
             "analytic_surface",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact));
         if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_zero_surfaces") {
             return Some(Err(error));
         }
@@ -858,14 +866,14 @@ pub(in crate::families) fn try_decode_zero_entity(
                 support.record_ordinal,
             );
             if let Some(geometry) = support.model_curve.clone() {
-                annotate(
+                admitted!(annotate(
+                    ctx,
                     &mut annotations,
                     &curve_id,
                     "zero_entity_a9_03",
                     support.pos as u64,
                     "support_model_curve",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived));
                 annotations.derived(&curve_id, "geometry").ok()?;
                 if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_zero_support_curves") {
                     return Some(Err(error));
@@ -962,14 +970,14 @@ pub(in crate::families) fn try_decode_zero_entity(
                 ),
                 support.record_ordinal,
             );
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &curve_id,
                 "zero_entity_a9_03",
                 support.pos as u64,
                 role,
-                Exactness::Derived,
-            );
+                Exactness::Derived));
             annotations
                 .derived(&curve_id, "geometry")
                 .ok()?

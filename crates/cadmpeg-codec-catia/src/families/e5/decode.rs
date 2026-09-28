@@ -88,6 +88,14 @@ pub(in crate::families) fn try_decode_e5(
     let mut surfaces = crate::families::e5::records::e5_surfaces(ctx, stream, refusal)?;
     let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let topology = match crate::families::e5::graph::parse_topology(ctx, stream) {
             Ok(topology) => topology,
             Err(error) => return Some(Err(error)),
@@ -170,14 +178,14 @@ pub(in crate::families) fn try_decode_e5(
         for (index, point) in points.iter().enumerate() {
             let point_id =
                 PointId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index);
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &point_id,
                 "e5_0d_03",
                 0,
                 "vertex_05_08_01",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.points, "catia_e5_model_points") {
                 return Some(Err(error));
             }
@@ -186,14 +194,14 @@ pub(in crate::families) fn try_decode_e5(
                 .push(Point::new(point_id.clone(), *point, None));
             let vertex_id =
                 VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &vertex_id,
                 "MainDataStream+SurfacicReps",
                 0,
                 "vertex_05_08_01",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             annotations.derived(&vertex_id, "point").ok()?;
             if let Err(error) = admission.reserve_entity(&mut ir.model.vertices, "catia_e5_model_vertices") {
                 return Some(Err(error));
@@ -209,14 +217,14 @@ pub(in crate::families) fn try_decode_e5(
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
                 index,
             );
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &id,
                 "e5_0d_03",
                 circle.pos as u64,
                 "circle_carrier",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_e5_model_curves") {
                 return Some(Err(error));
             }
@@ -231,7 +239,8 @@ pub(in crate::families) fn try_decode_e5(
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
                 index,
             );
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &id,
                 "e5_0d_03",
@@ -244,8 +253,7 @@ pub(in crate::families) fn try_decode_e5(
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
-                },
-            );
+                }));
             if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_e5_model_surfaces") {
                 return Some(Err(error));
             }
@@ -265,14 +273,14 @@ pub(in crate::families) fn try_decode_e5(
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
                 surface_index,
             );
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &surface_id,
                 "e5_0d_03",
                 jet.pos as u64,
                 "rolling_ball_jet_carrier",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             annotations.derived(&surface_id, "geometry").ok()?;
             if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_e5_model_surfaces") {
                 return Some(Err(error));
@@ -285,14 +293,14 @@ pub(in crate::families) fn try_decode_e5(
                 },
                 source_object: None,
             });
-            annotate(
+            admitted!(annotate(
+                ctx,
                 &mut annotations,
                 &procedural_id,
                 "e5_0d_03",
                 jet.pos as u64,
                 "rolling_ball_jet_definition",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact));
             annotations
                 .derived(&procedural_id, "surface")
                 .ok()?
@@ -999,13 +1007,13 @@ fn attach_e5_free_vertices(
     );
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
+            ctx,
             annotations,
             id,
             "e5_0d_03",
             0,
             "unbound_point_owner",
-            Exactness::Inferred,
-        );
+            Exactness::Inferred)?;
     }
     let mut regions = Vec::new();
     crate::resource::push(ctx, &mut regions, region_id.clone(), "catia_e5_free_body_regions")?;
@@ -1719,13 +1727,13 @@ fn emit_e5_curves_and_edges(
     for (&record_id, (geometry, _)) in edge_curve_plan {
         let id = edge_curve_ids[&record_id].clone();
         annotate(
+            ctx,
             annotations,
             &id,
             "e5_0d_03",
             0,
             "lifted_boundary_curve",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotations
             .derived(&id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1743,13 +1751,13 @@ fn emit_e5_curves_and_edges(
             record_id,
         );
         annotate(
+            ctx,
             annotations,
             &id,
             "e5_0d_03",
             0,
             "c1_surface_intersection",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotations
             .derived(&id, "curve")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -1778,13 +1786,13 @@ fn emit_e5_curves_and_edges(
             record_id,
         );
         annotate(
+            ctx,
             annotations,
             &id,
             "e5_0d_03",
             0,
             "parametric_surface_curve",
-            Exactness::Derived,
-        );
+            Exactness::Derived)?;
         annotations
             .derived(&id, "curve")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -1821,13 +1829,13 @@ fn emit_e5_curves_and_edges(
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();
         annotate(
+            ctx,
             annotations,
             &id,
             "e5_0d_03",
             0,
             "ff_edge_use",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         for field in ["start", "end"] {
             annotations
                 .derived(&id, field)
@@ -1858,7 +1866,7 @@ fn emit_e5_curves_and_edges(
 
 /// Emits the surface pcurve layer.
 fn emit_e5_pcurves(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
@@ -1870,13 +1878,13 @@ fn emit_e5_pcurves(
             record_id,
         );
         annotate(
+            ctx,
             annotations,
             &id,
             "e5_0d_03",
             0,
             "surface_parameter_curve",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         annotations
             .derived(&id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1925,6 +1933,7 @@ fn emit_e5_bodies(
             ));
         }
         annotate(
+            ctx,
             annotations,
             &body_id,
             "e5_0d_03",
@@ -1934,8 +1943,7 @@ fn emit_e5_bodies(
                 Exactness::ByteExact
             } else {
                 Exactness::Inferred
-            },
-        );
+            })?;
         annotations
             .derived(&body_id, "kind")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -1958,13 +1966,13 @@ fn emit_e5_bodies(
                 cadmpeg_ir::ids::IdentityKey::from(body_index).dash(component),
             );
             annotate(
+                ctx,
                 annotations,
                 &region_id,
                 "e5_0d_03",
                 0,
                 "derived_region",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred)?;
             annotations
                 .derived(&region_id, "body")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -1979,13 +1987,13 @@ fn emit_e5_bodies(
                 shells,
             });
             annotate(
+                ctx,
                 annotations,
                 &shell_id,
                 "e5_0d_03",
                 0,
                 "derived_shell",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred)?;
             annotations
                 .derived(&shell_id, "region")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -2054,13 +2062,13 @@ fn emit_e5_faces_loops_coedges(
             ));
         }
         annotate(
+            ctx,
             annotations,
             &face_id,
             "e5_0d_03",
             0,
             "00_advanced_face",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         for field in ["shell", "surface", "sense", "loops"] {
             if annotations.derived(&face_id, field).is_err() {
                 return Ok(false);
@@ -2117,13 +2125,13 @@ fn emit_e5_faces_loops_coedges(
                 crate::resource::push(ctx, &mut vertex_uses, vertex_use, "catia_e5_loop_vertex_uses")?;
             }
             annotate(
+                ctx,
                 annotations,
                 &loop_id,
                 "e5_0d_03",
                 0,
                 "09_loop",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact)?;
             if annotations
                 .derived(&loop_id, "face")
                 .and_then(|builder| builder.derived(&loop_id, "coedges"))
@@ -2158,13 +2166,13 @@ fn emit_e5_faces_loops_coedges(
                     (member.orientation.reversed ^ pcurve_reversed).then_some([range[1], range[0]]);
                 let id = member.id.clone();
                 annotate(
+                    ctx,
                     annotations,
                     &id,
                     "e5_0d_03",
                     0,
                     "serialized_loop_member",
-                    Exactness::ByteExact,
-                );
+                    Exactness::ByteExact)?;
                 for field in ["owner_loop", "edge", "sense", "pcurves"] {
                     if annotations.derived(&id, field).is_err() {
                         return Ok(false);

@@ -100,6 +100,14 @@ pub(super) fn transfer_closed_face_topology(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<ZeroEntityTopologyCounts>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<ZeroEntityTopologyCounts, cadmpeg_core::CodecError>> {
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
         let ZeroEntityClosedTopology {
             support_runs,
             surface_ids_by_position,
@@ -535,14 +543,14 @@ pub(super) fn transfer_closed_face_topology(
         }
 
         for (index, locus) in endpoint_loci.iter().enumerate() {
-            annotate(
+            admitted!(annotate(
+                admission.context(),
                 annotations,
                 &point_ids[index],
                 "zero_entity_a9_03",
                 ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
                 "endpoint_locus_point",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred));
             annotations.derived(&point_ids[index], "position").ok()?;
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -555,14 +563,14 @@ pub(super) fn transfer_closed_face_topology(
             ) {
                 return Some(Err(error));
             }
-            annotate(
+            admitted!(annotate(
+                admission.context(),
                 annotations,
                 &vertex_ids[index],
                 "zero_entity_a9_03",
                 ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
                 "endpoint_locus_vertex",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred));
             annotations.derived(&vertex_ids[index], "point").ok()?;
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -586,14 +594,14 @@ pub(super) fn transfer_closed_face_topology(
             let Some(pcurve) = &occurrence.pcurve else {
                 continue;
             };
-            annotate(
+            admitted!(annotate(
+                admission.context(),
                 annotations,
                 &pcurve.id,
                 "zero_entity_a9_03",
                 occurrence.support_record_ordinal as u64,
                 "topology_pcurve",
-                Exactness::Derived,
-            );
+                Exactness::Derived));
             annotations.derived(&pcurve.id, "geometry").ok()?;
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -679,14 +687,14 @@ pub(super) fn transfer_closed_face_topology(
             let oriented_vertices = &occurrence_vertex_pairs
                 [*occurrence_by_support.get(&candidate.support_record_ordinals[0])?]
             .0;
-            annotate(
+            admitted!(annotate(
+                admission.context(),
                 annotations,
                 &edge_id,
                 "zero_entity_a9_03",
                 first_occurrence.support_record_ordinal as u64,
                 "topology_physical_edge_candidate",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred));
             annotations
                 .derived(&edge_id, "curve")
                 .ok()?
@@ -750,14 +758,14 @@ pub(super) fn transfer_closed_face_topology(
                 ZeroEntityLoopClass::ReversedC1 => Sense::Reversed,
                 ZeroEntityLoopClass::Bound50 => return None,
             };
-            annotate(
+            admitted!(annotate(
+                admission.context(),
                 annotations,
                 face_id,
                 "zero_entity_a9_03",
                 face.record_ordinal as u64,
                 "topology_face",
-                Exactness::Inferred,
-            );
+                Exactness::Inferred));
             annotations
                 .derived(face_id, "shell")
                 .ok()?
@@ -837,14 +845,14 @@ pub(super) fn transfer_closed_face_topology(
                         return Some(Err(error));
                     }
                 }
-                annotate(
+                admitted!(annotate(
+                    admission.context(),
                     annotations,
                     loop_id,
                     "zero_entity_a9_03",
                     loop_record.record_ordinal as u64,
                     "topology_loop",
-                    Exactness::Inferred,
-                );
+                    Exactness::Inferred));
                 annotations
                     .derived(loop_id, "face")
                     .ok()?
@@ -953,14 +961,14 @@ pub(super) fn transfer_closed_face_topology(
                         }
                     }
                     let coedge_id = coedge_ids[member_index].clone();
-                    annotate(
+                    admitted!(annotate(
+                        admission.context(),
                         annotations,
                         &coedge_id,
                         "zero_entity_a9_03",
                         occurrence.support_record_ordinal as u64,
                         "topology_coedge",
-                        Exactness::Inferred,
-                    );
+                        Exactness::Inferred));
                     annotations
                         .derived(&coedge_id, "owner_loop")
                         .ok()?
@@ -1027,14 +1035,14 @@ pub(super) fn transfer_closed_face_topology(
                 .map(|coedge| coedge.radial_next = first.clone())?;
         }
 
-        annotate(
+        admitted!(annotate(
+            admission.context(),
             annotations,
             &body_id,
             "zero_entity_a9_03",
             ownership_root.map_or(first_face.pos, |root| root.body_pos) as u64,
             "topology_body",
-            Exactness::Derived,
-        );
+            Exactness::Derived));
         annotations
             .derived(&body_id, "kind")
             .ok()?
@@ -1069,14 +1077,14 @@ pub(super) fn transfer_closed_face_topology(
         ) {
             return Some(Err(error));
         }
-        annotate(
+        admitted!(annotate(
+            admission.context(),
             annotations,
             &region_id,
             "zero_entity_a9_03",
             ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
             "topology_region",
-            Exactness::Derived,
-        );
+            Exactness::Derived));
         annotations
             .derived(&region_id, "body")
             .ok()?
@@ -1107,14 +1115,14 @@ pub(super) fn transfer_closed_face_topology(
         ) {
             return Some(Err(error));
         }
-        annotate(
+        admitted!(annotate(
+            admission.context(),
             annotations,
             &shell_id,
             "zero_entity_a9_03",
             ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
             "topology_shell",
-            Exactness::Derived,
-        );
+            Exactness::Derived));
         annotations
             .derived(&shell_id, "region")
             .ok()?
