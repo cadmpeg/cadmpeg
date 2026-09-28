@@ -103,6 +103,18 @@ pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::id
     )
 }
 
+pub(crate) fn appearance_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    key: &str,
+) -> Result<cadmpeg_ir::ids::AppearanceId, cadmpeg_core::CodecError> {
+    let id = native_scoped_id_charged(ctx, "design", "appearance", key)?;
+    cadmpeg_ir::ids::AppearanceId::mint(id).map_err(|error| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "F3D appearance identity is invalid: {error}"
+        ))
+    })
+}
+
 /// Build a body appearance binding identity.
 pub(crate) fn body_appearance_binding_id(
     entity_suffix: u64,
@@ -113,6 +125,21 @@ pub(crate) fn body_appearance_binding_id(
         &cadmpeg_ir::identity_namespace!("f3d", "appearance", "body"),
         key,
     )
+}
+
+pub(crate) fn body_appearance_binding_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity_suffix: u64,
+    visual_guid: &str,
+) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
+    let id = native_scoped_id_charged(
+        ctx,
+        "appearance",
+        "body",
+        format_args!("{entity_suffix}:{visual_guid}"),
+    )?;
+    cadmpeg_ir::ids::AppearanceBindingId::mint(id)
+        .map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// Build a body assignment appearance binding identity.
@@ -128,6 +155,24 @@ pub(crate) fn assignment_appearance_binding_id(
         &cadmpeg_ir::identity_namespace!("f3d", "appearance", "binding"),
         key,
     ))
+}
+
+pub(crate) fn assignment_appearance_binding_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity_id: &str,
+    visual_guid: &str,
+) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
+    let id = native_scoped_id_charged(
+        ctx,
+        "appearance",
+        "binding",
+        format_args!("{entity_id}:{visual_guid}"),
+    )?;
+    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "F3D appearance binding identity is invalid: {error}"
+        ))
+    })
 }
 
 /// Build a face appearance binding identity.
@@ -1401,6 +1446,70 @@ mod tests {
             super::subd_id("cage:one%20").unwrap().as_str(),
             "f3d:tspline:subd#cage:one%20"
         );
+    }
+
+    #[test]
+    fn charged_appearance_ids_preserve_identity_text() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let visual = cadmpeg_ir::ids::IdentityKey::try_new("visual").unwrap();
+        assert_eq!(
+            super::appearance_id_charged(&ctx, visual.as_str()).unwrap(),
+            super::appearance_id(visual.clone())
+        );
+        assert_eq!(
+            super::body_appearance_binding_id_charged(&ctx, 42, visual.as_str()).unwrap(),
+            super::body_appearance_binding_id(42, visual.clone())
+        );
+        assert_eq!(
+            super::assignment_appearance_binding_id_charged(
+                &ctx,
+                "part:one%20_7",
+                visual.as_str(),
+            )
+            .unwrap(),
+            super::assignment_appearance_binding_id("part:one%20_7", visual).unwrap()
+        );
+    }
+
+    #[test]
+    fn appearance_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::appearance_id_charged(&ctx, "visual").unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID"));
+    }
+
+    #[test]
+    fn body_appearance_binding_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::body_appearance_binding_id_charged(&ctx, 42, "visual").unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID"));
+    }
+
+    #[test]
+    fn assignment_appearance_binding_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::assignment_appearance_binding_id_charged(
+            &ctx,
+            "part:one%20_7",
+            "visual",
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native record ID"));
     }
 
     #[test]
