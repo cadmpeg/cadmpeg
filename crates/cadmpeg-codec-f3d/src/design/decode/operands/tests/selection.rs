@@ -945,10 +945,40 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         },
     )
     .unwrap();
+    for (limit, operation) in [
+        (0, "f3d Extrude identity matches"),
+        (1, "f3d Extrude identity IDs"),
+    ] {
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &limited_arena, &limited_policy,
+        ).unwrap();
+        assert!(matches!(
+            bind_extrude_selection_identities(&limited_ctx, std::slice::from_mut(&mut member), std::slice::from_ref(&identity)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+    }
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    limited_policy.limits.max_retained_bytes = u64::try_from(identity.id.len() - 1).unwrap();
+    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &limited_arena, &limited_policy,
+    ).unwrap();
+    assert!(matches!(
+        bind_extrude_selection_identities(&limited_ctx, std::slice::from_mut(&mut member), std::slice::from_ref(&identity)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && failure.operation == "f3d Extrude identity ID text"
+    ));
     bind_extrude_selection_identities(
+        &ctx,
         std::slice::from_mut(&mut member),
         std::slice::from_ref(&identity),
-    );
+    ).unwrap();
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
     if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
@@ -987,6 +1017,25 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             .unwrap(),
         );
     }
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    limited_policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &limited_arena, &limited_policy,
+    ).unwrap();
+    assert!(matches!(
+        bind_extrude_selection_geometry(
+            &limited_ctx,
+            std::slice::from_mut(&mut member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[],
+            &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d selected Extrude sketch index"
+    ));
     let curve = SketchCurveIdentity {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,
@@ -1000,12 +1049,13 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         geometry: None,
     };
     bind_extrude_selection_geometry(
+        &ctx,
         std::slice::from_mut(&mut member),
         std::slice::from_ref(&group),
         std::slice::from_ref(&owning_scope),
         &[],
         &[curve],
-    );
+    ).unwrap();
     assert!(matches!(
         member.resolved_geometry,
         Some(SketchRelationOperand::Curve {

@@ -2337,12 +2337,13 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_points,
         )?;
         crate::design::decode::operands::bind_extrude_selection_geometry(
+            ctx,
             &mut self.native.design_extrude_selection_members,
             &self.native.design_extrude_selection_groups,
             &self.native.design_parameter_scopes,
             &self.native.sketch_points,
             &self.native.sketch_curve_identities,
-        );
+        )?;
         let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
             scan,
             placements: &self.native.design_sketch_placements,
@@ -4706,9 +4707,10 @@ fn extend_related_design_records(
         &native.asm_histories,
     );
     crate::design::decode::operands::bind_extrude_selection_identities(
+        ctx,
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
-    );
+    )?;
     crate::history::bind_extrude_selection_history(
         &mut native.design_extrude_selection_members,
         &native.design_component_naming_spaces,
