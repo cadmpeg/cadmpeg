@@ -15,6 +15,14 @@ use crate::om::draft_construction_identity_frames;
 use crate::om::hole_package_construction_group_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_named_point;
+
+fn construction_payload_scalar_fields_test(bytes: &[u8]) -> Vec<crate::om::ConstructionPayloadScalarField> {
+    crate::test_support::with_decode_context(|ctx| construction_payload_scalar_fields(ctx, bytes)).unwrap()
+}
+
+fn offset_store_named_point_test<'a>(blocks: impl IntoIterator<Item = &'a [u8]>) -> Option<crate::om::OffsetStoreNamedPoint> {
+    crate::test_support::with_decode_context(|ctx| offset_store_named_point(ctx, blocks)).unwrap()
+}
 use crate::om::operation_body_reference;
 use crate::om::operation_body_references;
 use crate::om::operation_body_write_frames;
@@ -126,7 +134,7 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     let bytes = [
         0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
     ];
-    let fields = construction_payload_scalar_fields(&bytes);
+    let fields = construction_payload_scalar_fields_test(&bytes);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
@@ -134,10 +142,21 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
 
     let mut malformed = bytes;
     malformed[5] = 1;
-    assert!(construction_payload_scalar_fields(&malformed).is_empty());
+    assert!(construction_payload_scalar_fields_test(&malformed).is_empty());
     malformed = bytes;
     malformed[6] = 0x70;
-    assert!(construction_payload_scalar_fields(&malformed).is_empty());
+    assert!(construction_payload_scalar_fields_test(&malformed).is_empty());
+}
+
+#[test]
+fn construction_scalar_scan_refuses_collection_limit() {
+    let bytes = [0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = construction_payload_scalar_fields(&ctx, &bytes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
@@ -150,7 +169,7 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
         0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
         0x07,
     ];
-    let point = offset_store_named_point([&first[..], &second[..]]).unwrap();
+    let point = offset_store_named_point_test([&first[..], &second[..]]).unwrap();
     assert_eq!(point.name, "Point7");
     assert!(point
         .values
@@ -167,13 +186,13 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let mut same_block = first.to_vec();
     same_block.extend_from_slice(&second);
     assert_eq!(
-        offset_store_named_point([&same_block[..]])
+        offset_store_named_point_test([&same_block[..]])
             .unwrap()
             .block_count,
         1
     );
     assert_eq!(
-        offset_store_named_point([&first[..9], &first[9..], &second[..]])
+        offset_store_named_point_test([&first[..9], &first[9..], &second[..]])
             .unwrap()
             .block_count,
         3
@@ -181,22 +200,33 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let third = [
         0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ];
-    assert!(offset_store_named_point([&first[..], &second[..], &third[..]]).is_none());
+    assert!(offset_store_named_point_test([&first[..], &second[..], &third[..]]).is_none());
     let next_name = [
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
     ];
     let next_name_blocks = [&first[..], &second[..], &next_name[..]];
-    assert!(offset_store_named_point(next_name_blocks).is_some());
+    assert!(offset_store_named_point_test(next_name_blocks).is_some());
     let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
     assert_eq!(
-        offset_store_named_point([&first[..], &second[..], &next_point[..]])
+        offset_store_named_point_test([&first[..], &second[..], &next_point[..]])
             .unwrap()
             .block_count,
         2
     );
     let mut zero = first;
     zero[7] = b'0';
-    assert!(offset_store_named_point([&zero[..], &second[..]]).is_none());
+    assert!(offset_store_named_point_test([&zero[..], &second[..]]).is_none());
+}
+
+#[test]
+fn offset_store_named_point_refuses_scoped_limit() {
+    let first = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&first, &arena, &policy).unwrap();
+    let error = offset_store_named_point(&ctx, [&first[..]]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
 
 #[test]
@@ -258,7 +288,7 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     payload.extend_from_slice(&shifted);
     payload.push(0xbb);
 
-    let fields = construction_payload_scalar_fields(&payload);
+    let fields = construction_payload_scalar_fields_test(&payload);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);

@@ -5127,28 +5127,29 @@ fn construction_payload_frames<P, S, R>(ctx: &cadmpeg_core::decode::DecodeContex
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
-    scan: impl Fn(&[u8]) -> Vec<S>,
+    scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
     build: impl Fn(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
 ) -> Result<Vec<R>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let projected = payloads
         .iter()
-        .flat_map(|payload| {
+        .map(|payload| -> Result<Vec<R>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(
                 data_blocks(payload).iter().map(|block| &block.id),
                 &blocks,
             ) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let source_offset = |relative: usize| joined.source_offset(relative as u64);
-            scan(joined.bytes())
+            Ok(scan(joined.bytes())?
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, row)| build(payload, ordinal, row, &source_offset))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
@@ -5161,7 +5162,7 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::binary64_pair::object_pairs,
+        |bytes| Ok(crate::om::binary64_pair::object_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
@@ -5191,7 +5192,7 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::datum_csys_payload_fixed_pairs,
+        |bytes| Ok(crate::om::datum_csys_payload_fixed_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureDatumCsysPayloadFixedPair {
                 id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
@@ -5220,7 +5221,7 @@ pub(super) fn feature_datum_csys_payload_scalars(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::construction_payload_scalar_fields,
+        |bytes| crate::om::construction_payload_scalar_fields(ctx, bytes),
         |payload, ordinal, scalar, source_offset| {
             Some(FeaturePayloadScalar {
                 id: format!("{}-scalar-{ordinal:010}", payload.id),
@@ -5307,7 +5308,7 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::binary64_pair::datum_plane_pairs,
+        |bytes| Ok(crate::om::binary64_pair::datum_plane_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
@@ -5594,7 +5595,7 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::binary64_pair::sketch_pairs,
+        |bytes| Ok(crate::om::binary64_pair::sketch_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeaturePayloadScalarPair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
@@ -5624,7 +5625,7 @@ pub(super) fn feature_sketch_payload_fixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::sketch_payload_fixed_pairs,
+        |bytes| Ok(crate::om::sketch_payload_fixed_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadFixedPair {
                 id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
@@ -5653,7 +5654,7 @@ pub(super) fn feature_sketch_payload_mixed_pairs(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::sketch_payload_mixed_pairs,
+        |bytes| Ok(crate::om::sketch_payload_mixed_pairs(bytes)),
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadMixedPair {
                 id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
@@ -5730,23 +5731,23 @@ pub(super) fn feature_sketch_payload_scalars(ctx: &cadmpeg_core::decode::DecodeC
 ) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(constructions
+    let projected = constructions
         .iter()
-        .filter_map(|construction| {
+        .map(|construction| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
             let mut data_blocks = construction
                 .members
                 .iter()
                 .map(|member| member.data_block.clone())
                 .collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
-            let joined = JoinedPayload::from_source(data_blocks.iter(), &blocks)?;
+            let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else { return Ok(Vec::new()); };
             let construction_payload = construction.id.replacen(
                 "sketch-construction-inputs",
                 "sketch-construction-payload",
                 1,
             );
-            Some(
-                crate::om::construction_payload_scalar_fields(joined.bytes())
+            Ok(
+                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
                     .into_iter()
                     .enumerate()
                     .filter_map(|(ordinal, field)| {
@@ -5772,8 +5773,8 @@ pub(super) fn feature_sketch_payload_scalars(ctx: &cadmpeg_core::decode::DecodeC
                     .collect::<Vec<_>>(),
             )
         })
-        .flatten()
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.
@@ -5786,7 +5787,7 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        crate::om::sketch_payload_scalar_lanes,
+        |bytes| Ok(crate::om::sketch_payload_scalar_lanes(bytes)),
         |payload, ordinal, lane, source_offset| {
             let header_source = source_offset(lane.offset() as usize)?;
             let terminator_source = source_offset(lane.end() as usize)?;
@@ -5811,9 +5812,9 @@ pub(super) fn feature_sketch_payload_names(ctx: &cadmpeg_core::decode::DecodeCon
 ) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(constructions
+    let projected = constructions
         .iter()
-        .flat_map(|construction| {
+        .map(|construction| -> Result<Vec<FeaturePayloadName>, CodecError> {
             let mut data_blocks = construction
                 .members
                 .iter()
@@ -5821,20 +5822,21 @@ pub(super) fn feature_sketch_payload_names(ctx: &cadmpeg_core::decode::DecodeCon
                 .collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
             let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let construction_payload = construction.id.replacen(
                 "sketch-construction-inputs",
                 "sketch-construction-payload",
                 1,
             );
-            crate::om::name_field::scan(joined.bytes())
+            crate::om::name_field::scan(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, field)| {
+                .map(|(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
                     let relative = field.offset() as u64;
-                    let source_offset = joined.source_offset(relative)?;
-                    Some(FeaturePayloadName {
+                    let Some(source_offset) = joined.source_offset(relative) else { return Ok(None); };
+                    let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else { return Ok(None); };
+                    Ok(Some(FeaturePayloadName {
                         id: format!(
                             "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
                             construction_payload
@@ -5844,13 +5846,15 @@ pub(super) fn feature_sketch_payload_names(ctx: &cadmpeg_core::decode::DecodeCon
                         operation_label: construction.operation_label.clone(),
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
-                        frame: field.into_native(|offset| joined.source_offset(offset))?,
+                        frame,
                         source_offset,
-                    })
+                    }))
                 })
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| values.into_iter().flatten().collect())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Join complete name-delimited intervals to their framed scalar fields.
@@ -6109,8 +6113,9 @@ pub(super) fn offset_store_named_points(ctx: &cadmpeg_core::decode::DecodeContex
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for ordinal in 0..records.len() {
             let Some(point) = crate::om::offset_store_named_point(
+                ctx,
                 records[ordinal..].iter().map(|record| record.bytes),
-            ) else {
+            )? else {
                 continue;
             };
             let records = &records[ordinal..ordinal + point.block_count];
@@ -7677,14 +7682,14 @@ pub(super) fn feature_block_payload_scalars(ctx: &cadmpeg_core::decode::DecodeCo
 ) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let projected = payloads
         .iter()
-        .flat_map(|payload| {
+        .map(|payload| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            crate::om::construction_payload_scalar_fields(joined.bytes())
+            Ok(crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
@@ -7702,9 +7707,10 @@ pub(super) fn feature_block_payload_scalars(ctx: &cadmpeg_core::decode::DecodeCo
                         source_offset,
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
@@ -7714,30 +7720,33 @@ pub(super) fn feature_block_payload_names(ctx: &cadmpeg_core::decode::DecodeCont
 ) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let projected = payloads
         .iter()
-        .flat_map(|payload| {
+        .map(|payload| -> Result<Vec<FeaturePayloadName>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            crate::om::name_field::scan(joined.bytes())
+            crate::om::name_field::scan(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, field)| {
-                    let source_offset = joined.source_offset(field.offset() as u64)?;
-                    Some(FeaturePayloadName {
+                .map(|(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
+                    let Some(source_offset) = joined.source_offset(field.offset() as u64) else { return Ok(None); };
+                    let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else { return Ok(None); };
+                    Ok(Some(FeaturePayloadName {
                         id: format!("{}-name-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        frame: field.into_native(|offset| joined.source_offset(offset))?,
+                        frame,
                         source_offset,
-                    })
+                    }))
                 })
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| values.into_iter().flatten().collect())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.

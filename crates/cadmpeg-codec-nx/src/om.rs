@@ -417,9 +417,11 @@ const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
 
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
 pub(crate) fn construction_payload_scalar_fields(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<ConstructionPayloadScalarField> {
+) -> Result<Vec<ConstructionPayloadScalarField>, CodecError> {
     let mut fields = Vec::new();
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX construction scalars")?;
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf") || bytes.get(start + 4) != Some(&0x00) {
             continue;
@@ -430,13 +432,16 @@ pub(crate) fn construction_payload_scalar_fields(
         else {
             continue;
         };
+        ctx.charge_collection_items(1, "NX construction scalar fields")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ConstructionPayloadScalarField>()), "NX construction scalar fields")?;
+        fields.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX construction scalar fields", 0, 1))?;
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
             scalar,
         });
     }
-    fields
+    Ok(fields)
 }
 
 /// Exact type-free named point record spanning consecutive store blocks.
@@ -452,30 +457,37 @@ pub(crate) struct OffsetStoreNamedPoint {
 
 /// Decode a named two-scalar point from a streaming block sequence.
 pub(crate) fn offset_store_named_point<'a>(
+    ctx: &DecodeContext<'_>,
     blocks: impl IntoIterator<Item = &'a [u8]>,
-) -> Option<OffsetStoreNamedPoint> {
+) -> Result<Option<OffsetStoreNamedPoint>, CodecError> {
     let mut bytes = Vec::new();
+    let mut byte_reservation = None;
     let mut candidate = None;
     for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
-            && name_field::scan(block)
+            && name_field::scan(ctx, block)?
                 .first()
                 .is_some_and(|name| name.code().is_none())
         {
-            return candidate;
+            return Ok(candidate);
         }
+        let length = bytes.len().checked_add(block.len()).ok_or_else(|| ctx.refuse_codec_limit("NX named point block bytes", u64::MAX, u64::MAX))?;
+        drop(byte_reservation.take());
+        byte_reservation = Some(ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(length), "NX named point block bytes")?);
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(block.len()), "NX named point block bytes")?;
+        bytes.try_reserve(block.len()).map_err(|_| ctx.refuse_codec_limit("NX named point block bytes", 0, cadmpeg_core::decode::u64_from_index(length)))?;
         bytes.extend_from_slice(block);
-        let names = name_field::scan(&bytes);
-        let name = names.first()?;
+        let names = name_field::scan(ctx, &bytes)?;
+        let Some(name) = names.first() else { return Ok(None); };
         if name.code().is_some() || parse_positive_decimal_suffix(name.value(), "Point").is_none() {
-            return None;
+            return Ok(None);
         }
         let next_name = names
             .iter()
             .find(|next| next.code().is_some() && next.offset() > name.offset());
         let interval_end = next_name.map_or(bytes.len(), name_field::NameField::offset);
-        let scalars = construction_payload_scalar_fields(&bytes)
+        let mut scalars = construction_payload_scalar_fields(ctx, &bytes)?
             .into_iter()
             .filter(|scalar| {
                 scalar.offset > name.offset()
@@ -483,27 +495,33 @@ pub(crate) fn offset_store_named_point<'a>(
                         .offset
                         .checked_add(SHIFTED_BINARY64_SCALAR_FRAME_LEN)
                         .is_some_and(|end| end <= interval_end)
-            })
-            .collect::<Vec<_>>();
-        match scalars.as_slice() {
-            [] | [_] => {}
-            [first_scalar, second_scalar] => {
-                candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
-                    name: name.value().to_string(),
+            });
+        match (scalars.next(), scalars.next(), scalars.next()) {
+            (Some(first_scalar), Some(second_scalar), None) => {
+                if candidate.is_none() {
+                    let value = name.value();
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), "NX named point name")?;
+                    let mut owned = String::new();
+                    owned.try_reserve_exact(value.len()).map_err(|_| ctx.refuse_codec_limit("NX named point name", 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+                    owned.push_str(value);
+                    candidate = Some(OffsetStoreNamedPoint {
+                    name: owned,
                     values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
                         scalar: field.scalar,
                         offset: field.offset,
                     }),
                     block_count: block_ordinal + 1,
-                });
+                    });
+                }
             }
-            _ => return None,
+            (None, _, _) | (Some(_), None, _) => {}
+            _ => return Ok(None),
         }
         if next_name.is_some() {
-            return candidate;
+            return Ok(candidate);
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
