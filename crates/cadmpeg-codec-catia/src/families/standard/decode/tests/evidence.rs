@@ -63,6 +63,58 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+#[test]
+fn standard_evidence_store_refuses_each_collection_before_retaining_geometry() {
+    use crate::families::standard::decode::{StandardEvidenceStore, StandardSurfaceEvidence};
+
+    let build = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        let mut store = StandardEvidenceStore::default();
+        store.add(
+            ctx,
+            17,
+            StandardSurfaceEvidence::Geometry(SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Unknown { record: None },
+            )),
+        )?;
+        store.into_outputs(ctx, &HashSet::new())
+    };
+    for (limit, operation) in [
+        (0, "catia_standard_evidence_records"),
+        (1, "catia_standard_surface_candidates"),
+        (2, "catia_standard_surface_candidate_evidence"),
+        (3, "catia_standard_procedure_validity"),
+        (4, "catia_standard_surface_geometries"),
+    ] {
+        assert!(matches!(
+            crate::test_support::with_collection_limit(limit, build),
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation
+        ), "missing admission at {operation}");
+    }
+    let (geometries, procedures) = crate::test_support::with_service_context(build)
+        .expect("service context admits evidence");
+    assert_eq!(geometries.len(), 1);
+    assert!(matches!(geometries.get(&17),
+        Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }))));
+    assert!(procedures.is_empty());
+}
+
+#[test]
+fn standard_population_object_copy_refuses_retained_limit() {
+    let stream = b5_closed_triangle_stream();
+    let refusal = crate::test_support::with_retained_limit(0, |ctx| {
+        standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(refusal,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_standard_population_object_bytes"));
+}
+
 fn standard_shared_boundary_group_domains(
     supports: &[StandardCurveSupport],
     original: &[Vec<[usize; 2]>],
