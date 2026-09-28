@@ -909,11 +909,6 @@ native_record_id!(
     "design-face-operand"
 );
 native_record_id!(
-    /// The native design-face-source-group record key.
-    native_design_face_source_group_id,
-    "design-face-source-group"
-);
-native_record_id!(
     /// The native persistent-reference record key.
     native_persistent_reference_id,
     "persistent-reference"

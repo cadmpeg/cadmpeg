@@ -1,9 +1,57 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::operands::{
-    face_source_carrier_layout, parse_face_source_carrier_prefix,
+    face_source_carrier_layout, face_source_reference_headers, parse_face_source_carrier_prefix,
+    push_face_source_group,
 };
 use crate::test_support::write_marked_reference;
+
+#[test]
+fn face_source_reference_headers_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&service, &[]).unwrap();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        face_source_reference_headers(&ctx, &[], 0, [7u32, 8].iter(), &records),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d face source reference headers"
+    ));
+}
+
+#[test]
+fn face_source_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let group = crate::records::topology::face::DesignFaceSourceGroup {
+        id: "f3d:design:design-face-source-group#0".to_owned(),
+        scope_record_index: 12,
+        carrier_reference_ordinal: 0,
+        carrier_record_index: 7,
+        carrier_span: crate::records::identity::NonEmptyByteSpan::new(0, 11).unwrap(),
+        carrier_class_tag: crate::records::references::DesignClassTag::try_from("398".to_owned()).unwrap(),
+        paired_record_index: 7,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("462".to_owned()).unwrap(),
+        source_members: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut out = Vec::new();
+    assert!(matches!(
+        push_face_source_group(&ctx, &mut out, group),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d face source group output"
+    ));
+    assert!(out.is_empty());
+}
 
 fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
     bytes.extend_from_slice(&3u32.to_le_bytes());
