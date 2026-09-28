@@ -1363,14 +1363,40 @@ fn offset_plane_reference_frame_matches(
             <= EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8
 }
 
+/// Append a charged sketch-block candidate to an indexed list.
+fn push_sketch_block_candidate<T>(
+    ctx: &DecodeContext<'_>,
+    candidates: &mut HashMap<usize, Vec<T>>,
+    index: usize,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(values) = candidates.get_mut(&index) {
+        ctx.reserve_collection_vec(values, 1, operation)?;
+        values.push(value);
+    } else {
+        let mut values = Vec::new();
+        ctx.reserve_collection_vec(&mut values, 1, operation)?;
+        values.push(value);
+        ctx.charge_collection_items(1, operation)?;
+        candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            operation, u64::MAX - 1, u64::MAX,
+        ))?;
+        candidates.insert(index, values);
+    }
+    Ok(())
+}
+
 /// Resolve sketch-block definition ownership and placement from typed object records.
 pub(crate) fn enrich_history_sketch_block_references(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     for history in histories {
         let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
         for (feature_index, feature) in history.features.iter().enumerate() {
+            ctx.charge_work(1, "scan SLDPRT sketch block features")?;
             let Some(source) = feature.source_value() else {
                 continue;
             };
@@ -1378,6 +1404,12 @@ pub(crate) fn enrich_history_sketch_block_references(
                 feature_index,
                 native_object_class(feature.input_class.as_deref().unwrap_or_default()),
             );
+            if !by_source.contains_key(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT sketch block sources")?;
+                by_source.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT sketch block sources", u64::MAX - 1, u64::MAX,
+                ))?;
+            }
             by_source
                 .entry(source)
                 .and_modify(|entry| *entry = None)
@@ -1386,16 +1418,23 @@ pub(crate) fn enrich_history_sketch_block_references(
         let mut candidates = HashMap::<usize, Vec<u32>>::new();
         let mut placement_candidates = HashMap::<usize, Vec<Point3>>::new();
         for lane in lanes {
-            let mut names = lane.names.iter().collect::<Vec<_>>();
+            let mut names = Vec::new();
+            for name in &lane.names {
+                ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT sketch block names")?;
+                names.push(name);
+            }
+            ctx.charge_work(u64_from_index(names.len()), "sort SLDPRT sketch block names")?;
             names.sort_by_key(|name| name.offset);
-            let instance_names = names
-                .iter()
-                .filter_map(|name| {
-                    let source = name.object_id.and_then(ObjectId::value)?;
-                    let (feature_index, kind) = by_source.get(&source).and_then(|entry| *entry)?;
-                    (kind == NativeClassKind::SketchBlockInstance).then_some((*name, feature_index))
-                })
-                .collect::<Vec<_>>();
+            let mut instance_names = Vec::new();
+            for &name in &names {
+                let Some(source) = name.object_id.and_then(ObjectId::value) else { continue };
+                let Some((feature_index, kind)) = by_source.get(&source).and_then(|entry| *entry) else { continue };
+                if kind == NativeClassKind::SketchBlockInstance {
+                    ctx.reserve_collection_vec(&mut instance_names, 1,
+                        "collect SLDPRT sketch block instances")?;
+                    instance_names.push((name, feature_index));
+                }
+            }
             let mut definitions_by_local_id = HashMap::<u16, Option<u32>>::new();
             for (position, (name, _)) in instance_names.iter().enumerate() {
                 let Some(next) = names.iter().find(|next| next.offset > name.offset) else {
@@ -1422,6 +1461,12 @@ pub(crate) fn enrich_history_sketch_block_references(
                 else {
                     continue;
                 };
+                if !definitions_by_local_id.contains_key(&local_id) {
+                    ctx.charge_collection_items(1, "index SLDPRT sketch block local IDs")?;
+                    definitions_by_local_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "index SLDPRT sketch block local IDs", u64::MAX - 1, u64::MAX,
+                    ))?;
+                }
                 definitions_by_local_id
                     .entry(local_id)
                     .and_modify(|entry| *entry = None)
@@ -1440,10 +1485,8 @@ pub(crate) fn enrich_history_sketch_block_references(
                         sketch_block_identity_normalization_origin(&lane.native_payload, start, end)
                     })
                 {
-                    placement_candidates
-                        .entry(*instance_index)
-                        .or_default()
-                        .push(origin);
+                    push_sketch_block_candidate(ctx, &mut placement_candidates, *instance_index,
+                        origin, "collect SLDPRT sketch block placements")?;
                 }
             }
             for pair in names.windows(2) {
@@ -1463,10 +1506,8 @@ pub(crate) fn enrich_history_sketch_block_references(
                 else {
                     continue;
                 };
-                candidates
-                    .entry(instance_index)
-                    .or_default()
-                    .push(definition_source);
+                push_sketch_block_candidate(ctx, &mut candidates, instance_index,
+                    definition_source, "collect SLDPRT sketch block definitions")?;
             }
             for (position, (name, instance_index)) in instance_names.iter().enumerate() {
                 let end = instance_names
@@ -1483,10 +1524,8 @@ pub(crate) fn enrich_history_sketch_block_references(
                 else {
                     continue;
                 };
-                candidates
-                    .entry(*instance_index)
-                    .or_default()
-                    .push(definition_source);
+                push_sketch_block_candidate(ctx, &mut candidates, *instance_index,
+                    definition_source, "collect SLDPRT sketch block definitions")?;
             }
         }
         for (feature_index, mut sources) in candidates {
@@ -1495,10 +1534,13 @@ pub(crate) fn enrich_history_sketch_block_references(
             let [source] = sources.as_slice() else {
                 continue;
             };
-            history.features[feature_index].properties.insert(
-                cadmpeg_core::nonblank_literal!("BlockDefinition"),
-                source.to_string(),
-            );
+            let value = ctx.format_retained(format_args!("{source}"),
+                "retain SLDPRT sketch block definition")?;
+            let properties = &mut history.features[feature_index].properties;
+            if !properties.contains_key("BlockDefinition") {
+                ctx.charge_collection_items(1, "insert SLDPRT sketch block definition")?;
+            }
+            properties.insert(cadmpeg_core::nonblank_literal!("BlockDefinition"), value);
         }
         for (feature_index, mut origins) in placement_candidates {
             origins
@@ -1507,12 +1549,18 @@ pub(crate) fn enrich_history_sketch_block_references(
             let [origin] = origins.as_slice() else {
                 continue;
             };
-            history.features[feature_index].properties.insert(
-                cadmpeg_core::nonblank_literal!("BlockOrigin"),
-                format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
-            );
+            let value = ctx.format_retained(
+                format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+                "retain SLDPRT sketch block origin",
+            )?;
+            let properties = &mut history.features[feature_index].properties;
+            if !properties.contains_key("BlockOrigin") {
+                ctx.charge_collection_items(1, "insert SLDPRT sketch block origin")?;
+            }
+            properties.insert(cadmpeg_core::nonblank_literal!("BlockOrigin"), value);
         }
     }
+    Ok(())
 }
 
 fn sketch_block_record_identity(payload: &[u8], start: usize, end: usize) -> Option<(u16, usize)> {
