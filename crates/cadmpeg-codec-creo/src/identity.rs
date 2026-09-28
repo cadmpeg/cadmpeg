@@ -3,10 +3,46 @@
 //! uniqueness a namespace identity depends on.
 
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::IdentityNamespace;
+use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
+
+/// Build a typed identity after admitting its exact retained text length.
+pub(crate) fn compose_checked<I>(
+    ctx: &DecodeContext<'_>,
+    namespace: &IdentityNamespace,
+    key: impl Display,
+    operation: &'static str,
+) -> Result<I, CodecError>
+where
+    I: TryFrom<String, Error = IdentityError>,
+{
+    let text = ctx.format_retained(
+        format_args!(
+            "{}:{}:{}#{key}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind()
+        ),
+        operation,
+    )?;
+    I::try_from(text).map_err(|_| CodecError::malformed("generated Creo identity is invalid"))
+}
+
+/// Copy an existing typed identity after admitting its retained text.
+pub(crate) fn copy_checked_id<I>(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    operation: &'static str,
+) -> Result<I, CodecError>
+where
+    I: TryFrom<String, Error = IdentityError>,
+{
+    I::try_from(ctx.copy_retained_text(source, operation)?)
+        .map_err(|_| CodecError::malformed("copied Creo identity is invalid"))
+}
 
 /// Return the rows whose native identifier, read by `id`, occurs exactly once.
 ///
@@ -64,7 +100,57 @@ pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32)
 
 #[cfg(test)]
 mod tests {
-    use super::matches_numbered_identity;
+    use super::{compose_checked, copy_checked_id, matches_numbered_identity};
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::ShellId;
+
+    #[test]
+    fn composed_identity_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = compose_checked::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            format_args!("1:{}", 2),
+            "creo B-rep shell identity",
+        )
+        .err()
+        .expect("identity text refused");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo B-rep shell identity"));
+    }
+
+    #[test]
+    fn checked_identity_preserves_compose_and_copy() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let composed = compose_checked::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            format_args!("1:{}", 2),
+            "creo B-rep shell identity",
+        )
+        .expect("service identity admitted");
+        let copied = copy_checked_id::<ShellId>(
+            &ctx,
+            composed.as_str(),
+            "creo B-rep shell identity copies",
+        )
+        .expect("service identity copy admitted");
+        assert_eq!(composed, ShellId::compose(
+            &crate::identity::VISIBGEOM_SHELL,
+            cadmpeg_ir::ids::IdentityKey::from(1).colon(2),
+        ));
+        assert_eq!(copied, composed);
+    }
 
     #[test]
     fn numbered_identity_match_requires_canonical_decimal_bytes() {

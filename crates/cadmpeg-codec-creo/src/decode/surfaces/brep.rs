@@ -1691,6 +1691,53 @@ impl BrepComponentTopology {
     }
 }
 
+struct BrepShellReferences {
+    face_ids: Vec<FaceId>,
+    edge_ids: Vec<EdgeId>,
+}
+
+impl BrepShellReferences {
+    fn from_shell(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        shell: &NeutralShellSpec,
+        shell_id: &ShellId,
+        face_shell_ids: &mut BTreeMap<u32, ShellId>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut face_ids = Vec::new();
+        for face_id in &shell.faces {
+            if !face_shell_ids.contains_key(face_id) {
+                ctx.charge_collection_items(1, "creo B-rep face-shell nodes")?;
+            }
+            face_shell_ids.insert(
+                *face_id,
+                crate::identity::copy_checked_id(
+                    ctx,
+                    shell_id.as_str(),
+                    "creo B-rep face-shell identity copies",
+                )?,
+            );
+            ctx.try_reserve_items(&mut face_ids, 1, "creo B-rep shell face references")?;
+            face_ids.push(crate::identity::compose_checked::<FaceId>(
+                ctx,
+                &crate::identity::VISIBGEOM_FACE,
+                *face_id,
+                "creo B-rep shell face identities",
+            )?);
+        }
+        let mut edge_ids = Vec::new();
+        for curve_id in &shell.wire_curves {
+            ctx.try_reserve_items(&mut edge_ids, 1, "creo B-rep shell edge references")?;
+            edge_ids.push(crate::identity::compose_checked::<EdgeId>(
+                ctx,
+                &crate::identity::VISIBGEOM_EDGE,
+                *curve_id,
+                "creo B-rep shell edge identities",
+            )?);
+        }
+        Ok(Self { face_ids, edge_ids })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -2210,14 +2257,20 @@ pub(in super::super) fn transfer_native_brep(
     for (component_index, component) in body_components.iter().enumerate() {
         let faces = &component.faces;
         let component_curves = &component.wire_curves;
-        let body_id = BodyId::compose(&crate::identity::VISIBGEOM_BODY, component_index + 1);
-        let region_id = RegionId::compose(&crate::identity::VISIBGEOM_REGION, component_index + 1);
-        for (id, tag) in [
-            (body_id.to_string(), "native_component_body"),
-            (region_id.to_string(), "native_component_region"),
-        ] {
-            annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
-        }
+        let body_id = crate::identity::compose_checked::<BodyId>(
+            ctx,
+            &crate::identity::VISIBGEOM_BODY,
+            component_index + 1,
+            "creo B-rep body identity",
+        )?;
+        let region_id = crate::identity::compose_checked::<RegionId>(
+            ctx,
+            &crate::identity::VISIBGEOM_REGION,
+            component_index + 1,
+            "creo B-rep region identity",
+        )?;
+        annotate(annotations, &body_id, "VisibGeom", 0, "native_component_body", Exactness::Derived);
+        annotate(annotations, &region_id, "VisibGeom", 0, "native_component_region", Exactness::Derived);
         let BrepComponentTopology {
             component_face_curves,
             wire_curves,
@@ -2250,57 +2303,64 @@ pub(in super::super) fn transfer_native_brep(
         let mut face_shell_ids = BTreeMap::<u32, ShellId>::new();
         let mut shell_ids = Vec::new();
         for (shell_index, shell) in shell_specs.iter().enumerate() {
-            let shell_id = {
-                let key = if shell_index == 0 {
-                    cadmpeg_ir::ids::IdentityKey::from(component_index + 1)
-                } else {
-                    cadmpeg_ir::ids::IdentityKey::from(component_index + 1).colon(shell_index + 1)
-                };
-                ShellId::compose(&crate::identity::VISIBGEOM_SHELL, key)
+            let shell_id = if shell_index == 0 {
+                crate::identity::compose_checked::<ShellId>(
+                    ctx,
+                    &crate::identity::VISIBGEOM_SHELL,
+                    component_index + 1,
+                    "creo B-rep shell identity",
+                )?
+            } else {
+                crate::identity::compose_checked::<ShellId>(
+                    ctx,
+                    &crate::identity::VISIBGEOM_SHELL,
+                    format_args!("{}:{}", component_index + 1, shell_index + 1),
+                    "creo B-rep shell identity",
+                )?
             };
             annotate(
                 annotations,
-                shell_id.to_string(),
+                &shell_id,
                 "VisibGeom",
                 0,
                 "native_component_shell",
                 Exactness::Derived,
             );
-            for face_id in &shell.faces {
-                face_shell_ids.insert(*face_id, shell_id.clone());
-            }
             if shell.faces.is_empty() && shell.wire_curves.is_empty() {
                 diagnostics.empty_component_count += 1;
                 continue;
             }
+            let BrepShellReferences { face_ids, edge_ids } =
+                BrepShellReferences::from_shell(ctx, shell, &shell_id, &mut face_shell_ids)?;
             ctx.charge_entities(1, "admit Creo model shells")?;
             let Ok(shell_entity) = Shell::new(
-                shell_id.clone(),
-                region_id.clone(),
-                shell
-                    .faces
-                    .iter()
-                    .map(|face| FaceId::compose(&crate::identity::VISIBGEOM_FACE, *face))
-                    .collect(),
-                shell
-                    .wire_curves
-                    .iter()
-                    .map(|curve_id| EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, *curve_id))
-                    .collect(),
+                crate::identity::copy_checked_id(ctx, shell_id.as_str(), "creo B-rep shell entity ID copy")?,
+                crate::identity::copy_checked_id(ctx, region_id.as_str(), "creo B-rep shell region ID copy")?,
+                face_ids,
+                edge_ids,
                 Vec::new(),
             ) else {
                 diagnostics.empty_component_count += 1;
                 continue;
             };
+            ctx.try_reserve_items(&mut ir.model.shells, 1, "creo model shells")?;
             ir.model.shells.push(shell_entity);
+            ctx.try_reserve_items(&mut shell_ids, 1, "creo B-rep body shell IDs")?;
             shell_ids.push(shell_id);
         }
+        let mut region_ids = Vec::new();
+        ctx.try_reserve_items(&mut region_ids, 1, "creo B-rep body region IDs")?;
+        region_ids.push(crate::identity::copy_checked_id(
+            ctx,
+            region_id.as_str(),
+            "creo B-rep body region identity copy",
+        )?);
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ctx,
             ir,
             Body {
-                id: body_id.clone(),
+                id: crate::identity::copy_checked_id(ctx, body_id.as_str(), "creo B-rep body entity ID copy")?,
                 kind: if !wire_curves.is_empty() {
                     BodyKind::General
                 } else if closed {
@@ -2308,7 +2368,7 @@ pub(in super::super) fn transfer_native_brep(
                 } else {
                     BodyKind::Sheet
                 },
-                regions: vec![region_id.clone()],
+                regions: region_ids,
                 transform: None,
                 name: None,
                 color: None,
@@ -2316,8 +2376,9 @@ pub(in super::super) fn transfer_native_brep(
             },
         )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
+        ctx.try_reserve_items(&mut ir.model.regions, 1, "creo model regions")?;
         ir.model.regions.push(Region {
-            id: region_id.clone(),
+            id: crate::identity::copy_checked_id(ctx, region_id.as_str(), "creo B-rep region entity ID copy")?,
             body: body_id,
             shells: shell_ids,
         });
