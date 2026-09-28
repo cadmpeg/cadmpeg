@@ -5,6 +5,7 @@ use super::feature_completeness::operands::{
     body_selection_is_incomplete, face_selection_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete,
 };
+use super::emit::render_retained_text;
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
     combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
@@ -38,7 +39,69 @@ use cadmpeg_ir::features::{
     UnresolvedFamily,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use std::fmt::{self, Display};
 use std::collections::{BTreeMap, BTreeSet};
+
+fn push_report_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    code: NxLossCode,
+    message: fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = render_retained_text(ctx, message, "nx geometry report loss text")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index("nx".len()),
+        "nx geometry report loss namespace",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "nx geometry report loss code",
+    )?;
+    ctx.charge_collection_items(1, "nx geometry report losses")?;
+    losses.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx geometry report losses", 0, 1)
+    })?;
+    losses.push(code.note(message));
+    Ok(())
+}
+
+struct JoinedLabels<'a> {
+    labels: &'a [Option<&'static str>],
+    separator: &'static str,
+}
+
+impl Display for JoinedLabels<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for label in self.labels.iter().flatten() {
+            if !first {
+                formatter.write_str(self.separator)?;
+            }
+            formatter.write_str(label)?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
+struct JoinedCounts<'a> {
+    counts: &'a BTreeMap<&'static str, usize>,
+    separator: &'static str,
+}
+
+impl Display for JoinedCounts<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for (family, count) in self.counts {
+            if !first {
+                formatter.write_str(self.separator)?;
+            }
+            write!(formatter, "{family} {count}")?;
+            first = false;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 // Each flag is an independent model-wide phase fact surfaced in the loss
@@ -79,7 +142,7 @@ pub(super) fn build_geometry_report(
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
 
-    losses.push(NxLossCode::CarrierAnalyticCensus.note(format!(
+    push_report_loss(ctx, &mut losses, NxLossCode::CarrierAnalyticCensus, format_args!(
         "Decoded {} POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, \
              metres → millimetres), {} analytic surface carrier(s) ({} plane, {} cylinder, {} \
              cone, {} sphere, {} torus), and {} analytic curve carrier(s) ({} line, {} circle, {} \
@@ -95,27 +158,27 @@ pub(super) fn build_geometry_report(
         counts.lines,
         counts.circles,
         counts.ellipses,
-    )));
+    ))?;
 
     if tessellation_count != 0 {
-        losses.push(NxLossCode::CarrierTessellationCensus.note(format!(
+        push_report_loss(ctx, &mut losses, NxLossCode::CarrierTessellationCensus, format_args!(
             "Decoded {tessellation_count} embedded JT display tessellation(s) with scene-node ownership, model-space coordinates, topological triangle connectivity, and corner normals when bound."
-        )));
+        ))?;
     }
 
     if !has_topology {
-        losses.push(NxLossCode::TopologyGraphNotReconstructed.note(
+        push_report_loss(ctx, &mut losses, NxLossCode::TopologyGraphNotReconstructed, format_args!(
             "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
                       reconstructed because the surviving typed records did not form a complete \
                       connected ownership graph. Exact-key supported partition↔deltas replacements \
                       and deletions were applied before graph construction. Required unresolved \
                       records prevent their dependent incidence from being emitted; decoded geometry \
                       then remains unattached.",
-        ));
+        ))?;
     }
 
     if counts.intersection_rejections.total() > 0 {
-        losses.push(NxLossCode::IntersectionRecordsOpaque.note(format!(
+        push_report_loss(ctx, &mut losses, NxLossCode::IntersectionRecordsOpaque, format_args!(
             "{} surface-intersection record(s) without a complete validated CHART_s and \
                  term-endpoint witness remain opaque constructions. Support-UV values govern \
                  optional pcurve attachment and do not invalidate a witnessed 3D carrier. Each \
@@ -127,7 +190,7 @@ pub(super) fn build_geometry_report(
             counts.intersection_rejections.missing_start_term,
             counts.intersection_rejections.missing_end_term,
             counts.intersection_rejections.endpoint_mismatch,
-        )));
+        ))?;
     }
 
     let unresolved_intersection_lanes = ir
@@ -165,40 +228,21 @@ pub(super) fn build_geometry_report(
             || completion_budget.coupled_support_uv_geometry_exhausted
             || completion_budget.support_uv_lane_geometry_exhausted)
     {
-        let mut bounded_phases = Vec::new();
-        if completion_budget.exact_boundary_exhausted {
-            bounded_phases.push("exact-boundary transfer");
-        }
-        if completion_budget.transfer_exhausted {
-            bounded_phases.push("opposite-chart transfer");
-        }
-        if completion_budget.support_uv_validation_exhausted {
-            bounded_phases.push("support-UV consistency checks");
-        }
-        if completion_budget.support_uv_exhausted {
-            bounded_phases.push("EXT11 support-UV fitting");
-        }
-        if completion_budget.coupled_support_uv_exhausted {
-            bounded_phases.push("coupled EXT11 support-UV fitting");
-        }
-        if completion_budget.completion_geometry_exhausted {
-            bounded_phases.push("pcurve geometry fitting");
-        }
-        if completion_budget.serialized_support_uv_geometry_exhausted {
-            bounded_phases.push("serialized support-UV geometry fitting");
-        }
-        if completion_budget.support_uv_geometry_exhausted {
-            bounded_phases.push("support-UV geometry fitting");
-        }
-        if completion_budget.coupled_support_uv_geometry_exhausted {
-            bounded_phases.push("coupled support-UV geometry fitting");
-        }
-        if completion_budget.support_uv_lane_geometry_exhausted {
-            bounded_phases.push("support-UV lane geometry slices");
-        }
-        losses.push(NxLossCode::IntersectionPcurveCompletionBounded.note(format!(
+        let bounded_phases = [
+            completion_budget.exact_boundary_exhausted.then_some("exact-boundary transfer"),
+            completion_budget.transfer_exhausted.then_some("opposite-chart transfer"),
+            completion_budget.support_uv_validation_exhausted.then_some("support-UV consistency checks"),
+            completion_budget.support_uv_exhausted.then_some("EXT11 support-UV fitting"),
+            completion_budget.coupled_support_uv_exhausted.then_some("coupled EXT11 support-UV fitting"),
+            completion_budget.completion_geometry_exhausted.then_some("pcurve geometry fitting"),
+            completion_budget.serialized_support_uv_geometry_exhausted.then_some("serialized support-UV geometry fitting"),
+            completion_budget.support_uv_geometry_exhausted.then_some("support-UV geometry fitting"),
+            completion_budget.coupled_support_uv_geometry_exhausted.then_some("coupled support-UV geometry fitting"),
+            completion_budget.support_uv_lane_geometry_exhausted.then_some("support-UV lane geometry slices"),
+        ];
+        push_report_loss(ctx, &mut losses, NxLossCode::IntersectionPcurveCompletionBounded, format_args!(
             "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
-            bounded_phases.join(" and "),
+            JoinedLabels { labels: &bounded_phases, separator: " and " },
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
             completion_budget.transfer_limit,
             completion_budget.support_uv_limit,
@@ -209,25 +253,24 @@ pub(super) fn build_geometry_report(
             MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
             MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
             unresolved_intersection_lanes,
-        )));
+        ))?;
     }
 
     if adaptive_geometry_exhausted {
-        losses.push(NxLossCode::GeometryAdaptiveWorkBounded.note(format!(
+        push_report_loss(ctx, &mut losses, NxLossCode::GeometryAdaptiveWorkBounded, format_args!(
             "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
              unresolved adaptive geometry certification results were left untyped.",
-        )));
+        ))?;
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
         let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
-        let unmatched_tombstone_detail = unmatched_delta_tombstone_counts
-            .iter()
-            .map(|(family, count)| format!("{family} {count}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let unmatched_tombstone_detail = JoinedCounts {
+            counts: unmatched_delta_tombstone_counts,
+            separator: ", ",
+        };
         if unmatched_tombstones == 0 {
-            losses.push(NxLossCode::DeltasApplied.note(format!(
+            push_report_loss(ctx, &mut losses, NxLossCode::DeltasApplied, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
@@ -251,43 +294,59 @@ pub(super) fn build_geometry_report(
                  lane. Every \
                  terminal tombstone resolved to an exact current or earlier-added key.",
                 scan.count(StreamKind::Deltas)
-            )));
+            ))?;
         } else {
-            losses.push(NxLossCode::DeltasUnmatchedTombstones.note(format!(
+            push_report_loss(ctx, &mut losses, NxLossCode::DeltasUnmatchedTombstones, format_args!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                     Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                 scan.count(StreamKind::Deltas)
-            )));
+            ))?;
         }
     }
 
     if has_unresolved_sub_bodies {
-        losses.push(NxLossCode::SubBodyCompositionUnresolved.note(format!(
+        push_report_loss(ctx, &mut losses, NxLossCode::SubBodyCompositionUnresolved, format_args!(
             "This part is composed of {} sub-body partition(s); its decoded feature-history \
                  Booleans do not resolve every intermediate body object to a partition image. \
                  Carriers from all sub-bodies are emitted without the unresolved composition that \
                  would remove interior/construction faces.",
             scan.count(StreamKind::Partition)
-        )));
+        ))?;
     }
 
     append_design_intent_losses(ctx, ir, &mut losses)?;
 
     if has_untransferred_attribute_fields {
-        losses.push(NxLossCode::AttributeValueUnresolved.note(
+        push_report_loss(ctx, &mut losses, NxLossCode::AttributeValueUnresolved, format_args!(
             "A referenced Parasolid attribute value was not transferred because its \
                       complete value relation did not resolve.",
-        ));
+        ))?;
     }
 
-    losses.extend_from_slice(dialect_losses);
+    for loss in dialect_losses {
+        ctx.charge_collection_items(1, "nx geometry report losses")?;
+        losses.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx geometry report losses", 0, 1)
+        })?;
+        losses.push(loss.clone_admitted(ctx, "nx geometry report dialect loss")?);
+    }
+    let note_count = cadmpeg_core::decode::u64_from_index(notes.len());
+    ctx.charge_collection_items(note_count, "nx geometry report notes")?;
+    let mut copied_notes = Vec::new();
+    copied_notes.try_reserve_exact(notes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx geometry report notes", 0, note_count)
+    })?;
+    for note in notes {
+        let bytes = ctx.copy_retained(note.as_bytes(), "nx geometry report note text")?;
+        copied_notes.push(String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?);
+    }
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
         losses,
-        notes: notes.to_vec(),
+        notes: copied_notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     })
 }
