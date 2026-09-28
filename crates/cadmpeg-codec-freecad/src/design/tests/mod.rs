@@ -12,6 +12,47 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn extrusion_native_references_refuse_at_retained_limits() {
+    let profile = || cadmpeg_ir::features::ProfileRef::Planar(
+        cadmpeg_ir::features::PlanarProfileRef::Native("profile".into()));
+    let direction = vector_property("extrude", "Dir", 0.0, 0.0, 2.0);
+    let mode = enumeration_property("extrude", "DirMode", 1);
+    let dir_link = linked_property("extrude", "DirLink", "direction-link");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd extrusion direction link", |ctx| {
+        super::extrusion_definition(ctx, "Part::Extrusion", &[&direction, &mode, &dir_link], profile(), None, &[])
+    });
+    let normal = Some(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    let face_type = enumeration_property("pad", "Type", 3);
+    let face = linked_property("pad", "UpToFace", "up-to-face");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd extrusion face termination", |ctx| {
+        super::extrusion_definition(ctx, "PartDesign::Pad", &[&face_type, &face], profile(), normal, &[])
+    });
+    let shape_type = enumeration_property("pad", "Type", 5);
+    let shape = linked_property("pad", "UpToShape", "up-to-shape");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd extrusion shape termination", |ctx| {
+        super::extrusion_definition(ctx, "PartDesign::Pad", &[&shape_type, &shape], profile(), normal, &[])
+    });
+    let axis = linked_property("pad", "ReferenceAxis", "reference-axis");
+    let custom_direction = vector_property("pad", "Direction", 1.0, 0.0, 0.0);
+    let length = scalar_property("pad", "Length", "3");
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd extrusion reference axis", |ctx| {
+        super::extrusion_definition(ctx, "PartDesign::Pad", &[&axis, &custom_direction, &length], profile(), normal, &[])
+    });
+}
+
+fn enumeration_property(owner: &str, name: &str, value: u64) -> crate::native::PropertyRecord {
+    crate::native::PropertyRecord {
+        id: format!("{owner}:{name}"), owner: owner.into(), name: name.into(),
+        type_name: "App::PropertyEnumeration".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            format!("<Property><Integer value=\"{value}\"/></Property>"), 0,
+        ).expect("valid XML span"),
+    }
+}
+
+#[test]
 fn hole_enumeration_selected_label_refuses_at_retained_limit() {
     let property = crate::native::PropertyRecord {
         id: "thread-size".into(), owner: "hole".into(), name: "ThreadSize".into(),
