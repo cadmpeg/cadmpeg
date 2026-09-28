@@ -835,17 +835,29 @@ fn decode_persistent_references_from_stream(
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
 /// `BulkStream` entry in `scan`.
 pub(crate) fn decode_lost_edge_references(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
-    let marker = b"EDGE_REFERENCE_LOST";
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let mut cursor = 0;
+        decode_lost_edge_references_from_stream(ctx, &entry.name, bytes, &mut out)?;
+    }
+    Ok(out)
+}
+
+fn decode_lost_edge_references_from_stream(
+    ctx: &DecodeContext<'_>,
+    entry_name: &str,
+    bytes: &[u8],
+    out: &mut Vec<LostEdgeReference>,
+) -> Result<(), CodecError> {
+    let marker = b"EDGE_REFERENCE_LOST";
+    let mut cursor = 0;
         while let Some(relative) = bytes[cursor..]
             .windows(marker.len())
             .position(|window| window == marker)
@@ -881,8 +893,24 @@ pub(crate) fn decode_lost_edge_references(
             let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
                 continue;
             };
+            if !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                continue;
+            }
+            ctx.charge_collection_items(1, "f3d lost edge reference output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d lost edge reference output allocation", 0, 1)
+            })?;
             let Ok(reference) = LostEdgeReference::new(
-                ids::native_lost_edge_reference_id(&entry.name, header_offset),
+                design_record_id_charged(
+                    ctx,
+                    entry_name,
+                    ":lost-edge-reference#",
+                    header_offset as u64,
+                    "f3d lost edge reference ID",
+                    "f3d lost edge reference ID allocation",
+                )?,
                 header_offset as u64,
                 class_tag.to_owned(),
                 record_index,
@@ -893,8 +921,7 @@ pub(crate) fn decode_lost_edge_references(
             };
             out.push(reference);
         }
-    }
-    Ok(out)
+    Ok(())
 }
 
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five

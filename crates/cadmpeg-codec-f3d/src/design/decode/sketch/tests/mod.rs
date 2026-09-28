@@ -8,6 +8,7 @@
 
 mod curves;
 mod index;
+mod lost_edge;
 mod placement;
 mod persistent;
 mod points;
