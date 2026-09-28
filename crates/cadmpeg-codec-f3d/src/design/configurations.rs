@@ -289,9 +289,9 @@ pub(crate) fn unresolved_configuration_rule_count(
         .filter(|rule| rule.rule().is_some_and(|payload| !payload.is_empty()))
         .filter(|rule| {
             !projected.iter().any(|configuration| {
-                configuration
-                    .properties
-                    .contains_key(format!("activation_rule:{}", rule.entry_name()).as_str())
+                configuration.properties.keys().any(|key| {
+                    key.as_str().strip_prefix("activation_rule:") == Some(rule.entry_name())
+                })
             })
         })
         .count()
