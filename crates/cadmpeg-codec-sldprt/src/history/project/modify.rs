@@ -285,19 +285,18 @@ pub(in crate::history) fn body_retention_mode(feature: &Feature) -> Option<BodyR
         .properties
         .get("Mode")
         .map_or(feature.kind.as_str(), String::as_str);
-    match value.to_ascii_lowercase().as_str() {
-        "delete" | "deletebody" | "body-delete" => Some(BodyRetentionMode::DeleteSelected),
-        "keep" | "keepbody" => Some(BodyRetentionMode::KeepSelected),
-        _ if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") => {
+    if ["delete", "deletebody", "body-delete"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+        Some(BodyRetentionMode::DeleteSelected)
+    } else if ["keep", "keepbody"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+        Some(BodyRetentionMode::KeepSelected)
+    } else if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") {
             Some(BodyRetentionMode::DeleteSelected)
-        }
-        _ if feature.xml_tag.eq_ignore_ascii_case("KeepBody") => {
+    } else if feature.xml_tag.eq_ignore_ascii_case("KeepBody") {
             Some(BodyRetentionMode::KeepSelected)
-        }
-        _ if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") => {
+    } else if feature.kind.trim().eq_ignore_ascii_case("Body-Delete/Keep") {
             Some(BodyRetentionMode::Unresolved)
-        }
-        _ => None,
+    } else {
+        None
     }
 }
 
@@ -358,28 +357,27 @@ pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value))
     };
-    let motion = match feature
-        .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "offset" => FaceMotion::Offset {
+    let mode = feature.properties.get("Mode")?;
+    let motion = if mode.eq_ignore_ascii_case("offset") {
+        FaceMotion::Offset {
             distance: distance()?,
-        },
-        "translate" => FaceMotion::Translate {
+        }
+    } else if mode.eq_ignore_ascii_case("translate") {
+        FaceMotion::Translate {
             direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance: distance()?,
-        },
-        "rotate" => FaceMotion::Rotate {
+        }
+    } else if mode.eq_ignore_ascii_case("rotate") {
+        FaceMotion::Rotate {
             axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
             axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
             angle: feature
                 .parameters
                 .get("Angle")
                 .and_then(|value| parse_angle_rad(value))?,
-        },
-        _ => return None,
+        }
+    } else {
+        return None;
     };
     Some(FeatureDefinition::Operation(FeatureOperation::MoveFace {
         faces: feature
@@ -461,12 +459,16 @@ pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
         .get("Distance")
         .and_then(|value| parse_length_mm(value));
     let form = feature.properties.get("Mode").and_then(|value| {
-        match value.to_ascii_lowercase().as_str() {
-            "bending" | "bend" => Some(FlexForm::Bending),
-            "twisting" | "twist" => Some(FlexForm::Twisting),
-            "tapering" | "taper" => Some(FlexForm::Tapering),
-            "stretching" | "stretch" => Some(FlexForm::Stretching),
-            _ => None,
+        if ["bending", "bend"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+            Some(FlexForm::Bending)
+        } else if ["twisting", "twist"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+            Some(FlexForm::Twisting)
+        } else if ["tapering", "taper"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+            Some(FlexForm::Tapering)
+        } else if ["stretching", "stretch"].iter().any(|name| value.eq_ignore_ascii_case(name)) {
+            Some(FlexForm::Stretching)
+        } else {
+            None
         }
     });
     let mode = match (form, angle, factor, distance) {

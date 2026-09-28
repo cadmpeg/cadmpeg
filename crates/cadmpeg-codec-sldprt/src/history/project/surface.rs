@@ -136,19 +136,18 @@ pub(super) fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefiniti
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))?,
     )?;
-    let mode = match feature
-        .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "normal" => RuledSurfaceMode::Normal { distance },
-        "tangent" => RuledSurfaceMode::Tangent { distance },
-        "direction" => RuledSurfaceMode::Direction {
+    let mode_name = feature.properties.get("Mode")?;
+    let mode = if mode_name.eq_ignore_ascii_case("normal") {
+        RuledSurfaceMode::Normal { distance }
+    } else if mode_name.eq_ignore_ascii_case("tangent") {
+        RuledSurfaceMode::Tangent { distance }
+    } else if mode_name.eq_ignore_ascii_case("direction") {
+        RuledSurfaceMode::Direction {
             direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance,
-        },
-        _ => return None,
+        }
+    } else {
+        return None;
     };
     Some(FeatureDefinition::Operation(
         FeatureOperation::RuledSurface {

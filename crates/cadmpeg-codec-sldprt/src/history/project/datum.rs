@@ -267,20 +267,19 @@ pub(super) fn project_wrap(
         .get(profile.as_str())
         .map_or_else(|| profile.clone(), |id| (*id).to_string());
     let face = FaceSelection::Native(feature.properties.get("Face")?.clone());
-    let mode = match feature
-        .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "emboss" => WrapMode::Emboss {
+    let mode_name = feature.properties.get("Mode")?;
+    let mode = if mode_name.eq_ignore_ascii_case("emboss") {
+        WrapMode::Emboss {
             depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        },
-        "deboss" => WrapMode::Deboss {
+        }
+    } else if mode_name.eq_ignore_ascii_case("deboss") {
+        WrapMode::Deboss {
             depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        },
-        "scribe" => WrapMode::Scribe,
-        _ => return None,
+        }
+    } else if mode_name.eq_ignore_ascii_case("scribe") {
+        WrapMode::Scribe
+    } else {
+        return None;
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
         profile: PlanarProfileRef::Native(profile),
