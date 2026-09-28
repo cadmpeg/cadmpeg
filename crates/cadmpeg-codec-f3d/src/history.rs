@@ -1453,45 +1453,63 @@ pub(crate) fn bind_feature_body_selections(
     let shells = inputs.shells;
 
     bind_pattern_body_selections(ctx, features, inputs)?;
-    let pattern_body_slots = features
-        .iter()
-        .filter_map(|feature| {
+    let mut pattern_body_slots = HashMap::new();
+    'pattern: for feature in features.iter() {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
                 feature.evaluation.definition()
             else {
-                return None;
+                continue;
             };
             let cadmpeg_ir::features::patterns::PatternTransform::Circular { count, .. } =
                 pattern.definition()
             else {
-                return None;
+                continue;
             };
             let [cadmpeg_ir::features::patterns::PatternSeed::Bodies(BodySelection::Historical {
                 bodies: seed_bodies,
                 ..
             })] = seeds.as_slice()
             else {
-                return None;
+                continue;
             };
             let [seed_body] = seed_bodies.as_slice() else {
-                return None;
+                continue;
             };
-            let expected_count = usize::try_from(*count).ok()?;
+            let Ok(expected_count) = usize::try_from(*count) else {
+                continue;
+            };
             if feature.evaluation.outputs().len().checked_add(1) != Some(expected_count) {
-                return None;
+                continue;
             }
-            let slots = std::iter::once(historical_body_slot(seed_body.as_str()))
+            let mut slots = BTreeSet::new();
+            for slot in std::iter::once(historical_body_slot(seed_body.as_str()))
                 .chain(
                     feature
                         .evaluation
                         .outputs()
                         .iter()
                         .map(|body| stable_ref(body.as_str())),
-                )
-                .collect::<Option<BTreeSet<_>>>()?;
-            (slots.len() == expected_count).then_some((feature.id.clone(), slots))
-        })
-        .collect::<HashMap<_, _>>();
+                ) {
+                let Some(slot) = slot else {
+                    continue 'pattern;
+                };
+                history_set_insert(Some(ctx), &mut slots, slot,
+                    "index F3D pattern body slots")?;
+            }
+            if slots.len() != expected_count {
+                continue;
+            }
+            let feature_id = cadmpeg_ir::features::FeatureId::mint(copy_history_string(
+                ctx, feature.id.as_str(), "copy F3D pattern body feature ID",
+            )?).map_err(cadmpeg_core::CodecError::malformed)?;
+            if !pattern_body_slots.contains_key(&feature_id) {
+                ctx.charge_collection_items(1, "index F3D pattern body features")?;
+                pattern_body_slots.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D pattern body features", 0, 1)
+                })?;
+            }
+            pattern_body_slots.insert(feature_id, slots);
+    }
 
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
