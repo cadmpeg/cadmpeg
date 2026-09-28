@@ -104,6 +104,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             &classification,
             container::notes_charged(ctx, &scan)?,
         );
+        ctx.reserve_collection_vec(
+            &mut report.losses,
+            pmi_losses.len(),
+            "append SLDPRT PMI losses",
+        )?;
         report.losses.append(&mut pmi_losses);
         return decode_result(ir, report, annotations, unknowns);
     }
@@ -120,6 +125,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 decoded,
                 form_padding,
                 &mut admitted_entities,
+            )?;
+            ctx.reserve_collection_vec(
+                &mut report.losses,
+                pmi_losses.len(),
+                "append SLDPRT PMI losses",
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(ctx, &ir, &mut report)?;
@@ -140,6 +150,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &classification,
         container::notes_charged(ctx, &scan)?,
     );
+    ctx.reserve_collection_vec(
+        &mut report.losses,
+        pmi_losses.len(),
+        "append SLDPRT PMI losses",
+    )?;
     report.losses.append(&mut pmi_losses);
     append_design_losses(ctx, &ir, &mut report)?;
     decode_result(ir, report, annotations, unknowns)
