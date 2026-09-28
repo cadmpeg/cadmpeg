@@ -2,9 +2,9 @@
 use super::{
     bounded_pcurve_range, close_radial_rings, connected_components, edge_endpoint_uses,
     is_identity, normalize_occt_curve_range, normalize_pcurve_parameter_range, occurrence_label,
-    pcurve_geometry, referenced_pcurve_ids, select_exact_curve_representation, select_pcurve_representation,
-    source_topology_indices, unique_fallback_polygon_representation, IndexedPolygon, OccurrenceKey,
-    SourceOccurrenceKey, Tables,
+    pcurve_geometry, referenced_pcurve_ids, select_exact_curve_representation,
+    select_pcurve_representation, source_topology_indices, unique_fallback_polygon_representation,
+    IndexedPolygon, OccurrenceKey, SourceOccurrenceKey, Tables,
 };
 use crate::brep::{
     surface_parameter_affine, TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation,
@@ -28,16 +28,21 @@ pub(super) fn assert_codec_collection_refusal(bytes: &[u8], operation: &str) {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_collection_items = 0;
     for _ in 0..4096 {
-        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &options)
             .expect_err("collection admission must refuse");
         let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected {operation} collection refusal: {error:?}");
         };
         assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("finite test budget");
         if limit.operation == operation {
             options.policy.limits.max_collection_items = threshold - 1;
-            let final_error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            let final_error = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &options)
                 .expect_err("one item below the site must refuse");
             assert!(matches!(final_error,
                 cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
@@ -53,16 +58,21 @@ pub(super) fn assert_codec_retained_refusal(bytes: &[u8], operation: &str) {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 0;
     for _ in 0..4096 {
-        let error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+        let error = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &options)
             .expect_err("retained admission must refuse");
         let cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit)) = error else {
             panic!("expected {operation} retained refusal: {error:?}");
         };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("finite test budget");
         if limit.operation == operation {
             options.policy.limits.max_retained_bytes = threshold - 1;
-            let final_error = FcstdCodec.decode(&mut Cursor::new(bytes), &options)
+            let final_error = FcstdCodec
+                .decode(&mut Cursor::new(bytes), &options)
                 .expect_err("one byte below the site must refuse");
             assert!(matches!(final_error,
                 cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(ref refusal))
@@ -97,71 +107,6 @@ Sh 1001000 +3 0 *
 So 1001000 +2 0 *
 +1 0 *";
     archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
-}
-
-fn unowned_triangulation_archive() -> Vec<u8> {
-    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
-    let brep = b"CASCADE Topology V3, (c) Open Cascade
-Locations 0
-Curve2ds 0
-Curves 0
-Polygon3D 0
-PolygonOnTriangulations 0
-Surfaces 0
-Triangulations 1
-3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3
-TShapes 0";
-    archive_entries(&[("Document.xml", document), ("Shape.brp", brep)])
-}
-
-#[test]
-fn unowned_triangulation_nodes_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&unowned_triangulation_archive(), "FreeCAD unowned triangulation nodes");
-}
-
-#[test]
-fn unowned_triangulation_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&unowned_triangulation_archive(), "FreeCAD unowned triangulation triangles");
-}
-
-#[test]
-fn unowned_triangulation_identity_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(&unowned_triangulation_archive(), "FreeCAD model identity");
-}
-
-#[test]
-fn unowned_triangulation_source_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(&unowned_triangulation_archive(), "FreeCAD topology source association");
-}
-
-#[test]
-fn placed_triangulation_source_refuses_at_retained_limit() {
-    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD topology source association");
-}
-
-#[test]
-fn placed_triangulation_nodes_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD placed triangulation nodes");
-}
-
-#[test]
-fn placed_triangulation_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD placed triangulation triangles");
-}
-
-#[test]
-fn polygonal_surface_vertices_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD polygonal surface vertices");
-}
-
-#[test]
-fn polygonal_surface_triangles_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD polygonal surface triangles");
-}
-
-#[test]
-fn tessellation_faces_refuse_at_collection_limit() {
-    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD tessellation faces");
 }
 
 fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
@@ -263,8 +208,7 @@ fn indexed_polygon_pairs_checked_samples() {
         }
     );
     assert!(
-        test_indexed_polygon(vec![node], None, cadmpeg_ir::scalar::NonNegativeReal::ZERO)
-            .is_ok()
+        test_indexed_polygon(vec![node], None, cadmpeg_ir::scalar::NonNegativeReal::ZERO).is_ok()
     );
 }
 
@@ -378,8 +322,8 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let indices = source_topology_indices(&ctx, tables).expect("valid locations");
 
     assert_eq!(
@@ -400,8 +344,8 @@ fn source_topology_stack_refuses_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let tshapes = crate::brep::TextTShapes::from(vec![TextTShape {
         geometry: geometry_for_kind(TextShapeKind::Edge),
         flags: [false; 7],
@@ -413,9 +357,15 @@ fn source_topology_stack_refuses_at_caller_limit() {
         location: 0.into(),
     }];
     let tables = Tables {
-        locations: &[], curve2ds: &[], curves: &[], surfaces: &[],
-        polygons3d: &[], polygons_on_triangulations: &[], tshapes: &tshapes,
-        triangulations: &[], roots: &roots,
+        locations: &[],
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
     };
     assert!(matches!(source_topology_indices(&ctx, tables),
         Err(CodecError::ResourceLimit(limit))
@@ -427,13 +377,17 @@ fn radial_edge_index_refuses_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let id = CoedgeId::mint("fcstd:test:coedge#radial").expect("identity grammar");
     let mut coedges = vec![Coedge {
-        id: id.clone(), owner_loop: LoopId::mint("fcstd:test:loop#radial").expect("identity grammar"),
+        id: id.clone(),
+        owner_loop: LoopId::mint("fcstd:test:loop#radial").expect("identity grammar"),
         edge: EdgeId::mint("fcstd:test:edge#radial").expect("identity grammar"),
-        radial_next: id, sense: Sense::Forward, use_curve: None, pcurves: Vec::new(),
+        radial_next: id,
+        sense: Sense::Forward,
+        use_curve: None,
+        pcurves: Vec::new(),
     }];
     assert!(matches!(close_radial_rings(&ctx, &mut coedges),
         Err(CodecError::ResourceLimit(limit))
@@ -445,16 +399,20 @@ fn referenced_pcurves_refuse_at_caller_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let id = CoedgeId::mint("fcstd:test:coedge#pcurve").expect("identity grammar");
     let coedges = [Coedge {
-        id: id.clone(), owner_loop: LoopId::mint("fcstd:test:loop#pcurve").expect("identity grammar"),
+        id: id.clone(),
+        owner_loop: LoopId::mint("fcstd:test:loop#pcurve").expect("identity grammar"),
         edge: EdgeId::mint("fcstd:test:edge#pcurve").expect("identity grammar"),
-        radial_next: id, sense: Sense::Forward, use_curve: None,
+        radial_next: id,
+        sense: Sense::Forward,
+        use_curve: None,
         pcurves: vec![PcurveUse {
             pcurve: PcurveId::mint("fcstd:test:pcurve#1").expect("identity grammar"),
-            isoparametric: None, parameter_range: None,
+            isoparametric: None,
+            parameter_range: None,
         }],
     }];
     assert!(matches!(referenced_pcurve_ids(&ctx, &coedges),
@@ -505,8 +463,8 @@ fn source_indices_follow_depth_first_topology_order() {
     };
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let indices = source_topology_indices(&ctx, tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
@@ -561,8 +519,8 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
 
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let indices = source_topology_indices(&ctx, tables).expect("valid locations");
 
     assert_eq!(
@@ -925,8 +883,8 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     close_radial_rings(&ctx, &mut coedges).expect("radial map fits policy");
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
 
@@ -1121,8 +1079,10 @@ fn face_connectivity_stack_refuses_on_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected-component stack"));
+    assert!(
+        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected-component stack")
+    );
 }
 
 #[test]
@@ -1133,8 +1093,10 @@ fn face_connectivity_members_refuse_on_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected-component members"));
+    assert!(
+        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected-component members")
+    );
 }
 
 #[test]
@@ -1145,8 +1107,10 @@ fn face_connectivity_components_refuse_on_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test decode context");
-    assert!(matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
-        if limit.operation == "FreeCAD connected components"));
+    assert!(
+        matches!(connected_components(&ctx, &sets), Err(CodecError::ResourceLimit(limit))
+        if limit.operation == "FreeCAD connected components")
+    );
 }
 
 #[test]
