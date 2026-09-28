@@ -1518,7 +1518,7 @@ fn collect_references(
 /// Record accessors shared by the reader submodules.
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
-    fn display_name(&self) -> String;
+    fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError>;
     fn parameters(&self) -> &[Value];
     fn parameter(&self, index: usize) -> Option<&Value>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
@@ -1528,12 +1528,17 @@ impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
         (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
     }
-    fn display_name(&self) -> String {
-        self.partials
-            .iter()
-            .map(|partial| partial.name.as_str())
-            .collect::<Vec<_>>()
-            .join("+")
+    fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
+        let names = self.partials.iter().map(|partial| partial.name.as_str());
+        match ctx {
+            Some(ctx) => crate::decode_alloc::charged_join(
+                ctx,
+                "step_record_display_name",
+                names,
+                "+",
+            ),
+            None => Ok(names.collect::<Vec<_>>().join("+")),
+        }
     }
     fn parameters(&self) -> &[Value] {
         self.partials.first().parameters.as_slice()

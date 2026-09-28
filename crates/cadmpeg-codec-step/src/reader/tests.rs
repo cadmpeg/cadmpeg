@@ -5,13 +5,32 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use super::{
     byte_accounting, claim_trivia, decode_exchange_mode, implicit_face_plane_work,
-    semantic_input_work, ByteClass, Packaging,
+    semantic_input_work, ByteClass, Packaging, RecordExt,
 };
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
 
 const REFERENCE_NOTE_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
 const DIAGNOSTIC_LOSS_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;9');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+
+#[test]
+fn record_display_name_refuses_retained_byte_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(ALPHA() BETA());ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid complex record");
+    let record = exchange.records().get(&1).expect("record one");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 9;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits policy");
+    assert!(matches!(record.display_name(Some(&ctx)),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_record_display_name"));
+}
 
 #[test]
 fn inspect_opaque_offsets_refuse_collection_limit() {
