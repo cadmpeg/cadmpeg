@@ -1087,7 +1087,7 @@ fn validate_loaded(
     validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings)?;
     validate_path_feature_operand_roles(&ctx, &mut findings)?;
-    validate_extrude_parameter_operands(&ctx, &mut findings);
+    validate_extrude_parameter_operands(&ctx, &mut findings)?;
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings)?;
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records)?;
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings)?;
@@ -4906,7 +4906,10 @@ fn validate_path_feature_operand_roles(
 }
 
 /// Validate Extrude profile, operation, start, and extent operand agreement.
-fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_extrude_parameter_operands(
+    ctx: &Ctx,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
@@ -4923,7 +4926,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
         if design::design_feature_family(&scope.kind())
             == Some(design::DesignFeatureFamily::Extrude)
         {
-            let profile_groups = native
+            let mut profile_groups = native
                 .design_construction_operand_groups
                 .iter()
                 .filter(|group| {
@@ -4931,33 +4934,29 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role()
                             == Some(records::topology::extrude_selection::DesignExtrudeOperandRole::Profile)
-                })
-                .collect::<Vec<_>>();
+                });
+            let first_profile_group = profile_groups.next();
+            let second_profile_group = profile_groups.next();
             let profile_matches_operand =
                 scope
                     .extrude_profile()
-                    .is_none_or(|profile| match profile_groups.as_slice() {
-                        [] => {
+                    .is_none_or(|profile| match (first_profile_group, second_profile_group) {
+                        (None, _) => {
                             usize::try_from(profile.scope_reference_ordinal)
                                 .ok()
                                 .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                                 == Some(&profile.record_index)
                         }
-                        [group] => {
+                        (Some(group), None) => {
                             group.members().first().map(|member| &member.value)
                                 == Some(&profile.record_index)
                         }
-                        [_, _, ..] => false,
+                        (Some(_), Some(_)) => false,
                     });
             if !profile_matches_operand {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message:
-                        "Fusion Design Extrude profile conflicts with its profile operand group"
-                            .into(),
-                    entity: Some(scope.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design Extrude profile conflicts with its profile operand group",
+                    Some(ctx.copy_entity(&scope.id)?))?;
             }
             let has_body_operands = native
                 .design_construction_operand_groups
@@ -5021,13 +5020,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 None => true,
             };
             if !operation_matches_operands {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion Design Extrude operation conflicts with its body operands"
-                        .into(),
-                    entity: Some(scope.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design Extrude operation conflicts with its body operands",
+                    Some(ctx.copy_entity(&scope.id)?))?;
             }
             let Some(prologue) = scope.extrude_prologue() else {
                 continue;
@@ -5049,7 +5044,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter(|parameter| parameter.source_kind() == source_kind)
                     .count()
             };
-            let parameter_kind_values = |source_kind: &str| {
+            let parameter_kind_values = |source_kind: &'static str| {
                 native
                     .design_parameter_owners
                     .iter()
@@ -5060,9 +5055,8 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .filter_map(|owner| {
                         parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                     })
-                    .filter(|parameter| parameter.source_kind() == source_kind)
+                    .filter(move |parameter| parameter.source_kind() == source_kind)
                     .map(|parameter| parameter.evaluated_value().get())
-                    .collect::<Vec<_>>()
             };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
@@ -5074,9 +5068,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &prologue,
                     side_one_offset_count,
                 );
-            let side_one_offsets = parameter_kind_values("Side1Offset");
-            let side_one_offset_is_absent = side_one_offsets.is_empty()
-                || matches!(side_one_offsets.as_slice(), [offset] if *offset == 0.0);
+            let mut side_one_offsets = parameter_kind_values("Side1Offset");
+            let side_one_offset_is_absent = match side_one_offsets.next() {
+                None => true,
+                Some(0.0) => side_one_offsets.next().is_none(),
+                Some(_) => false,
+            };
             let side_two_offset_count = parameter_kind_count("Side2Offset");
             let has_fixed_extrude_parameters = scope.fixed_extrude_parameters().is_some();
             let has_fixed_along = scope
@@ -5189,17 +5186,16 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 extrude_start,
                 records::feature::extrude::DesignExtrudeStart::FromFace
             ));
-            let mut face_groups = native
-                .design_construction_operand_groups
-                .iter()
-                .filter(|group| {
+            let mut face_groups = ctx.collect_vec(
+                native.design_construction_operand_groups.iter().filter(|group| {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role().is_some_and(|role| {
                             matches!(role, records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_))
                         })
-                })
-                .collect::<Vec<_>>();
+                }),
+                "collect F3D Extrude face operand groups",
+            )?;
             face_groups.sort_by_key(|group| group.scope_reference_ordinal);
             let expected_face_roles = match (extrude_start, extrude_extent) {
                 (
@@ -5237,13 +5233,9 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .map(|group| group.extrude_face_role())
                         .ne(expected_face_roles.iter().copied().map(Some)))
             {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion Design Extrude start or extent conflicts with its parameters and face operands"
-                        .into(),
-                    entity: Some(scope.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design Extrude start or extent conflicts with its parameters and face operands",
+                    Some(ctx.copy_entity(&scope.id)?))?;
             }
         }
         if design::design_feature_family(&scope.kind()) == Some(design::DesignFeatureFamily::Sweep)
@@ -5269,16 +5261,13 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     })
                 });
             if !profile_matches_operand {
-                findings.push(Finding {
-                    check: Check::NativeLinks,
-                    severity: Severity::Error,
-                    message: "Fusion Design Sweep profile conflicts with its profile operand group"
-                        .into(),
-                    entity: Some(scope.id.clone()),
-                });
+                ctx.push_constant_finding(findings, Check::NativeLinks,
+                    "Fusion Design Sweep profile conflicts with its profile operand group",
+                    Some(ctx.copy_entity(&scope.id)?))?;
             }
         }
     }
+    Ok(())
 }
 
 /// Validate Fillet radius-law parameter assignments; returns the assigned groups.
