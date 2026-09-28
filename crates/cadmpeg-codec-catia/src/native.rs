@@ -8409,9 +8409,8 @@ fn consolidated_owner_packets(
         crate::families::b2::records::b2_owner_packets_from_records(bytes, records),
         "catia_native_fixed_owner_packets",
     )?;
-    let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
-        .into_iter()
-        .map(|chart| {
+    let mut owner_charts = HashMap::new();
+    for chart in crate::families::b2::records::b2_owner_charts_from_records(bytes, records) {
             let native_reference =
                 |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
                     CatiaOwnerChartBridgeReference::new(
@@ -8419,9 +8418,8 @@ fn consolidated_owner_packets(
                         native_allocation_reference_encoding(reference.encoding),
                     )
                 };
-            (
-                (chart.source_index, chart.owner_pos),
-                CatiaOwnerChartRelation {
+            let key = (chart.source_index, chart.owner_pos);
+            let value = CatiaOwnerChartRelation {
                     carrier_byte_offset: chart.carrier_pos as u64,
                     carrier: match chart.carrier {
                         crate::families::b2::records::B2OwnerChartCarrier::B28 => {
@@ -8463,33 +8461,38 @@ fn consolidated_owner_packets(
                     parameter_point_byte_offsets: chart
                         .parameter_point_offsets()
                         .map(|pos| pos as u64),
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
+                };
+            crate::resource::insert_map(ctx, &mut owner_charts, key, value,
+                "catia_native_owner_charts")?;
+    }
     let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
     for target in
         crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
     {
-        identity_targets
-            .entry((target.source_index, target.owner_pos))
-            .or_default()
-            .push(CatiaOwnerIdentityTarget {
+        let key = (target.source_index, target.owner_pos);
+        let value = CatiaOwnerIdentityTarget {
                 slot: target.slot,
                 distance: target.distance,
                 target_byte_offset: target.target_pos as u64,
                 target_class: target.target_class,
-            });
+        };
+        if let Some(targets) = identity_targets.get_mut(&key) {
+            crate::resource::push(ctx, targets, value,
+                "catia_native_owner_identity_target_entries")?;
+        } else {
+            let mut targets = Vec::new();
+            crate::resource::push(ctx, &mut targets, value,
+                "catia_native_owner_identity_target_entries")?;
+            crate::resource::insert_map(ctx, &mut identity_targets, key, targets,
+                "catia_native_owner_identity_target_groups")?;
+        }
     }
-    let boundary_cycles =
-        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
-            bytes, records,
-        )
-        .into_iter()
-        .map(|cycle| {
-            (
-                (cycle.source_index, cycle.owner_pos),
-                CatiaOwnerBoundaryCycle {
+    let mut boundary_cycles = HashMap::new();
+    for cycle in crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+        bytes, records,
+    ) {
+            let key = (cycle.source_index, cycle.owner_pos);
+            let value = CatiaOwnerBoundaryCycle {
                     face_node: cycle.face_node.and_then(|face_node| {
                         let byte_len = cycle.owner_pos.checked_sub(face_node.pos)?;
                         Some(CatiaFaceNodeRelation {
@@ -8513,33 +8516,24 @@ fn consolidated_owner_packets(
                         byte_offset: edge.target_pos as u64,
                         endpoint_records: edge.endpoint_records.map(|pos| pos as u64),
                     }),
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
+                };
+            crate::resource::insert_map(ctx, &mut boundary_cycles, key, value,
+                "catia_native_owner_boundary_cycles")?;
+    }
     let adjacent_counted = crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
         ctx, bytes, records,
     )?;
-    let face_nodes =
-        crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
-            .into_iter()
-            .map(|linked| {
-                (
-                    (linked.owner.source_index, linked.owner.pos),
-                    linked.face_node,
-                )
-            })
-            .chain(
-                adjacent_counted
-                .into_iter()
-                .map(|linked| {
-                    (
-                        (linked.owner.source_index, linked.owner.pos),
-                        linked.face_node,
-                    )
-                }),
-            )
-            .collect::<HashMap<_, _>>();
+    let mut face_nodes = HashMap::new();
+    for linked in crate::families::b2::records::b2_adjacent_face_owners_from_records(ctx, bytes, records)? {
+        crate::resource::insert_map(ctx, &mut face_nodes,
+            (linked.owner.source_index, linked.owner.pos), linked.face_node,
+            "catia_native_owner_face_nodes")?;
+    }
+    for linked in adjacent_counted {
+        crate::resource::insert_map(ctx, &mut face_nodes,
+            (linked.owner.source_index, linked.owner.pos), linked.face_node,
+            "catia_native_owner_face_nodes")?;
+    }
     let mut fixed_positions = HashSet::new();
     for packet in &fixed {
         crate::resource::insert_set(

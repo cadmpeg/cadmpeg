@@ -917,6 +917,39 @@ fn native_fixed_owner_packets_refuse_collection_limit() {
 }
 
 #[test]
+fn native_owner_indexes_and_nested_identity_targets_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut refused = HashSet::new();
+    let fixtures = [
+        b2_owner_chart_stream(0x28),
+        b2_width_coded_owner_with_allocation_stream().0,
+        b2_fixed_owner_boundary_cycle_stream().0,
+        b2_adjacent_face_owner_stream(),
+    ];
+    for bytes in fixtures {
+        let records = crate::wire::records::consolidated_records(&bytes);
+        for limit in 0..256 {
+            let result = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::super::consolidated_owner_packets(ctx, &bytes, &records)
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                refused.insert(error.operation);
+            }
+        }
+    }
+    for operation in [
+        "catia_native_owner_charts",
+        "catia_native_owner_identity_target_entries",
+        "catia_native_owner_identity_target_groups",
+        "catia_native_owner_boundary_cycles",
+        "catia_native_owner_face_nodes",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
 fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
     let native = crate::native::CatiaNative::decode(&b2_adjacent_face_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
