@@ -1538,7 +1538,8 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
+                    edit_result = bind_body_recipe_body_selection(
+                        ctx,
                         tools,
                         &feature_id,
                         previous_state_id,
@@ -1547,7 +1548,9 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     for cell in cells {
-                        bind_body_recipe_body_selection(
+                        if edit_result.is_err() { break; }
+                        edit_result = bind_body_recipe_body_selection(
+                            ctx,
                             cell,
                             &feature_id,
                             previous_state_id,
@@ -1807,7 +1810,8 @@ pub(crate) fn bind_feature_body_selections(
             }) = definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
+                    edit_result = bind_body_recipe_body_selection(
+                        ctx,
                         targets,
                         &feature_id,
                         previous_state_id,
@@ -1824,7 +1828,8 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
+                    edit_result = bind_body_recipe_body_selection(
+                        ctx,
                         bodies,
                         &feature_id,
                         previous_state_id,
@@ -1841,7 +1846,8 @@ pub(crate) fn bind_feature_body_selections(
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
+                    edit_result = bind_body_recipe_body_selection(
+                        ctx,
                         bodies,
                         &feature_id,
                         previous_state_id,
@@ -1849,7 +1855,7 @@ pub(crate) fn bind_feature_body_selections(
                         groups,
                         body_recipe_operands,
                     );
-                    if matches!(bodies, BodySelection::Native(_)) {
+                    if edit_result.is_ok() && matches!(bodies, BodySelection::Native(_)) {
                         bind_direct_body_recipe_body_selection(bodies, scope, inputs);
                     }
                 } else {
@@ -2168,14 +2174,15 @@ fn bind_pattern_body_selections(
                     return;
                 };
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
+                    reserve_error = bind_body_recipe_body_selection(
+                        ctx,
                         selection,
                         feature_id,
                         previous_state_id,
                         scope,
                         groups,
                         body_recipe_operands,
-                    );
+                    ).err();
                 } else {
                     bind_direct_body_recipe_body_selection(selection, scope, inputs);
                 }
@@ -2251,17 +2258,18 @@ fn unique_external_body_candidate(
 }
 
 fn bind_body_recipe_body_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::BodySelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::BodySelection;
 
     let BodySelection::Native(group_id) = selection else {
-        return;
+        return Ok(());
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -2276,12 +2284,12 @@ fn bind_body_recipe_body_selection(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return;
+        return Ok(());
     }
-    let mut body_slots = Vec::with_capacity(group.members().len());
+    let mut body_slots = Vec::new();
     for (ordinal, record_index) in group
         .members()
         .iter()
@@ -2289,7 +2297,7 @@ fn bind_body_recipe_body_selection(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return;
+            return Ok(());
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
@@ -2297,28 +2305,39 @@ fn bind_body_recipe_body_selection(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return;
+            return Ok(());
         };
         if matching_operands.next().is_some() {
-            return;
+            return Ok(());
         }
         let Some(body_slot) = operand.resolved_body_slot else {
-            return;
+            return Ok(());
         };
         if !body_slots.contains(&body_slot) {
+            ctx.charge_collection_items(1, "collect F3D body recipe slots")?;
+            body_slots.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "collect F3D body recipe slots", 0, 1))?;
             body_slots.push(body_slot);
         }
     }
-    let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = BodySelection::historical(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
-        body_slots
-            .into_iter()
-            .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
-            .collect(),
-        group_id.clone(),
-    )
-    .unwrap_or_else(|_| BodySelection::Native(group_id.clone()));
+    let count = u64::try_from(body_slots.len()).map_err(|_| ctx.refuse_codec_limit(
+        "collect F3D body recipe identities", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "collect F3D body recipe identities")?;
+    let mut body_ids = Vec::new();
+    body_ids.try_reserve(body_slots.len()).map_err(|_| ctx.refuse_codec_limit(
+        "collect F3D body recipe identities", 0, count))?;
+    for slot in body_slots {
+        body_ids.push(crate::ids::history_input_body_id_charged(
+            ctx, feature_id, previous_state_id, slot,
+        )?);
+    }
+    let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
+    let native = copy_history_string(ctx, &group.id, "copy F3D body recipe group identity")?;
+    ctx.charge_collection_items(count, "validate F3D body recipe identities")?;
+    if let Ok(historical) = BodySelection::historical(state, body_ids, native) {
+        *selection = historical;
+    }
+    Ok(())
 }
 
 fn bind_direct_body_recipe_body_selection(
