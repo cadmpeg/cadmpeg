@@ -4,9 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::index_from_u32;
 
-use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::design::decode::text::copy_ascii_retained;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::{copy_ascii_retained, design_record_id_charged, lp_ascii_filtered_view};
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
@@ -63,33 +61,41 @@ pub(crate) fn decode_dimension_recipe_records(
     companions: &[DesignParameterCompanion],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_owners = owners
-        .iter()
-        .filter_map(|owner| {
-            let stream = native_stream(owner.id())?;
-            parameters
-                .get(&(stream, owner.parameter_record_index()))
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-                .then_some((stream.to_owned(), owner.record_index()))
-        })
-        .collect::<HashSet<_>>();
-    let recipes = recipes
-        .iter()
-        .map(|recipe| (recipe.id.as_str(), recipe))
-        .collect::<HashMap<_, _>>();
+    let mut parameter_index = HashMap::new();
+    for parameter in parameters {
+        let Some(stream) = native_stream(&parameter.id) else { continue };
+        ctx.charge_collection_items(1, "f3d dimension recipe parameter index")?;
+        parameter_index.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension recipe parameter index allocation", 0, 1)
+        })?;
+        parameter_index.insert((stream, parameter.record_index), parameter);
+    }
+    let mut dimension_owners = HashSet::new();
+    for owner in owners {
+        let Some(stream) = native_stream(owner.id()) else { continue };
+        if parameter_index
+            .get(&(stream, owner.parameter_record_index()))
+            .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
+        {
+            ctx.charge_collection_items(1, "f3d dimension recipe owners")?;
+            dimension_owners.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension recipe owner allocation", 0, 1)
+            })?;
+            dimension_owners.insert((stream, owner.record_index()));
+        }
+    }
+    let mut recipe_index = HashMap::new();
+    for recipe in recipes {
+        ctx.charge_collection_items(1, "f3d dimension recipe index")?;
+        recipe_index.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension recipe index allocation", 0, 1)
+        })?;
+        recipe_index.insert(recipe.id.as_str(), recipe);
+    }
     let mut out = Vec::new();
     for companion in companions.iter().filter(|companion| {
         native_stream(companion.id()).is_some_and(|stream| {
-            dimension_owners.contains(&(stream.to_owned(), companion.owner_record_index()))
+            dimension_owners.contains(&(stream, companion.owner_record_index()))
         })
     }) {
         let Some(stream) = native_stream(companion.id()) else {
@@ -114,7 +120,7 @@ pub(crate) fn decode_dimension_recipe_records(
             continue;
         };
         for (recipe_ordinal, recipe_id) in payload.owned_recipe_ids().iter().enumerate() {
-            let Some(recipe) = recipes.get(recipe_id.as_str()).copied() else {
+            let Some(recipe) = recipe_index.get(recipe_id.as_str()).copied() else {
                 continue;
             };
             let Some(recipe_offset) = usize::try_from(recipe.byte_offset).ok() else {
@@ -148,6 +154,7 @@ pub(crate) fn decode_dimension_recipe_records(
             };
             let program = program?;
             let prefix_bytes = ctx.copy_retained(prefix_bytes, "f3d dimension recipe prefix")?;
+            let class_tag = copy_ascii_retained(ctx, class_tag, "f3d dimension recipe class tag")?;
             let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag)
             else {
                 continue;
@@ -160,11 +167,20 @@ pub(crate) fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
+            let id = design_record_id_charged(
+                ctx, &entry.name, ":design-dimension-recipe-record#", recipe.byte_offset,
+                "f3d dimension recipe record ID", "f3d dimension recipe record ID allocation",
+            )?;
+            let recipe_id = copy_ascii_retained(ctx, &recipe.id, "f3d dimension recipe ID")?;
+            ctx.charge_collection_items(1, "f3d dimension recipe records")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension recipe record allocation", 0, 1)
+            })?;
             out.push(DesignDimensionRecipeRecord {
-                id: ids::native_design_dimension_recipe_record_id(&entry.name, recipe.byte_offset),
+                id,
                 companion_record_index: companion.record_index(),
                 recipe_ordinal,
-                recipe_id: recipe.id.clone(),
+                recipe_id,
                 recipe_kind: recipe.kind,
                 byte_offset,
                 class_tag,
@@ -897,7 +913,7 @@ fn indexed_record_containing(
     start: usize,
     end: usize,
     member_offset: usize,
-) -> Option<(usize, String, u32, usize)> {
+) -> Option<(usize, &str, u32, usize)> {
     if start > member_offset || member_offset >= end || end > bytes.len() {
         return None;
     }
@@ -911,7 +927,7 @@ fn indexed_record_containing(
             return containing
                 .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
         }
-        let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
+        let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
         containing = Some((at, class_tag, View::u32_le_at(bytes, after_tag)?));
         cursor = at + 11;
     }

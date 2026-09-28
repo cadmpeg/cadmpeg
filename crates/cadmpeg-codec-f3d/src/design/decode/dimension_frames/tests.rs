@@ -1407,3 +1407,109 @@ fn dimension_annotation_interval_refuses_collection_limit() {
         assert!(admitted.is_empty());
     });
 }
+
+#[test]
+fn dimension_recipe_indexes_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut stream_bytes = Vec::new();
+    stream_bytes.extend_from_slice(&3u32.to_le_bytes());
+    stream_bytes.extend_from_slice(b"415");
+    stream_bytes.extend_from_slice(&40u32.to_le_bytes());
+    stream_bytes.extend_from_slice(&[0; 10]);
+    stream_bytes.extend_from_slice(&16u32.to_le_bytes());
+    let recipe_byte_offset = u64::try_from(stream_bytes.len()).unwrap();
+    stream_bytes.extend_from_slice(b"edge_recipe_data");
+    stream_bytes.extend_from_slice(&0i32.to_le_bytes());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&stream_bytes).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            Some(300), "40 mm", "Linear Dimension-3", Some("mm"), "d3", 4.0,
+        ))
+        .unwrap();
+        parameter.id = format!("{}:design-parameter#301", crate::ids::native_scope(STREAM));
+        parameter.record_index = 301;
+        let owner = DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("{}:design-parameter-owner#300", crate::ids::native_scope(STREAM)),
+                byte_offset: 0,
+                frame_length: 104,
+                class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+                record_index: 300,
+                scope_record_index: 10,
+                local_ordinal: 0,
+                evaluated_value: 4.0,
+                evaluated_value_offset: 40,
+                parameter_record_index: 301,
+                owned_ordinal: 3,
+                variant: Some(0),
+                companion_record_index: 302,
+            },
+        )
+        .unwrap();
+        let recipe = crate::records::recipes::ConstructionRecipe {
+            id: format!("{}:construction-recipe#1", crate::ids::native_scope(STREAM)),
+            byte_offset: recipe_byte_offset,
+            kind: crate::records::recipes::ConstructionRecipeKind::Edge,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        };
+        for (parameters, owners, recipes, limit, operation) in [
+            (std::slice::from_ref(&parameter), &[][..], &[][..], 0, "f3d dimension recipe parameter index"),
+            (std::slice::from_ref(&parameter), std::slice::from_ref(&owner), &[][..], 1, "f3d dimension recipe owners"),
+            (&[][..], &[][..], std::slice::from_ref(&recipe), 0, "f3d dimension recipe index"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let refusal = super::decode_dimension_recipe_records(
+                &ctx, scan, parameters, owners, &[], recipes,
+            );
+            assert!(matches!(
+                refusal,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ));
+        }
+        let companion = crate::records::parameters::DesignParameterCompanion::unbound(
+            format!("{}:parameter-companion#302", crate::ids::native_scope(STREAM)),
+            0,
+            crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+            302,
+            300,
+            std::num::NonZeroU64::MIN,
+            42,
+        )
+        .bound(crate::records::parameters::DesignCompanionPayload::new(
+            0,
+            u64::try_from(stream_bytes.len()).unwrap(),
+            vec![recipe.id.clone()],
+        ));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let refusal = super::decode_dimension_recipe_records(
+            &ctx, scan, std::slice::from_ref(&parameter), std::slice::from_ref(&owner),
+            std::slice::from_ref(&companion), std::slice::from_ref(&recipe),
+        );
+        assert!(matches!(
+            refusal,
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d dimension recipe records"
+        ));
+    });
+}
