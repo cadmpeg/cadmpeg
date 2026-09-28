@@ -3510,25 +3510,44 @@ fn derive_cylindrical_pcurves(
                 };
                 // One pole row carries its radial and axial halves together,
                 // so the two projections are built into one list.
-                let poles = nurbs
-                    .control_points()
-                    .iter()
-                    .zip(&radial_control_points)
-                    .map(
-                        |(point, radial)| cadmpeg_ir::geometry::pcurve::PolarNurbsPole {
-                            radial: *radial,
-                            axial: dot(
-                                [point.x - origin.x, point.y - origin.y, point.z - origin.z],
-                                *axis,
-                            ),
-                        },
-                    )
-                    .collect::<Vec<_>>();
+                let mut poles = Vec::new();
+                ctx.reserve_collection_vec(&mut poles, nurbs.pole_count(), "collect cylindrical polar poles")?;
+                for (index, radial) in radial_control_points.iter().enumerate() {
+                    let Some(point) = nurbs.pole_rows().point_at(index) else {
+                        continue;
+                    };
+                    poles.push(cadmpeg_ir::geometry::pcurve::PolarNurbsPole {
+                        radial: *radial,
+                        axial: dot(
+                            [point.x - origin.x, point.y - origin.y, point.z - origin.z],
+                            *axis,
+                        ),
+                    });
+                }
+                ctx.charge_collection_items(
+                    u64::try_from(nurbs.knots().len()).map_err(|_| {
+                        ctx.refuse_codec_limit("copy cylindrical polar knots", u64::MAX - 1, u64::MAX)
+                    })?,
+                    "copy cylindrical polar knots",
+                )?;
+                let knots = nurbs.knots().try_clone().map_err(|_| {
+                    ctx.refuse_codec_limit("copy cylindrical polar knots", u64::MAX - 1, u64::MAX)
+                })?;
+                let weights = if let cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } =
+                    nurbs.pole_rows()
+                {
+                    let mut weights = Vec::new();
+                    ctx.reserve_collection_vec(&mut weights, nurbs.pole_count(), "copy cylindrical polar weights")?;
+                    weights.extend(points.iter().map(|pole| pole.weight));
+                    Some(weights)
+                } else {
+                    None
+                };
                 let polar = match PolarPcurveNurbs::from_checked_lanes(
                     nurbs.degree(),
-                    nurbs.knots().clone(),
+                    knots,
                     poles,
-                    nurbs.weights(),
+                    weights,
                     nurbs.periodic(),
                 ) {
                     Ok(polar) => polar,
@@ -5206,58 +5225,62 @@ fn nurbs_representation_matches(
     expected: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     actual: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> bool {
-    let expected_points = expected.control_points();
-    let actual_points = actual.control_points();
-    let expected_weights = expected.weights();
-    let actual_weights = actual.weights();
     if expected.degree() != actual.degree()
         || expected.periodic() != actual.periodic()
         || expected.knots().len() != actual.knots().len()
-        || expected_points.len() != actual_points.len()
+        || expected.pole_count() != actual.pole_count()
     {
         return false;
     }
-    let scale = expected_points
-        .iter()
-        .chain(&actual_points)
-        .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
-        .chain(
-            expected_weights
-                .iter()
-                .flatten()
-                .map(|weight| weight.get().abs()),
-        )
-        .chain(
-            actual_weights
-                .iter()
-                .flatten()
-                .map(|weight| weight.get().abs()),
-        )
-        .fold(1.0_f64, f64::max);
+    let mut scale = 1.0_f64;
+    for index in 0..expected.pole_count() {
+        let (Some(expected_point), Some(actual_point)) = (
+            expected.pole_rows().point_at(index),
+            actual.pole_rows().point_at(index),
+        ) else {
+            return false;
+        };
+        for value in [
+            expected_point.x,
+            expected_point.y,
+            expected_point.z,
+            actual_point.x,
+            actual_point.y,
+            actual_point.z,
+        ] {
+            scale = scale.max(value.abs());
+        }
+        if let Some(weight) = expected.pole_rows().weight_at(index) {
+            scale = scale.max(weight.abs());
+        }
+        if let Some(weight) = actual.pole_rows().weight_at(index) {
+            scale = scale.max(weight.abs());
+        }
+    }
     expected
         .knots()
         .iter()
         .zip(actual.knots().iter())
         .all(|(left, right)| nurbs_roundoff_equal(*left, *right, scale))
-        && expected_points
-            .iter()
-            .zip(&actual_points)
-            .all(|(left, right)| {
-                nurbs_roundoff_equal(left.x, right.x, scale)
-                    && nurbs_roundoff_equal(left.y, right.y, scale)
-                    && nurbs_roundoff_equal(left.z, right.z, scale)
-            })
-        && match (&expected_weights, &actual_weights) {
-            (None, None) => true,
-            (Some(expected), Some(actual)) => {
-                expected.len() == actual.len()
-                    && expected
-                        .iter()
-                        .zip(actual)
-                        .all(|(left, right)| nurbs_roundoff_equal(left.get(), right.get(), scale))
-            }
-            _ => false,
-        }
+        && (0..expected.pole_count()).all(|index| {
+            let (Some(left), Some(right)) = (
+                expected.pole_rows().point_at(index),
+                actual.pole_rows().point_at(index),
+            ) else {
+                return false;
+            };
+            nurbs_roundoff_equal(left.x, right.x, scale)
+                && nurbs_roundoff_equal(left.y, right.y, scale)
+                && nurbs_roundoff_equal(left.z, right.z, scale)
+                && match (
+                    expected.pole_rows().weight_at(index),
+                    actual.pole_rows().weight_at(index),
+                ) {
+                    (None, None) => true,
+                    (Some(left), Some(right)) => nurbs_roundoff_equal(left, right, scale),
+                    _ => false,
+                }
+        })
 }
 
 fn nurbs_homogeneous_controls(
