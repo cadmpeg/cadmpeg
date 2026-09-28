@@ -35,11 +35,11 @@ const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 
-#[derive(Clone, Debug)]
-struct CircularArcWitness {
+#[derive(Clone, Copy, Debug)]
+struct CircularArcWitness<'a> {
     index: usize,
-    sketch: SketchId,
-    endpoints: [String; 2],
+    sketch: &'a SketchId,
+    endpoints: [&'a str; 2],
     center: Point2,
     radius: f64,
 }
@@ -807,7 +807,7 @@ fn closed_cycle_marker_arc_geometry(
     target: &SketchEntity,
     entities: &[SketchEntity],
     point_by_ref: &HashMap<&str, Point2>,
-    circular_witnesses: &[CircularArcWitness],
+    circular_witnesses: &[CircularArcWitness<'_>],
     tolerance: f64,
 ) -> Option<SketchGeometry> {
     if !matches!((
@@ -831,14 +831,14 @@ fn closed_cycle_marker_arc_geometry(
     };
     let mut candidates = circular_witnesses.iter().filter_map(|witness| {
         if witness.index == target_index
-            || witness.sketch != target.sketch
+            || witness.sketch != &target.sketch
             || !witness.radius.is_finite()
             || witness.radius <= 0.0
         {
             return None;
         }
         let [witness_start, witness_end] = &witness.endpoints;
-        let witness_endpoints = [witness_start.as_str(), witness_end.as_str()];
+        let witness_endpoints = [*witness_start, *witness_end];
         if target_endpoints
             .iter()
             .any(|endpoint| witness_endpoints.contains(endpoint))
@@ -846,8 +846,8 @@ fn closed_cycle_marker_arc_geometry(
             return None;
         }
         let (Some(witness_start_point), Some(witness_end_point)) = (
-            point_by_ref.get(witness_start.as_str()),
-            point_by_ref.get(witness_end.as_str()),
+            point_by_ref.get(*witness_start),
+            point_by_ref.get(*witness_end),
         ) else {
             return None;
         };
@@ -1016,8 +1016,8 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             };
             (!entity.construction).then_some(CircularArcWitness {
                 index,
-                sketch: entity.sketch.clone(),
-                endpoints: [start.clone(), end.clone()],
+                sketch: &entity.sketch,
+                endpoints: [start.as_str(), end.as_str()],
                 center: center.get(),
                 radius: radius.get(),
             })
