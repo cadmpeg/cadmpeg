@@ -83,14 +83,17 @@ pub(super) fn append_consolidated_revolutions(
                 + profile.center_pair[0] * direction_y.z
                 + profile.center_pair[1] * axis.z,
         );
-        let directrix = CurveId::compose(
+        let directrix = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!(
                 "catia",
                 "consolidated",
                 "surface-revolution-directrix"
             ),
             index,
-        );
+            CurveId::mint,
+            "catia_revolution_directrix_id",
+        )?;
         let Some(admitted_center) = FinitePoint3::new(center) else {
             continue;
         };
@@ -109,14 +112,18 @@ pub(super) fn append_consolidated_revolutions(
             Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
-            id: directrix.clone(),
+            id: crate::resource::copy_id(admission.context(), directrix.as_str(),
+                CurveId::mint, "catia_revolution_curve_id")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
             source_object: Some(cgm_source(admission.context(), "profile-circle", profile.record_id)?),
         });
-        let surface = SurfaceId::compose(
+        let surface = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution-surface"),
             index,
-        );
+            SurfaceId::mint,
+            "catia_revolution_surface_id",
+        )?;
         let center_offset = Vector3::new(
             center.x - origin.x,
             center.y - origin.y,
@@ -173,25 +180,32 @@ pub(super) fn append_consolidated_revolutions(
             revolution.pos as u64,
             format_args!("profile-allocation:{}", revolution.profile_allocation_id),
             Exactness::ByteExact)?;
+        let procedural_id = crate::resource::compose_index_id(admission.context(),
+            &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution"),
+            index, ProceduralSurfaceId::mint, "catia_revolution_construction_id")?;
+        let surface_construction_id = crate::resource::copy_id(admission.context(),
+            procedural_id.as_str(), ProceduralSurfaceId::mint,
+            "catia_revolution_surface_construction_id")?;
+        let cache = match &torus_geometry {
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus))) =>
+                SolvedSurfaceGeometry::Torus(torus.clone()),
+            _ => SolvedSurfaceGeometry::Unknown { record: None },
+        };
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: torus_geometry.clone().unwrap_or(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Unknown { record: None },
-            )),
+            id: surface,
+            geometry: SurfaceGeometry::Procedural {
+                construction: surface_construction_id,
+                cache: Some(cache),
+            },
             source_object: Some(cgm_source(admission.context(),
                 "revolution",
                 u32::from(revolution.profile_allocation_id),
             )?),
         });
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
-        let _attached = ir.model.add_procedural_surface(
-            surface,
-            ProceduralSurface::new(
-                ProceduralSurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "consolidated", "surface-revolution"),
-                    index,
-                ),
+        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
                 ProceduralSurfaceDefinition::Revolution(RevolutionSurfaceConstruction::legacy(
                     directrix,
                     (revolution.origin, revolution.axis.into()),
@@ -202,16 +216,15 @@ pub(super) fn append_consolidated_revolutions(
                     None,
                 )),
                 None,
-            ),
-        );
+            ));
         if let Some(geometry) = torus_geometry {
-            bindings.push(ConsolidatedRevolutionBinding {
+            crate::resource::push(admission.context(), &mut bindings, ConsolidatedRevolutionBinding {
                 geometry,
                 profile_sweep: (revolution.profile_range.upper()
                     - revolution.profile_range.lower())
                 .abs()
                     / profile.radius.get(),
-            });
+            }, "catia_revolution_bindings")?;
         }
     }
     Ok(bindings)
@@ -3930,6 +3943,26 @@ mod tests {
             ));
             assert_eq!(ir.model.entity_count(), 0);
         });
+    }
+
+    #[test]
+    fn consolidated_revolution_directrix_id_refuses_retained_limit() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let resolved = crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_resolved_revolutions_from_records(
+                ctx, &bytes, &records,
+            )
+        }).expect("service decode");
+        assert_eq!(resolved.len(), 1);
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            super::append_consolidated_revolutions(
+                &mut CadIr::empty(), &mut AnnotationBuilder::new(), &resolved, &mut admission,
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_revolution_directrix_id"));
     }
 
     #[test]
