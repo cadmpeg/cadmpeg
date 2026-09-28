@@ -409,6 +409,72 @@ pub(crate) fn consolidated_edge_definition_data(
     Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
 }
 
+fn edge_definition_is_scalar_eight(definition: &ConsolidatedEdgeDefinition) -> bool {
+    if !matches!(definition.class, ConsolidatedEdgeDefinitionClass::Class23 | ConsolidatedEdgeDefinitionClass::Class24)
+        || definition.frame.payload.first() != Some(&0x82)
+    {
+        return false;
+    }
+    let payload = &definition.frame.payload;
+    let mut at = 1;
+    let parsed = (|| {
+        compact_int(payload, &mut at)?;
+        compact_int(payload, &mut at)?;
+        persistent_ref(payload, &mut at)?;
+        let scalar_bytes = payload.get(at..)?;
+        if scalar_bytes.len() != 64 {
+            return None;
+        }
+        let values = read_f64_array::<8>(scalar_bytes, 0)?;
+        Some(values[2] == values[7])
+    })();
+    parsed == Some(true)
+}
+
+fn edge_definition_is_typed_class25(definition: &ConsolidatedEdgeDefinition) -> bool {
+    if definition.class != ConsolidatedEdgeDefinitionClass::Class25
+        || definition.frame.payload.first() != Some(&0x82)
+    {
+        return false;
+    }
+    fn finite_lane(bytes: &[u8]) -> bool {
+        if !bytes.len().is_multiple_of(8) {
+            return false;
+        }
+        let mut view = View::over_retained(bytes);
+        while !view.is_empty() {
+            if view.f64_le().and_then(FiniteReal::new).is_none() {
+                return false;
+            }
+        }
+        true
+    }
+    let payload = &definition.frame.payload;
+    let mut at = 1;
+    let parsed = (|| {
+        allocation_ref(payload, &mut at)?;
+        allocation_ref(payload, &mut at)?;
+        class25_persistent_ref(payload, &mut at)?;
+        let scalar_bytes = payload.get(at..)?;
+        if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
+            return Some(finite_lane(scalar_bytes));
+        }
+        read_f64_array::<5>(scalar_bytes, 0)?;
+        let marker = *scalar_bytes.get(40)?;
+        let trailing = scalar_bytes.get(41..)?;
+        let count = trailing.len() / 8;
+        let valid_arity = match marker {
+            0x82 => matches!(count, 5..=7),
+            0x83 => matches!(count, 8 | 9),
+            0x89 => count == 20,
+            0x8b => count == 24,
+            _ => false,
+        };
+        Some(valid_arity && finite_lane(trailing))
+    })();
+    parsed == Some(true)
+}
+
 fn class25_persistent_ref(bytes: &[u8], at: &mut usize) -> Option<(u32, Class25PersistentLead)> {
     match *bytes.get(*at)? {
         lead @ (0x0a | 0x0b) => {
@@ -601,7 +667,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
             "catia_consolidated_topology_edges")?;
     }
     let mut use_runs = BTreeMap::new();
-    for value in consolidated_edge_use_runs_from_records(data, records) {
+    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
         crate::resource::insert_btree_map(ctx, &mut use_runs, value.uses[0].pos, value,
             "catia_consolidated_topology_uses")?;
     }
@@ -641,24 +707,30 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_analytic_circle_edge_runs(data: &[u8]) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
     let records = consolidated_records(data);
-    consolidated_analytic_circle_edge_runs_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_analytic_circle_edge_runs_from_records(ctx, data, &records)
+            .expect("service decode")
+    })
 }
 
 pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
-    let circles = b2_circles_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.uses[0].pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(6)
-        .filter_map(|window| {
+) -> Result<Vec<ConsolidatedAnalyticCircleEdgeRun>, CodecError> {
+    let mut circles = BTreeMap::new();
+    for value in b2_circles_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut circles, value.pos, value,
+            "catia_analytic_circle_carriers")?;
+    }
+    let mut use_runs = BTreeMap::new();
+    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut use_runs, value.uses[0].pos, value,
+            "catia_analytic_circle_use_runs")?;
+    }
+    let mut runs = Vec::new();
+    for window in records.windows(6) {
+        let candidate = (|| {
             let [parameter, circle, definition, use0, use1, node] = window else {
                 return None;
             };
@@ -681,23 +753,37 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
                 return None;
             }
             let use_run = use_runs.get(&use0.byte_offset())?;
-            let definition = use_run.definition.clone()?;
-            match definition.data()? {
-                ConsolidatedEdgeDefinitionData::Scalar { values, .. } if values.len() == 8 => {}
-                _ => return None,
-            }
-            Some(ConsolidatedAnalyticCircleEdgeRun {
-                descriptor: ConsolidatedRawFrame::from_record(
-                    parameter,
-                    data[parameter.payload()?].to_vec(),
-                ),
-                circle: circles.get(&circle.byte_offset())?.clone(),
-                #[cfg(test)]
-                definition,
-                node: use_run.node,
-            })
-        })
-        .collect()
+            let definition = use_run.definition.as_ref()?;
+            edge_definition_is_scalar_eight(definition).then_some((parameter,
+                circles.get(&circle.byte_offset())?, use_run))
+        })();
+        let Some((parameter, circle, use_run)) = candidate else { continue };
+        let Some(payload) = parameter.payload() else { continue };
+        #[cfg(test)]
+        let Some(definition) = use_run.definition.as_ref() else { continue };
+        #[cfg(test)]
+        let definition = ConsolidatedEdgeDefinition {
+            frame: ConsolidatedRawFrame {
+                pos: definition.frame.pos,
+                width: definition.frame.width,
+                flag: definition.frame.flag,
+                header_token: definition.frame.header_token,
+                payload: crate::resource::copy_retained_slice(ctx, &definition.frame.payload,
+                    "catia_analytic_circle_test_definition_payload")?,
+            },
+            class: definition.class,
+        };
+        let descriptor = ConsolidatedRawFrame::from_record(parameter,
+            crate::resource::copy_retained_slice(ctx, &data[payload],
+                "catia_analytic_circle_descriptor_payload")?);
+        crate::resource::push(ctx, &mut runs, ConsolidatedAnalyticCircleEdgeRun {
+            descriptor, circle: circle.clone(),
+            #[cfg(test)]
+            definition,
+            node: use_run.node,
+        }, "catia_analytic_circle_edge_runs")?;
+    }
+    Ok(runs)
 }
 
 /// Decode adjacent `18,25,06,06,5e` edge runs whose descriptor and definition
@@ -706,24 +792,29 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
-    consolidated_class25_edge_runs_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_class25_edge_runs_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn consolidated_class25_edge_runs_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedClass25EdgeRun> {
-    let descriptors = b2_class25_descriptors_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.uses[0].pos, value))
-        .collect::<BTreeMap<_, _>>();
-    records
-        .windows(5)
-        .filter_map(|window| {
+) -> Result<Vec<ConsolidatedClass25EdgeRun>, CodecError> {
+    let mut descriptors = BTreeMap::new();
+    for value in b2_class25_descriptors_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut descriptors, value.pos, value,
+            "catia_class25_edge_descriptors")?;
+    }
+    let mut use_runs = BTreeMap::new();
+    for value in consolidated_edge_use_runs_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut use_runs, value.uses[0].pos, value,
+            "catia_class25_edge_use_runs")?;
+    }
+    let mut runs = Vec::new();
+    for window in records.windows(5) {
+        let candidate = (|| {
             let [descriptor, definition, use0, use1, node] = window else {
                 return None;
             };
@@ -744,22 +835,25 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
                 return None;
             }
             let use_run = use_runs.get(&use0.byte_offset())?;
-            let definition = use_run.definition.clone()?;
-            if !matches!(
-                definition.data(),
-                Some(
-                    ConsolidatedEdgeDefinitionData::Scalar25 { .. }
-                        | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }
-                )
-            ) {
+            let definition = use_run.definition.as_ref()?;
+            if !edge_definition_is_typed_class25(definition) {
                 return None;
             }
-            Some(ConsolidatedClass25EdgeRun {
-                descriptor: descriptors.get(&descriptor.byte_offset())?.clone(),
-                node: use_run.node,
-            })
-        })
-        .collect()
+            Some((descriptors.get(&descriptor.byte_offset())?, use_run.node))
+        })();
+        let Some((descriptor, node)) = candidate else { continue };
+        crate::resource::push(ctx, &mut runs, ConsolidatedClass25EdgeRun {
+            descriptor: B2Class25Descriptor {
+                pos: descriptor.pos,
+                record_id: descriptor.record_id,
+                control: descriptor.control,
+                values: crate::resource::copy_retained_slice(ctx, &descriptor.values,
+                    "catia_class25_edge_descriptor_values")?,
+            },
+            node,
+        }, "catia_class25_edge_runs")?;
+    }
+    Ok(runs)
 }
 
 /// Decode every adjacent `06,06,5e` edge-use run independently of pcurve
@@ -768,25 +862,29 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 #[cfg(test)]
 fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
-    consolidated_edge_use_runs_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_edge_use_runs_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn consolidated_edge_use_runs_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<ConsolidatedEdgeUseRun> {
-    let uses = b2_use_metadata_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let nodes = b2_edge_nodes_from_records(data, records)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let preceding = records
-        .windows(3)
-        .enumerate()
-        .filter_map(|(index, window)| {
+) -> Result<Vec<ConsolidatedEdgeUseRun>, CodecError> {
+    let mut uses = BTreeMap::new();
+    for value in b2_use_metadata_from_records(ctx, data, records)? {
+        crate::resource::insert_btree_map(ctx, &mut uses, value.pos, value,
+            "catia_edge_use_metadata_index")?;
+    }
+    let mut nodes = BTreeMap::new();
+    for value in b2_edge_nodes_from_records(data, records) {
+        crate::resource::insert_btree_map(ctx, &mut nodes, value.pos, value,
+            "catia_edge_use_node_index")?;
+    }
+    let mut runs = Vec::new();
+    for (index, window) in records.windows(3).enumerate() {
+        let candidate = (|| {
             let [use0, use1, node] = window else {
                 return None;
             };
@@ -803,10 +901,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 return None;
             }
             let node = *nodes.get(&node.byte_offset())?;
-            let uses = [
-                uses.get(&use0.byte_offset())?.clone(),
-                uses.get(&use1.byte_offset())?.clone(),
-            ];
+            let uses = [uses.get(&use0.byte_offset())?, uses.get(&use1.byte_offset())?];
             let identity_chain_consistent = node
                 .curve_ref
                 .checked_sub(2)
@@ -824,24 +919,29 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                         && record.source_range.end == use0.source_range.start
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
-                })
-                .and_then(|record| {
-                    Some(ConsolidatedEdgeDefinition {
-                        frame: ConsolidatedRawFrame::from_record(
-                            record,
-                            data[record.payload()?].to_vec(),
-                        ),
-                        class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
-                    })
                 });
-            identity_chain_consistent.then_some(ConsolidatedEdgeUseRun {
-                definition,
-                uses,
-                node,
-            })
-        })
-        .collect::<Vec<_>>();
-    let succeeding = records.windows(4).filter_map(|window| {
+            identity_chain_consistent.then_some((definition, uses, node))
+        })();
+        let Some((definition_record, uses, node)) = candidate else { continue };
+        let definition = match definition_record.and_then(|record| {
+            Some((record, record.payload()?,
+                ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?))
+        }) {
+            Some((record, payload, class)) => Some(ConsolidatedEdgeDefinition {
+                frame: ConsolidatedRawFrame::from_record(record,
+                    crate::resource::copy_retained_slice(ctx, &data[payload],
+                        "catia_edge_use_preceding_definition_payload")?),
+                class,
+            }),
+            None => None,
+        };
+        let uses = [uses[0].clone_charged(ctx)?, uses[1].clone_charged(ctx)?];
+        crate::resource::push(ctx, &mut runs, ConsolidatedEdgeUseRun {
+            definition, uses, node,
+        }, "catia_edge_use_runs")?;
+    }
+    for window in records.windows(4) {
+        let candidate = (|| {
         let [node_record, definition_record, use0, use1] = window else {
             return None;
         };
@@ -849,7 +949,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             || node_record.family != ConsolidatedFamily::B
             || node_record.class != 0x5e
             || definition_record.family != ConsolidatedFamily::B
-            || !matches!(definition_record.class, 0x23..=0x25)
+            || definition_record.class != 0x24
             || use0.family != ConsolidatedFamily::B
             || use0.class != 0x06
             || use1.family != ConsolidatedFamily::B
@@ -858,43 +958,44 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             return None;
         }
         let node = *nodes.get(&node_record.byte_offset())?;
-        let uses = [
-            uses.get(&use0.byte_offset())?.clone(),
-            uses.get(&use1.byte_offset())?.clone(),
-        ];
-        let definition_data = consolidated_edge_definition_data(
-            definition_record.class,
-            &data[definition_record.payload()?],
-        );
-        let identity_chain_consistent = match &definition_data {
-            Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
-                operand
-                    .checked_add(1)
-                    .zip(operand.checked_add(2))
-                    .is_some_and(|(first, second)| {
-                        uses[0].references() == Some(&[node.start_parameter_ref, first][..])
-                            && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
-                    })
-                    && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
-            }
-            _ => false,
-        };
+        let uses = [uses.get(&use0.byte_offset())?, uses.get(&use1.byte_offset())?];
+        let payload = &data[definition_record.payload()?];
+        if payload.first() != Some(&0x81) {
+            return None;
+        }
+        let mut at = 1;
+        let operand = compact_int(payload, &mut at)?;
+        if payload.get(at..) != Some(&[0x0f, 0x87][..]) {
+            return None;
+        }
+        let identity_chain_consistent = operand
+            .checked_add(1)
+            .zip(operand.checked_add(2))
+            .is_some_and(|(first, second)| {
+                uses[0].references() == Some(&[node.start_parameter_ref, first][..])
+                    && uses[1].references() == Some(&[node.end_parameter_ref, second][..])
+            })
+            && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2];
         if !identity_chain_consistent {
             return None;
         }
-        Some(ConsolidatedEdgeUseRun {
-            definition: Some(ConsolidatedEdgeDefinition {
-                frame: ConsolidatedRawFrame::from_record(
-                    definition_record,
-                    data[definition_record.payload()?].to_vec(),
-                ),
-                class: ConsolidatedEdgeDefinitionClass::try_from(definition_record.class).ok()?,
-            }),
-            uses,
-            node,
-        })
-    });
-    preceding.into_iter().chain(succeeding).collect()
+        Some((definition_record, uses, node))
+        })();
+        let Some((definition_record, uses, node)) = candidate else { continue };
+        let Some(payload) = definition_record.payload() else { continue };
+        let Ok(class) = ConsolidatedEdgeDefinitionClass::try_from(definition_record.class) else { continue };
+        let definition = Some(ConsolidatedEdgeDefinition {
+            frame: ConsolidatedRawFrame::from_record(definition_record,
+                crate::resource::copy_retained_slice(ctx, &data[payload],
+                    "catia_edge_use_succeeding_definition_payload")?),
+            class,
+        });
+        let uses = [uses[0].clone_charged(ctx)?, uses[1].clone_charged(ctx)?];
+        crate::resource::push(ctx, &mut runs, ConsolidatedEdgeUseRun {
+            definition, uses, node,
+        }, "catia_edge_use_runs")?;
+    }
+    Ok(runs)
 }
 
 /// Resolve compact owner references that land exactly on class-`0x5e` frames.

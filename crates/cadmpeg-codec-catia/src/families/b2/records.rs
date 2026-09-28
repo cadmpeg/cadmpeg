@@ -33,8 +33,8 @@ use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTe
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane,
-    finite_f64_lane_charged, read_f64_array,
+    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane_charged,
+    read_f64_array,
     u32_le_24, AllocationReferenceEncoding,
 };
 #[cfg(test)]
@@ -538,6 +538,21 @@ pub(crate) struct B2UseMetadata {
 }
 
 impl B2UseMetadata {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let payload = crate::resource::copy_retained_slice(ctx, &self.payload,
+            "catia_b2_use_clone_payload")?;
+        let kind = match &self.kind {
+            B2UsePayload::Closed { sense, references } => B2UsePayload::Closed {
+                sense: *sense,
+                references: crate::resource::copy_retained_slice(ctx, references,
+                    "catia_b2_use_clone_references")?,
+            },
+            B2UsePayload::SenseOnly(sense) => B2UsePayload::SenseOnly(*sense),
+            B2UsePayload::Opaque => B2UsePayload::Opaque,
+        };
+        Ok(Self { pos: self.pos, payload, kind })
+    }
+
     pub(crate) fn sense(&self) -> Option<B2UseSense> {
         match self.kind {
             B2UsePayload::Closed { sense, .. } | B2UsePayload::SenseOnly(sense) => Some(sense),
@@ -597,17 +612,20 @@ pub(crate) struct B2EdgeNode {
 #[cfg(test)]
 pub(in crate::families) fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
     let records = consolidated_records(data);
-    b2_use_metadata_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_use_metadata_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn b2_use_metadata_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2UseMetadata> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x06)
-        .into_iter()
-        .map(|frame| {
-            let payload = data[frame.payload..frame.end].to_vec();
+) -> Result<Vec<B2UseMetadata>, CodecError> {
+    let mut uses = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x06) {
+            let payload = crate::resource::copy_retained_slice(ctx,
+                &data[frame.payload..frame.end], "catia_b2_use_payload")?;
             let sense = match payload.last() {
                 Some(0x84) => Some(B2UseSense::Sense84),
                 Some(0x88) => Some(B2UseSense::Sense88),
@@ -616,29 +634,42 @@ pub(in crate::families) fn b2_use_metadata_from_records(
             let kind = match sense {
                 None => B2UsePayload::Opaque,
                 Some(sense) => {
-                    let references = (|| {
-                        let end = frame.end.checked_sub(1)?;
-                        let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+                    let references = if let Some((end, count)) = frame.end.checked_sub(1).zip(
+                        data.get(frame.payload).and_then(|byte| byte.checked_sub(0x80))
+                    ) {
+                        let count = usize::from(count);
                         let mut at = frame.payload + 1;
-                        let mut references = Vec::new();
-                        for _ in 0..count {
-                            references.push(compact_int(data, &mut at)?);
+                        let mut parsed = [0u32; 127];
+                        let mut valid = true;
+                        for value in parsed.iter_mut().take(count) {
+                            let Some(reference) = compact_int(data, &mut at) else {
+                                valid = false;
+                                break;
+                            };
+                            *value = reference;
                         }
-                        (at == end).then_some(references)
-                    })();
+                        if valid && at == end {
+                            Some(crate::resource::copy_retained_slice(ctx, &parsed[..count],
+                                "catia_b2_use_references")?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
                     match references {
                         Some(references) => B2UsePayload::Closed { sense, references },
                         None => B2UsePayload::SenseOnly(sense),
                     }
                 }
             };
-            B2UseMetadata {
+            crate::resource::push(ctx, &mut uses, B2UseMetadata {
                 pos: frame.pos,
                 payload,
                 kind,
-            }
-        })
-        .collect()
+            }, "catia_b2_uses")?;
+    }
+    Ok(uses)
 }
 
 /// Decode class-`0x5e` payloads and their `0x0a <u16le>` reference tokens.
@@ -1872,12 +1903,13 @@ pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
 pub(in crate::families) fn b2_class25_descriptors_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Class25Descriptor> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x18)
-        .into_iter()
-        .filter_map(|frame| {
+) -> Result<Vec<B2Class25Descriptor>, CodecError> {
+    let mut descriptors = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x18) {
+        let parsed = (|| {
             if frame.header_token != 5 {
                 return None;
             }
@@ -1888,15 +1920,18 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
             if !matches!(control, 0x02 | 0x0a) {
                 return None;
             }
-            let values = finite_f64_lane(data.get(at..frame.end)?)?;
-            matches!(values.len(), 2 | 3).then(|| B2Class25Descriptor {
-                pos: frame.pos,
-                record_id,
-                control,
-                values,
-            })
-        })
-        .collect()
+            let lane = data.get(at..frame.end)?;
+            matches!(lane.len(), 16 | 24).then_some((record_id, control, lane))
+        })();
+        let Some((record_id, control, lane)) = parsed else { continue };
+        let Some(values) = finite_f64_lane_charged(ctx, lane, "catia_b2_class25_values")? else {
+            continue;
+        };
+        crate::resource::push(ctx, &mut descriptors, B2Class25Descriptor {
+            pos: frame.pos, record_id, control, values,
+        }, "catia_b2_class25_descriptors")?;
+    }
+    Ok(descriptors)
 }
 
 /// Shared-edge parameter range stored in a `b2 03 23` packet.
