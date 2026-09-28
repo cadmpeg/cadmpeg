@@ -620,7 +620,7 @@ pub(crate) fn scan<'a>(
     let root_document_members = root_f3d_members(ctx, &inflated_entries)?;
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(ctx, top_level_manifest.window())?;
-        let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
+        let matched = F3dDialect::classify_document(ctx, top_level_manifest.declared_version())?;
         let design_asset_folder = manifest::resolve_design_folder(
             ctx,
             &top_level_manifest,
@@ -636,7 +636,7 @@ pub(crate) fn scan<'a>(
         && !root_document_members.is_empty()
     {
         F3dContainerKind::MultiDocument {
-            matched: F3dDialect::classify_f3z(&root_document_members),
+            matched: F3dDialect::classify_f3z(ctx, &root_document_members)?,
         }
     } else {
         return Err(CodecError::Malformed(

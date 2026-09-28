@@ -36,6 +36,7 @@ use cadmpeg_core::dialect::{
     Admission, DialectId, DialectLayers, DialectMatch, Grammar, LayerInstance,
 };
 use cadmpeg_core::target::TargetDescriptor;
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
 
@@ -130,18 +131,31 @@ impl F3dDialect {
     /// constant it compared against. Reaching here means the `3-2-0-0` layout
     /// parsed the whole manifest, so the version decides only which row names
     /// that reading: its own, or the recovery row.
-    pub(crate) fn classify_document(version: &str) -> DialectMatch {
+    pub(crate) fn classify_document(
+        ctx: &DecodeContext<'_>,
+        version: &str,
+    ) -> Result<DialectMatch, CodecError> {
+        const OPERATION: &str = "classify F3D manifest dialect";
+        ctx.charge_collection_items(1, OPERATION)?;
+        let length = u64::try_from(version.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+        ctx.charge_retained(length, OPERATION)?;
+        let mut declared_version = String::new();
+        declared_version
+            .try_reserve(version.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, length))?;
+        declared_version.push_str(version);
         let mut declared = BTreeMap::new();
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION),
-            version.to_owned(),
+            declared_version,
         );
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
             Self::Manifest3200
         } else {
             Self::Unknown
         };
-        dialect.matched(declared)
+        Ok(dialect.matched(declared))
     }
 
     /// Classifies a multi-document F3Z archive from its root-level `*.f3d`
@@ -150,13 +164,38 @@ impl F3dDialect {
     /// The row declares a filename-presence discriminant and no version, so a
     /// document that reaches here was read with exactly the strategy its row
     /// declares: [`Admission::Admitted`].
-    pub(crate) fn classify_f3z(root_document_members: &[&str]) -> DialectMatch {
+    pub(crate) fn classify_f3z(
+        ctx: &DecodeContext<'_>,
+        root_document_members: &[&str],
+    ) -> Result<DialectMatch, CodecError> {
+        const OPERATION: &str = "classify F3Z root document members";
+        let separators = if root_document_members.is_empty() {
+            0
+        } else {
+            root_document_members.len() - 1
+        };
+        let length = root_document_members.iter().try_fold(separators, |total, member| {
+            total.checked_add(member.len())
+        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+        let length_u64 = u64::try_from(length)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        ctx.charge_retained(length_u64, OPERATION)?;
+        let mut joined = String::new();
+        joined.try_reserve(length)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, length_u64))?;
+        for (index, member) in root_document_members.iter().enumerate() {
+            if index > 0 {
+                joined.push_str(MEMBER_SEPARATOR);
+            }
+            joined.push_str(member);
+        }
         let mut declared = BTreeMap::new();
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS),
-            root_document_members.join(MEMBER_SEPARATOR),
+            joined,
         );
-        Self::F3zMultiDocument.matched(declared)
+        Ok(Self::F3zMultiDocument.matched(declared))
     }
 
     /// The one [`DialectMatch`] construction path in this codec, so a
