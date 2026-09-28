@@ -144,43 +144,54 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
 /// Bind the pathless axial assembly selectors after every scope in the Design
 /// stream has decoded its own construction.
 pub(super) fn bind_axial_assembly_operand_targets(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scopes: &mut [DesignParameterScope],
-) {
-    let bindings = scopes
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, scope)| {
-            if !matches!(scope.frame_length(), 705 | 772) {
-                return None;
-            }
-            let alignment = scope.assembly_alignment()?;
-            let assembly::DesignAssemblyAlignmentForm::Frames { frames } =
-                alignment.form.as_ref()?
-            else {
-                return None;
-            };
-            let first =
-                exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)?;
-            let second =
-                exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)?;
-            Some((
-                ordinal,
-                assembly::DesignAssemblyAlignmentForm::qualified(
-                    frames.clone(),
-                    [first, second]
-                        .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target }),
-                ),
-            ))
-        })
-        .collect::<Vec<_>>();
+) -> Result<(), CodecError> {
+    let mut bindings = Vec::new();
+    for (ordinal, scope) in scopes.iter().enumerate() {
+        if !matches!(scope.frame_length(), 705 | 772) {
+            continue;
+        }
+        let Some(alignment) = scope.assembly_alignment() else {
+            continue;
+        };
+        let Some(assembly::DesignAssemblyAlignmentForm::Frames { frames }) =
+            alignment.form.as_ref()
+        else {
+            continue;
+        };
+        let Some(first) =
+            exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)
+        else {
+            continue;
+        };
+        let Some(second) =
+            exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)
+        else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "f3d axial assembly bindings")?;
+        bindings.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d axial assembly bindings allocation", 0, 1)
+        })?;
+        bindings.push((
+            ordinal,
+            assembly::DesignAssemblyAlignmentForm::qualified(
+                frames.clone(),
+                [first, second]
+                    .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target }),
+            ),
+        ));
+    }
 
     for (ordinal, form) in bindings {
         if let Some(alignment) = scopes[ordinal].assembly_alignment_mut() {
             alignment.form = Some(form);
         }
     }
+    Ok(())
 }
 
 struct AxialComponentOperand {
@@ -398,17 +409,18 @@ fn exact_assembly_axial_selector(
 ) -> Option<DesignAssemblyAxialSelectorIdentity> {
     let axis_record_index = axis.record_index;
     let selector_record_index = axis_record_index.checked_add(3)?;
-    let selector_offsets = records
+    let mut selector_offsets = records
         .offsets(selector_record_index)
         .iter()
         .copied()
-        .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit)
-        .collect::<Vec<_>>();
-    let [selector_at, selector_paired_at] = selector_offsets.as_slice() else {
+        .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit);
+    let (Some(selector_at), Some(selector_paired_at), None) = (
+        selector_offsets.next(),
+        selector_offsets.next(),
+        selector_offsets.next(),
+    ) else {
         return None;
     };
-    let selector_at = *selector_at;
-    let selector_paired_at = *selector_paired_at;
     let selector_class_tag = exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
     let selector_paired_class_tag =
         exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
@@ -464,16 +476,14 @@ fn exact_assembly_axial_selector(
     }
 
     let role_record_index = selector_record_index.checked_add(5)?;
-    let role_offsets = records
+    let mut role_offsets = records
         .offsets(role_record_index)
         .iter()
         .copied()
-        .filter(|offset| *offset > selector_paired_at && *offset < limit)
-        .collect::<Vec<_>>();
-    let [role_at] = role_offsets.as_slice() else {
+        .filter(|offset| *offset > selector_paired_at && *offset < limit);
+    let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
         return None;
     };
-    let role_at = *role_at;
     let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
     if bytes.get(
         role_at.checked_add(axial_role::ZERO_RUN_10)?
@@ -535,23 +545,24 @@ fn exact_paired_indexed_record_between(
     start: usize,
     end: usize,
 ) -> Option<ExactIndexedRecordPair> {
-    let offsets = records
+    let mut offsets = records
         .offsets(record_index)
         .iter()
         .copied()
-        .filter(|offset| *offset >= start && *offset < end)
-        .collect::<Vec<_>>();
-    let [primary_at, paired_at] = offsets.as_slice() else {
+        .filter(|offset| *offset >= start && *offset < end);
+    let (Some(primary_at), Some(paired_at), None) =
+        (offsets.next(), offsets.next(), offsets.next())
+    else {
         return None;
     };
-    let class_tag = exact_indexed_header_at(bytes, *primary_at, record_index)?;
-    let paired_class_tag = exact_indexed_header_at(bytes, *paired_at, record_index)?;
+    let class_tag = exact_indexed_header_at(bytes, primary_at, record_index)?;
+    let paired_class_tag = exact_indexed_header_at(bytes, paired_at, record_index)?;
     Some(ExactIndexedRecordPair {
         record_index,
         class_tag,
-        byte_offset: *primary_at,
+        byte_offset: primary_at,
         paired_class_tag,
-        paired_byte_offset: *paired_at,
+        paired_byte_offset: paired_at,
     })
 }
 

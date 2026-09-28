@@ -18,6 +18,38 @@ fn joint_origin_collection_context<'a>(arena: &'a DecodeArena) -> DecodeContext<
     DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
 }
 
+fn axial_binding_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
+    DecodeContext::from_root_bytes(&[], arena, &DecodePolicy::default()).unwrap().0
+}
+
+#[test]
+fn axial_assembly_bindings_refuse_collection_limit() {
+    let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
+    assembly.try_edit(|draft| {
+        draft.frame_length = 705;
+        draft.paired_byte_offset = 705;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    if let DesignScopePayloadMut::Assemble(slot) = assembly.payload_mut() {
+        *slot = Some(axial_test_alignment([identity, identity]));
+    }
+    let origins = [70_u32, 80_u32].map(|index| {
+        let mut origin = DesignParameterScope::empty("origin", DesignFeatureKind::JointOrigin, index);
+        origin.with_joint_origin_transform(identity.try_into().unwrap());
+        origin
+    });
+    let mut scopes = vec![assembly];
+    scopes.extend(origins);
+    let arena = DecodeArena::new();
+    let ctx = joint_origin_collection_context(&arena);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&[]);
+    let error = bind_axial_assembly_operand_targets(&ctx, &[], &records, &mut scopes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d axial assembly bindings"));
+}
+
 #[test]
 fn joint_origin_frame_candidates_refuse_collection_limit() {
     let mut assembly = DesignParameterScope::empty("assembly", DesignFeatureKind::Assemble, 10);
@@ -85,6 +117,8 @@ fn resolved_joint_origins_refuse_collection_limit() {
 
 #[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
+    let arena = DecodeArena::new();
+    let ctx = axial_binding_context(&arena);
     let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let mut second_transform =
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -143,7 +177,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     ];
     let unresolved_scopes = scopes.clone();
 
-    bind_axial_assembly_operand_targets(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes);
+    bind_axial_assembly_operand_targets(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes).unwrap();
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
@@ -211,10 +245,11 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     mismatched[mismatch_at..mismatch_at + 8].copy_from_slice(&7_002_u64.to_le_bytes());
     let mut mismatched_scopes = unresolved_scopes;
     bind_axial_assembly_operand_targets(
+        &ctx,
         &mismatched,
         &crate::design::test_support::indexed_record_offsets_for_test(&mismatched),
         &mut mismatched_scopes,
-    );
+    ).unwrap();
     assert!(mismatched_scopes[0]
         .assembly_alignment()
         .is_some_and(|alignment| !matches!(
@@ -234,6 +269,8 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
 #[test]
 fn axial_assembly_selector_binds_a_document_root_joint_origin() {
+    let arena = DecodeArena::new();
+    let ctx = axial_binding_context(&arena);
     let first_transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let mut second_transform =
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -279,7 +316,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     origin.with_joint_origin_transform(second_transform.try_into().unwrap());
     let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
 
-    bind_axial_assembly_operand_targets(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes);
+    bind_axial_assembly_operand_targets(&ctx, &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &mut scopes).unwrap();
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
