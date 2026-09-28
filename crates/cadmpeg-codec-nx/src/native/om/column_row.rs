@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native column rows retain one checked source frame with resolved targets.
 
-use super::{column_storage_block_at, copy_om_retained_text, retained_om_index_id};
+use super::{column_storage_block_at, control_index_data_block, copy_om_retained_text, retained_om_index_id};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -83,7 +83,7 @@ pub(in crate::native) fn data_block_index_rows(
         |row, section, block_count, source_base| {
             let offset = row.offset();
             let [a, b, c, d] = row.indices().map(|index| {
-                retained_column_block_id(ctx, section, block_count, index.atom.value())
+                control_index_data_block(ctx, section, block_count, index.atom.value())
             });
             let mut targets = [a?, b?, c?, d?].into_iter();
             let Some(frame) = row
@@ -117,9 +117,9 @@ pub(in crate::native) fn data_block_linked_index_rows(
         |storage| crate::om::column_row::scan::linked_rows(ctx, storage),
         |row, section, block_count, source_base| {
             let offset = row.offset();
-            let target = retained_column_block_id(ctx, section, block_count, row.target_index().atom.value())?;
+            let target = control_index_data_block(ctx, section, block_count, row.target_index().atom.value())?;
             let [a, b, c] = row.indices().map(|index| {
-                retained_column_block_id(ctx, section, block_count, index.atom.value())
+                control_index_data_block(ctx, section, block_count, index.atom.value())
             });
             let mut targets = [target, a?, b?, c?].into_iter();
             let Some(frame) = row
@@ -153,9 +153,9 @@ pub(in crate::native) fn data_block_target_index_rows(
         |storage| crate::om::column_row::scan::target_rows(ctx, storage),
         |row, section, block_count, source_base| {
             let offset = row.offset();
-            let target = retained_column_block_id(ctx, section, block_count, row.target_index().atom.value())?;
+            let target = control_index_data_block(ctx, section, block_count, row.target_index().atom.value())?;
             let [a, b, c] = row.indices().map(|index| {
-                retained_column_block_id(ctx, section, block_count, index.atom.value())
+                control_index_data_block(ctx, section, block_count, index.atom.value())
             });
             let mut targets = [target, a?, b?, c?].into_iter();
             let Some(frame) = row
@@ -179,26 +179,6 @@ pub(in crate::native) fn data_block_target_index_rows(
 }
 
 /// One owner for section framing, source locations and admitted row ordinals.
-fn retained_column_block_id(
-    ctx: &DecodeContext<'_>,
-    section_ordinal: usize,
-    block_count: usize,
-    value: u32,
-) -> Result<Option<String>, CodecError> {
-    let Some(ordinal) = usize::try_from(value).ok().filter(|ordinal| *ordinal < block_count) else {
-        return Ok(None);
-    };
-    retained_om_index_id(
-        ctx,
-        "nx:om-data-blocks-",
-        section_ordinal,
-        ":block#",
-        u64_from_index(ordinal),
-        "NX column row block target",
-    )
-    .map(Some)
-}
-
 fn project_column_rows<R, F, T>(
     ctx: &DecodeContext<'_>,
     container: &Container,

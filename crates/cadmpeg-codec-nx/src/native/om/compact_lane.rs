@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved counted and ABR compact-index lanes.
 
-use super::control_index_data_block;
+use super::{control_index_data_block, copy_om_retained_text, retained_om_index_id};
 use crate::container::Container;
 use crate::om::compact_lane::scan::{abr_lanes, counted_lanes};
 use crate::om::compact_lane::{AbrLane, CountedLane};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use wire::{DataBlockAbrReferenceLaneWire, DataBlockCountedIndexLaneWire};
@@ -32,6 +32,40 @@ pub(in crate::native) struct DataBlockAbrReferenceLane {
     source_entry: String,
 }
 
+fn counted_lane_id(
+    ctx: &DecodeContext<'_>,
+    section_ordinal: usize,
+    block_ordinal: usize,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    use std::fmt::Write;
+
+    fn digits(mut value: usize) -> usize {
+        let mut digits = 1;
+        while value >= 10 {
+            value /= 10;
+            digits += 1;
+        }
+        digits
+    }
+    let operation = "NX counted lane id";
+    let length = "nx:om-data-block-counted-index-lanes-".len()
+        .checked_add(digits(section_ordinal))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(digits(block_ordinal)))
+        .and_then(|length| length.checked_add(":lane#".len()))
+        .and_then(|length| length.checked_add(digits(ordinal)))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_work(u64_from_index(length), operation)?;
+    ctx.charge_retained(u64_from_index(length), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
 /// Decode complete in-range counted block-index lanes from offset-only stores.
 pub(in crate::native) fn data_block_counted_index_lanes(
     ctx: &DecodeContext<'_>,
@@ -45,10 +79,12 @@ pub(in crate::native) fn data_block_counted_index_lanes(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let block_count = records.len() + 1;
+        let block_count = records.len().checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane block count", 0, 1))?;
         for (record_ordinal, block) in records.iter().enumerate() {
-            let block_ordinal = record_ordinal + 1;
-            let Some(source_base) = entry_offset.checked_add(block.offset as u64) else {
+            let block_ordinal = record_ordinal.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane block ordinal", 0, 1))?;
+            let Some(source_base) = entry_offset.checked_add(u64_from_index(block.offset)) else {
                 continue;
             };
             let mut ordinal = 0usize;
@@ -57,18 +93,25 @@ pub(in crate::native) fn data_block_counted_index_lanes(
                     continue;
                 };
                 let Some(frame) = lane.try_resolve_charged(ctx, |atom| {
-                    control_index_data_block(section_ordinal, block_count, atom.value())
+                    control_index_data_block(ctx, section_ordinal, block_count, atom.value())
                 })?
                 else {
                     continue;
                 };
+                let row_ordinal = u32::try_from(ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX counted lane ordinal", 0, 1))?;
+                ctx.charge_collection_items(1, "NX native counted index lanes")?;
+                ctx.charge_retained(u64_from_index(std::mem::size_of::<DataBlockCountedIndexLane>()), "retain NX native counted index lane")?;
+                output.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX native counted index lane", 0, 1))?;
                 output.push(DataBlockCountedIndexLane {
-                    id: format!("nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"),
-                    data_block: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-                    ordinal: ordinal as u32,
+                    id: counted_lane_id(ctx, section_ordinal, block_ordinal, ordinal)?,
+                    data_block: retained_om_index_id(ctx, "nx:om-data-blocks-", section_ordinal, ":block#", u64_from_index(block_ordinal), "NX counted lane data block")?,
+                    ordinal: row_ordinal,
                     frame,
                 });
-                ordinal += 1;
+                ordinal = ordinal.checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX counted lane ordinal", 0, 1))?;
             }
         }
     }
@@ -91,29 +134,38 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else {
+        let Some(source_base) = entry_offset.checked_add(u64_from_index(storage_offset)) else {
             continue;
         };
-        let block_count = records.len() + 1;
+        let block_count = records.len().checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane block count", 0, 1))?;
         let mut ordinal = 0usize;
         for lane in abr_lanes(ctx, storage)? {
-            let Some(frame) = lane.into_absolute(source_base).and_then(|lane| {
-                lane.try_resolve(|atom| {
-                    control_index_data_block(section_ordinal, block_count, atom.value())
-                })
-            }) else {
+            let Some(lane) = lane.into_absolute(source_base) else {
                 continue;
             };
+            let Some(frame) = lane.try_resolve(|atom| {
+                control_index_data_block(ctx, section_ordinal, block_count, atom.value())
+            })? else {
+                continue;
+            };
+            let section_number = u32::try_from(section_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX ABR lane section ordinal", 0, 1))?;
+            let row_ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX ABR lane ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX native ABR reference lanes")?;
+            ctx.charge_retained(u64_from_index(std::mem::size_of::<DataBlockAbrReferenceLane>()), "retain NX native ABR reference lane")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX native ABR reference lane", 0, 1))?;
             output.push(DataBlockAbrReferenceLane {
-                id: format!(
-                    "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
-                ),
-                section_ordinal: section_ordinal as u32,
-                ordinal: ordinal as u32,
+                id: retained_om_index_id(ctx, "nx:om-data-block-abr-reference-lanes-", section_ordinal, ":lane#", u64_from_index(ordinal), "NX ABR lane id")?,
+                section_ordinal: section_number,
+                ordinal: row_ordinal,
                 frame,
-                source_entry: entry.name.clone(),
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX ABR lane source entry")?,
             });
-            ordinal += 1;
+            ordinal = ordinal.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX ABR lane ordinal", 0, 1))?;
         }
     }
     Ok(output)
@@ -124,6 +176,75 @@ mod tests {
     use crate::container;
     use crate::test_support::test_om::offset_only_indexed_om_section;
     use crate::test_support::test_prt::prt_with_named_payloads;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const COUNTED: &[u8] = &[0x01, 0x03, 0x01, 0x01, 0x01, 0x11];
+    const ABR: &[u8] = &[
+        0x11, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03,
+    ];
+
+    fn lane_container(lane: &[u8]) -> container::Container<'static> {
+        let mut store = offset_only_indexed_om_section();
+        store.extend_from_slice(lane);
+        let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+        let end_at = index_start + 3 * 4;
+        let end = u32::try_from(store.len()).expect("test store length");
+        store[end_at..end_at + 4].copy_from_slice(&end.to_le_bytes());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("lane container")
+    }
+
+    type Route = fn(&DecodeContext<'_>, &container::Container<'_>) -> Result<usize, CodecError>;
+
+    fn counted_count(ctx: &DecodeContext<'_>, container: &container::Container<'_>) -> Result<usize, CodecError> {
+        Ok(super::data_block_counted_index_lanes(ctx, container)?.len())
+    }
+
+    fn abr_count(ctx: &DecodeContext<'_>, container: &container::Container<'_>) -> Result<usize, CodecError> {
+        Ok(super::data_block_abr_reference_lanes(ctx, container)?.len())
+    }
+
+    fn lane_refusal(lane: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
+        let container = lane_container(lane);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => panic!("unsupported test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        route(&ctx, &container).expect_err("lane resource refusal")
+    }
+
+    #[test]
+    fn native_compact_lane_routes_keep_resolved_frames() {
+        for (lane, route) in [(COUNTED, counted_count as Route), (ABR, abr_count)] {
+            let container = lane_container(lane);
+            assert_eq!(crate::test_support::with_decode_context(|ctx| route(ctx, &container)).expect("resolved lane"), 1);
+        }
+    }
+
+    macro_rules! lane_limit_test {
+        ($name:ident, $lane:ident, $route:ident, $dimension:ident) => {
+            #[test]
+            fn $name() {
+                let error = lane_refusal($lane, $route, ResourceDimension::$dimension);
+                assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::$dimension), "{error:?}");
+            }
+        };
+    }
+
+    lane_limit_test!(native_counted_lane_refuses_collection_limit, COUNTED, counted_count, CollectionItems);
+    lane_limit_test!(native_counted_lane_refuses_retained_limit, COUNTED, counted_count, RetainedBytes);
+    lane_limit_test!(native_counted_lane_refuses_work_limit, COUNTED, counted_count, WorkUnits);
+    lane_limit_test!(native_abr_lane_refuses_collection_limit, ABR, abr_count, CollectionItems);
+    lane_limit_test!(native_abr_lane_refuses_retained_limit, ABR, abr_count, RetainedBytes);
+    lane_limit_test!(native_abr_lane_refuses_work_limit, ABR, abr_count, WorkUnits);
 
     #[test]
     fn native_abr_lane_resolves_nullable_slots_within_its_offset_store() {
