@@ -1807,6 +1807,37 @@ impl BrepFaceReferences {
     }
 }
 
+fn native_loop_ring(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    native_loop: &crate::topology::Loop,
+    face_id: u32,
+) -> Result<cadmpeg_ir::topology::LoopRing, cadmpeg_core::CodecError> {
+    let mut coedge_ids = Vec::new();
+    for half_edge in &native_loop.half_edges {
+        ctx.try_reserve_items(&mut coedge_ids, 1, "creo B-rep ring coedge IDs")?;
+        coedge_ids.push(crate::identity::compose_checked::<CoedgeId>(
+            ctx,
+            &crate::identity::VISIBGEOM_COEDGE,
+            format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
+            "creo B-rep ring coedge identities",
+        )?);
+    }
+    cadmpeg_ir::topology::LoopRing::new_admitted(
+        ctx,
+        coedge_ids,
+        Vec::new(),
+        "creo native loop ring validation nodes",
+    )
+    .map_err(|error| match error {
+        cadmpeg_core::CodecError::Malformed(message) => {
+            cadmpeg_core::CodecError::malformed(format!(
+                "VisibGeom face {face_id} loop ring: {message}"
+            ))
+        }
+        other => other,
+    })
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -2550,52 +2581,38 @@ pub(in super::super) fn transfer_native_brep(
                 },
             )?;
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
-                let coedge_ids = native_loop
-                    .half_edges
-                    .iter()
-                    .map(|half_edge| {
-                        CoedgeId::compose(
-                            &crate::identity::VISIBGEOM_COEDGE,
-                            cadmpeg_ir::ids::IdentityKey::from(half_edge.curve_id)
-                                .colon(half_edge.side.index()),
-                        )
-                    })
-                    .collect::<Vec<_>>();
+                let ring = native_loop_ring(ctx, native_loop, *face_id)?;
                 ctx.charge_entities(1, "admit Creo model loops")?;
+                ctx.try_reserve_items(&mut ir.model.loops, 1, "creo model native loops")?;
                 ir.model.loops.push(IrLoop {
-                    id: loop_id.clone(),
-                    face: face.clone(),
-                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new_admitted(
-                            ctx,
-                            coedge_ids.clone(),
-                            Vec::new(),
-                            "creo native loop ring validation nodes",
-                        )
-                        .map_err(|error| match error {
-                            cadmpeg_core::CodecError::Malformed(message) => {
-                                cadmpeg_core::CodecError::malformed(format!(
-                                    "VisibGeom face {face_id} loop ring: {message}"
-                                ))
-                            }
-                            other => other,
-                        })?,
-                    ),
+                    id: crate::identity::copy_checked_id(ctx, loop_id.as_str(), "creo B-rep model loop ID copy")?,
+                    face: crate::identity::copy_checked_id(ctx, face.as_str(), "creo B-rep model loop face ID copy")?,
+                    boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
                 });
-                for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
-                    let id = coedge_ids[index].clone();
+                for half_edge in &native_loop.half_edges {
+                    let id = crate::identity::compose_checked::<CoedgeId>(
+                        ctx,
+                        &crate::identity::VISIBGEOM_COEDGE,
+                        format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
+                        "creo B-rep coedge identities",
+                    )?;
                     let twin = HalfEdgeId {
                         curve_id: half_edge.curve_id,
                         side: half_edge.side.flip(),
                     };
                     let radial_next = if emitted_half_edges.contains(&twin) {
-                        CoedgeId::compose(
+                        crate::identity::compose_checked::<CoedgeId>(
+                            ctx,
                             &crate::identity::VISIBGEOM_COEDGE,
-                            cadmpeg_ir::ids::IdentityKey::from(twin.curve_id)
-                                .colon(twin.side.index()),
-                        )
+                            format_args!("{}:{}", twin.curve_id, twin.side.index()),
+                            "creo B-rep radial coedge identities",
+                        )?
                     } else {
-                        id.clone()
+                        crate::identity::copy_checked_id(
+                            ctx,
+                            id.as_str(),
+                            "creo B-rep self radial ID copies",
+                        )?
                     };
                     annotate(
                         annotations,
