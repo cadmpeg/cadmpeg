@@ -347,12 +347,15 @@ pub(in super::super) fn transfer_saved_spline_curves(
 }
 
 pub(in super::super) fn revolved_nurbs_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
-    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
+) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
+    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z]) else {
+        return Ok(None);
+    };
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
         [1.0, 0.0],
@@ -377,9 +380,12 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
-    let mut control_points = Vec::with_capacity(directrix.control_points().len() * 9);
-    let mut weights = Vec::with_capacity(directrix.control_points().len() * 9);
-    for (index, point) in directrix.control_points().iter().enumerate() {
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    for index in 0..directrix.pole_count() {
+        let Some(point) = directrix.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
         let relative = [
             point.x - axis_origin[0],
             point.y - axis_origin[1],
@@ -395,57 +401,70 @@ pub(in super::super) fn revolved_nurbs_surface(
             point.z - center[2],
         ];
         let tangent = cross(axis_direction, radial);
-        let directrix_weight = directrix
-            .weights()
-            .map_or(1.0, |curve_weights| curve_weights[index].get());
+        let directrix_weight = directrix.pole_rows().weight_at(index).map_or(1.0, |weight| weight);
+        ctx.try_reserve_items(&mut control_points, 1, "creo revolved NURBS pole rows")?;
+        ctx.try_reserve_items(&mut weights, 1, "creo revolved NURBS weight rows")?;
+        let mut point_row = Vec::new();
+        let mut weight_row = Vec::new();
+        ctx.try_reserve_items(&mut point_row, angular_poles.len(), "creo revolved NURBS poles")?;
+        ctx.try_reserve_items(&mut weight_row, angular_weights.len(), "creo revolved NURBS weights")?;
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
         {
-            control_points.push(Point3::new(
+            point_row.push(Point3::new(
                 center[0] + radial_scale * radial[0] + tangent_scale * tangent[0],
                 center[1] + radial_scale * radial[1] + tangent_scale * tangent[1],
                 center[2] + radial_scale * radial[2] + tangent_scale * tangent[2],
             ));
-            weights.push(directrix_weight * angular_weight);
+            weight_row.push(directrix_weight * angular_weight);
         }
+        control_points.push(point_row);
+        weights.push(weight_row);
     }
+    let mut u_knots = Vec::new();
+    ctx.try_reserve_items(&mut u_knots, directrix.knots().as_slice().len(), "creo revolved NURBS u knots")?;
+    u_knots.extend_from_slice(directrix.knots().as_slice());
+    let angular_knots = [
+        0.0,
+        0.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::PI,
+        std::f64::consts::PI,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        std::f64::consts::TAU,
+        std::f64::consts::TAU,
+        std::f64::consts::TAU,
+    ];
+    let mut v_knots = Vec::new();
+    ctx.try_reserve_items(&mut v_knots, angular_knots.len(), "creo revolved NURBS v knots")?;
+    v_knots.extend(angular_knots);
     match NurbsSurface::from_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             directrix.degree(),
-            directrix.knots().to_vec(),
+            u_knots,
             false,
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             2,
-            vec![
-                0.0,
-                0.0,
-                0.0,
-                std::f64::consts::FRAC_PI_2,
-                std::f64::consts::FRAC_PI_2,
-                std::f64::consts::PI,
-                std::f64::consts::PI,
-                3.0 * std::f64::consts::FRAC_PI_2,
-                3.0 * std::f64::consts::FRAC_PI_2,
-                std::f64::consts::TAU,
-                std::f64::consts::TAU,
-                std::f64::consts::TAU,
-            ],
+            v_knots,
             false,
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control_points.chunks(9_usize).map(<[_]>::to_vec).collect(),
-            Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
+            control_points,
+            Some(weights),
         ),
         false,
     ) {
-        Ok(surface) => Some(surface),
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
             refusal.note(
                 format!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }

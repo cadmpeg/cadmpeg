@@ -348,6 +348,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             };
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let surface = revolved_nurbs_surface(
+                ctx,
                 &directrix,
                 &axis,
                 &format!(
@@ -355,7 +356,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     spline.offset
                 ),
                 &mut refusal,
-            );
+            )?;
             let refused = refusal.take_records();
             let Some(surface) = surface.filter(|_| refused.is_empty()) else {
                 for record in &refused {

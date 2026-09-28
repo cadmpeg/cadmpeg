@@ -92,29 +92,37 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let Some(area) = extrusion_profile_signed_area(profile) else {
             continue;
         };
-        let vertex_curves = profile
-            .iter()
-            .map(|entity| revolved_section_circle(transform, entity.start(), &axis))
-            .collect::<Vec<_>>();
+        let vertex_curves = crate::decode::collect_items(
+            ctx,
+            profile
+                .iter()
+                .map(|entity| revolved_section_circle(transform, entity.start(), &axis)),
+            "creo revolution vertex curves",
+        )?;
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let refusal = &mut refusal;
-        let surface_geometries = profile
-            .iter()
-            .enumerate()
-            .map(|(index, entity)| {
-                let geometry = entity.geometry();
-                let reversed = entity.reversed();
-
-                revolved_brep_surface(
-                    transform,
-                    &geometry.to_sketch()?,
-                    reversed,
-                    &axis,
-                    &format!("revolution feature {feature_id} profile segment {index}"),
-                    refusal,
-                )
-            })
-            .collect::<Option<Vec<_>>>();
+        let mut surfaces = Vec::new();
+        let mut complete = true;
+        for (index, entity) in profile.iter().enumerate() {
+            let Some(geometry) = entity.geometry().to_sketch() else {
+                complete = false;
+                break;
+            };
+            let Some(surface) = revolved_brep_surface(
+                ctx,
+                transform,
+                &geometry,
+                entity.reversed(),
+                &axis,
+                &format!("revolution feature {feature_id} profile segment {index}"),
+                &mut refusal,
+            )? else {
+                complete = false;
+                break;
+            };
+            ctx.try_reserve_items(&mut surfaces, 1, "creo revolution surface geometries")?;
+            surfaces.push(surface);
+        }
+        let surface_geometries = complete.then_some(surfaces);
         let Some(surface_geometries) = surface_geometries else {
             let records = refusal.take_records();
             losses.push(
@@ -159,7 +167,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         boundary.key()
                     );
                     let mut diagnostics =
-                        crate::lane_refusal::LaneRefusalContext::new(&record, refusal);
+                        crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                     PrevalidatedRevolutionBoundary::new(
                         transform,
                         segment,
@@ -201,7 +209,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     &axis,
                     area.get(),
                     &format!("revolution feature {feature_id} profile segment {index} face sense"),
-                    refusal,
+                    &mut refusal,
                 )
             })
             .collect::<Option<Vec<_>>>();

@@ -250,28 +250,30 @@ fn revolution_boundary_pcurve(
 }
 
 pub(in super::super) fn revolved_brep_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
     reversed: bool,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<SurfaceGeometry> {
+) -> Result<Option<SurfaceGeometry>, cadmpeg_core::CodecError> {
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            revolved_nurbs_surface(
-                &placed_section_nurbs(transform, &directrix)?,
-                axis,
-                record,
-                refusal,
-            )?,
-        )));
+        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
+            return Ok(None);
+        };
+        let Some(placed_directrix) = placed_section_nurbs(transform, &directrix) else {
+            return Ok(None);
+        };
+        let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)? else {
+            return Ok(None);
+        };
+        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))));
     }
-    revolved_section_surface(transform, geometry, axis)
+    Ok(revolved_section_surface(transform, geometry, axis))
 }
 
 /// An endpoint boundary of a revolved profile segment.

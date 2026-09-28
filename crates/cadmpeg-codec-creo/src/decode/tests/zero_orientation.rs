@@ -1385,7 +1385,8 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
         false,
     )
     .expect("valid revolution directrix");
-    let surface = revolved_nurbs_surface(
+    let surface = crate::decode::with_test_decode_ctx(|ctx| revolved_nurbs_surface(
+        ctx,
         &directrix,
         &RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -1396,7 +1397,8 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
         },
         &"revolution directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("service revolution allocation")
     .expect("revolution surface");
 
     assert_eq!((surface.u_count(), surface.v_count()), (2, 9));
@@ -1458,14 +1460,16 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     );
     let segment = crate::decode::sweep::profiles::ProfileEntity::new(spline.clone(), false)
         .expect("valid profile entity");
-    let surface = revolved_brep_surface(
+    let surface = crate::decode::with_test_decode_ctx(|ctx| revolved_brep_surface(
+        ctx,
         &transform,
         &spline,
         false,
         &axis,
         &"revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("service revolution allocation")
     .expect("revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &surface else {
         panic!("spline revolution must retain a NURBS surface");
@@ -1557,14 +1561,16 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 
-    let reversed = revolved_brep_surface(
+    let reversed = crate::decode::with_test_decode_ctx(|ctx| revolved_brep_surface(
+        ctx,
         &transform,
         &spline,
         true,
         &axis,
         &"reversed revolved spline fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("service revolution allocation")
     .expect("reversed revolved spline surface");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
