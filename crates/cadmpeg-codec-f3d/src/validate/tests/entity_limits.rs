@@ -125,3 +125,163 @@ fn native_sketch_relation_finding_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity"));
 }
 
+fn sketch_geometry_fixture() -> crate::native::F3dNative {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let decoded = crate::F3dCodec
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (ir, _, _) = decoded.into_parts();
+    crate::native::F3dNative::load(ir.native.namespace("f3d").unwrap()).unwrap()
+}
+
+fn sketch_geometry_error(
+    native: crate::native::F3dNative,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_sketch_geometry_identities(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn sketch_point_identity_index_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.truncate(1);
+    native.sketch_points[0].owner_reference = Some(100);
+    native.sketch_curve_identities.clear();
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch point identities"));
+}
+
+#[test]
+fn sketch_geometry_record_index_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.truncate(1);
+    native.sketch_points[0].owner_reference = None;
+    native.sketch_curve_identities.clear();
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch geometry records"));
+}
+
+#[test]
+fn sketch_curve_identity_index_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.clear();
+    native.sketch_curve_identities.truncate(1);
+    native.sketch_curve_identities[0].owner_reference = Some(100);
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch curve identities"));
+}
+
+fn validation_sketch_surface() -> crate::records::sketch_geometry::SketchSurface {
+    use crate::records::sketch_geometry::{SketchSurface, SketchSurfaceGeometry};
+    SketchSurface {
+        id: "f3d:Design/BulkStream.dat:sketch-surface#1".into(),
+        record_index: 1,
+        owner_reference: Some(100),
+        class_tag: crate::records::references::DesignClassTag::try_from("296".to_owned()).unwrap(),
+        byte_offset: 10,
+        entity_genesis: None,
+        persistent_id: std::num::NonZeroU64::new(1).unwrap(),
+        geometry: SketchSurfaceGeometry {
+            u_degree: std::num::NonZeroU32::new(1).unwrap(),
+            v_degree: std::num::NonZeroU32::new(1).unwrap(),
+            u_knots: Vec::new(),
+            v_knots: Vec::new(),
+            control_points: Vec::new(),
+        },
+    }
+}
+
+#[test]
+fn sketch_surface_identity_index_refuses_collection_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.sketch_surfaces.push(validation_sketch_surface());
+    let error = sketch_geometry_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch surface identities"));
+}
+
+#[test]
+fn sketch_point_identity_finding_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.truncate(1);
+    native.sketch_points[0].owner_reference = Some(100);
+    let duplicate = native.sketch_points[0].clone();
+    native.sketch_points.push(duplicate);
+    native.sketch_curve_identities.clear();
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn sketch_point_identity_finding_refuses_retained_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.truncate(1);
+    native.sketch_points[0].owner_reference = Some(100);
+    let duplicate = native.sketch_points[0].clone();
+    native.sketch_points.push(duplicate);
+    native.sketch_curve_identities.clear();
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+#[test]
+fn sketch_curve_identity_finding_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.clear();
+    native.sketch_curve_identities.truncate(1);
+    native.sketch_curve_identities[0].owner_reference = Some(100);
+    let duplicate = native.sketch_curve_identities[0].clone();
+    native.sketch_curve_identities.push(duplicate);
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn sketch_surface_identity_finding_refuses_collection_limit() {
+    let surface = validation_sketch_surface();
+    let mut native = crate::native::F3dNative::default();
+    native.sketch_surfaces.push(surface.clone());
+    native.sketch_surfaces.push(surface);
+    let error = sketch_geometry_error(native, 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn sketch_geometry_alias_finding_refuses_collection_limit() {
+    let mut native = sketch_geometry_fixture();
+    native.sketch_points.truncate(1);
+    native.sketch_points[0].owner_reference = None;
+    let duplicate = native.sketch_points[0].clone();
+    native.sketch_points.push(duplicate);
+    native.sketch_curve_identities.clear();
+    native.sketch_surfaces.clear();
+    let error = sketch_geometry_error(native, 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
