@@ -19,15 +19,15 @@ use crate::feature::definitions::positional_order_table;
 use crate::feature::definitions::positional_relation_table;
 use crate::feature::definitions::positional_relation_triples;
 use crate::feature::definitions::positional_section_3d;
-use crate::feature::definitions::positional_trim_entity_table;
-use crate::feature::definitions::positional_trim_vertex_table;
+use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
+use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
 use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
 use crate::feature::definitions::relation_table;
 use crate::feature::definitions::self_described_positional_dimension_table;
 use crate::feature::definitions::test_support::with_points;
-use crate::feature::definitions::trim_buckets;
+use crate::feature::definitions::trim_buckets as parse_trim_buckets;
 use crate::feature::definitions::trim_table_header;
-use crate::feature::definitions::trim_vertex_entry;
+use crate::feature::definitions::trim_vertex_entry as parse_trim_vertex_entry;
 use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::BinaryFlag;
 use crate::feature::definitions::FeatureDimensionReference;
@@ -49,6 +49,197 @@ use crate::feature::definitions::TrimTableHeader;
 use crate::feature::definitions::VariableType;
 use crate::psb;
 use crate::scalar;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+fn with_trim_limits<T>(
+    collection_limit: u64,
+    work_limit: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_work_units = work_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits the trim policy");
+    run(&ctx)
+}
+
+fn trim_bucket_with_limits(
+    collection_limit: u64,
+    work_limit: u64,
+) -> Result<Vec<super::FeatureTrimBucket>, cadmpeg_core::CodecError> {
+    let payload = b"bucket_index\0\x00bucket_xar\0\xf8\x01\xf7\x43\xfb\xe3\
+            \xf7\x44\x01\x02\x03\x00\xe0";
+    let header = TrimTableHeader {
+        declared_count: 1,
+        classes: TrimTableClasses {
+            table: 66,
+            bucket: 67,
+            entry: 68,
+        },
+    };
+    with_trim_limits(collection_limit, work_limit, |ctx| {
+        parse_trim_buckets(ctx, payload, 0, payload.len(), header, TrimEntryKind::Vertex)
+    })
+}
+
+fn trim_entity_with_limit(
+    limit: u64,
+) -> Result<Option<super::FeatureTrimEntityTable>, cadmpeg_core::CodecError> {
+    let payload = b"prefix\xf8\x07\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\
+            \x09\x00\x03\x04\xf6\x00\
+            \xf4\x04\xf7\x42\xe2\x01\xf8\x13\xf7\x44\xfb\xe2";
+    with_trim_limits(limit, u64::MAX, |ctx| {
+        parse_positional_trim_entity_table(
+            ctx,
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 66,
+                bucket: 67,
+                entry: 67,
+            },
+            Some(68),
+        )
+    })
+}
+
+fn trim_vertex_with_limit(
+    limit: u64,
+) -> Result<Option<super::FeatureTrimVertexTable>, cadmpeg_core::CodecError> {
+    let payload = b"prefix\xf8\x13\xf7\x44\xfb\xe2\xf7\x45\
+            \x01\x02\x03\x00\xe2";
+    with_trim_limits(limit, u64::MAX, |ctx| {
+        parse_positional_trim_vertex_table(
+            ctx,
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 68,
+                bucket: 69,
+                entry: 69,
+            },
+            None,
+            None,
+        )
+    })
+}
+
+macro_rules! trim_bucket_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(trim_bucket_with_limits($limit, u64::MAX),
+                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation));
+            assert_eq!(trim_bucket_with_limits(3, u64::MAX)
+                .expect("all bucket allocations admitted").len(), 1);
+        }
+    };
+}
+
+trim_bucket_collection_limit_test!(trim_bucket_starts_refuse_before_vec_growth, 0, "creo trim bucket starts");
+trim_bucket_collection_limit_test!(trim_bucket_results_refuse_before_vec_growth, 1, "creo trim buckets");
+trim_bucket_collection_limit_test!(trim_bucket_vertex_nodes_refuse_before_btree_insertion, 2, "creo trim bucket vertex nodes");
+
+#[test]
+fn trim_bucket_entry_work_refuses_before_scan() {
+    assert!(matches!(trim_bucket_with_limits(u64::MAX, 0),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::WorkUnits
+                && refusal.operation == "creo trim bucket entry scan"));
+}
+
+macro_rules! trim_entity_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(trim_entity_with_limit($limit),
+                Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation));
+            assert_eq!(trim_entity_with_limit(3)
+                .expect("entity table admitted")
+                .expect("one table").rows.len(), 1);
+        }
+    };
+}
+
+trim_entity_collection_limit_test!(trim_entity_id_nodes_refuse_before_btree_insertion, 0, "creo trim entity ID nodes");
+trim_entity_collection_limit_test!(trim_entity_rows_refuse_before_vec_growth, 1, "creo trim entity rows");
+trim_entity_collection_limit_test!(trim_entity_solved_ids_refuse_before_vec_growth, 2, "creo trim entity solved IDs");
+
+#[test]
+fn trim_vertex_entities_refuse_before_vec_growth() {
+    assert!(matches!(trim_vertex_with_limit(1),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo trim vertex entities"));
+    assert_eq!(trim_vertex_with_limit(3)
+        .expect("vertex table admitted")
+        .expect("one table").rows[0].entities, [1, 2]);
+}
+
+#[test]
+fn trim_vertex_rows_refuse_before_vec_growth() {
+    assert!(matches!(trim_vertex_with_limit(2),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo trim vertex rows"));
+}
+
+fn positional_trim_entity_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    classes: TrimTableClasses,
+    next_table_class: Option<u32>,
+) -> Option<super::FeatureTrimEntityTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_trim_entity_table(ctx, payload, start, end, classes, next_table_class)
+    })
+    .expect("trim entity table admitted")
+}
+
+fn positional_trim_vertex_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    classes: TrimTableClasses,
+    segments: Option<&FeatureSegmentTable>,
+    variables: Option<&FeatureVariableTable>,
+) -> Option<super::FeatureTrimVertexTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_trim_vertex_table(ctx, payload, start, end, classes, segments, variables)
+    })
+    .expect("trim vertex table admitted")
+}
+
+fn trim_buckets(
+    payload: &[u8],
+    table: usize,
+    end: usize,
+    header: TrimTableHeader,
+    kind: TrimEntryKind,
+) -> Vec<super::FeatureTrimBucket> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_trim_buckets(ctx, payload, table, end, header, kind)
+    })
+    .expect("trim buckets admitted")
+}
+
+fn trim_vertex_entry(
+    payload: &[u8],
+    offset: usize,
+    end: usize,
+) -> Option<(Vec<u32>, u32, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_trim_vertex_entry(ctx, payload, offset, end))
+        .expect("trim vertex entities admitted")
+}
 
 fn variable_table(
     payload: &[u8],
