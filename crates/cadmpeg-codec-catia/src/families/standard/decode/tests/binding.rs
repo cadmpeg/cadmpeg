@@ -2257,3 +2257,27 @@ fn native_edge_support_match_refuses_work_limit() {
     assert_eq!(matched, id);
     assert_eq!(ir.model.surfaces.len(), 1);
 }
+
+#[test]
+fn native_edge_support_nurbs_copy_refuses_collection_limit() {
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface())),
+    );
+    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+        let mut ir = CadIr::empty();
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        ensure_native_edge_support_surface(&mut ir, &mut AnnotationBuilder::new(), 42,
+            &carrier, &mut admission)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_edge_support_geometry"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut ir = CadIr::empty();
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let id = ensure_native_edge_support_surface(&mut ir, &mut AnnotationBuilder::new(), 42,
+            &carrier, &mut admission)?;
+        Ok::<_, cadmpeg_core::CodecError>((id, ir.model.surfaces))
+    }).expect("service budget admits native edge support surface");
+    assert_eq!(admitted.1.len(), 1);
+    assert_eq!(admitted.0, admitted.1[0].id);
+}
