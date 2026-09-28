@@ -1165,7 +1165,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let triples = crate::om::body_scalar_triple::operation_body_scalar_triples(record);
+    let triples = crate::test_support::with_decode_context(|ctx| crate::om::body_scalar_triple::operation_body_scalar_triples(ctx, record)).unwrap();
     assert_eq!(triples.len(), 2);
     assert_eq!(triples[0].body_reference_ordinal, 0);
     assert_eq!(triples[0].body_object_index, 66);
@@ -1211,7 +1211,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
         [2.0, 0.0, 0.0]
     );
     let truncated = &bytes[..bytes.len() - 1];
-    let truncated_triples = crate::om::body_scalar_triple::operation_body_scalar_triples(
+    let truncated_triples = crate::test_support::with_decode_context(|ctx| crate::om::body_scalar_triple::operation_body_scalar_triples(ctx,
         crate::om::operation_record::OperationBodyInput::new(
             truncated,
             record.offset(),
@@ -1219,7 +1219,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
             record.name(),
         )
         .unwrap(),
-    );
+    )).unwrap();
     assert_eq!(truncated_triples.len(), 1);
     assert_eq!(truncated_triples[0], triples[0]);
 }
