@@ -1503,7 +1503,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &"revolution boundary fixture start",
         &mut start_refusal,
     );
-    let start_pcurve = revolution_profile_boundary_pcurve(
+    let start_pcurve = crate::decode::with_test_decode_ctx(|ctx| revolution_profile_boundary_pcurve(
+        ctx,
         &transform,
         &segment,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
@@ -1511,14 +1512,16 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         segment.start(),
         RevolutionBoundary::Start,
         &mut start_diagnostics,
-    )
+    ))
+    .expect("resource admission")
     .expect("start boundary pcurve");
     let mut end_refusal = crate::lane_refusal::LaneRefusals::new();
     let mut end_diagnostics = crate::lane_refusal::LaneRefusalContext::new(
         &"revolution boundary fixture end",
         &mut end_refusal,
     );
-    let end_pcurve = revolution_profile_boundary_pcurve(
+    let end_pcurve = crate::decode::with_test_decode_ctx(|ctx| revolution_profile_boundary_pcurve(
+        ctx,
         &transform,
         &segment,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
@@ -1526,7 +1529,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         segment.end(),
         RevolutionBoundary::End,
         &mut end_diagnostics,
-    )
+    ))
+    .expect("resource admission")
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
         assert_eq!(
@@ -1539,7 +1543,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         );
     }
 
-    let forward_sense = revolution_face_sense(
+    let forward_sense = crate::decode::with_test_decode_ctx(|ctx| revolution_face_sense(
+        ctx,
         &transform,
         &segment,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
@@ -1547,9 +1552,11 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         1.0,
         &"revolution face sense fixture forward",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("resource admission")
     .expect("forward face sense");
-    let reverse_sense = revolution_face_sense(
+    let reverse_sense = crate::decode::with_test_decode_ctx(|ctx| revolution_face_sense(
+        ctx,
         &transform,
         &segment,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
@@ -1557,7 +1564,8 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         -1.0,
         &"revolution face sense fixture reverse",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("resource admission")
     .expect("reverse face sense");
     assert_ne!(forward_sense, reverse_sense);
 

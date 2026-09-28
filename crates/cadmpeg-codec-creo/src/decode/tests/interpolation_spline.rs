@@ -221,14 +221,16 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
         let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
-        let pcurve = extrusion_cap_pcurve(
+        let pcurve = crate::decode::with_test_decode_ctx(|ctx| extrusion_cap_pcurve(
+            ctx,
             &spline,
             reversed,
             start,
             end,
             &"spline extrusion cap fixture",
             &mut crate::lane_refusal::LaneRefusals::new(),
-        )
+        ))
+        .expect("resource admission")
         .unwrap();
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");

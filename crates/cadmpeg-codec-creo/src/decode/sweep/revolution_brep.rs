@@ -170,6 +170,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 let mut diagnostics =
                     crate::lane_refusal::LaneRefusalContext::new(&record, &mut refusal);
                 let Some(row) = PrevalidatedRevolutionBoundary::new(
+                    ctx,
                     transform,
                     segment,
                     &surface_geometries[index],
@@ -177,7 +178,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     section_point,
                     boundary,
                     &mut diagnostics,
-                ) else {
+                )? else {
                     complete = false;
                     break;
                 };
@@ -211,6 +212,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut complete = true;
         for (index, (segment, surface)) in profile.iter().zip(&surface_geometries).enumerate() {
             let Some(sense) = revolution_face_sense(
+                    ctx,
                     transform,
                     segment,
                     surface,
@@ -218,7 +220,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     area.get(),
                     &format!("revolution feature {feature_id} profile segment {index} face sense"),
                     &mut refusal,
-                ) else {
+                )? else {
                     complete = false;
                     break;
                 };
@@ -517,6 +519,7 @@ struct PrevalidatedRevolutionBoundary {
 
 impl PrevalidatedRevolutionBoundary {
     fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         transform: &crate::placement::FeatureSectionTransform,
         segment: &super::profiles::ProfileEntity,
         surface: &cadmpeg_ir::geometry::SurfaceGeometry,
@@ -524,10 +527,9 @@ impl PrevalidatedRevolutionBoundary {
         section_point: [f64; 2],
         boundary: RevolutionBoundary,
         diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
-    ) -> Option<Self> {
-        Some(Self {
-            boundary,
-            geometry: revolution_profile_boundary_pcurve(
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let Some(geometry) = revolution_profile_boundary_pcurve(
+                ctx,
                 transform,
                 segment,
                 surface,
@@ -535,8 +537,10 @@ impl PrevalidatedRevolutionBoundary {
                 section_point,
                 boundary,
                 diagnostics,
-            )?,
-        })
+            )? else {
+                return Ok(None);
+            };
+        Ok(Some(Self { boundary, geometry }))
     }
 }
 

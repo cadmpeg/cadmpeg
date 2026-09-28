@@ -32,13 +32,15 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
             .expect("valid direction fixture"),
         reference: None,
     };
-    let pcurve = revolution_boundary_pcurve(
+    let pcurve = crate::decode::with_test_decode_ctx(|ctx| revolution_boundary_pcurve(
+        ctx,
         &surface,
         [-3.0, 0.0, 0.0],
         &axis,
         &"revolution boundary fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
-    )
+    ))
+    .expect("resource admission")
     .expect("spindle boundary");
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
