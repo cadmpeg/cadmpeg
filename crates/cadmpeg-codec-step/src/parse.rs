@@ -61,6 +61,84 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
+fn copy_parser_text(
+    value: &str,
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut copied = String::new();
+    copied.try_reserve_exact(value.len()).map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.push_str(value);
+    Ok(copied)
+}
+
+fn copy_parser_bytes(
+    value: &[u8],
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Vec<u8>, CodecError> {
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
+    }
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(value.len()).map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.extend_from_slice(value);
+    Ok(copied)
+}
+
+fn parser_copy_refusal(
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    requested: usize,
+) -> CodecError {
+    budget.map_or_else(
+        || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested)),
+        |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
+    )
+}
+
+fn try_clone_value(
+    value: &Value,
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Value, CodecError> {
+    let _depth = budget.map(|ctx| ctx.enter_nested("step_value_copy_depth")).transpose()?;
+    Ok(match value {
+        Value::Reference(id) => Value::Reference(*id),
+        Value::ValueReference(id) => Value::ValueReference(*id),
+        Value::ConstantEntity(text) => Value::ConstantEntity(copy_parser_text(text, budget, operation)?),
+        Value::ConstantValue(text) => Value::ConstantValue(copy_parser_text(text, budget, operation)?),
+        Value::Integer(value) => Value::Integer(*value),
+        Value::Real(value) => Value::Real(*value),
+        Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
+        Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
+        Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
+        Value::Resource(text) => Value::Resource(copy_parser_text(text, budget, operation)?),
+        Value::Omitted => Value::Omitted,
+        Value::Derived => Value::Derived,
+        Value::List(values) => {
+            if let Some(ctx) = budget {
+                ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
+            }
+            let mut copied = Vec::new();
+            copied.try_reserve_exact(values.len()).map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+            for value in values {
+                copied.push(try_clone_value(value, budget, operation)?);
+            }
+            Value::List(copied)
+        }
+        Value::Typed(name, nested) => {
+            if let Some(ctx) = budget {
+                ctx.charge_collection_items(1, operation)?;
+            }
+            Value::Typed(
+                copy_parser_text(name, budget, operation)?,
+                Box::new(try_clone_value(nested, budget, operation)?),
+            )
+        }
+    })
+}
+
 /// One simple entity leaf within an entity instance.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PartialRecord {
@@ -1057,10 +1135,15 @@ impl Parser<'_, '_, '_> {
                     "step_anchor_binding_storage",
                 )?;
             }
-            let anchor_bindings = anchors
-                .iter()
-                .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-                .collect::<BTreeMap<_, _>>();
+            let mut anchor_bindings = BTreeMap::new();
+            for anchor in &anchors {
+                anchor_bindings.insert(
+                    copy_parser_text(&anchor.name, self.budget, "step_anchor_binding_name_copy")
+                        .map_err(ParseError::Resource)?,
+                    try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
+                        .map_err(ParseError::Resource)?,
+                );
+            }
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
@@ -1897,7 +1980,10 @@ fn validate_header_sections(
                         "step_section_language_name_copy",
                     )?;
                 }
-                if !language_sections.insert(section.clone()) {
+                let section_copy = section.as_deref().map(|value| {
+                    copy_parser_text(value, budget, "step_section_language_name_copy")
+                }).transpose().map_err(ValidationError::Resource)?;
+                if !language_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
                 if let Some(section) = section {
@@ -1919,7 +2005,10 @@ fn validate_header_sections(
                         "step_section_context_name_copy",
                     )?;
                 }
-                if !context_sections.insert(section.clone()) {
+                let section_copy = section.as_deref().map(|value| {
+                    copy_parser_text(value, budget, "step_section_context_name_copy")
+                }).transpose().map_err(ValidationError::Resource)?;
+                if !context_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_CONTEXT section");
                 }
                 if let Some(section) = section {
@@ -2559,7 +2648,12 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     }
                     self.charge_nodes(*nodes)?;
                     self.charge_storage(value)?;
-                    return Ok((value.clone(), *nodes, *nodes));
+                    return Ok((
+                        try_clone_value(value, self.budget, "step_anchor_memo_value_copy")
+                            .map_err(ResolveError::Resource)?,
+                        *nodes,
+                        *nodes,
+                    ));
                 }
                 if stack.contains(&name) {
                     let message = format_parser_text(
@@ -2610,7 +2704,14 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         )
                         .map_err(ResolveError::Resource)?;
                 }
-                self.memo.insert(name, (value.clone(), nodes));
+                self.memo.insert(
+                    name,
+                    (
+                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
+                            .map_err(ResolveError::Resource)?,
+                        nodes,
+                    ),
+                );
                 return Ok((value, nodes, nodes));
             }
         }
@@ -2668,13 +2769,22 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .checked_add(u64_from_index(name.len()))
                         .ok_or("anchor typed storage exceeds u64")?,
                 )?;
-                let value = Value::Typed(name.clone(), Box::new(value));
+                let value = Value::Typed(
+                    copy_parser_text(name, self.budget, "step_anchor_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
+                    Box::new(value),
+                );
                 Ok((value, nodes + 1, expanded_nodes))
             }
             value => {
                 self.charge_nodes(1)?;
                 self.charge_storage(value)?;
-                Ok((value.clone(), 1, 0))
+                Ok((
+                    try_clone_value(value, self.budget, "step_anchor_leaf_copy")
+                        .map_err(ResolveError::Resource)?,
+                    1,
+                    0,
+                ))
             }
         }
     }
@@ -2740,7 +2850,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
 
     fn clone_leaf(&self, value: &Value) -> Result<Value, ResolveError> {
         self.admit_copy(1, value_node_storage_bytes(value))?;
-        Ok(value.clone())
+        try_clone_value(value, self.budget, "step_reference_leaf_copy")
+            .map_err(ResolveError::Resource)
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
@@ -2794,7 +2905,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .checked_add(u64_from_index(name.len()))
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
-                Ok(Value::Typed(name.clone(), Box::new(resolved)))
+                Ok(Value::Typed(
+                    copy_parser_text(name, self.budget, "step_reference_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
+                    Box::new(resolved),
+                ))
             }
             _ => self.clone_leaf(value),
         }
@@ -2895,10 +3010,15 @@ fn resolve_local_references(
             .charge_retained(bytes, "step_reference_anchor_copy_storage")
             .map_err(ResolveError::Resource)?;
     }
-    let anchor_bindings = anchors
-        .iter()
-        .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let mut anchor_bindings = BTreeMap::new();
+    for anchor in anchors.iter() {
+        anchor_bindings.insert(
+            copy_parser_text(&anchor.name, budget, "step_reference_anchor_name_copy")
+                .map_err(ResolveError::Resource)?,
+            try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
+                .map_err(ResolveError::Resource)?,
+        );
+    }
     let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     for anchor in anchors {
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
