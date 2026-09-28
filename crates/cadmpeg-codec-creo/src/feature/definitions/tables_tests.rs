@@ -21,14 +21,14 @@ use crate::feature::definitions::positional_relation_triples;
 use crate::feature::definitions::positional_section_3d;
 use crate::feature::definitions::positional_trim_entity_table;
 use crate::feature::definitions::positional_trim_vertex_table;
-use crate::feature::definitions::positional_variable_table;
+use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
 use crate::feature::definitions::relation_table;
 use crate::feature::definitions::self_described_positional_dimension_table;
 use crate::feature::definitions::test_support::with_points;
 use crate::feature::definitions::trim_buckets;
 use crate::feature::definitions::trim_table_header;
 use crate::feature::definitions::trim_vertex_entry;
-use crate::feature::definitions::variable_table;
+use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::BinaryFlag;
 use crate::feature::definitions::FeatureDimensionReference;
 use crate::feature::definitions::FeatureOrderRow;
@@ -49,6 +49,85 @@ use crate::feature::definitions::TrimTableHeader;
 use crate::feature::definitions::VariableType;
 use crate::psb;
 use crate::scalar;
+
+fn variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_variable_table(ctx, payload, start, end, cache)
+    })
+    .expect("variable table admitted")
+}
+
+fn positional_variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_variable_table(ctx, payload, start, end, table_class, cache)
+    })
+    .expect("variable table admitted")
+}
+
+fn positional_variable_rows_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<FeatureVariableTable, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
+            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2\
+            \x02\x07\x18\x18\x01\x00\x0a";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
+    Ok(parse_positional_variable_table(
+        &ctx, payload, 0, payload.len(), 119, &scalar::ScalarCache::default(),
+    )?
+    .expect("complete positional variable table"))
+}
+
+#[test]
+fn positional_variable_row_capacity_refuses_before_reservation() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(positional_variable_rows_with_limits(2, u64::MAX).expect("two rows admitted").rows.len(), 2);
+    let error = positional_variable_rows_with_limits(1, u64::MAX).expect_err("two slots need two items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo variable rows"));
+}
+
+#[test]
+fn positional_variable_value_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = positional_variable_rows_with_limits(2, 0).expect_err("value needs one byte");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable value body"));
+}
+
+#[test]
+fn positional_variable_guess_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = positional_variable_rows_with_limits(2, 1).expect_err("guess needs one byte");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable guess body"));
+}
 
 #[test]
 fn positional_dimension_table_uses_the_inherited_table_class() {
