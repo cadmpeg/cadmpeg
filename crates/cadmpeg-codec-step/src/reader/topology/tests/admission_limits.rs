@@ -1045,3 +1045,82 @@ fn implicit_face_loop_normals_refuse_collection_limit() {
         CodecError::ResourceLimit(refusal)
             if refusal.operation == "step_implicit_face_loop_normals"));
 }
+
+fn pcurve_seed_refusal(collection_limit: u64, break_only: bool) -> CodecError {
+    let ir = cadmpeg_ir::CadIr::empty();
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:audit:surface#1")
+        .expect("valid surface identity");
+    let surface = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+    );
+    let pcurve = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            vec![cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                 cadmpeg_ir::math::Point2::new(0.5, 0.0),
+                 cadmpeg_ir::math::Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("finite pcurve"),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    if break_only {
+        super::super::pcurve_parameter_break_fractions(&pcurve, [0.0, 1.0], &mut Vec::new(), &ctx)
+            .err()
+            .expect("break fractions exceed limit")
+    } else {
+        super::super::pcurve_selection_seeds(&index, &surface_id, &pcurve, &surface, &ctx)
+            .err()
+            .expect("selection seeds exceed limit")
+    }
+}
+
+#[test]
+fn pcurve_break_fractions_refuse_collection_limit() {
+    assert!(matches!(pcurve_seed_refusal(0, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_pcurve_break_fractions"));
+}
+
+#[test]
+fn pcurve_selection_seeds_refuse_collection_limit() {
+    assert!(matches!(pcurve_seed_refusal(0, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_pcurve_selection_seeds"));
+}
+
+#[test]
+fn pcurve_selection_fractions_refuse_collection_limit() {
+    assert!(matches!(pcurve_seed_refusal(69, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.operation == "step_pcurve_selection_fractions"));
+}
+
+#[test]
+fn selected_pcurve_id_refuses_retained_limit() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid empty exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+        .expect("empty carrier index fits policy");
+    let candidate = cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#1")
+        .expect("valid pcurve identity");
+    assert!(matches!(super::super::select_associated_pcurve(
+        &cadmpeg_ir::CadIr::empty(), &exchange, 1,
+        &super::super::EdgeDef::Bare { start: 1, end: 2 },
+        &BTreeMap::new(), &carriers, &[candidate], &ctx,
+    ), Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
+        if refusal.dimension == ResourceDimension::RetainedBytes
+            && refusal.operation == "step_selected_pcurve_id"));
+}
