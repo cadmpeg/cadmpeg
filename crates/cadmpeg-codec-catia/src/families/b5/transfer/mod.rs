@@ -898,9 +898,10 @@ pub(in crate::families) enum ResolvedPcurveSurface {
 
 /// Lower one resolved object-stream surface to an exact neutral carrier.
 pub(in crate::families) fn resolved_surface_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &B5Surface,
-) -> Option<ResolvedPcurveSurface> {
-    match surfaces::surface_carrier(surface) {
+) -> Result<Option<ResolvedPcurveSurface>, cadmpeg_core::CodecError> {
+    Ok(match surfaces::surface_carrier(ctx, surface)? {
         surfaces::B5SurfaceCarrier::Analytic(geometry) => {
             Some(ResolvedPcurveSurface::Geometry(geometry))
         }
@@ -909,13 +910,18 @@ pub(in crate::families) fn resolved_surface_carrier(
             definition,
         }) => Some(ResolvedPcurveSurface::RollingBall {
             carrier_object_id,
-            definition: Box::new(definition.clone()),
+            definition: {
+                let copy = surfaces::copy_rolling_ball_definition(ctx, definition)?;
+                ctx.charge_retained(std::mem::size_of::<ProceduralSurfaceDefinition>() as u64,
+                    "catia_b5_resolved_rolling_ball_box")?;
+                Box::new(copy)
+            },
         }),
         surfaces::B5SurfaceCarrier::Procedural(
             surfaces::B5ProceduralSurface::Unresolved
             | surfaces::B5ProceduralSurface::Revolution { .. },
         ) => None,
-    }
+    })
 }
 
 /// Resolve a pcurve support carrier with the graph context required by exact
@@ -929,7 +935,7 @@ pub(in crate::families) fn resolved_surface_carrier_in_graph(
     let Some(surface) = graph.surfaces.get(&surface_object_id) else {
         return Ok(None);
     };
-    if let Some(carrier) = resolved_surface_carrier(surface) {
+    if let Some(carrier) = resolved_surface_carrier(ctx, surface)? {
         return Ok(Some(carrier));
     }
     Ok(
@@ -950,7 +956,10 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
         Some(graph) => resolved_surface_carrier_in_graph(ctx, graph, pcurve.support_id, refusal)?,
         None => None,
     };
-    let Some(carrier) = graph_carrier.or_else(|| resolved_surface_carrier(surface)) else {
+    let Some(carrier) = (match graph_carrier {
+        Some(carrier) => Some(carrier),
+        None => resolved_surface_carrier(ctx, surface)?,
+    }) else {
         return Ok(None);
     };
     let Some((knots, control_points)) = pcurve.bspline(ctx)? else {
@@ -960,10 +969,10 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
         PcurveNurbs::from_lanes(
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
-            control_points
-                .into_iter()
-                .map(|point| pcurves::neutral_pcurve_point(point.get(), surface))
-                .collect(),
+            crate::resource::collect_vec(ctx,
+                control_points.into_iter()
+                    .map(|point| pcurves::neutral_pcurve_point(point.get(), surface)),
+                "catia_b5_object_stream_pcurve_points")?,
             None,
             false,
         ),
