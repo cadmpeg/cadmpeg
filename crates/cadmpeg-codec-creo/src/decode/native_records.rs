@@ -294,19 +294,35 @@ pub(super) struct CreoSketchSectionOrientation {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureParameterFrame {
+pub(super) struct CreoFeatureParameterFrame<'a> {
     pub(super) kind: &'static str,
-    pub(super) body: Vec<u8>,
+    pub(super) body: &'a [u8],
     pub(super) decoded_values: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureOutline {
+pub(super) struct CreoFeatureOutline<'a> {
     pub(super) phase: &'static str,
-    pub(super) local_values: Vec<Option<f64>>,
-    pub(super) local_value_bodies: Vec<Vec<u8>>,
+    #[serde(serialize_with = "serialize_feature_outline_values")]
+    pub(super) local_values: &'a [crate::feature::definitions::DecodedField<Option<f64>>],
+    #[serde(serialize_with = "serialize_feature_outline_bodies")]
+    pub(super) local_value_bodies: &'a [crate::feature::definitions::DecodedField<Option<f64>>],
     pub(super) offset: usize,
+}
+
+fn serialize_feature_outline_values<S: serde::Serializer>(
+    fields: &[crate::feature::definitions::DecodedField<Option<f64>>],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(fields.iter().map(|field| field.value))
+}
+
+fn serialize_feature_outline_bodies<S: serde::Serializer>(
+    fields: &[crate::feature::definitions::DecodedField<Option<f64>>],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(fields.iter().map(|field| &field.body))
 }
 
 #[derive(Serialize)]

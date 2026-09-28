@@ -588,7 +588,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     pcurve_endpoint_payload.extend(pcurve_endpoints.iter().map(|(record, _)| record));
     store_arena(ctx, ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
-    let feature_definitions = feature_definition_records(scan);
+    let feature_definitions = feature_definition_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
