@@ -132,7 +132,10 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_counted_61_from_records(&bytes, &records)
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_counted_61_from_records(ctx, &bytes, &records)
+                .expect("service decode")
+        })
             .into_iter()
             .map(|record| record.pos)
             .collect(),
@@ -146,7 +149,10 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_long_61_from_records(&bytes, &records)
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_long_61_from_records(ctx, &bytes, &records)
+                .expect("service decode")
+        })
             .into_iter()
             .map(|record| record.pos)
             .collect(),
@@ -160,7 +166,10 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .into_iter()
             .map(|record| record.frame.pos)
             .collect(),
-        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
+        crate::test_support::with_service_context(|ctx| {
+            crate::families::b2::records::b2_class5b5c_records_from_records(ctx, &bytes, &records)
+                .expect("service decode")
+        })
             .into_iter()
             .map(|record| record.frame.pos)
             .collect(),

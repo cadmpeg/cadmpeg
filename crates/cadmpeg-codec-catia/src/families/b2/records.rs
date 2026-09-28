@@ -1377,36 +1377,50 @@ fn b2_owner_numeric_tail(data: &[u8]) -> Option<CatiaOwnerNumericTail> {
 #[cfg(test)]
 fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
     let records = consolidated_records(data);
-    b2_counted_61_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_counted_61_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_counted_61_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Counted61> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x61)
-        .into_iter()
-        .filter_map(|frame| {
-            let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
-            if count == 0 {
-                return None;
-            }
-            let mut at = frame.payload + 1;
-            let references = (0..count)
-                .map(|_| compact_int(data, &mut at))
-                .collect::<Option<Vec<_>>>()?;
-            let tail = data.get(at..frame.end)?;
-            if tail.is_empty() || tail.last() != Some(&0x03) {
-                return None;
-            }
-            Some(B2Counted61 {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                references,
-                tail: tail.to_vec(),
-            })
-        })
-        .collect()
+) -> Result<Vec<B2Counted61>, CodecError> {
+    let mut output = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
+        let Some(count) = data.get(frame.payload).and_then(|byte| byte.checked_sub(0x80)) else {
+            continue;
+        };
+        let count = usize::from(count);
+        if count == 0 { continue; }
+        let Some(payload_len) = frame.end.checked_sub(frame.payload + 1) else { continue };
+        if count > payload_len { continue; }
+        let mut at = frame.payload + 1;
+        let mut parsed = [0u32; 127];
+        let mut valid = true;
+        for slot in &mut parsed[..count] {
+            let Some(value) = compact_int(data, &mut at) else {
+                valid = false;
+                break;
+            };
+            *slot = value;
+        }
+        if !valid { continue; }
+        let Some(tail) = data.get(at..frame.end) else { continue };
+        if tail.is_empty() || tail.last() != Some(&0x03) { continue; }
+        let references = crate::resource::copy_retained_slice(ctx, &parsed[..count],
+            "catia_b2_counted61_references")?;
+        let tail = crate::resource::copy_retained_slice(ctx, tail,
+            "catia_b2_counted61_tail")?;
+        crate::resource::push(ctx, &mut output, B2Counted61 {
+            pos: frame.pos,
+            header_token: frame.header_token,
+            references,
+            tail,
+        }, "catia_b2_counted61_records")?;
+    }
+    Ok(output)
 }
 
 /// Decode the long class-`0x61` form. Its fixed 25-byte suffix determines the
@@ -1415,61 +1429,71 @@ pub(crate) fn b2_counted_61_from_records(
 #[cfg(test)]
 fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
     let records = consolidated_records(data);
-    b2_long_61_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_long_61_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_long_61_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Long61> {
-    family_frames_from_records(records, ConsolidatedFamily::B, 0x61)
-        .into_iter()
-        .filter_map(|frame| {
-            let payload_len = frame.end.checked_sub(frame.payload)?;
-            let delimiter = frame.end.checked_sub(25)?;
+) -> Result<Vec<B2Long61>, CodecError> {
+    let mut output = Vec::new();
+    for frame in family_frames_from_records(records, ConsolidatedFamily::B, 0x61) {
+            let Some(payload_len) = frame.end.checked_sub(frame.payload) else { continue };
+            let Some(delimiter) = frame.end.checked_sub(25) else { continue };
             if payload_len < 36
                 || data.get(frame.payload + 8) != Some(&0x06)
                 || data.get(delimiter) != Some(&0xfe)
                 || (delimiter - (frame.payload + 9)) % 2 != 0
                 || data.get(frame.end - 1) != Some(&0x03)
             {
-                return None;
+                continue;
             }
-            let prefix = data
-                .get(frame.payload..frame.payload + 8)?
-                .try_into()
-                .ok()?;
-            let mut members_view = View::over_retained(data.get(frame.payload + 9..delimiter)?);
+            let Some(prefix) = data.get(frame.payload..frame.payload + 8)
+                .and_then(|bytes| bytes.try_into().ok()) else { continue };
+            let Some(member_bytes) = data.get(frame.payload + 9..delimiter) else { continue };
+            let mut members_view = View::over_retained(member_bytes);
             let mut members = Vec::new();
             while !members_view.is_empty() {
-                members.push(members_view.u16_le()?);
+                let Some(member) = members_view.u16_le() else { break };
+                ctx.charge_retained(2, "catia_b2_long61_members")?;
+                crate::resource::push(ctx, &mut members, member,
+                    "catia_b2_long61_members")?;
             }
-            if members.is_empty() || members.windows(2).any(|pair| pair[0] >= pair[1]) {
-                return None;
+            if !members_view.is_empty() || members.is_empty()
+                || members.windows(2).any(|pair| pair[0] >= pair[1]) {
+                continue;
             }
             let mut at = delimiter + 1;
             let mut references = [0u16; 5];
+            let mut valid = true;
             for reference in &mut references {
                 if data.get(at) != Some(&0x0a) {
-                    return None;
+                    valid = false;
+                    break;
                 }
-                *reference = View::u16_le_at(data, at + 1)?;
+                let Some(value) = View::u16_le_at(data, at + 1) else {
+                    valid = false;
+                    break;
+                };
+                *reference = value;
                 at += 3;
             }
-            let scalar = f64_le(data, at)?;
-            if at + 9 != frame.end {
-                return None;
-            }
-            Some(B2Long61 {
+            if !valid { continue; }
+            let Some(scalar) = f64_le(data, at) else { continue };
+            if at + 9 != frame.end { continue; }
+            crate::resource::push(ctx, &mut output, B2Long61 {
                 pos: frame.pos,
                 header_token: frame.header_token,
                 prefix,
                 members,
                 references,
                 scalar,
-            })
-        })
-        .collect()
+            }, "catia_b2_long61_records")?;
+    }
+    Ok(output)
 }
 
 /// Decode complete B-family class-`0x5b` and class-`0x5c` control records.
@@ -1480,29 +1504,33 @@ pub(crate) fn b2_long_61_from_records(
 #[cfg(test)]
 fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
-    b2_class5b5c_records_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_class5b5c_records_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_class5b5c_records_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Class5b5cRecord> {
-    records
-        .iter()
-        .filter_map(|record| {
+) -> Result<Vec<B2Class5b5cRecord>, CodecError> {
+    let mut output = Vec::new();
+    for record in records {
             if record.family != ConsolidatedFamily::B {
-                return None;
+                continue;
             }
-            let class = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class).ok()?;
-            let payload = data.get(record.payload()?)?;
-            Some(B2Class5b5cRecord {
-                frame: ConsolidatedRawFrame::from_record(record, payload.to_vec()),
+            let Ok(class) = crate::native::class5b5c::CatiaClass5b5c::try_from(record.class) else { continue };
+            let Some(payload) = record.payload().and_then(|range| data.get(range)) else { continue };
+            let payload = crate::resource::copy_retained_slice(ctx, payload,
+                "catia_b2_class5b5c_payload")?;
+            crate::resource::push(ctx, &mut output, B2Class5b5cRecord {
+                frame: ConsolidatedRawFrame::from_record(record, payload),
                 source_index: record.source_index,
                 source_offset: record.source_range.start,
                 class,
-            })
-        })
-        .collect()
+            }, "catia_b2_class5b5c_records")?;
+    }
+    Ok(output)
 }
 
 /// Decode structurally complete class-`0x5f` nodes.

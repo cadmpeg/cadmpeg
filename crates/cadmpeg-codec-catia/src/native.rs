@@ -7259,72 +7259,119 @@ pub(crate) fn legacy_evaluated_value_name<'a>(
 }
 
 fn consolidated_class61_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedClass61Record> {
-    let mut class61_records =
-        crate::families::b2::records::b2_counted_61_from_records(bytes, records)
-            .into_iter()
-            .map(|record| {
-                (
-                    record.pos,
-                    record.header_token,
-                    CatiaConsolidatedClass61Payload::Counted {
-                        references: record.references,
-                        tail: record.tail,
-                    },
-                )
-            })
-            .chain(
-                crate::families::b2::records::b2_long_61_from_records(bytes, records)
-                    .into_iter()
-                    .map(|record| {
-                        (
-                            record.pos,
-                            record.header_token,
-                            CatiaConsolidatedClass61Payload::Long {
-                                prefix: record.prefix,
-                                members: record.members,
-                                references: record.references,
-                                scalar: record.scalar,
-                            },
-                        )
-                    }),
-            )
-            .collect::<Vec<_>>();
-    class61_records.sort_by_key(|(pos, _, _)| *pos);
-    class61_records
-        .into_iter()
-        .enumerate()
-        .map(
-            |(index, (pos, header_token, payload))| CatiaConsolidatedClass61Record {
-                id: format!("catia:consolidated:class61-record#{index}"),
-                byte_offset: pos as u64,
-                header_token,
-                payload,
+) -> Result<Vec<CatiaConsolidatedClass61Record>, CodecError> {
+    let mut class61_records = Vec::new();
+    for record in crate::families::b2::records::b2_counted_61_from_records(ctx, bytes, records)? {
+        crate::resource::push(ctx, &mut class61_records, (
+            record.pos, record.header_token,
+            CatiaConsolidatedClass61Payload::Counted {
+                references: record.references, tail: record.tail,
             },
-        )
-        .collect()
+        ), "catia_native_class61_order")?;
+    }
+    for record in crate::families::b2::records::b2_long_61_from_records(ctx, bytes, records)? {
+        crate::resource::push(ctx, &mut class61_records, (
+            record.pos, record.header_token,
+            CatiaConsolidatedClass61Payload::Long {
+                prefix: record.prefix,
+                members: record.members,
+                references: record.references,
+                scalar: record.scalar,
+            },
+        ), "catia_native_class61_order")?;
+    }
+    class61_records.sort_by_key(|(pos, _, _)| *pos);
+    let mut output = Vec::new();
+    for (index, (pos, header_token, payload)) in class61_records.into_iter().enumerate() {
+        let value = CatiaConsolidatedClass61Record {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:class61-record#", index, 0,
+                "catia_native_class61_id")?,
+            byte_offset: pos as u64,
+            header_token,
+            payload,
+        };
+        crate::resource::push(ctx, &mut output, value,
+            "catia_native_class61_records")?;
+    }
+    Ok(output)
 }
 
 fn consolidated_class5b5c_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedClass5b5cRecord> {
+) -> Result<Vec<CatiaConsolidatedClass5b5cRecord>, CodecError> {
     let mut control_records =
-        crate::families::b2::records::b2_class5b5c_records_from_records(bytes, records);
+        crate::families::b2::records::b2_class5b5c_records_from_records(ctx, bytes, records)?;
     control_records.sort_by_key(|record| (record.source_index, record.source_offset));
-    control_records
-        .into_iter()
-        .enumerate()
-        .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
-            id: format!("catia:consolidated:class5b5c-record#{index}"),
+    let mut output = Vec::new();
+    for (index, record) in control_records.into_iter().enumerate() {
+        let value = CatiaConsolidatedClass5b5cRecord {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:class5b5c-record#", index, 0,
+                "catia_native_class5b5c_id")?,
             frame: record.frame.into(),
             source_index: record.source_index as u64,
             source_offset: record.source_offset as u64,
             class: record.class,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut output, value,
+            "catia_native_class5b5c_records")?;
+    }
+    Ok(output)
+}
+
+#[cfg(test)]
+mod consolidated_class_record_limit_tests {
+    use super::{consolidated_class61_records, consolidated_class5b5c_records};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_class61_order_output_and_id_refuse_limits() {
+        let mut bytes = crate::test_support::test_b2::b2_counted_61_stream();
+        bytes.extend_from_slice(&crate::test_support::test_b2::b2_long_61_stream());
+        let records = crate::wire::records::consolidated_records(&bytes);
+        for (limit, operation) in [
+            (7, "catia_native_class61_order"),
+            (13, "catia_native_class61_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                consolidated_class61_records(ctx, &bytes, &records)
+            });
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == operation));
+        }
+        let limited = crate::test_support::with_retained_limit(24, |ctx| {
+            consolidated_class61_records(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_class61_id"));
+    }
+
+    #[test]
+    fn native_class5b5c_output_and_id_refuse_limits() {
+        let bytes = crate::test_support::test_b2::b2_class5b5c_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let payload_bytes = u64::try_from(records.iter()
+            .filter(|record| matches!(record.class, 0x5b | 0x5c))
+            .map(|record| record.payload().expect("class payload").len()).sum::<usize>())
+            .expect("fixture payloads fit u64");
+        let record_count = u64::try_from(records.iter()
+            .filter(|record| matches!(record.class, 0x5b | 0x5c)).count())
+            .expect("fixture records fit u64");
+        let limited = crate::test_support::with_collection_limit(payload_bytes + record_count, |ctx| {
+            consolidated_class5b5c_records(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_class5b5c_records"));
+        let limited = crate::test_support::with_retained_limit(payload_bytes, |ctx| {
+            consolidated_class5b5c_records(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_class5b5c_id"));
+    }
 }
 
 fn consolidated_cone_faces(
@@ -9340,9 +9387,9 @@ impl CatiaNative {
         }
         let consolidated_circles = consolidated_circles(ctx, bytes, consolidated_records)?;
         let consolidated_class61_records =
-            consolidated_class61_records(bytes, consolidated_records);
+            consolidated_class61_records(ctx, bytes, consolidated_records)?;
         let consolidated_class5b5c_records =
-            consolidated_class5b5c_records(bytes, consolidated_records);
+            consolidated_class5b5c_records(ctx, bytes, consolidated_records)?;
         let consolidated_parameter_points =
             consolidated_parameter_points(ctx, bytes, consolidated_records)?;
         let consolidated_cone_faces =
