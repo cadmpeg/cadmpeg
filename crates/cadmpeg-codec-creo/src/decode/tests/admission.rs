@@ -299,8 +299,10 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections.len(), 1);
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
-    let classification = crate::dialect::classify(&scan);
-    assert!(container::summarize(&scan, &classification)
+    let classification = crate::decode::with_test_decode_ctx(|ctx| crate::dialect::classify(ctx, &scan))
+        .expect("dialect classification admitted");
+    assert!(crate::decode::with_test_decode_ctx(|ctx| container::summarize(ctx, &scan, classification))
+        .expect("container summary admitted")
         .notes
         .iter()
         .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
