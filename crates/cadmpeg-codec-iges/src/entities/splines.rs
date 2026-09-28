@@ -218,7 +218,7 @@ fn add_edge(
         source_object: Some(match source_object(entry, Some(ctx)) {
             Ok(source) => source,
             Err(error) => {
-                super::non_resource_error(error)?;
+                super::non_resource_error(error, Some(ctx))?;
                 return Ok(None);
             }
         }),

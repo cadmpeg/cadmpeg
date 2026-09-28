@@ -1984,7 +1984,7 @@ fn project_native_composite(
     let source = match source_object(entry, ctx) {
         Ok(source) => source,
         Err(error) => {
-            super::non_resource_error(error)?;
+            super::non_resource_error(error, ctx)?;
             return Ok(None);
         }
     };

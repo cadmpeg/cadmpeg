@@ -3,12 +3,26 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
-use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
+
+#[test]
+fn diagnostic_error_text_refuses_before_retained_copy() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx));
+    assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges diagnostic error text"));
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(super::non_resource_error(CodecError::Malformed("invalid source".into()), Some(&ctx)).unwrap(), "malformed container: invalid source");
+}
 
 fn assert_entity_loss_limit(bytes: &[u8], operation: &str, retained: bool) {
     let mut cap = 0_u64;

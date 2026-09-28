@@ -869,7 +869,7 @@ pub(super) fn project(
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
                     Err(error) => {
-                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error)?))?;
+                        super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error, ctx)?))?;
                         continue;
                     }
                 }),
@@ -904,7 +904,7 @@ pub(super) fn project(
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
                 Err(error) => {
-                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error)?))?;
+                    super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", super::non_resource_error(error, ctx)?))?;
                     continue;
                 }
             }),
