@@ -267,13 +267,13 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 }
             }
         }
-        let decoded = fixed_signature(kind)
-            .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .or_else(|| {
-                value_owned
-                    .then(|| consume_variable(stream, offset, kind))
-                    .flatten()
-            });
+        let fixed = fixed_signature(kind)
+            .and_then(|signature| consume_fixed(stream, offset, kind, signature));
+        let decoded = if fixed.is_some() || !value_owned {
+            fixed
+        } else {
+            consume_variable(ctx, stream, offset, kind)?
+        };
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
             offset = record.end;

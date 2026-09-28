@@ -1753,9 +1753,13 @@ fn consume_shared_record(
         return Ok(Some(record));
     }
     let Some(kind) = stream.get(offset).copied().map(u16::from) else { return Ok(None); };
-    Ok(fixed_signature(kind)
-        .and_then(|signature| consume_fixed(stream, record_offset, kind, signature))
-        .or_else(|| consume_variable(stream, record_offset, kind)))
+    let fixed = fixed_signature(kind)
+        .and_then(|signature| consume_fixed(stream, record_offset, kind, signature));
+    Ok(if fixed.is_some() {
+        fixed
+    } else {
+        consume_variable(ctx, stream, record_offset, kind)?
+    })
 }
 
 fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
@@ -2429,8 +2433,19 @@ fn fixed_layout(
     })
 }
 
-fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
-    let (xmt, byte_len, family) = match kind {
+fn consume_variable(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    kind: u16,
+) -> Result<Option<Record>, CodecError> {
+    if kind == 90 {
+        return Ok(consume_group(stream, offset));
+    }
+    if kind == 91 {
+        return Ok(consume_type_91(stream, offset));
+    }
+    let parsed = (|| -> Option<_> { Some(match kind {
         81 => {
             let record = crate::parasolid::entity_51_record_at(stream, offset)?;
             (
@@ -2460,18 +2475,18 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
             };
             (xmt, byte_len, family)
         }
-        90 => return consume_group(stream, offset),
-        91 => return consume_type_91(stream, offset),
         _ => return None,
-    };
-    let end = offset.checked_add(byte_len)?;
-    Some(Record {
+    }) })();
+    let Some((xmt, byte_len, family)) = parsed else { return Ok(None); };
+    let Some(end) = offset.checked_add(byte_len) else { return Ok(None); };
+    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    Ok(Some(Record {
         family,
         xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        canonical_bytes: ctx.copy_retained(bytes, "NX deltas variable record bytes")?,
         offset,
         end,
-    })
+    }))
 }
 
 fn is_value_family(kind: u16) -> bool {
