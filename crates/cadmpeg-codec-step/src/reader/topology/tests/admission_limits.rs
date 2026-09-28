@@ -765,3 +765,90 @@ fn geometric_set_faces_refuse_collection_limit() {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_geometric_set_faces"));
 }
+
+fn staged_topology_refusal(
+    collection_limit: u64,
+    retained_limit: u64,
+    surface_count: usize,
+) -> super::super::StageError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
+    let body_id = body_id();
+    let region_id = cadmpeg_ir::ids::RegionId::mint("step:data:region#1")
+        .expect("valid region identity");
+    let surfaces = (0..surface_count)
+        .map(|index| cadmpeg_ir::geometry::Surface {
+            id: cadmpeg_ir::ids::SurfaceId::mint(format!("step:data:surface#{index}"))
+                .expect("valid surface identity"),
+            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+            ),
+            source_object: None,
+        })
+        .collect();
+    super::super::staged_topology(
+        std::collections::HashSet::new(),
+        Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), surfaces, Vec::new(),
+        cadmpeg_ir::topology::Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: Vec::new(),
+        },
+        cadmpeg_ir::topology::Body {
+            id: body_id,
+            kind: cadmpeg_ir::topology::BodyKind::Sheet,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+        &ctx,
+    )
+    .err()
+    .expect("staging exceeds limit")
+}
+
+#[test]
+fn staged_surface_ids_refuse_collection_limit() {
+    assert!(matches!(staged_topology_refusal(0, u64::MAX, 1),
+        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_staged_surface_ids"));
+}
+
+#[test]
+fn staged_surface_ids_refuse_retained_limit() {
+    assert!(matches!(staged_topology_refusal(u64::MAX, 0, 1),
+        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_staged_surface_ids"));
+}
+
+#[test]
+fn staged_surfaces_refuse_collection_limit() {
+    assert!(matches!(staged_topology_refusal(1, u64::MAX, 1),
+        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_staged_surfaces"));
+}
+
+#[test]
+fn staged_regions_refuse_collection_limit() {
+    assert!(matches!(staged_topology_refusal(0, u64::MAX, 0),
+        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_staged_regions"));
+}
+
+#[test]
+fn staged_bodies_refuse_collection_limit() {
+    assert!(matches!(staged_topology_refusal(1, u64::MAX, 0),
+        super::super::StageError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_staged_bodies"));
+}
