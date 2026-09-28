@@ -68,6 +68,19 @@ impl<T> NonEmpty<T> {
         }
         Ok(NonEmpty { first, rest })
     }
+
+    pub(crate) fn try_map_charged<U>(self, ctx: &DecodeContext<'_>, mut map: impl FnMut(T) -> Option<U>) -> Result<Option<NonEmpty<U>>, CodecError> {
+        let Some(first) = map(self.first) else { return Ok(None) };
+        let mut rest = Vec::new();
+        for value in self.rest {
+            let Some(value) = map(value) else { return Ok(None) };
+            ctx.charge_collection_items(1, "NX nonempty mapped entries")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<U>()), "NX nonempty mapped entries")?;
+            rest.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX nonempty mapped entries", 0, 1))?;
+            rest.push(value);
+        }
+        Ok(Some(NonEmpty { first, rest }))
+    }
 }
 
 impl<T> NonEmpty<Option<T>> {

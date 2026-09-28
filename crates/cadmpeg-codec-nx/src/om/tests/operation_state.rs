@@ -168,10 +168,40 @@ fn operation_state_journal_start_accepts_count_token_runs() {
 
     let start = operation_state_journal_start(&bytes, 0).expect("journal prefix");
     assert_eq!(start, prefix.len());
-    let groups = operation_state_journal_groups_before_boundary(&bytes, start, bytes.len(), 0)
+    let groups = crate::test_support::with_decode_context(|ctx| operation_state_journal_groups_before_boundary(ctx, &bytes, start, bytes.len(), 0)).unwrap()
         .expect("journal groups");
     assert_eq!(groups.len(), 1);
     assert_eq!(Some(groups[0].rows().first().ordinal().value()), Some(0x2a));
+}
+
+fn state_journal_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = [
+        0x04, 0x01, 0x02, 0x00, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83,
+        0x10, 0x2a, 0x13,
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    crate::om::operation_state_journal_groups_before_boundary(&ctx, &bytes, 0, bytes.len(), 0).unwrap_err()
+}
+
+#[test]
+fn state_journal_groups_refuse_collection_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_journal_groups_refuse_retained_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_journal_groups_refuse_work_limit() {
+    let error = state_journal_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
