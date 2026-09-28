@@ -1475,60 +1475,80 @@ pub(crate) fn decode_sketch_relations(
             ) else {
                 continue;
             };
-            let rectangular_counted_reference_count = match &parsed.class_members {
-                RelationClassMembers::Rectangular {
-                    reference_count, ..
-                } => Some(*reference_count),
-                _ => None,
-            };
-            let members = crate::records::sketch_relations::SketchRelationMembers::from_indices(
-                parsed.members.into_iter().map(|member| {
-                    (
-                        member.reference.value,
-                        member.reference.offset as u32,
-                        member.relation_ordinal,
-                    )
-                }),
-            );
-            let return_members =
-                crate::records::sketch_relations::SketchRelationReturnMembers::from_indices(
-                    parsed
-                        .return_members
-                        .into_iter()
-                        .map(|member| (member.value, member.offset as u32)),
-                );
-            out.push(
-                SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
-                    id: ids::native_sketch_relation_id(&entry.name, record.record_index),
-                    record_index: record.record_index,
-                    class_tag: record.class_tag.clone(),
-                    byte_offset: record.byte_offset,
-                    state_offset: parsed.state_offset as u32,
-                    owner_reference: parsed.owner_reference,
-                    owner_entity_id: None,
-                    owner_reference_offset: parsed.owner_reference_offset as u32,
-                    auxiliary_references: crate::records::identity::ReferenceRun::located(
-                        parsed
-                            .auxiliary_references
-                            .into_iter()
-                            .map(|row| crate::records::identity::Located {
-                                value: row.value,
-                                offset: row.offset as u32,
-                            })
-                            .collect(),
-                    ),
-                    rectangular_counted_reference_count,
-                    members,
-                    definition,
-                    entity_genesis: parsed.entity_genesis,
-                    return_members,
-                    raw_bytes: payload.to_vec(),
-                })
-                .map_err(|error| CodecError::malformed(error.to_string()))?,
-            );
+            admit_sketch_relation(ctx, &mut out, &entry.name, record, payload, parsed, definition)?;
         }
     }
     Ok(out)
+}
+
+fn admit_sketch_relation(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<SketchRelation>,
+    stream: &str,
+    record: &DesignRecordHeader,
+    payload: &[u8],
+    parsed: ParsedSketchRelation,
+    definition: crate::records::sketch_relations::SketchRelationDefinition,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d sketch relation output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch relation output allocation", 0, 1)
+    })?;
+    let rectangular_counted_reference_count = match &parsed.class_members {
+        RelationClassMembers::Rectangular { reference_count, .. } => Some(*reference_count),
+        _ => None,
+    };
+    let members = crate::records::sketch_relations::SketchRelationMembers::from_indices(
+        parsed.members.into_iter().map(|member| {
+            (
+                member.reference.value,
+                member.reference.offset as u32,
+                member.relation_ordinal,
+            )
+        }),
+    );
+    let return_members = crate::records::sketch_relations::SketchRelationReturnMembers::from_indices(
+        parsed.return_members.into_iter().map(|member| (member.value, member.offset as u32)),
+    );
+    let auxiliary_count = parsed.auxiliary_references.len();
+    ctx.charge_collection_items(auxiliary_count as u64, "f3d sketch relation auxiliary output")?;
+    let mut auxiliary_references = Vec::new();
+    auxiliary_references.try_reserve_exact(auxiliary_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch relation auxiliary allocation", 0, auxiliary_count as u64)
+    })?;
+    for row in parsed.auxiliary_references {
+        auxiliary_references.push(crate::records::identity::Located {
+            value: row.value,
+            offset: row.offset as u32,
+        });
+    }
+    let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
+        id: design_record_id_charged(
+            ctx,
+            stream,
+            ":sketch-relation#",
+            u64::from(record.record_index),
+            "f3d sketch relation ID",
+            "f3d sketch relation ID allocation",
+        )?,
+        record_index: record.record_index,
+        class_tag: record.class_tag.clone(),
+        byte_offset: record.byte_offset,
+        state_offset: parsed.state_offset as u32,
+        owner_reference: parsed.owner_reference,
+        owner_entity_id: None,
+        owner_reference_offset: parsed.owner_reference_offset as u32,
+        auxiliary_references: crate::records::identity::ReferenceRun::located(auxiliary_references),
+        rectangular_counted_reference_count,
+        members,
+        definition,
+        entity_genesis: parsed.entity_genesis,
+        return_members,
+        raw_bytes: ctx.copy_retained(payload, "f3d sketch relation raw bytes")?,
+    })
+    .map_err(|error| CodecError::malformed(error.to_string()))?;
+    out.push(relation);
+    Ok(())
 }
 
 /// Decode the pattern definition a relation's class members carry, reading them
