@@ -135,6 +135,36 @@ pub(super) fn linear_knots(
     Ok(knots)
 }
 
+fn linear_pcurve_geometry(
+    ctx: &DecodeContext<'_>,
+    parameters: &[f64],
+    controls: &[Point2],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<PcurveGeometry, cadmpeg_core::CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(controls.len());
+    ctx.charge_collection_items(count, "nx support UV admitted controls")?;
+    let mut points = Vec::new();
+    points.try_reserve_exact(controls.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx support UV admitted controls", 0, count)
+    })?;
+    for control in controls {
+        points.push(FinitePoint2::new(*control).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("control_points contains a non-finite point")
+        })?);
+    }
+    let knots = cadmpeg_ir::geometry::nurbs::KnotVector::new(linear_knots(
+        parameters,
+        geometry_budget,
+    )?)?;
+    let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+        1,
+        knots,
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points },
+        false,
+    )?;
+    Ok(PcurveGeometry::Nurbs { nurbs })
+}
+
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
 // this function decides which native lane can be admitted to which support.
 #[allow(clippy::too_many_arguments)]
@@ -710,15 +740,8 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             let Some(control_points) = control_points else {
                 continue;
             };
-            let replacement = PcurveGeometry::Nurbs {
-                nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    1,
-                    linear_knots(parameters, geometry_budget)?,
-                    control_points,
-                    None,
-                    false,
-                )?,
-            };
+            let replacement =
+                linear_pcurve_geometry(ctx, parameters, &control_points, geometry_budget)?;
             ctx.charge_collection_items(1, "nx serialized support UV replacements")?;
             replacements.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("nx serialized support UV replacements", 0, 1)
@@ -1507,14 +1530,7 @@ fn complete_support_uv_wave(
                         ];
                     }
                     let parameter_range = samples.parameter_range();
-                    let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                        1,
-                        linear_knots(parameters, geometry_budget)?,
-                        uv,
-                        None,
-                        false,
-                    )?;
-                    let pcurve = PcurveGeometry::Nurbs { nurbs };
+                    let pcurve = linear_pcurve_geometry(ctx, parameters, &uv, geometry_budget)?;
                     if let [Some(first), Some(last)] = endpoint_values {
                         let key = (
                             crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx support UV witness owner")?,
@@ -1906,21 +1922,8 @@ fn complete_coupled_support_uv(
                         None
                     };
                 let parameter_range = samples.parameter_range();
-                let count = cadmpeg_core::decode::u64_from_index(lanes[side].len());
-                ctx.charge_collection_items(count, "nx coupled support UV controls")?;
-                let mut controls = Vec::new();
-                controls.try_reserve_exact(lanes[side].len()).map_err(|_| {
-                    ctx.refuse_codec_limit("nx coupled support UV controls", 0, count)
-                })?;
-                controls.extend_from_slice(&lanes[side]);
-                let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    1,
-                    linear_knots(parameters, geometry_budget)?,
-                    controls,
-                    None,
-                    false,
-                )?;
-                let pcurve = PcurveGeometry::Nurbs { nurbs };
+                let pcurve =
+                    linear_pcurve_geometry(ctx, parameters, &lanes[side], geometry_budget)?;
                 if let Some([Some(first), Some(last)]) = endpoint_values {
                     let key = (
                         crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx coupled support UV witness owner")?,
