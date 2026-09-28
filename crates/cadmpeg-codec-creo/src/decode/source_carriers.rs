@@ -169,10 +169,11 @@ impl SourceUnitCarriers {
         mut feature: Feature,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            let mut definition = feature.evaluation.definition().clone();
-            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
-                .map_err(Self::unrepresentable_length)?;
-            feature.evaluation.set_definition(definition);
+            let mut result = Ok(());
+            feature.evaluation.edit(|definition, _| {
+                result = crate::decode::build::units::scale_feature_definition(ctx, definition, scale);
+            });
+            result.map_err(Self::unrepresentable_length)?;
         }
         ctx.try_reserve_items(&mut ir.model.features, 1, "creo model features")?;
         ir.model.features.push(feature);
@@ -181,11 +182,12 @@ impl SourceUnitCarriers {
 
     pub(super) fn replace_feature_definition(
         &self,
+        ctx: &DecodeContext<'_>,
         feature: &mut Feature,
         mut definition: FeatureDefinition,
     ) -> Result<(), CodecError> {
         if let Some(scale) = self.length_scale_mm {
-            crate::decode::build::units::scale_feature_definition(&mut definition, scale)
+            crate::decode::build::units::scale_feature_definition(ctx, &mut definition, scale)
                 .map_err(Self::unrepresentable_length)?;
         }
         feature.evaluation.set_definition(definition);
