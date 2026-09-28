@@ -4059,44 +4059,54 @@ pub(super) fn parasolid_topology_attribute_class_uses(
 
 /// Resolve every type-81 attribute instance through its type-80 definition reference.
 pub(super) fn parasolid_attribute_class_uses(
+    ctx: &DecodeContext<'_>,
     entities: &[ParasolidEntity51Record],
     definitions: &[ParasolidAttributeDefinition],
-) -> Vec<ParasolidAttributeClassUse> {
+) -> Result<Vec<ParasolidAttributeClassUse>, CodecError> {
     let mut definitions_by_identity =
-        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
+        BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
+    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute class definition index")?;
     for definition in definitions {
-        definitions_by_identity
-            .entry((definition.stream_ordinal, u32::from(definition.xmt)))
-            .or_default()
-            .push(definition);
+        insert_unique_value(ctx, &mut definitions_by_identity, &mut definitions_guard,
+            (definition.stream_ordinal, u32::from(definition.xmt)), definition)?;
     }
-    let mut uses = entities
-        .iter()
-        .filter_map(|entity| {
-            let definition_xmt = entity.definition_xmt;
-            let [definition] = definitions_by_identity
-                .get(&(entity.stream_ordinal, definition_xmt))?
-                .as_slice()
-            else {
-                return None;
-            };
-            Some(ParasolidAttributeClassUse {
+    let mut uses = Vec::new();
+    for entity in entities {
+        let Some(Some(definition)) = definitions_by_identity
+            .get(&(entity.stream_ordinal, entity.definition_xmt)) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "NX attribute class uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeClassUse>()), "NX attribute class use")?;
+        uses.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute class uses", 0, 1))?;
+        let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+        let length = "nx:s".len()
+            .checked_add(digits(u64::from(entity.stream_ordinal)))
+            .and_then(|length| length.checked_add(":attribute-class-use#".len()))
+            .and_then(|length| length.checked_add(digits(u64::from(u32::from(entity.xmt)))))
+            .and_then(|length| length.checked_add(1 + digits(entity.inflated_offset)))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX attribute class use identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX attribute class use identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(length)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute class use identity", 0, 1))?;
+        write!(&mut id, "nx:s{}:attribute-class-use#{}-{}", entity.stream_ordinal, u32::from(entity.xmt), entity.inflated_offset)
+            .map_err(|_| ctx.refuse_codec_limit("write NX attribute class use identity", 0, 1))?;
+        uses.push(ParasolidAttributeClassUse {
                 inflated_offset: entity.inflated_offset,
-                id: format!(
-                    "nx:s{}:attribute-class-use#{}-{}",
-                    entity.stream_ordinal,
-                    u32::from(entity.xmt),
-                    entity.inflated_offset
-                ),
+                id,
                 stream_ordinal: entity.stream_ordinal,
-                entity_51_record: entity.id.clone(),
+                entity_51_record: entity_51_use_text(ctx, &entity.id)?,
                 definition_xmt: definition.xmt,
-                attribute_definition: definition.id.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
+                attribute_definition: entity_51_use_text(ctx, &definition.id)?,
+            });
+    }
+    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute class use sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX attribute class use sort work")?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    Ok(uses)
 }
 
 /// Assign uniquely resolved attribute values to declared type-80 fields.
@@ -6088,6 +6098,68 @@ mod tests {
         ).err().expect("topology attribute validation limit refusal")
     }
 
+    fn attribute_class_use_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(20).unwrap(),
+            next_definition_xmt: None,
+            identifier_xmt: NonNullXmt::try_from(21).unwrap(),
+            identifier_inflated_offset: 10,
+            name: PrintableString::new("CLASS".to_owned()).unwrap(),
+            type_id: NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
+            field_names_xmt: None,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+            field_codes: vec![AttributeField::Point],
+            inflated_offset: 20,
+        };
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(30).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
+            definition_xmt: 20,
+            leading_references: [1; 5],
+            trailing_references: EntityReferences::new(vec![40]).unwrap(),
+            byte_len: 32, inflated_offset: 30,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_attribute_class_uses(&ctx, &[entity], &[definition])
+            .err().expect("attribute class use limit refusal")
+    }
+
+    #[test]
+    fn attribute_class_use_refuses_collection_limit() {
+        let error = attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn attribute_class_use_refuses_retained_limit() {
+        let error = attribute_class_use_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn attribute_class_use_refuses_scoped_limit() {
+        let error = attribute_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn attribute_class_use_refuses_work_limit() {
+        let error = attribute_class_use_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
     #[test]
     fn topology_attribute_validation_refuses_collection_limit() {
         let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_collection_items = 0);
@@ -6438,10 +6510,10 @@ mod tests {
             inflated_offset: 300,
         };
 
-        let instance_uses = super::parasolid_attribute_class_uses(
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&definition),
-        );
+        let instance_uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_attribute_class_uses(ctx,
+                std::slice::from_ref(&entity), std::slice::from_ref(&definition)).unwrap()
+        });
         assert_eq!(instance_uses.len(), 1);
         assert_eq!(instance_uses[0].entity_51_record, entity.id);
         assert_eq!(u32::from(instance_uses[0].definition_xmt), 34);
@@ -6465,15 +6537,17 @@ mod tests {
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;
-        assert!(super::parasolid_attribute_class_uses(
-            std::slice::from_ref(&invalid),
-            std::slice::from_ref(&definition),
-        )
-        .is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_attribute_class_uses(ctx,
+                std::slice::from_ref(&invalid), std::slice::from_ref(&definition)).unwrap()
+        }).is_empty());
+        let invalid_uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_attribute_class_uses(ctx, &[invalid.clone()], &[definition]).unwrap()
+        });
         assert!(super::parasolid_topology_attribute_class_uses(
             &[reference],
             std::slice::from_ref(&invalid),
-            &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
+            &invalid_uses,
         )
         .is_empty());
     }
@@ -6524,10 +6598,10 @@ mod tests {
             attribute_list_record: Some(head.id.clone()),
             inflated_offset: 80,
         };
-        let class_uses = super::parasolid_attribute_class_uses(
-            &[head.clone(), child.clone()],
-            std::slice::from_ref(&definition),
-        );
+        let class_uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_attribute_class_uses(ctx,
+                &[head.clone(), child.clone()], std::slice::from_ref(&definition)).unwrap()
+        });
 
         let uses = super::parasolid_topology_attribute_class_uses(
             std::slice::from_ref(&reference),
