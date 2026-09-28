@@ -130,6 +130,19 @@ fn redirections_design_collection_refuses_limit() {
 }
 
 #[test]
+fn redirections_json_refuses_materialized_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let bytes = redirections_json("root.f3d", &[]);
+    let error = super::parse(&ctx, bytes.as_bytes()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3D redirections JSON"));
+}
+
+#[test]
 fn redirections_reference_collection_refuses_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let ctx = redirections_limit_context(&arena, 2);
@@ -717,13 +730,28 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 
 #[test]
 fn component_reference_data_is_an_open_json_object() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let value = super::parse_component_reference_data(
+        &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
     )
     .expect("open component-reference object");
     assert_eq!(value["schema"], 7);
-    assert!(super::parse_component_reference_data(br"[]").is_err());
-    assert!(super::parse_component_reference_data(b"not-json").is_err());
+    assert!(super::parse_component_reference_data(&ctx, br"[]").is_err());
+    assert!(super::parse_component_reference_data(&ctx, b"not-json").is_err());
+}
+
+#[test]
+fn component_reference_data_json_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::parse_component_reference_data(&ctx, br#"{"items":[1,2]}"#)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "parse F3D component reference JSON"));
 }
 
 /// One occurrence-placement record: a target path whose last element
