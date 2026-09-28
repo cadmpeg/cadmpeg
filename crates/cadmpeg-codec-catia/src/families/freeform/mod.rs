@@ -218,14 +218,16 @@ pub(super) fn append_consolidated_revolutions(
 }
 
 fn typed_face_counts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &std::collections::BTreeMap<u32, crate::families::b5::graph::B5FaceRecord>,
     resolved_faces: &[crate::families::b5::graph::B5Face],
-) -> [usize; 4] {
-    let resolved_ids = resolved_faces
-        .iter()
-        .map(|face| face.object_id)
-        .collect::<HashSet<_>>();
-    records.values().fold([0usize; 4], |mut counts, face| {
+) -> Result<[usize; 4], cadmpeg_core::CodecError> {
+    let resolved_ids = crate::resource::collect_set(
+        ctx,
+        resolved_faces.iter().map(|face| face.object_id),
+        "catia_freeform_resolved_face_ids",
+    )?;
+    Ok(records.values().fold([0usize; 4], |mut counts, face| {
         match face.terminal_control {
             Some(B5FramingControl::Control03) => counts[0] += 1,
             Some(B5FramingControl::Control05) => counts[1] += 1,
@@ -233,7 +235,7 @@ fn typed_face_counts(
         }
         counts[3] += usize::from(!resolved_ids.contains(&face.object_id));
         counts
-    })
+    }))
 }
 
 fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
@@ -382,7 +384,7 @@ pub(super) fn try_decode_freeform_surfaces(
             })
         });
         let typed_face_counts = if let Some(graph) = &b5_graph {
-            Some(typed_face_counts(&graph.face_records, &graph.faces))
+            Some(admitted!(typed_face_counts(ctx, &graph.face_records, &graph.faces)))
         } else {
             let records = match crate::families::b5::graph::typed_face_records_from_records(
                 ctx, &census_object_records,
@@ -390,7 +392,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(records) => records,
                 Err(error) => return Some(Err(error)),
             };
-            (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
+            if records.is_empty() { None } else { Some(admitted!(typed_face_counts(ctx, &records, &[]))) }
         };
         let typed_multi_surface_face_count = b5_graph
             .as_ref()
@@ -588,25 +590,23 @@ pub(super) fn try_decode_freeform_surfaces(
         let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
         // The graph moves into the transfer below. Keep the record identities the
         // topology loss notes must name.
-        let b5_face_object_ids = b5_graph
-            .as_ref()
-            .map(|graph| {
-                graph
-                    .faces
-                    .iter()
-                    .map(|face| face.object_id)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let b5_loop_object_ids = b5_graph
-            .as_ref()
-            .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
-            .unwrap_or_default();
-        let census_face_object_ids = census_object_records
-            .iter()
-            .filter(|record| record.class == B5_FACE_CLASS)
-            .map(|record| record.object_id)
-            .collect::<Vec<_>>();
+        let b5_face_object_ids = admitted!(crate::resource::collect_vec(
+            ctx,
+            b5_graph.iter().flat_map(|graph| graph.faces.iter().map(|face| face.object_id)),
+            "catia_freeform_b5_face_ids",
+        ));
+        let b5_loop_object_ids = admitted!(crate::resource::collect_vec(
+            ctx,
+            b5_graph.iter().flat_map(|graph| graph.loops.keys().copied()),
+            "catia_freeform_b5_loop_ids",
+        ));
+        let census_face_object_ids = admitted!(crate::resource::collect_vec(
+            ctx,
+            census_object_records.iter()
+                .filter(|record| record.class == B5_FACE_CLASS)
+                .map(|record| record.object_id),
+            "catia_freeform_census_face_ids",
+        ));
         let mut topology_ir = ir.clone();
         let mut topology_annotations = annotations.clone();
         let topology_transferred = if let Some(graph) = b5_graph.take() {
@@ -679,10 +679,21 @@ pub(super) fn try_decode_freeform_surfaces(
             return Some(Err(error));
         }
         let line_profiles = admitted!(consolidated_line_profiles(ctx, &scan.data, &consolidated_records));
-        let mut standalone_wires = line_profiles
-            .iter()
-            .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
-            .collect::<Vec<_>>();
+        let mut standalone_wires = Vec::new();
+        for profile in &line_profiles {
+            let id = admitted!(crate::resource::copy_id(
+                ctx,
+                profile.curve.id.as_str(),
+                CurveId::mint,
+                "catia_freeform_standalone_wire_id",
+            ));
+            admitted!(crate::resource::push(
+                ctx,
+                &mut standalone_wires,
+                (id, profile.range, profile.pos),
+                "catia_freeform_standalone_wires",
+            ));
+        }
         if let Err(error) = append_consolidated_line_profiles(
             &mut ir,
             &mut annotations,
@@ -1653,10 +1664,9 @@ pub(super) fn append_freeform_surface_pools(
                 source_object: None,
             });
         }
-        let stations = jet
-            .sites
-            .iter()
-            .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+        let stations = crate::resource::collect_vec(
+            admission.context(),
+            jet.sites.iter().map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
                 knot: sample.knot,
                 multiplicity: crate::families::a5a8::records::A5FreeformCurve::DEGREE + 1,
                 site: crate::families::a5a8::records::rolling_ball_jet_site(
@@ -1664,8 +1674,9 @@ pub(super) fn append_freeform_surface_pools(
                     sample.first_derivatives,
                     sample.second_derivatives,
                 ),
-            })
-            .collect::<Vec<_>>();
+            }),
+            "catia_freeform_rolling_ball_stations",
+        )?;
         let surface_index = ir.model.surfaces.len();
         let surface_id = SurfaceId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "surf"),
@@ -3906,10 +3917,13 @@ mod tests {
             .iter()
             .all(|face| graph.face_records.contains_key(&face.object_id)));
         assert_eq!(
-            typed_face_counts(&graph.face_records, &graph.faces),
+            crate::test_support::with_service_context(|ctx| typed_face_counts(ctx, &graph.face_records, &graph.faces)).expect("service face count"),
             [1, 1, 0, 1]
         );
-        assert_eq!(typed_face_counts(&graph.face_records, &[]), [1, 1, 0, 2]);
+        assert_eq!(crate::test_support::with_service_context(|ctx| typed_face_counts(ctx, &graph.face_records, &[])).expect("service face count"), [1, 1, 0, 2]);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| typed_face_counts(ctx, &graph.face_records, &graph.faces));
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_freeform_resolved_face_ids"));
 
         let record = B5Record {
             offset: 0,
