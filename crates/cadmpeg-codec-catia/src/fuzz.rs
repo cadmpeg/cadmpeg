@@ -7,7 +7,13 @@
 
 /// Exercise `V5_CFV2` container stream-directory parsing.
 pub fn container_directory(data: &[u8]) {
-    let _probe = crate::container::parse_stream_directory(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::container::parse_stream_directory(&ctx, data);
 }
 
 /// Exercise `b5 03` object-stream graph parsing.

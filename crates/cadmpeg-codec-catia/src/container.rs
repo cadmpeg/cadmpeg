@@ -917,58 +917,76 @@ fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
 /// documented in the format spec ([§3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Returns `None` when there is no nested
 /// container or no parseable directory (the non-nested `a9 03` variant, and the
 /// contiguous-body exception whose directory catalogues no BREP streams).
-pub(crate) fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
+pub(crate) fn parse_stream_directory(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Option<InnerDir>, CodecError> {
     if data.len() < inner_hdr::LEN {
-        return None;
+        return Ok(None);
     }
-    let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
-    let a = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_OFFSET_DELTA)?)? as usize;
-    let b = View::u32_be_at(data, inner.checked_add(inner_hdr::DIRECTORY_LENGTH)?)?;
-    let dir_offset = inner.checked_add(a)?;
-    let magic_end = dir_offset.checked_add(DIR_MAGIC.len())?;
+    let Some((inner, dir_offset, b)) = (|| {
+        let inner = find_from(data, OUTER_MAGIC, OUTER_MAGIC.len())?;
+        let a = usize::try_from(View::u32_be_at(data,
+            inner.checked_add(inner_hdr::DIRECTORY_OFFSET_DELTA)?)?).ok()?;
+        let b = usize::try_from(View::u32_be_at(data,
+            inner.checked_add(inner_hdr::DIRECTORY_LENGTH)?)?).ok()?;
+        Some((inner, inner.checked_add(a)?, b))
+    })() else { return Ok(None) };
+    let Some(magic_end) = dir_offset.checked_add(DIR_MAGIC.len()) else { return Ok(None) };
     if data.get(dir_offset..magic_end) != Some(DIR_MAGIC) {
-        return None;
+        return Ok(None);
     }
-    let b_usize = b as usize;
-    if b == 0 || dir_offset.checked_add(b_usize)? > data.len() {
-        return None;
+    if b == 0 || dir_offset.checked_add(b).is_none_or(|end| end > data.len()) {
+        return Ok(None);
     }
-    parse_directory_region(data, inner, dir_offset, b_usize)
+    parse_directory_region(ctx, data, inner, dir_offset, b)
 }
 
 /// Parse the outer `CATIA_V5 CB0001` stream directory. Physical extent offsets
 /// in its descriptors are absolute file offsets.
-#[must_use]
-pub(crate) fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
-    parse_outer_stream_directory_with_range(data).map(|(_, directory)| directory)
+pub(crate) fn parse_outer_stream_directory(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Option<InnerDir>, CodecError> {
+    Ok(parse_outer_stream_directory_with_range(ctx, data)?.map(|(_, directory)| directory))
 }
 
 /// Parse and return the exact outer stream-directory byte range.
-#[must_use]
 pub(crate) fn outer_stream_directory_range(data: &[u8]) -> Option<Range<usize>> {
-    parse_outer_stream_directory_with_range(data).map(|(range, _)| range)
-}
-
-fn parse_outer_stream_directory_with_range(data: &[u8]) -> Option<(Range<usize>, InnerDir)> {
     let dir_offset = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
     let dir_length = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
     let dir_end = dir_offset.checked_add(dir_length)?;
-    (dir_end == data.len()).then_some(())?;
-    let directory = parse_directory_region(data, 0, dir_offset, dir_length)?;
-    Some((dir_offset..dir_end, directory))
+    (dir_end == data.len() && directory_region_has_descriptor(data, 0, dir_offset, dir_length))
+        .then_some(dir_offset..dir_end)
+}
+
+fn parse_outer_stream_directory_with_range(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Option<(Range<usize>, InnerDir)>, CodecError> {
+    let Some((dir_offset, dir_length, dir_end)) = (|| {
+        let dir_offset = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_OFFSET)?).ok()?;
+        let dir_length = usize::try_from(View::u32_be_at(data, outer_hdr::DIRECTORY_LENGTH)?).ok()?;
+        let dir_end = dir_offset.checked_add(dir_length)?;
+        (dir_end == data.len()).then_some((dir_offset, dir_length, dir_end))
+    })() else { return Ok(None) };
+    let Some(directory) = parse_directory_region(ctx, data, 0, dir_offset, dir_length)? else {
+        return Ok(None);
+    };
+    Ok(Some((dir_offset..dir_end, directory)))
 }
 
 fn parse_directory_region(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     physical_base: usize,
     dir_offset: usize,
     dir_length: usize,
-) -> Option<InnerDir> {
+) -> Result<Option<InnerDir>, CodecError> {
+    let Some(dir_end) = dir_offset.checked_add(dir_length) else { return Ok(None) };
+    let Some(magic_end) = dir_offset.checked_add(16) else { return Ok(None) };
     if dir_length == 0
-        || dir_offset.checked_add(dir_length)? > data.len()
-        || data.get(dir_offset..dir_offset + 16) != Some(DIR_MAGIC)
+        || dir_end > data.len()
+        || data.get(dir_offset..magic_end) != Some(DIR_MAGIC)
     {
-        return None;
+        return Ok(None);
     }
     let dirbuf = &data[dir_offset..dir_offset + dir_length];
     let file_len = data.len();
@@ -987,18 +1005,19 @@ fn parse_directory_region(
             .checked_mul(extent::LEN)
             .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
         if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
-            if let Some((extents, cum)) = parse_extents(dirbuf, o, k, physical_base, file_len) {
+            if let Some((extents, cum)) = parse_extents(ctx, dirbuf, o, k, physical_base, file_len)? {
                 if cum > 0 && o >= stream_desc::EXTENT_COUNT {
                     let ds = o - stream_desc::EXTENT_COUNT;
                     let logical_length =
                         View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
                             .unwrap_or(0);
                     if logical_length as usize == cum {
-                        descriptors.push(Descriptor {
-                            name: descriptor_name(dirbuf, ds),
+                        let name = descriptor_name(ctx, dirbuf, ds)?;
+                        crate::resource::push(ctx, &mut descriptors, Descriptor {
+                            name,
                             desc_offset: ds,
                             extents,
-                        });
+                        }, "catia_directory_descriptors")?;
                     }
                 }
             }
@@ -1007,47 +1026,105 @@ fn parse_directory_region(
     }
 
     if descriptors.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(InnerDir {
+    Ok(Some(InnerDir {
         inner: physical_base,
         descriptors,
-    })
+    }))
+}
+
+fn directory_region_has_descriptor(
+    data: &[u8], physical_base: usize, dir_offset: usize, dir_length: usize,
+) -> bool {
+    let Some(dir_end) = dir_offset.checked_add(dir_length) else { return false };
+    let Some(magic_end) = dir_offset.checked_add(DIR_MAGIC.len()) else { return false };
+    if dir_length == 0 || dir_end > data.len()
+        || data.get(dir_offset..magic_end) != Some(DIR_MAGIC) {
+        return false;
+    }
+    let dirbuf = &data[dir_offset..dir_end];
+    if dirbuf.len() < 4 { return false; }
+    for o in 0..=dirbuf.len() - 4 {
+        let Some(k) = View::u32_be_at(dirbuf, o).and_then(|value| usize::try_from(value).ok())
+        else { continue };
+        let Some(extents_end) = k.checked_mul(extent::LEN)
+            .and_then(|bytes| o.checked_add(4)?.checked_add(bytes)) else { continue };
+        if k == 0 || extents_end > dirbuf.len() || o < stream_desc::EXTENT_COUNT {
+            continue;
+        }
+        let Some(cum) = validate_extents(dirbuf, o, k, physical_base, data.len()) else {
+            continue;
+        };
+        let ds = o - stream_desc::EXTENT_COUNT;
+        if cum > 0 && View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
+            .is_some_and(|length| length as usize == cum) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Validate the `k` 20-byte extent structs beginning at `o + 4`; returns the
 /// extents and their cumulative logical length, or `None` if any extent fails a
 /// gate (`log_off` cumulative from 0, `log_len == phys_len`, physically in range).
 fn parse_extents(
+    ctx: &DecodeContext<'_>,
     dirbuf: &[u8],
     o: usize,
     k: usize,
     physical_base: usize,
     file_len: usize,
-) -> Option<(Vec<Extent>, usize)> {
-    let mut extents = Vec::with_capacity(k);
+) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
+    ctx.charge_work(u64::try_from(k).map_err(|_| {
+        ctx.refuse_codec_limit("catia_extent_validation", u64::MAX, u64::MAX)
+    })?, "catia_extent_validation")?;
+    let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
+        return Ok(None);
+    };
+    let mut extents = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut extents, k, "catia_directory_extents")?;
+    for i in 0..k {
+        let Some((extent, _, _)) = read_extent_fields(dirbuf, o, i) else {
+            return Ok(None);
+        };
+        extents.push(extent);
+    }
+    Ok(Some((extents, cum)))
+}
+
+fn validate_extents(
+    dirbuf: &[u8], o: usize, k: usize, physical_base: usize, file_len: usize,
+) -> Option<usize> {
     let mut cum: usize = 0;
     for i in 0..k {
-        let base = o + 4 + extent::LEN * i;
-        let phys_off = View::u32_be_at(dirbuf, base + extent::PHYS_OFF)?;
-        let phys_len = View::u32_be_at(dirbuf, base + extent::PHYS_LEN)?;
-        let log_len = View::u32_be_at(dirbuf, base + extent::LOG_LEN)?;
-        let log_off = View::u32_be_at(dirbuf, base + extent::LOG_OFF)?;
-        let flags = View::u32_be_at(dirbuf, base + extent::FLAGS)?;
+        let Some((extent, log_len, log_off)) = read_extent_fields(dirbuf, o, i) else {
+            return None;
+        };
         let phys_end = physical_base
-            .checked_add(phys_off as usize)?
-            .checked_add(phys_len as usize)?;
-        if phys_len == 0 || phys_end > file_len || log_off as usize != cum || log_len != phys_len {
+            .checked_add(extent.phys_off as usize)
+            .and_then(|start| start.checked_add(extent.phys_len as usize));
+        if extent.phys_len == 0 || phys_end.is_none_or(|end| end > file_len)
+            || log_off as usize != cum || log_len != extent.phys_len {
             return None;
         }
-        cum = cum.checked_add(log_len as usize)?;
-        extents.push(Extent {
-            phys_off,
-            phys_len,
-            flags,
-        });
+        let Some(next) = cum.checked_add(log_len as usize) else { return None };
+        cum = next;
     }
-    Some((extents, cum))
+    Some(cum)
+}
+
+fn read_extent_fields(dirbuf: &[u8], o: usize, index: usize) -> Option<(Extent, u32, u32)> {
+    let base = o.checked_add(4)?.checked_add(extent::LEN.checked_mul(index)?)?;
+    Some((
+        Extent {
+            phys_off: View::u32_be_at(dirbuf, base + extent::PHYS_OFF)?,
+            phys_len: View::u32_be_at(dirbuf, base + extent::PHYS_LEN)?,
+            flags: View::u32_be_at(dirbuf, base + extent::FLAGS)?,
+        },
+        View::u32_be_at(dirbuf, base + extent::LOG_LEN)?,
+        View::u32_be_at(dirbuf, base + extent::LOG_OFF)?,
+    ))
 }
 
 /// Read a descriptor's UTF-16LE ASCII stream name from one of its two framed
@@ -1057,7 +1134,18 @@ fn parse_extents(
 /// padding byte. The name is the complete run of printable ASCII code units
 /// immediately before that tail. This end anchor keeps unrelated UTF-16 text
 /// elsewhere in the descriptor from becoming the stream name.
-fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
+fn descriptor_name(
+    ctx: &DecodeContext<'_>, dirbuf: &[u8], ds: usize,
+) -> Result<String, CodecError> {
+    struct Utf16Ascii<'a>(&'a [u8]);
+    impl std::fmt::Display for Utf16Ascii<'_> {
+        fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for pair in self.0.chunks_exact(2) {
+                write!(out, "{}", char::from(pair[0]))?;
+            }
+            Ok(())
+        }
+    }
     if let Some(tail_start) = ds.checked_sub(3) {
         if dirbuf.get(tail_start..ds) == Some(&[0, 0, 0]) {
             let mut name_start = tail_start;
@@ -1071,10 +1159,8 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
             }
             let name_bytes = &dirbuf[name_start..tail_start];
             if name_bytes.len() >= 6 {
-                return name_bytes
-                    .chunks_exact(2)
-                    .map(|pair| pair[0] as char)
-                    .collect();
+                return crate::resource::format_retained(ctx, format_args!("{}", Utf16Ascii(name_bytes)),
+                    "catia_descriptor_name");
             }
         }
     }
@@ -1083,13 +1169,13 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
     // form only when the name closes with a UTF-16LE terminator and the rest
     // of the header before the extent count is zero.
     let Some(header_name_start) = ds.checked_add(0x10) else {
-        return String::new();
+        return Ok(String::new());
     };
     let Some(header_end) = ds.checked_add(stream_desc::EXTENT_COUNT) else {
-        return String::new();
+        return Ok(String::new());
     };
     let Some(header_name) = dirbuf.get(header_name_start..header_end) else {
-        return String::new();
+        return Ok(String::new());
     };
     let mut name_len = 0;
     while name_len + 1 < header_name.len()
@@ -1104,13 +1190,11 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
             .get(name_len + 2..)
             .is_none_or(|rest| rest.iter().any(|byte| *byte != 0))
     {
-        return String::new();
+        return Ok(String::new());
     }
 
-    header_name[..name_len]
-        .chunks_exact(2)
-        .map(|pair| pair[0] as char)
-        .collect()
+    crate::resource::format_retained(ctx,
+        format_args!("{}", Utf16Ascii(&header_name[..name_len])), "catia_descriptor_name")
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
@@ -1406,8 +1490,8 @@ pub(crate) fn scan_bytes<'a>(
     let outer_dir_offset = View::u32_be_at(&data, outer_hdr::DIRECTORY_OFFSET).unwrap_or(0);
     let outer_dir_length = View::u32_be_at(&data, outer_hdr::DIRECTORY_LENGTH).unwrap_or(0);
 
-    let outer = parse_outer_stream_directory(&data);
-    let inner = parse_stream_directory(&data);
+    let outer = parse_outer_stream_directory(ctx, &data)?;
+    let inner = parse_stream_directory(ctx, &data)?;
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
     let outer_body = outer_body_range(&data);
