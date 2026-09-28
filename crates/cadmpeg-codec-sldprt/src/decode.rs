@@ -2570,7 +2570,7 @@ fn build_geometry_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        parameter_identity_lanes(&lanes),
+        parameter_identity_lanes(ctx, &lanes)?,
     )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
@@ -3808,7 +3808,7 @@ fn build_metadata_ir(
         &mut ir.model.parameters,
         &ir.model.features,
         &histories,
-        parameter_identity_lanes(&lanes),
+        parameter_identity_lanes(ctx, &lanes)?,
     )?;
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut ir.model.parameters,
@@ -4195,29 +4195,25 @@ fn project_design_history(
     Ok(())
 }
 
-fn parameter_identity_lanes(
-    lanes: &[crate::records::FeatureInputLane],
-) -> Vec<&crate::records::FeatureInputLane> {
-    let lanes = lanes
-        .iter()
-        .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
-        .collect::<Vec<_>>();
-    let has_global = lanes.iter().any(|lane| lane.configuration.is_none());
-    let scoped_configurations = lanes
-        .iter()
-        .filter_map(|lane| lane.configuration.as_deref())
-        .collect::<BTreeSet<_>>();
-    let lane_count = lanes.len();
-    lanes
-        .into_iter()
-        .filter(|lane| {
-            if has_global {
-                lane.configuration.is_none()
-            } else {
-                scoped_configurations.len() == 1 && lane_count == 1
-            }
-        })
-        .collect()
+fn parameter_identity_lanes<'a>(
+    ctx: &DecodeContext<'_>,
+    lanes: &'a [crate::records::FeatureInputLane],
+) -> Result<Vec<&'a crate::records::FeatureInputLane>, CodecError> {
+    let eligible = || lanes.iter().filter(|lane| {
+        !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
+    });
+    let has_global = eligible().any(|lane| lane.configuration.is_none());
+    let single_scoped = !has_global && eligible().count() == 1;
+    let mut selected = Vec::new();
+    for lane in eligible() {
+        if (has_global && lane.configuration.is_none())
+            || (single_scoped && lane.configuration.is_some())
+        {
+            ctx.reserve_collection_vec(&mut selected, 1, "select SLDPRT parameter identity lanes")?;
+            selected.push(lane);
+        }
+    }
+    Ok(selected)
 }
 
 fn stamp_parameter_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
