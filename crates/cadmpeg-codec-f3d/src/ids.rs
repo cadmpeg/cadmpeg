@@ -864,11 +864,6 @@ native_record_id!(
     "design-dimension-locus-group"
 );
 native_record_id!(
-    /// The native design-construction-operand-group record key.
-    native_design_construction_operand_group_id,
-    "design-construction-operand-group"
-);
-native_record_id!(
     /// The native design-edge-operand record key.
     native_design_edge_operand_id,
     "design-edge-operand"

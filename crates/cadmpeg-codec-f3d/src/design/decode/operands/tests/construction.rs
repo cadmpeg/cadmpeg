@@ -127,6 +127,45 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let group = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
         .complete()
         .expect("counted Extrude operand group");
+    let id_len = crate::ids::native_scope("Design/BulkStream.dat").len()
+        + ":design-construction-operand-group#".len() + 1;
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (0, u64::MAX, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            "f3d construction operand group output"),
+        (u64::MAX, 0, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d native stream key"),
+        (u64::MAX, u64::try_from(id_len - 1).unwrap(), cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            "f3d construction operand group ID"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let parsed = parse_construction_operand_group(&bytes, &scope, 0, &RecordFrame::from(&record))
+            .complete()
+            .expect("counted Extrude operand group");
+        let mut out = Vec::new();
+        assert!(matches!(
+            crate::design::decode::operands::push_construction_operand_group(
+                &ctx, &mut out, Box::new(parsed), "Design/BulkStream.dat", 0,
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut unclosed = Vec::new();
+    assert!(matches!(
+        crate::design::decode::operands::push_unclosed_construction_operand(&ctx, &mut unclosed, 100),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d unclosed construction operand group"
+    ));
     assert_eq!(
         group
             .members()
