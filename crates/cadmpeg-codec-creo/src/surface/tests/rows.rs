@@ -255,8 +255,10 @@ fn positional_spline_replay_uses_the_named_array_extents() {
     assert_eq!(later_parameter.boundary, SurfaceBodyBoundary::CompoundClose);
     assert!(later_parameter.body.len() > 1);
     let cache = scalar::ScalarCache::from_section(&payload);
-    let replay =
-        decode_positional_spline_replay(&later_parameter.body, &prototype, &cache).unwrap();
+    let replay = super::with_decode_ctx(&payload, |ctx| {
+        decode_positional_spline_replay(ctx, &later_parameter.body, &prototype, &cache)
+    })
+    .unwrap();
     assert_eq!(replay.points().len(), 4);
     assert_eq!(replay.u_derivatives().len(), 4);
     assert_eq!(replay.v_derivatives().len(), 4);
@@ -275,6 +277,43 @@ fn positional_spline_replay_uses_the_named_array_extents() {
         ),
         Some(later_parameter.body_offset + later_parameter.body.len())
     );
+}
+
+fn spline_collection_error(
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0x0f], &arena, &policy)
+        .expect("one scalar fits root limit");
+    run(&ctx).expect_err("one spline item exceeds collection limit")
+}
+
+#[test]
+fn positional_spline_replay_refuses_scalar_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [0x0f];
+    let cache = scalar::ScalarCache::from_section(&body);
+    let error = spline_collection_error(|ctx| {
+        crate::surface::take_spline_scalars(ctx, &body, &mut 0, 1, "i_points", &cache)
+            .map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo spline replay scalar values"));
+}
+
+#[test]
+fn positional_spline_replay_refuses_point_vector() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let error = spline_collection_error(|ctx| {
+        crate::surface::spline_vectors(ctx, &[0.0, 1.0, 2.0]).map(|_| ())
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo spline replay vectors"));
 }
 
 #[test]
@@ -310,7 +349,10 @@ fn positional_spline_replay_rejects_unordered_parameters_at_grid_admission() {
     let u_second = replay_body.len() - 3;
     assert_eq!(replay_body[u_second], 0xe4);
     replay_body[u_second] = 0x0f;
-    assert!(decode_positional_spline_replay(&replay_body, &prototype, &cache).is_none());
+    assert!(super::with_decode_ctx(&payload, |ctx| {
+        decode_positional_spline_replay(ctx, &replay_body, &prototype, &cache)
+    })
+    .is_none());
 }
 
 #[test]
