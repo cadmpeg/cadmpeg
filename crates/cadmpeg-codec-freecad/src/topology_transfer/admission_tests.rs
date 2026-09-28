@@ -4,6 +4,7 @@ use super::tests::{assert_codec_collection_refusal, assert_codec_retained_refusa
 use super::{connected_components, copy_shape_for_transfer, pcurve_geometry, pcurve_loss, source_topology_indices, transform_curve, transform_surface, Builder, PcurveGeometryError};
 use crate::brep::{NurbsCurve2d, ShapePayload, ShapePayloadRecord, Tables, TextCurve2d, TextEdgeRepresentation, TextPolygon3d, TextTShape, TextTShapeGeometry, TextTShapes};
 use crate::test_support::assert_retained_refusal_at;
+use crate::test_support::test_archive::archive_entries;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -202,6 +203,62 @@ fn pcurve_nested_basis_refuses_at_depth_limit() {
     assert!(matches!(pcurve_geometry(&ctx, &curve),
         Err(PcurveGeometryError::Resource(CodecError::ResourceLimit(refusal)))
             if refusal.operation == "FreeCAD pcurve geometry nesting"));
+}
+
+fn triangulated_face_with_normals_archive() -> Vec<u8> {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade
+Locations 1
+1 1 0 0 10 0 1 0 0 0 0 1 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 1
+2 1 2 p 0.01 1 0 1
+Surfaces 0
+Triangulations 1
+3 1 0 1 0.02 0 0 0 1 0 0 0 1 0 1 2 3 0 0 1 0 0 1 0 0 1
+TShapes 7
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 6 1 1 0 0 1001000 +7 0 -6 0 *
+Wi 1001000 +5 0 *
+Fa 0 0.001 0 1 2 1 1001000 +4 0 *
+Sh 1001000 +3 0 *
+So 1001000 +2 0 *
++1 0 *";
+    archive_entries(&[("Document.xml", document.as_slice()), ("Shape.brp", brep.as_slice())])
+}
+
+
+fn unowned_triangulation_with_normals_archive() -> Vec<u8> {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 1
+3 1 0 1 0.02 0 0 0 1 0 0 0 1 0 1 2 3 0 0 1 0 0 1 0 0 1
+TShapes 0";
+    archive_entries(&[("Document.xml", document.as_slice()), ("Shape.brp", brep.as_slice())])
+}
+
+
+#[test]
+fn placed_triangulation_normals_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(
+        &triangulated_face_with_normals_archive(), "FreeCAD placed triangulation normals",
+    );
+}
+
+#[test]
+fn unowned_triangulation_normals_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(
+        &unowned_triangulation_with_normals_archive(), "FreeCAD unowned triangulation normals",
+    );
 }
 
 #[test]
