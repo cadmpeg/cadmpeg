@@ -83,10 +83,7 @@ fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
 const EPS_RATIONAL_RULED: f64 = 1.0e-10;
 const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
 
-use super::{
-    angular_basis, offset_indicator_parameters,
-    tabulated_directrix_type_allowed,
-};
+use super::{angular_basis, offset_indicator_parameters, tabulated_directrix_type_allowed};
 
 fn assert_surface_collection_refusal(bytes: &[u8], operation: &str) {
     let mut cap = 0_u64;
