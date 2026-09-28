@@ -926,19 +926,21 @@ pub(super) fn exact_copy_paste_component_operation(
         return None;
     }
     let copied_occurrence_record_index = View::u32_le_at(bytes, relation_at + 22)?;
-    let copied_candidates = occurrences
+    let mut copied_candidates = occurrences
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
                 && occurrence.record_index == copied_occurrence_record_index
                 && occurrence.byte_offset() < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
-        })
-        .collect::<Vec<_>>();
-    let [copied] = copied_candidates.as_slice() else {
+        });
+    let Some(copied) = copied_candidates.next() else {
         return None;
     };
-    let source_candidates = occurrences
+    if copied_candidates.next().is_some() {
+        return None;
+    }
+    let mut source_candidates = occurrences
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
@@ -948,11 +950,13 @@ pub(super) fn exact_copy_paste_component_operation(
                     .as_str()
                     .eq_ignore_ascii_case(copied.component_guid.as_str())
                 && occurrence.transform().is_none()
-        })
-        .collect::<Vec<_>>();
-    let [source] = source_candidates.as_slice() else {
+        });
+    let Some(source) = source_candidates.next() else {
         return None;
     };
+    if source_candidates.next().is_some() {
+        return None;
+    }
     Some(DesignCopyPasteComponentOperation {
         relation_record_index,
         source_occurrence_record_index: source.record_index,
