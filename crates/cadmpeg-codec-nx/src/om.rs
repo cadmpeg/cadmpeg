@@ -1479,9 +1479,11 @@ fn unlabeled_operation_records_with_ordinals<'a>(
 }
 
 /// Decode ordered `03|04, length, text, 00` frames from one operation payload.
-pub(crate) fn operation_payload_text_frames(
-    record: OperationPayload<'_>,
-) -> Vec<OperationPayloadTextFrame<'_>> {
+pub(crate) fn operation_payload_text_frames<'a>(
+    ctx: &DecodeContext<'_>,
+    record: OperationPayload<'a>,
+) -> Result<Vec<OperationPayloadTextFrame<'a>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX operation payload text")?;
     let mut frames = Vec::new();
     let mut at = 0usize;
     while at + 4 <= record.payload().len() {
@@ -1513,6 +1515,7 @@ pub(crate) fn operation_payload_text_frames(
             at += 1;
             continue;
         }
+        reserve_om_retained_item(ctx, &mut frames, "nx operation payload text frames")?;
         frames.push(OperationPayloadTextFrame {
             marker,
             offset: record.payload_offset() + at,
@@ -1520,44 +1523,51 @@ pub(crate) fn operation_payload_text_frames(
         });
         at = end + 1;
     }
-    frames
+    Ok(frames)
 }
 
 /// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub(crate) fn operation_payload_strings(
-    record: OperationPayload<'_>,
-) -> Vec<OperationPayloadString<'_>> {
-    operation_payload_text_frames(record)
-        .into_iter()
-        .filter(|frame| frame.marker == OperationTextMarker::String)
-        .map(|frame| OperationPayloadString {
-            offset: frame.offset,
-            value: frame.value,
-        })
-        .collect()
+pub(crate) fn operation_payload_strings<'a>(
+    ctx: &DecodeContext<'_>,
+    record: OperationPayload<'a>,
+) -> Result<Vec<OperationPayloadString<'a>>, CodecError> {
+    let mut strings = Vec::new();
+    for frame in operation_payload_text_frames(ctx, record)? {
+        if frame.marker == OperationTextMarker::String {
+            reserve_om_retained_item(ctx, &mut strings, "nx operation payload strings")?;
+            strings.push(OperationPayloadString {
+                offset: frame.offset,
+                value: frame.value,
+            });
+        }
+    }
+    Ok(strings)
 }
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
 pub(crate) fn simple_hole_repeated_scalar_lane(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<NonEmpty<RepeatedScalar<usize>>> {
+) -> Result<Option<NonEmpty<RepeatedScalar<usize>>>, CodecError> {
     if record.name() != "SIMPLE HOLE" {
-        return None;
+        return Ok(None);
     }
-    let templates = operation_payload_strings(record)
+    let mut templates = operation_payload_strings(ctx, record)?
         .into_iter()
-        .filter(|value| value.value.as_str().starts_with("Hole_"))
-        .collect::<Vec<_>>();
-    let [template] = templates.as_slice() else {
-        return None;
+        .filter(|value| value.value.as_str().starts_with("Hole_"));
+    let Some(template) = templates.next() else {
+        return Ok(None);
     };
-    let boundary = template.offset.checked_sub(record.payload_offset())?;
-    let prefix = record.payload().get(..boundary)?;
+    if templates.next().is_some() { return Ok(None); }
+    let Some(boundary) = template.offset.checked_sub(record.payload_offset()) else { return Ok(None); };
+    let Some(prefix) = record.payload().get(..boundary) else { return Ok(None); };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(prefix.len()), "scan NX simple hole scalars")?;
     let mut scalars = Vec::new();
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
             if let Some(scalar) = ShiftedBinary64::read(&prefix[at..at + 8]) {
+                reserve_om_retained_item(ctx, &mut scalars, "nx simple hole scalar witnesses")?;
                 scalars.push((scalar, record.payload_offset() + at));
                 at += 8;
                 continue;
@@ -1567,7 +1577,7 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
     }
     let half = scalars.len() / 2;
     if scalars.len() != half * 2 {
-        return None;
+        return Ok(None);
     }
     let (first, second) = scalars.split_at(half);
     if first
@@ -1575,17 +1585,18 @@ pub(crate) fn simple_hole_repeated_scalar_lane(
         .zip(second)
         .any(|(left, right)| left.0 != right.0)
     {
-        return None;
+        return Ok(None);
     }
-    NonEmpty::new(
-        first
-            .iter()
-            .zip(second)
-            .map(|(left, right)| RepeatedScalar {
-                scalar: left.0,
-                witness_offsets: [left.1, right.1],
-            }),
-    )
+    let mut repeated = Vec::new();
+    for (left, right) in first.iter().zip(second) {
+        reserve_om_retained_item(ctx, &mut repeated, "nx simple hole repeated scalars")?;
+        repeated.push(RepeatedScalar {
+            scalar: left.0,
+            witness_offsets: [left.1, right.1],
+        });
+    }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(repeated.len()), "move NX simple hole first scalar")?;
+    Ok(NonEmpty::from_vec(repeated))
 }
 
 /// Decode the unique four-block construction-group lane in a `HOLE PACKAGE` payload.

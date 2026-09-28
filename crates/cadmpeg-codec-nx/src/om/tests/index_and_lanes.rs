@@ -31,11 +31,8 @@ use crate::om::operation_body_reference;
 use crate::om::operation_body_references;
 use crate::om::operation_body_write_frames;
 use crate::om::operation_common_frames;
-use crate::om::operation_payload_strings;
-use crate::om::operation_payload_text_frames;
 use crate::om::operation_terminal_frame;
 use crate::om::sections;
-use crate::om::simple_hole_repeated_scalar_lane;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
 use crate::om::OperationPayloadTextFrame;
@@ -54,6 +51,68 @@ fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::Operatio
 
 fn operation_records_with_labels_and_ordinals<'a>(bytes: &'a [u8], base_offset: usize, labels: &[crate::om::OperationLabel<'a>]) -> Vec<(usize, crate::om::operation_record::OperationRecord<'a>)> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, base_offset, labels)).unwrap()
+}
+
+fn operation_payload_strings(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::OperationPayloadString<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_payload_strings(ctx, record)).unwrap()
+}
+
+fn operation_payload_text_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::OperationPayloadTextFrame<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_payload_text_frames(ctx, record)).unwrap()
+}
+
+fn simple_hole_repeated_scalar_lane(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::nonempty::NonEmpty<crate::om::scalar::RepeatedScalar<usize>>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::simple_hole_repeated_scalar_lane(ctx, record)).unwrap()
+}
+
+fn simple_hole_references_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<[crate::om::simple_hole_references::ReferencePair; 2]> {
+    crate::test_support::with_decode_context(|ctx| crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(ctx, record)).unwrap()
+}
+
+fn one_simple_hole_scalar_payload() -> Vec<u8> {
+    let mut scalar = 25.4f64.to_be_bytes();
+    scalar[0] -= 0x10;
+    let mut payload = scalar.to_vec();
+    payload.push(0x7f);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(b"\x04\x08Hole_X\0");
+    payload
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_collection_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
+    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_retained_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
+    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_simple_hole_text_and_scalar_route_refuses_work_limit() {
+    let bytes = one_simple_hole_scalar_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
+    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -406,7 +465,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     let label = "SIMPLE HOLE";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let references =
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+        simple_hole_references_test(
             record,
         )
         .unwrap();
@@ -441,7 +500,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     wrapped.extend_from_slice(&[0x04, 0x08]);
     wrapped.extend_from_slice(b"Hole_X\0");
     let wrapped_references =
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+        simple_hole_references_test(
             crate::om::operation_record::OperationPayload::new(
                 &wrapped,
                 record.payload_offset(),
@@ -473,7 +532,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     let mut malformed_wrapper = wrapped.clone();
     malformed_wrapper[16] ^= 1;
     assert!(
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+        simple_hole_references_test(
             crate::om::operation_record::OperationPayload::new(
                 &malformed_wrapper,
                 record.payload_offset(),
@@ -487,7 +546,7 @@ fn om_simple_hole_lane_block_references_follow_both_scalar_runs() {
     let mut null = payload.clone();
     null[16] = 0xff;
     assert!(
-        crate::om::simple_hole_references::simple_hole_repeated_scalar_lane_block_references(
+        simple_hole_references_test(
             crate::om::operation_record::OperationPayload::new(
                 &null,
                 record.payload_offset(),

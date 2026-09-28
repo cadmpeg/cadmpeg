@@ -4406,15 +4406,20 @@ pub(super) fn feature_operation_state_journal_uses(
 pub(super) fn feature_payload_strings(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeaturePayloadString>, cadmpeg_core::CodecError>
 {
     let mut strings = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let values = match crate::om::operation_payload_strings(ctx, record.payload_view()) {
+                Ok(values) => values,
+                Err(error) => { failure = Some(error); return; }
+            };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
             strings.extend(
-                crate::om::operation_payload_strings(record.payload_view())
-                    .into_iter()
+                values.into_iter()
                     .enumerate()
                     .map(|(ordinal, value)| FeaturePayloadString {
                         id: format!(
@@ -4428,6 +4433,7 @@ pub(super) fn feature_payload_strings(ctx: &cadmpeg_core::decode::DecodeContext<
             );
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(strings)
 }
 
