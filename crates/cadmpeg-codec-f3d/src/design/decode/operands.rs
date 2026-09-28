@@ -11,7 +11,6 @@ use std::fmt::Write;
 use crate::bytes::{is_guid_relaxed, take_reference};
 use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end};
 use crate::design::decode::text::design_record_id_charged;
-use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references,
@@ -5169,7 +5168,7 @@ fn parse_sketch_profile_region_selection(
 
 struct ParsedRecipeOperand {
     paired_byte_offset: u64,
-    paired_class_tag: String,
+    paired_class_tag: crate::records::references::DesignClassTag,
     recipe_record_index: u32,
     recipe_record_byte_offset: u64,
     recipe_id: String,
@@ -5211,7 +5210,7 @@ fn parse_vertex_recipe(
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone(),
             paired_byte_offset: parsed.paired_byte_offset,
-            paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
+            paired_class_tag: parsed.paired_class_tag,
             recipe_record_index: parsed.recipe_record_index,
             recipe_record_byte_offset: parsed.recipe_record_byte_offset,
             recipe_id: parsed.recipe_id,
@@ -5242,14 +5241,15 @@ fn parse_recipe_operand(
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
     let start = usize::try_from(header.byte_offset).ok()?;
-    let mut offsets = Vec::with_capacity(5);
+    let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
-    for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
-        let offset = records.first_at_or_after(position, record_index?)?;
-        offsets.push(offset);
+    for (delta, slot) in offsets[..4].iter_mut().enumerate() {
+        let record_index = header.record_index.checked_add(u32::try_from(delta).ok()?)?;
+        let offset = records.first_at_or_after(position, record_index)?;
+        *slot = offset;
         position = offset.checked_add(11)?;
     }
-    offsets.push(match terminator {
+    offsets[4] = match terminator {
         RecipeOperandTerminator::RecordDelta(delta) => {
             records.first_at_or_after(position, header.record_index.checked_add(delta)?)?
         }
@@ -5270,15 +5270,13 @@ fn parse_recipe_operand(
             let next = next_indexed_record_offset(bytes, recipe_program_at)?;
             (u64::try_from(next).ok()? <= limit).then_some(next)?
         }
-    });
-    let indexed = offsets
-        .iter()
-        .map(|offset| {
-            let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-            Some((class_tag, View::u32_le_at(bytes, after_tag)?))
-        })
-        .collect::<Option<Vec<_>>>()?;
+    };
+    let mut indexed = [("", 0u32); 5];
+    for (offset, slot) in offsets.iter().zip(&mut indexed) {
+        let (class_tag, after_tag) =
+            lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
+        *slot = (class_tag, View::u32_le_at(bytes, after_tag)?);
+    }
     let recipe_record_index = header.record_index.checked_add(3)?;
     let expected_prefix = [
         header.record_index,
@@ -5302,18 +5300,18 @@ fn parse_recipe_operand(
     }
     let recipe_record_byte_offset = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
-    let matches = recipes
+    let mut matches = recipes
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
                 && recipe.kind == recipe_kind
                 && recipe.byte_offset > recipe_record_byte_offset
                 && recipe.byte_offset < next_byte_offset
-        })
-        .collect::<Vec<_>>();
-    let [recipe] = matches.as_slice() else {
+        });
+    let recipe = matches.next()?;
+    if matches.next().is_some() {
         return None;
-    };
+    }
     let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
         bytes,
         offsets[3],
@@ -5332,7 +5330,7 @@ fn parse_recipe_operand(
     let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
     Some(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
-        paired_class_tag: indexed[0].0.clone(),
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
         recipe_record_index,
         recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),
@@ -5400,7 +5398,7 @@ fn parse_edge_operand(
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone(),
             paired_byte_offset: parsed.paired_byte_offset,
-            paired_class_tag: parsed.paired_class_tag.try_into().ok()?,
+            paired_class_tag: parsed.paired_class_tag,
             recipe_record_index: parsed.recipe_record_index,
             recipe_record_byte_offset: parsed.recipe_record_byte_offset,
             recipe_id: parsed.recipe_id,
@@ -5869,21 +5867,22 @@ pub(super) fn parse_face_operand(
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignFaceOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let mut offsets = Vec::with_capacity(5);
+    let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
-    for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
-        let offset = records.first_at_or_after(position, record_index?)?;
-        offsets.push(offset);
+    for (delta, slot) in offsets[..4].iter_mut().enumerate() {
+        let record_index = header.record_index.checked_add(u32::try_from(delta).ok()?)?;
+        let offset = records.first_at_or_after(position, record_index)?;
+        *slot = offset;
         position = offset.checked_add(11)?;
     }
     let (immediate_next, next_record_index) =
         face_recipe_next_boundary(bytes, position, header.record_index, next_byte_offset)?;
-    offsets.push(immediate_next);
-    let mut indexed = Vec::with_capacity(offsets.len());
-    for offset in &offsets {
+    offsets[4] = immediate_next;
+    let mut indexed = [("", 0u32); 5];
+    for (offset, slot) in offsets.iter().zip(&mut indexed) {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, *offset, 0..=2000, u8::is_ascii_graphic)?;
-        indexed.push((class_tag, View::u32_le_at(bytes, after_tag)?));
+        *slot = (class_tag, View::u32_le_at(bytes, after_tag)?);
     }
     let recipe_record_index = header.record_index.checked_add(3)?;
     if indexed[0].1 != header.record_index
@@ -5897,7 +5896,7 @@ pub(super) fn parse_face_operand(
     let stream = native_stream(&scope.id)?;
     let recipe_start = u64::try_from(offsets[3]).ok()?;
     let next_byte_offset = u64::try_from(offsets[4]).ok()?;
-    let matches = recipes
+    let mut matches = recipes
         .iter()
         .filter(|recipe| {
             native_stream(&recipe.id) == Some(stream)
@@ -5907,11 +5906,11 @@ pub(super) fn parse_face_operand(
                 )
                 && recipe.byte_offset > recipe_start
                 && recipe.byte_offset < next_byte_offset
-        })
-        .collect::<Vec<_>>();
-    let [recipe] = matches.as_slice() else {
+        });
+    let recipe = matches.next()?;
+    if matches.next().is_some() {
         return None;
-    };
+    }
     let family_name_len = match recipe.kind {
         ConstructionRecipeKind::Face => b"face_recipe_data".len(),
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
