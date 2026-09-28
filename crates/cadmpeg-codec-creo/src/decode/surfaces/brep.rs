@@ -632,27 +632,35 @@ struct NeutralShellSpec {
     wire_curves: BTreeSet<u32>,
 }
 
-fn admitted_face_components(
-    scan: &ContainerScan,
+fn admitted_face_components<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
-) -> Vec<crate::topology::FaceComponent> {
+) -> Result<Vec<&'a crate::topology::FaceComponent>, cadmpeg_core::CodecError> {
+    let mut admitted = Vec::new();
     if !matches!(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
     ) {
-        return scan.topology.face_components.clone();
+        ctx.try_reserve_items(
+            &mut admitted,
+            scan.topology.face_components.len(),
+            "creo B-rep admitted component refs",
+        )?;
+        admitted.extend(&scan.topology.face_components);
+        return Ok(admitted);
     }
-    scan.topology
-        .face_components
-        .iter()
-        .filter(|component| {
-            component
-                .face_ids
-                .iter()
-                .any(|face_id| eligible_face_ids.contains(face_id))
-        })
-        .cloned()
-        .collect()
+    for component in &scan.topology.face_components {
+        if component
+            .face_ids
+            .iter()
+            .any(|face_id| eligible_face_ids.contains(face_id))
+        {
+            ctx.try_reserve_items(&mut admitted, 1, "creo B-rep admitted component refs")?;
+            admitted.push(component);
+        }
+    }
+    Ok(admitted)
 }
 
 /// Return whether a topology face reference belongs to the model-face
@@ -765,16 +773,17 @@ fn component_is_closed(
     faces: &[u32],
 ) -> bool {
     component_face_curves.iter().all(|curve_id| {
-        let face_uses = emitted_half_edges
+        let mut face_uses = emitted_half_edges
             .iter()
             .filter(|half_edge| half_edge.curve_id == *curve_id)
             .filter_map(|half_edge| half_edges.get(half_edge))
-            .filter_map(|half_edge| half_edge.face_id)
-            .collect::<Vec<_>>();
-        face_uses.len() == 2
-            && face_uses
-                .iter()
-                .all(|face_id| faces.contains(&face_id.get()))
+            .filter_map(|half_edge| half_edge.face_id);
+        let (Some(first), Some(second), None) =
+            (face_uses.next(), face_uses.next(), face_uses.next())
+        else {
+            return false;
+        };
+        faces.contains(&first.get()) && faces.contains(&second.get())
     })
 }
 
@@ -1504,7 +1513,7 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeMap<_, _>>();
 
     let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();
-    let admitted_components = admitted_face_components(scan, &eligible_face_ids);
+    let admitted_components = admitted_face_components(ctx, scan, &eligible_face_ids)?;
     let neutral_edge_curves = admitted_components
         .iter()
         .flat_map(|component| component.curve_ids.iter().copied())

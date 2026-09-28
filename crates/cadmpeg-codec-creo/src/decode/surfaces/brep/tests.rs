@@ -643,7 +643,13 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     ];
 
     assert_eq!(
-        admitted_face_components(&scan, &BTreeSet::from([5])),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            admitted_face_components(ctx, &scan, &BTreeSet::from([5]))
+        })
+        .expect("service component references admitted")
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>(),
         vec![
             crate::topology::FaceComponent {
                 face_ids: vec![5],
@@ -659,7 +665,13 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     let all_components = scan.topology.face_components.clone();
     scan.framing.layout = crate::container::Layout::Nd;
     assert_eq!(
-        admitted_face_components(&scan, &BTreeSet::new()),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            admitted_face_components(ctx, &scan, &BTreeSet::new())
+        })
+        .expect("service component references admitted")
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>(),
         all_components
     );
 
@@ -668,6 +680,25 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     assert!(legacy_body_ownership_is_unambiguous(&scan, 1));
     scan.framing.declared_body_count = Some(2);
     assert!(legacy_body_ownership_is_unambiguous(&scan, 2));
+}
+
+#[test]
+fn admitted_face_component_refs_refuse_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.topology.face_components.push(crate::topology::FaceComponent {
+        face_ids: vec![5],
+        curve_ids: Vec::new(),
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = admitted_face_components(&ctx, &scan, &BTreeSet::from([5]))
+        .expect_err("component reference refused");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep admitted component refs"));
 }
 
 #[test]
