@@ -180,6 +180,35 @@ fn selected_body_blob_name_refuses_retained_limit() {
 }
 
 #[test]
+fn body_visibility_lookup_refuses_scoped_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let index = std::collections::HashMap::new();
+    let error = super::super::body_visibility_for(&ctx, &index, "BREP0.smb", 7)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "look up F3D body visibility"));
+}
+
+#[test]
+fn body_visibility_collection_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut visibilities = Vec::new();
+    let error = super::super::push_decode_item(
+        &ctx,
+        &mut visibilities,
+        7_u64,
+        "collect F3D body visibilities",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D body visibilities"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
