@@ -673,7 +673,8 @@ pub(super) fn project(
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function has no polynomial NURBS carrier"))?;
                     continue;
                 };
-                if function_nurbs.weights().is_some() || function_nurbs.degree() == 0 {
+                if matches!(function_nurbs.pole_rows(), cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. })
+                    || function_nurbs.degree() == 0 {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function is rational or degree zero"))?;
                     continue;
                 }
@@ -722,10 +723,12 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = reserve_optional_vec(ctx, function_nurbs.control_points().len(), "iges function-offset controls")?;
-                for (index, function_control) in
-                    function_nurbs.control_points().iter().copied().enumerate()
-                {
+                let mut controls = reserve_optional_vec(ctx, function_nurbs.pole_count(), "iges function-offset controls")?;
+                for index in 0..function_nurbs.pole_count() {
+                    let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
+                        controls.clear();
+                        break;
+                    };
                     let Some(function_parameter) = greville(function_nurbs.knots(), degree, index)
                     else {
                         super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function Greville parameter is missing"))?;
@@ -748,7 +751,7 @@ pub(super) fn project(
                     };
                     controls.push(base.translated(offset_direction, distance));
                 }
-                if controls.len() != function_nurbs.control_points().len() {
+                if controls.len() != function_nurbs.pole_count() {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function controls cannot be composed"))?;
                     continue;
                 }
