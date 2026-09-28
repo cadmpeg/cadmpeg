@@ -47,7 +47,6 @@ use crate::test_support::test_streams::two_support_charted_intersection_curve_st
 
 use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
 use crate::decode::feature_completeness::output_free_local_body_construction;
-use crate::decode::report::append_design_intent_losses;
 
 use crate::framing::node_kind::NodeKind;
 use std::{collections::BTreeSet, io::Cursor};
@@ -65,6 +64,10 @@ use cadmpeg_ir::report::loss::LossCategory;
 use cadmpeg_ir::Exactness;
 
 use crate::NxCodec;
+
+fn append_design_intent_losses(ir: &cadmpeg_ir::document::CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
+    crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, ir, losses)).unwrap();
+}
 
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {

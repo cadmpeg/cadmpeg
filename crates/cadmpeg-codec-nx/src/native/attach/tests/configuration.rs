@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::decode::feature_completeness::incomplete_expression_parameters;
 use crate::native::attach::attach_active_configuration_feature_states;
 use crate::native::attach::attach_active_configuration_parameter_values;
 use crate::native::attach::attach_block_dimension_parameter_consumers;
@@ -1426,7 +1425,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(incomplete_expression_parameters(&ir).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::decode::feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap().is_empty());
 }
 
 #[test]
@@ -1459,7 +1458,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        incomplete_expression_parameters(&ir),
+        crate::test_support::with_decode_context(|ctx| crate::decode::feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
         [ir.model.parameters[0].id.clone()].into()
     );
 }

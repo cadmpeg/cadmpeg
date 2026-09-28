@@ -563,8 +563,8 @@ pub(crate) struct NumericExpression<'a> {
 
 impl NumericExpression<'_> {
     /// Finite value when the expression is context-free arithmetic.
-    pub(crate) fn constant_value(&self) -> Option<FiniteReal> {
-        evaluate_constant_expression(self.expression)
+    pub(crate) fn constant_value(&self, ctx: &DecodeContext<'_>) -> Result<Option<FiniteReal>, CodecError> {
+        evaluate_constant_expression(ctx, self.expression)
     }
 }
 
@@ -2702,7 +2702,7 @@ pub(crate) fn data_block_object_frames(ctx: &DecodeContext<'_>, bytes: &[u8]) ->
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
-pub(crate) fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
+pub(crate) fn expression_declaration_name<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Option<ExpressionDeclarationName<'a>>, CodecError> {
     let mut declaration = None;
     let mut literal = None;
     let mut multiple_literals = false;
@@ -2727,22 +2727,22 @@ pub(crate) fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDecl
             continue;
         };
         let Some(name) = ParameterName::<_, u32>::parse(value) else {
-            if evaluate_constant_expression(value).is_some() && literal.replace(value).is_some() {
+            if evaluate_constant_expression(ctx, value)?.is_some() && literal.replace(value).is_some() {
                 multiple_literals = true;
             }
             continue;
         };
         if declaration.replace((at, name)).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    let (offset, name) = declaration?;
+    let Some((offset, name)) = declaration else { return Ok(None) };
     let literal = (!multiple_literals).then_some(literal).flatten();
-    Some(ExpressionDeclarationName {
+    Ok(Some(ExpressionDeclarationName {
         offset,
         name,
         literal,
-    })
+    }))
 }
 
 /// Decode the unique direct primary-body field in one operation.
@@ -4541,7 +4541,8 @@ fn numeric_expression_comment_is_valid(comment: &str) -> bool {
 
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.
 /// Names and function calls fail; they need the parameter graph.
-pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
+pub(crate) fn evaluate_constant_expression(ctx: &DecodeContext<'_>, text: &str) -> Result<Option<FiniteReal>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "NX numeric expression scan")?;
     // This is the expression grammar's explicit operator stack. Do not turn
     // nested parentheses or unary signs back into recursive descent: formula
     // text is untrusted input, and a valid bounded record must not consume the
@@ -4570,15 +4571,62 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
         }
     }
 
-    struct Parser<'a> {
+    struct Parser<'a, 'b, 'c> {
         bytes: &'a [u8],
+        ctx: &'b DecodeContext<'c>,
+        failure: Option<CodecError>,
         at: usize,
         values: Vec<FiniteReal>,
+        values_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
+        charged_values_len: usize,
         operators: Vec<Operator>,
+        operators_reservation: cadmpeg_core::decode::ScopedReservation<'b>,
+        charged_operators_len: usize,
         expect_operand: bool,
     }
 
-    impl Parser<'_> {
+    impl Parser<'_, '_, '_> {
+        fn push_value(&mut self, value: FiniteReal) -> Option<()> {
+            let charged = self.ctx.charge_collection_items(1, "NX expression value stack")
+                .and_then(|()| {
+                    if self.values.len() < self.charged_values_len { return Ok(()) }
+                    self.values_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FiniteReal>()))?;
+                    self.charged_values_len = self.charged_values_len.checked_add(1)
+                        .ok_or_else(|| self.ctx.refuse_codec_limit("NX expression value stack", 0, u64::MAX))?;
+                    Ok(())
+                });
+            if let Err(error) = charged {
+                self.failure = Some(error);
+                return None;
+            }
+            if self.values.try_reserve(1).is_err() {
+                self.failure = Some(self.ctx.refuse_codec_limit("NX expression value stack", 0, 1));
+                return None;
+            }
+            self.values.push(value);
+            Some(())
+        }
+
+        fn push_operator(&mut self, operator: Operator) -> Option<()> {
+            let charged = self.ctx.charge_collection_items(1, "NX expression operator stack")
+                .and_then(|()| {
+                    if self.operators.len() < self.charged_operators_len { return Ok(()) }
+                    self.operators_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Operator>()))?;
+                    self.charged_operators_len = self.charged_operators_len.checked_add(1)
+                        .ok_or_else(|| self.ctx.refuse_codec_limit("NX expression operator stack", 0, u64::MAX))?;
+                    Ok(())
+                });
+            if let Err(error) = charged {
+                self.failure = Some(error);
+                return None;
+            }
+            if self.operators.try_reserve(1).is_err() {
+                self.failure = Some(self.ctx.refuse_codec_limit("NX expression operator stack", 0, 1));
+                return None;
+            }
+            self.operators.push(operator);
+            Some(())
+        }
         fn spaces(&mut self) {
             while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
                 self.at += 1;
@@ -4649,7 +4697,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
                     FiniteReal::new(raw)?
                 }
             };
-            self.values.push(value);
+            self.push_value(value)?;
             Some(())
         }
 
@@ -4663,7 +4711,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
             }) {
                 self.apply_top()?;
             }
-            self.operators.push(incoming);
+            self.push_operator(incoming)?;
             self.expect_operand = true;
             Some(())
         }
@@ -4679,7 +4727,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
             matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(())
         }
 
-        fn parse(mut self) -> Option<FiniteReal> {
+        fn parse(&mut self) -> Option<FiniteReal> {
             while self.at < self.bytes.len() {
                 self.spaces();
                 if self.at == self.bytes.len() {
@@ -4689,16 +4737,16 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
                 if self.expect_operand {
                     match byte {
                         b'+' | b'-' => {
-                            self.operators.push(Operator::Unary(byte));
+                            self.push_operator(Operator::Unary(byte))?;
                             self.at += 1;
                         }
                         b'(' => {
-                            self.operators.push(Operator::OpenParen);
+                            self.push_operator(Operator::OpenParen)?;
                             self.at += 1;
                         }
                         _ => {
                             let value = self.number()?;
-                            self.values.push(value);
+                            self.push_value(value)?;
                             self.expect_operand = false;
                         }
                     }
@@ -4727,16 +4775,32 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<FiniteReal> {
             }
             (self.values.len() == 1).then(|| self.values[0])
         }
+
+        fn parse_with_refusal(mut self) -> Result<Option<FiniteReal>, CodecError> {
+            let value = self.parse();
+            if let Some(error) = self.failure {
+                return Err(error);
+            }
+            Ok(value)
+        }
     }
 
+    let values_reservation = ctx.reserve_scoped(0, "NX expression value stack")?;
+    let operators_reservation = ctx.reserve_scoped(0, "NX expression operator stack")?;
     Parser {
         bytes: text.as_bytes(),
+        ctx,
+        failure: None,
         at: 0,
         values: Vec::new(),
+        values_reservation,
+        charged_values_len: 0,
         operators: Vec::new(),
+        operators_reservation,
+        charged_operators_len: 0,
         expect_operand: true,
     }
-    .parse()
+    .parse_with_refusal()
 }
 
 #[cfg(test)]

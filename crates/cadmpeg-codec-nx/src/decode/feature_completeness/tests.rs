@@ -18,7 +18,10 @@ use crate::decode::feature_completeness::{
     datum_coordinate_system_is_incomplete, projected_curve_direction_is_incomplete,
     shell_definition_is_incomplete,
 };
-use crate::decode::report::append_design_intent_losses;
+
+fn append_design_intent_losses(ir: &cadmpeg_ir::document::CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
+    crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, ir, losses)).unwrap();
+}
 
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {

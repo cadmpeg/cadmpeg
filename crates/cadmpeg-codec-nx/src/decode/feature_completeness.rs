@@ -177,7 +177,7 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
-pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
+pub(crate) fn incomplete_expression_parameters(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let parameter_owners = ir
         .model
         .parameters
@@ -256,6 +256,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             let parameter = parameters[index];
             let unit = parameter.properties.get("unit").map(String::as_str);
             let value = crate::native::om::evaluate_parameterized_expression(
+                ctx,
                 &parameter.expression,
                 |name| {
                     let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
@@ -263,7 +264,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                     };
                     evaluated.get(*dependency).copied()
                 },
-            );
+            )?;
             let stored = match (unit, parameter.value.as_ref()) {
                 (
                     Some("millimeter" | "inch"),
@@ -307,7 +308,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             }
         }
     }
-    incomplete
+    Ok(incomplete)
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {

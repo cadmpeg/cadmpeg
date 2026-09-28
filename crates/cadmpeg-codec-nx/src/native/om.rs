@@ -893,25 +893,53 @@ pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
 }
 
 pub(crate) fn evaluate_parameterized_expression(
+    ctx: &DecodeContext<'_>,
     expression: &str,
     mut parameter_value: impl FnMut(&str) -> Option<f64>,
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, CodecError> {
+    struct NumberText {
+        bytes: [u8; 400],
+        len: usize,
+    }
+
+    impl std::fmt::Write for NumberText {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            let end = self.len.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            let slot = self.bytes.get_mut(self.len..end).ok_or(std::fmt::Error)?;
+            slot.copy_from_slice(text.as_bytes());
+            self.len = end;
+            Ok(())
+        }
+    }
+
     let bytes = expression.as_bytes();
-    let mut substituted = String::with_capacity(expression.len());
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "NX expression substitution")?;
+    let mut reservation = ctx.reserve_scoped(0, "NX expression substitution")?;
+    let mut substituted = String::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if let Some(end) = expression_parameter_reference_end(bytes, at) {
-            let value = parameter_value(&expression[at..end])?;
+            let Some(value) = parameter_value(&expression[at..end]) else { return Ok(None) };
+            let mut number = NumberText { bytes: [0; 400], len: 0 };
+            std::fmt::Write::write_fmt(&mut number, format_args!("{value}"))
+                .map_err(|_| ctx.refuse_codec_limit("NX expression number formatting", 0, 400))?;
+            let value_text = std::str::from_utf8(&number.bytes[..number.len])
+                .map_err(|_| ctx.refuse_codec_limit("NX expression number formatting", 0, cadmpeg_core::decode::u64_from_index(number.len)))?;
+            let added = value_text.len().checked_add(2).ok_or_else(|| ctx.refuse_codec_limit("NX expression substitution", 0, u64::MAX))?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(added))?;
+            substituted.try_reserve(added).map_err(|_| ctx.refuse_codec_limit("NX expression substitution", 0, cadmpeg_core::decode::u64_from_index(added)))?;
             substituted.push('(');
-            substituted.push_str(&value.to_string());
+            substituted.push_str(&value_text);
             substituted.push(')');
             at = end;
         } else {
+            reservation.grow(1)?;
+            substituted.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX expression substitution", 0, 1))?;
             substituted.push(char::from(bytes[at]));
             at += 1;
         }
     }
-    crate::om::evaluate_constant_expression(&substituted)
+    crate::om::evaluate_constant_expression(ctx, &substituted)
 }
 
 fn expression_parameter_reference_end(bytes: &[u8], at: usize) -> Option<usize> {
@@ -4395,50 +4423,33 @@ pub(super) fn persistent_handles(
 }
 
 /// Decode named parameter declarations from expression-class OM records.
-pub(super) fn expression_declarations(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ExpressionDeclaration>, cadmpeg_core::CodecError>
-{
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            if !section
-                .types
-                .iter()
-                .any(|definition| definition.name == "UGS::EXP_expression")
-            {
-                return Vec::new();
-            }
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let Some(records) = section.as_fixed() else {
-                return Vec::new();
+pub(super) fn expression_declarations(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ExpressionDeclaration>, CodecError> {
+    let mut declarations = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        if !section.types.iter().any(|definition| definition.name == "UGS::EXP_expression") {
+            continue;
+        }
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let Some(records) = section.as_fixed() else { continue };
+        for (record_ordinal, record) in records.iter().enumerate() {
+            let Some(declaration) = crate::om::expression_declaration_name(ctx, record.bytes)? else {
+                continue;
             };
-            records
-                .iter()
-                .cloned()
-                .enumerate()
-                .filter_map(|(record_ordinal, record)| {
-                    let object_id = record.object_id.0;
-                    let declaration = crate::om::expression_declaration_name(record.bytes)?;
-                    let record_id =
-                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    Some(ExpressionDeclaration {
-                        id: format!(
-                            "nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"
-                        ),
-                        object_id,
-                        record: record_id,
-                        name: declaration.name.into_owned(),
-                        literal: declaration.literal.map(str::to_string),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset
-                            + record.offset as u64
-                            + declaration.offset as u64,
-                    })
-                })
-                .collect()
-        })
-        .collect())
+            declarations.push(ExpressionDeclaration {
+                id: format!("nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"),
+                object_id: record.object_id.0,
+                record: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
+                name: declaration.name.into_owned(),
+                literal: declaration.literal.map(str::to_string),
+                source_entry: entry.name.clone(),
+                source_offset: entry_offset + record.offset as u64 + declaration.offset as u64,
+            });
+        }
+    }
+    Ok(declarations)
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
@@ -4510,7 +4521,7 @@ pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Res
                     };
                     Some(declaration.id.clone())
                 });
-            let value = expression.constant_value();
+            let value = expression.constant_value(ctx)?;
             let Some(source_table) = cadmpeg_core::text::NonBlankString::new(format!(
                 "nx:om-entry-{entry_index}:expression-table#{table_offset}"
             )) else {
@@ -4536,11 +4547,11 @@ pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Res
             });
         }
     }
-    evaluate_expression_graphs(&mut expressions);
+    evaluate_expression_graphs(ctx, &mut expressions)?;
     Ok(expressions)
 }
 
-fn evaluate_expression_graphs(expressions: &mut [Expression]) {
+fn evaluate_expression_graphs(ctx: &DecodeContext<'_>, expressions: &mut [Expression]) -> Result<(), CodecError> {
     let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
@@ -4581,7 +4592,7 @@ fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
             }
-            let evaluated = evaluate_parameterized_expression(&expression.expression, |name| {
+            let evaluated = evaluate_parameterized_expression(ctx, &expression.expression, |name| {
                 let key = (
                     expression.source_table.as_str().to_string(),
                     name.to_string(),
@@ -4591,7 +4602,7 @@ fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                     return None;
                 }
                 values.get(&key).copied()
-            });
+            })?;
             if let Some(value) = evaluated {
                 expression.value = Some(value);
                 values.insert(expression_key.clone(), value.get());
@@ -4602,10 +4613,22 @@ fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             break;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn parameterized_expression_refuses_scoped_limit() {
+        let bytes = b"p1 + 2";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let error = super::evaluate_parameterized_expression(&ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
     use crate::test_support::test_om::offset_only_indexed_om_section;
     use crate::test_support::test_om::offset_only_indexed_om_section_with_control;
     use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
@@ -4697,7 +4720,7 @@ mod tests {
             expression("p6", "p4_ + 2", None),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4735,7 +4758,7 @@ mod tests {
             expression("p9", "p8 + p7", None),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[2]
@@ -4772,7 +4795,7 @@ mod tests {
             expression("p3", "-p1^2", None),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4835,7 +4858,7 @@ mod tests {
             ),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4905,7 +4928,7 @@ mod tests {
             ),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[0]
@@ -4993,7 +5016,7 @@ mod tests {
             ),
         ];
 
-        super::evaluate_expression_graphs(&mut expressions);
+        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
 
         assert_eq!(
             expressions[0]
@@ -5166,13 +5189,13 @@ mod tests {
                 .map(String::as_str),
             Some("degree")
         );
-        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap().is_empty());
 
         ir.model.parameters[0]
             .properties
             .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&ir),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
             [
                 ir.model.parameters[0].id.clone(),
                 ir.model.parameters[2].id.clone(),
@@ -5261,7 +5284,7 @@ mod tests {
                 cadmpeg_ir::scalar::Length::new(value).unwrap(),
             ));
         }
-        assert!(feature_completeness::incomplete_expression_parameters(&ir).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap().is_empty());
 
         let mut inconsistent = ir.clone();
         inconsistent.model.parameters[1].value =
@@ -5269,14 +5292,14 @@ mod tests {
                 cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ));
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&inconsistent),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &inconsistent)).unwrap(),
             [inconsistent.model.parameters[1].id.clone()].into()
         );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&duplicate_name),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &duplicate_name)).unwrap(),
             duplicate_name.model.parameters[..2]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5286,7 +5309,7 @@ mod tests {
         let mut unevaluated = ir.clone();
         unevaluated.model.parameters[1].value = None;
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&unevaluated),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &unevaluated)).unwrap(),
             [unevaluated.model.parameters[1].id.clone()].into()
         );
 
@@ -5300,7 +5323,7 @@ mod tests {
             ),
         );
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&operation_owned),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &operation_owned)).unwrap(),
             [operation_owned.model.parameters[1].id.clone()].into()
         );
     }
@@ -5343,7 +5366,7 @@ mod tests {
             .iter()
             .all(|parameter| parameter.dependencies.is_empty()));
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&ir),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
             ir.model
                 .parameters
                 .iter()
@@ -5351,7 +5374,7 @@ mod tests {
                 .collect()
         );
         let mut losses = Vec::new();
-        crate::decode::report::append_design_intent_losses(&ir, &mut losses);
+        crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, &ir, &mut losses)).unwrap();
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("2 NX expression parameter(s)"));
     }
@@ -5409,7 +5432,7 @@ mod tests {
             ));
         }
         assert_eq!(
-            feature_completeness::incomplete_expression_parameters(&ir),
+            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
             ir.model.parameters[2..]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5921,7 +5944,7 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
-        assert_eq!(expressions[0].constant_value(), None);
+        assert_eq!(crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx)).unwrap(), None);
         assert_eq!(
             super::expression_parameter_names(expressions[0].expression),
             vec!["p2", "p7_radius"]

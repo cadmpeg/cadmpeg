@@ -4,7 +4,6 @@ use crate::test_support::test_bytes::shifted_f64_bytes;
 use crate::test_support::test_om::indexed_om_section;
 
 use crate::om::color_tables;
-use crate::om::expression_declaration_name;
 use crate::om::indexed_sections;
 use crate::om::ExpressionUnit;
 
@@ -44,6 +43,10 @@ fn sample_color_table_bytes() -> Vec<u8> {
     }
 
     bytes
+}
+
+fn expression_declaration_name_for_test(bytes: &[u8]) -> Option<crate::om::ExpressionDeclarationName<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::expression_declaration_name(ctx, bytes)).unwrap()
 }
 
 #[test]
@@ -171,13 +174,13 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].unit, ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
     assert_eq!(
-        expressions[0]
-            .constant_value()
+        crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx))
+            .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
     let declaration =
-        expression_declaration_name(section.as_fixed().expect("fixed store")[1].bytes).unwrap();
+        expression_declaration_name_for_test(section.as_fixed().expect("fixed store")[1].bytes).unwrap();
     assert_eq!(
         declaration.name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
@@ -188,14 +191,14 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(declaration.literal, Some("120"));
-    let declaration = expression_declaration_name(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
+    let declaration = expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
     assert_eq!(declaration.name.as_str(), "p1");
     assert_eq!(declaration.literal, Some("-5.1 * 2"));
     let declaration =
-        expression_declaration_name(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0").unwrap();
+        expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x055.1\0\x04\x05120\0").unwrap();
     assert_eq!(declaration.literal, None);
-    assert!(expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
-    assert!(expression_declaration_name(b"\x04\x05p1-\0").is_none());
+    assert!(expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x04p2\0").is_none());
+    assert!(expression_declaration_name_for_test(b"\x04\x05p1-\0").is_none());
 }
 
 #[test]
