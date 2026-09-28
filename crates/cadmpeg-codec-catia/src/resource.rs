@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{
     DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
 };
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::AnnotationBuilder;
 
 fn allocation_failed(
     used: usize,
@@ -207,6 +208,28 @@ pub(crate) fn copy_retained_str(
         .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
     text.push_str(value);
     Ok(text)
+}
+
+pub(crate) fn derived_annotation(
+    ctx: &DecodeContext<'_>,
+    annotations: &mut AnnotationBuilder,
+    id: &str,
+    field: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let (outer, inner) = annotations.derived_field_admission(id, field);
+    if outer {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    if inner {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    let id = copy_retained_str(ctx, id, operation)?;
+    let field = copy_retained_str(ctx, field, operation)?;
+    annotations
+        .field_exactness_owned(id, field, cadmpeg_ir::Exactness::Derived)
+        .map_err(CodecError::malformed)?;
+    Ok(())
 }
 
 pub(crate) fn format_retained(

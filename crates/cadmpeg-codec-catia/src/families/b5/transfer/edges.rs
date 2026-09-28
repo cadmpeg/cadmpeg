@@ -350,9 +350,8 @@ pub(super) fn emit_edges(
             geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ) {
-            annotations
-                .derived(&curve_id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations,
+                curve_id.as_str(), "geometry", "catia_b5_curve_geometry_annotation")?;
         }
         let model_curve_id = crate::resource::copy_id(admission.context(), curve_id.as_str(),
             CurveId::mint, "catia_b5_model_edge_curve_id")?;
@@ -392,15 +391,14 @@ pub(super) fn emit_edges(
                 tag,
                 Exactness::Derived,
             )?;
-            annotations
-                .derived(&procedural_id, "curve")
-                .map_err(cadmpeg_core::CodecError::malformed)?
-                .derived(&procedural_id, "definition")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            for field in ["curve", "definition"] {
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    procedural_id.as_str(), field, "catia_b5_procedural_curve_annotation")?;
+            }
             if cache_fit_tolerance.is_some() {
-                annotations
-                    .derived(&procedural_id, "cache_fit_tolerance")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    procedural_id.as_str(), "cache_fit_tolerance",
+                    "catia_b5_procedural_curve_annotation")?;
             }
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
@@ -423,20 +421,17 @@ pub(super) fn emit_edges(
             "5e_edge",
             Exactness::ByteExact,
         )?;
-        annotations
-            .derived(&id, "start")
-            .map_err(cadmpeg_core::CodecError::malformed)?
-            .derived(&id, "end")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        for field in ["start", "end"] {
+            crate::resource::derived_annotation(admission.context(), annotations,
+                id.as_str(), field, "catia_b5_edge_annotation")?;
+        }
         if edge_range.is_some() {
-            annotations
-                .derived(&id, "param_range")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations,
+                id.as_str(), "param_range", "catia_b5_edge_annotation")?;
         }
         if edge_tolerance.is_some() {
-            annotations
-                .derived(&id, "tolerance")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations,
+                id.as_str(), "tolerance", "catia_b5_edge_annotation")?;
         }
         let map_id = crate::resource::copy_id(admission.context(), id.as_str(),
             EdgeId::mint, "catia_b5_edge_map_id")?;

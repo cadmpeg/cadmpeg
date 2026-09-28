@@ -424,6 +424,15 @@ impl AnnotationBuilder {
         Ok(self)
     }
 
+    /// Report which exactness map entries a derived field would add.
+    #[must_use]
+    pub fn derived_field_admission(&self, id: &str, field: &str) -> (bool, bool) {
+        match self.annotations.exactness.get(id) {
+            Some(note) => (false, !note.fields().contains_key(field)),
+            None => (true, true),
+        }
+    }
+
     /// Retain exactness annotations selected by identity.
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
         self.annotations.exactness.retain(|id, _| keep(id));

@@ -784,9 +784,8 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             )?;
             if *cylinder_reparameterized {
-                annotations
-                    .derived(&id, "geometry.control_points")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    id.as_str(), "geometry.control_points", "catia_b5_pcurve_annotation")?;
             }
             if graph
                 .pcurves
@@ -794,9 +793,8 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations
-                    .derived(&id, "parameter_range")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    id.as_str(), "parameter_range", "catia_b5_pcurve_annotation")?;
             }
             for occurrence in occurrences {
                 let use_id = crate::resource::copy_id(admission.context(), id.as_str(), PcurveId::mint,
