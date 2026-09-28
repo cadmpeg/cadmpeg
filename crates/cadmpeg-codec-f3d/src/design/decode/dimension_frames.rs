@@ -477,14 +477,81 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
 pub(crate) fn bind_dimension_recipe_reference_candidates(
+    ctx: &DecodeContext<'_>,
     records: &mut [DesignDimensionRecipeRecord],
     tags: &[PersistentSubentityTag],
-) {
+) -> Result<(), CodecError> {
     for record in records {
         for reference in &mut record.references {
-            bind_recipe_reference_candidates(reference, tags, Some(&record.id));
+            bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&record.id))?;
         }
     }
+    Ok(())
+}
+
+fn push_recipe_candidate<T: Clone>(
+    ctx: &DecodeContext<'_>,
+    candidates: &mut Vec<T>,
+    candidate: &T,
+    text_len: usize,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d recipe reference candidate")?;
+    ctx.charge_retained(
+        u64::try_from(text_len).map_err(|_| {
+            ctx.refuse_codec_limit("f3d recipe reference candidate length", 0, 1)
+        })?,
+        "f3d recipe reference candidate ID",
+    )?;
+    candidates.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d recipe reference candidate allocation", 0, 1)
+    })?;
+    candidates.push(candidate.clone());
+    Ok(())
+}
+
+pub(crate) fn bind_recipe_reference_candidates_charged(
+    ctx: &DecodeContext<'_>,
+    reference: &mut crate::records::dimensions::DesignRecipeReference,
+    tags: &[PersistentSubentityTag],
+    owner_id: Option<&str>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    reference.candidate_faces.clear();
+    reference.candidate_edges.clear();
+    reference.alternate_selector_faces.clear();
+    reference.alternate_selector_edges.clear();
+    for tag in tags.iter().filter(|tag| {
+        tag.token.as_str() == reference.token
+            && tag.design_references.contains(&reference.design_reference)
+            && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
+    }) {
+        let matching_selector = tag.selector == reference.selector;
+        match (&tag.target, matching_selector) {
+            (AttributeTarget::Face(face), true) => push_recipe_candidate(
+                ctx, &mut reference.candidate_faces, face, face.as_str().len(),
+            )?,
+            (AttributeTarget::Edge(edge), true) => push_recipe_candidate(
+                ctx, &mut reference.candidate_edges, edge, edge.as_str().len(),
+            )?,
+            (AttributeTarget::Face(face), false) => push_recipe_candidate(
+                ctx, &mut reference.alternate_selector_faces, face, face.as_str().len(),
+            )?,
+            (AttributeTarget::Edge(edge), false) => push_recipe_candidate(
+                ctx, &mut reference.alternate_selector_edges, edge, edge.as_str().len(),
+            )?,
+            _ => {}
+        }
+    }
+    reference.candidate_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    reference.candidate_faces.dedup();
+    reference.candidate_edges.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    reference.candidate_edges.dedup();
+    reference.alternate_selector_faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    reference.alternate_selector_faces.dedup();
+    reference.alternate_selector_edges.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    reference.alternate_selector_edges.dedup();
+    Ok(())
 }
 
 pub(crate) fn bind_recipe_reference_candidates(

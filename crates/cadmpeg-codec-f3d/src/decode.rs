@@ -4731,10 +4731,11 @@ fn extend_related_design_records(
         &native.construction_recipes,
     )?;
     crate::design::decode::operands::bind_edge_operand_candidates(
+        ctx,
         &mut native.design_edge_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_edge_operand_history_candidates(
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
@@ -4752,9 +4753,10 @@ fn extend_related_design_records(
             &native.construction_recipes,
         )?;
     crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
+        ctx,
         &mut native.design_edge_treatment_vertex_operands,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_edge_treatment_vertex_history(
         &mut native.design_edge_treatment_vertex_operands,
         &native.design_parameter_scopes,
@@ -4789,10 +4791,11 @@ fn extend_related_design_records(
         &native.construction_recipes,
     )?;
     crate::design::decode::operands::bind_face_operand_candidates(
+        ctx,
         &mut native.design_face_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_face_operand_history_candidates(
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
@@ -4851,9 +4854,10 @@ fn extend_related_design_records(
             &native.construction_recipes,
         )?;
     crate::design::decode::dimension_frames::bind_dimension_recipe_reference_candidates(
+        ctx,
         &mut native.design_dimension_recipe_records,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::design::decode::dimension_frames::bind_dimension_recipe_edge_operands(
         &mut native.design_dimension_recipe_records,
         &native.design_edge_operands,

@@ -6198,10 +6198,15 @@ fn validate_edge_treatment_vertex_operands<'a>(
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
     let mut expected = native.design_edge_treatment_vertex_operands.clone();
-    design::decode::operands::bind_edge_treatment_vertex_candidates(
-        &mut expected,
-        &native.persistent_subentity_tags,
-    );
+    for operand in &mut expected {
+        for reference in &mut operand.recipe.recipe_references {
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
+                reference,
+                &native.persistent_subentity_tags,
+                Some(&operand.id),
+            );
+        }
+    }
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
