@@ -256,32 +256,30 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             }
                         } else {
                             let directed = [(first, second), (second, first)];
-                            let point_on_curve = directed
-                                .into_iter()
-                                .filter_map(|(curve, point)| {
+                            let point_on_curve = crate::decode::uniqueness::exactly_one(
+                                directed.into_iter().filter_map(|(curve, point)| {
                                     Some((
                                         section_skamp_curve_entity(definition, sketch, curve)
                                             .or_else(|| inactive_curve_entity(curve))?,
                                         inactive_incidence_locus(point)?,
                                     ))
-                                })
-                                .collect::<Vec<_>>();
-                            if let [(entity, point)] = point_on_curve.as_slice() {
+                                }),
+                            );
+                            if let Some((entity, point)) = point_on_curve {
                                 SketchConstraintDefinitionInput::PointOnObject {
-                                    point: point.clone(),
-                                    entity: entity.clone(),
+                                    point,
+                                    entity,
                                 }
                             } else {
-                                let point_coincidence = directed
-                                    .into_iter()
-                                    .filter_map(|(point, locus)| {
+                                let point_coincidence = crate::decode::uniqueness::exactly_one(
+                                    directed.into_iter().filter_map(|(point, locus)| {
                                         Some([
                                             SketchLocus::Entity(point_entity(point)?),
                                             inactive_incidence_locus(locus)?,
                                         ])
-                                    })
-                                    .collect::<Vec<_>>();
-                                if let [loci] = point_coincidence.as_slice() {
+                                    }),
+                                );
+                                if let Some(loci) = point_coincidence {
                                     SketchConstraintDefinitionInput::CoincidentLoci {
                                         loci: loci.to_vec(),
                                     }
