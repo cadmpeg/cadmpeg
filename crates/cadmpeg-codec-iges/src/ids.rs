@@ -9,6 +9,8 @@
 
 use std::fmt;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::identity_key;
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey,
@@ -212,6 +214,22 @@ impl Stem {
     }
 }
 
+pub(crate) trait MintContext<'borrow, 'arena> {
+    fn optional(self) -> Option<&'borrow DecodeContext<'arena>>;
+}
+
+impl<'borrow, 'arena> MintContext<'borrow, 'arena> for &'borrow DecodeContext<'arena> {
+    fn optional(self) -> Option<&'borrow DecodeContext<'arena>> {
+        Some(self)
+    }
+}
+
+impl<'borrow, 'arena> MintContext<'borrow, 'arena> for Option<&'borrow DecodeContext<'arena>> {
+    fn optional(self) -> Option<&'borrow DecodeContext<'arena>> {
+        self
+    }
+}
+
 impl fmt::Display for Stem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.key.as_str())
@@ -228,6 +246,28 @@ macro_rules! minter {
                 stem.key(),
             )
         }
+    };
+    ($(#[$meta:meta])* $name:ident, $admitted:ident, $ty:ty, $scope:literal, $kind:literal) => {
+        $(#[$meta])*
+        pub(crate) fn $name(stem: &Stem) -> $ty {
+            <$ty>::compose(
+                &cadmpeg_ir::identity_namespace!("iges", $scope, $kind),
+                stem.key(),
+            )
+        }
+            pub(crate) fn $admitted<'borrow, 'arena: 'borrow>(
+                stem: &Stem,
+                ctx: impl MintContext<'borrow, 'arena>,
+            ) -> Result<$ty, CodecError> {
+                let Some(ctx) = ctx.optional() else { return Ok($name(stem)); };
+                let text = crate::decode_resource::format_retained(
+                    ctx,
+                    format_args!("iges:{}:{}#{stem}", $scope, $kind),
+                    "iges generated identity",
+                )?;
+                <$ty>::try_from(text)
+                    .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))
+            }
     };
 }
 
@@ -283,6 +323,7 @@ minter!(
 minter!(
     /// The point named by this key.
     point,
+    point_admitted,
     PointId,
     "model",
     "point"

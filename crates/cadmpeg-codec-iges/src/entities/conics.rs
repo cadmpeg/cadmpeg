@@ -68,7 +68,7 @@ fn add_bounded_curve(
         tolerance,
     } = span;
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
     sequences.record_point(&start_point, &stem, ctx)?;
     let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
     sequences.record_point(&end_point, &stem, ctx)?;
