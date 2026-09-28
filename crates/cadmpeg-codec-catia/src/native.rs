@@ -54,7 +54,6 @@ use crate::object_graph::{
     self, AliasGroupMembership, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField,
     PayloadSubtype,
 };
-use crate::unique_index::UniqueIndex;
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
@@ -9113,49 +9112,62 @@ fn external_reference_views(
     Ok(views)
 }
 
-fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
+fn resolve_alias_surface_tags(
+    ctx: &DecodeContext<'_>,
+    rows: &mut [CatiaAliasRow],
+) -> Result<(), CodecError> {
     let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
     for row in rows.iter() {
-        let Some(group) = row.group.as_ref() else {
-            continue;
-        };
-        if row.lead() != AliasLead::SurfaceSupportStorage {
-            continue;
+        let Some(group) = row.group.as_ref() else { continue };
+        if row.lead() != AliasLead::SurfaceSupportStorage { continue }
+        let key = (group.prototype, group.group_id);
+        if let Some(stored) = stored_by_group.get_mut(&key) {
+            *stored = None;
+        } else {
+            crate::resource::insert_map(ctx, &mut stored_by_group, key, Some(row.tag()),
+                "catia_alias_group_index")?;
         }
-        stored_by_group
-            .entry((group.prototype, group.group_id))
-            .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag()));
     }
     for row in rows {
         row.canonical_surface_tag = match row.lead() {
             AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
-                stored_by_group
-                    .get(&(group.prototype, group.group_id))
-                    .copied()
-                    .flatten()
+                stored_by_group.get(&(group.prototype, group.group_id)).copied().flatten()
             }),
             _ => None,
         };
     }
+    Ok(())
 }
 
 fn resolve_owner_chart_support_aliases(
+    ctx: &DecodeContext<'_>,
     packets: &mut [CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
-) {
-    let unique_by_tag = aliases
-        .iter()
-        .map(|alias| (alias.tag(), alias))
-        .collect::<UniqueIndex<_, _>>();
-    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
-        if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
-            *alias = unique_by_tag.get(&reference.value).and_then(|row| {
-                cadmpeg_core::text::NonBlankString::new(row.id.clone())
-                    .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
-            });
+) -> Result<(), CodecError> {
+    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
+    for row in aliases {
+        let key = row.tag();
+        if let Some(stored) = unique_by_tag.get_mut(&key) {
+            *stored = None;
+        } else {
+            crate::resource::insert_map(ctx, &mut unique_by_tag, key, Some(row),
+                "catia_owner_alias_index")?;
         }
+    }
+    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
+        if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
+            *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
+                let id = crate::resource::copy_retained_str(
+                    ctx, &row.id, "catia_owner_alias_binding_id"
+                )?;
+                cadmpeg_core::text::NonBlankString::new(id)
+                    .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
+            } else {
+                None
+            };
+        }
+        Ok(())
     };
     for packet in packets {
         let Some(chart) = packet.owner_chart_mut() else {
@@ -9170,9 +9182,10 @@ fn resolve_owner_chart_support_aliases(
             continue;
         };
         for reference in support_surfaces.iter_mut().chain(support_pcurves) {
-            resolve(reference);
+            resolve(reference)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -9180,7 +9193,12 @@ fn validate_alias_surface_tags(
     rows: &[CatiaAliasRow],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut expected = rows.to_vec();
-    resolve_alias_surface_tags(&mut expected);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("validation fixture fits service input limit");
+    resolve_alias_surface_tags(&ctx, &mut expected)
+        .expect("validation fixture fits service resource limits");
     if rows
         .iter()
         .zip(expected)
@@ -9200,7 +9218,12 @@ fn validate_owner_chart_support_aliases(
     aliases: &[CatiaAliasRow],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut expected = packets.to_vec();
-    resolve_owner_chart_support_aliases(&mut expected, aliases);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("validation fixture fits service input limit");
+    resolve_owner_chart_support_aliases(&ctx, &mut expected, aliases)
+        .expect("validation fixture fits service resource limits");
     if packets == expected {
         Ok(())
     } else {
@@ -9464,7 +9487,7 @@ impl CatiaNative {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
                 })
         });
-        resolve_alias_surface_tags(&mut alias_rows);
+        resolve_alias_surface_tags(ctx, &mut alias_rows)?;
         let design_objects = design_objects(&object_graphs, &entity_records);
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
@@ -9547,7 +9570,7 @@ impl CatiaNative {
         let consolidated_line_profiles = consolidated_line_profiles(ctx, bytes, consolidated_records)?;
         let mut consolidated_owner_packets =
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;
-        resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
+        resolve_owner_chart_support_aliases(ctx, &mut consolidated_owner_packets, &alias_rows)?;
         let consolidated_pcurves = consolidated_pcurves(ctx, bytes, consolidated_records)?;
         let consolidated_plane_carriers = consolidated_plane_carriers(ctx, bytes, consolidated_records)?;
         let consolidated_reference_lists =
