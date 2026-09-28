@@ -28,6 +28,7 @@ mod entity_limits;
 mod extrude_group_limits;
 mod extrude_member_limits;
 mod construction_group_limits;
+mod construction_identity_limits;
 mod operand_group_carrier_limits;
 mod face_group_limits;
 mod face_source_limits;
