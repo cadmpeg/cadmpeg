@@ -314,6 +314,19 @@ impl FeatureLoopHistoryEntry {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn dummy_loop_history_entry() -> FeatureLoopHistoryEntry {
+    FeatureLoopHistoryEntry {
+        feature_id: 7,
+        ordinal: 0,
+        loop_id: 11,
+        field_bytes: [vec![1], vec![2], vec![3], vec![4]],
+        boundary: FeatureLoopHistoryBoundary::CompoundClose,
+        offset: 23,
+        end_offset: 27,
+    }
+}
+
 /// Boundary form terminating one `lo_hist` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum FeatureLoopHistoryBoundary {
