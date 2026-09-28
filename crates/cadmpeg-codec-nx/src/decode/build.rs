@@ -1358,10 +1358,11 @@ pub(super) fn try_decode_geometry(
             )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
         extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, validated_support_uv_endpoint_witnesses(
+            ctx,
             &ir,
             &pending_ext11_support_uv,
             &validated_support_uv_lanes,
-        ))?;
+        )?)?;
         extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, newly_validated_endpoint_witnesses)?;
         extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, completed_endpoint_witnesses)?;
         copy_endpoint_witnesses(ctx, &mut model_endpoint_witnesses, &validated_endpoint_witnesses)?;

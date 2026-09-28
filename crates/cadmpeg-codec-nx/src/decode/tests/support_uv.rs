@@ -193,11 +193,15 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .expect("intersection owner")
         .clone();
 
-    let witnesses = crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
-        result.ir(),
-        &pending,
-        &validated_lanes,
-    );
+    let witnesses = crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::validated_support_uv_endpoint_witnesses(
+            ctx,
+            result.ir(),
+            &pending,
+            &validated_lanes,
+        )
+    })
+    .expect("validated witnesses fit the service profile");
 
     assert_eq!(
         crate::decode::pcurves::endpoint_witness_for_candidate(
