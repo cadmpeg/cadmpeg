@@ -18,6 +18,7 @@ use crate::native::{
     CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord,
     CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
 };
+use crate::resource;
 
 /// Transfer sketch member records whose source identity is complete but whose
 /// coordinate grammar is not yet typed.
@@ -36,9 +37,9 @@ pub(crate) fn transfer_native_sketch_entities(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native);
-    let entity_records = unique_entity_records(native);
-    let design_objects = unique_design_objects(native);
+    let object_records = unique_object_records(ctx, native)?;
+    let entity_records = unique_entity_records(ctx, native)?;
+    let design_objects = unique_design_objects(ctx, native)?;
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -156,9 +157,9 @@ pub(crate) fn transfer_native_sketch_constraints(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let object_records = unique_object_records(native);
-    let entity_records = unique_entity_records(native);
-    let design_objects = unique_design_objects(native);
+    let object_records = unique_object_records(ctx, native)?;
+    let entity_records = unique_entity_records(ctx, native)?;
+    let design_objects = unique_design_objects(ctx, native)?;
     let mut design_objects_by_owner_record = HashMap::<&str, Vec<&CatiaDesignObject>>::new();
     for object in native
         .design_objects
@@ -222,18 +223,17 @@ pub(crate) fn transfer_native_sketch_constraints(
             .iter()
             .map(|object| object.id.as_str())
             .collect::<HashSet<_>>();
-        let sketch_entities = ir
-            .model
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == sketch_id)
-            .filter_map(|entity| {
-                Some((
-                    entity.native_ref.as_deref()?.to_string(),
-                    entity.id().clone(),
-                ))
-            })
-            .collect::<UniqueIndex<_, _>>();
+        let mut sketch_entities = UniqueIndex::new();
+        for entity in ir.model.sketch_entities.iter().filter(|entity|
+            entity.sketch == sketch_id) {
+            let Some(native_ref) = entity.native_ref.as_deref() else { continue };
+            let key = resource::copy_retained_str(ctx, native_ref,
+                "catia_sketch_constraint_entity_key")?;
+            let id = resource::copy_id(ctx, entity.id().as_str(), SketchEntityId::mint,
+                "catia_sketch_constraint_entity_id")?;
+            sketch_entities.insert(ctx, key, id,
+                "catia_sketch_constraint_entity_index")?;
+        }
 
         for child_object in member_objects {
             for geometry_field in
@@ -594,7 +594,7 @@ pub(crate) fn transfer_constraint_ranges(
     feature_transfer: &DesignFeatureTransfer,
     graph_scope: &crate::decode::ModelingGraphScope,
 ) -> Result<HashSet<String>, cadmpeg_core::CodecError> {
-    let indexes = ConstraintIndexes::new(native, ir);
+    let indexes = ConstraintIndexes::new(ctx, native, ir)?;
     let mut transferred = HashSet::new();
 
     for entity in &native.entity_records {
@@ -670,33 +670,41 @@ struct ConstraintIndexes<'a> {
 }
 
 impl<'a> ConstraintIndexes<'a> {
-    fn new(native: &'a CatiaNative, ir: &CadIr) -> Self {
-        let entity_records = unique_entity_records(native);
-        let object_records = unique_object_records(native);
-        let design_objects = unique_design_objects(native);
-        let sketch_ids = sketch_ids_by_native_ref(ir);
-        let sketch_entities = sketch_entities_by_native_ref(ir);
-        Self {
+    fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        native: &'a CatiaNative,
+        ir: &CadIr,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let entity_records = unique_entity_records(ctx, native)?;
+        let object_records = unique_object_records(ctx, native)?;
+        let design_objects = unique_design_objects(ctx, native)?;
+        let sketch_ids = sketch_ids_by_native_ref(ctx, ir)?;
+        let sketch_entities = sketch_entities_by_native_ref(ctx, ir)?;
+        Ok(Self {
             entity_records,
             object_records,
             design_objects,
             sketch_ids,
             sketch_entities,
-        }
+        })
     }
 }
 
-fn sketch_entities_by_native_ref(ir: &CadIr) -> UniqueIndex<String, (SketchEntityId, SketchId)> {
-    ir.model
-        .sketch_entities
-        .iter()
-        .filter_map(|entity| {
-            Some((
-                entity.native_ref.as_deref()?.to_string(),
-                (entity.id().clone(), entity.sketch.clone()),
-            ))
-        })
-        .collect()
+fn sketch_entities_by_native_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr,
+) -> Result<UniqueIndex<String, (SketchEntityId, SketchId)>, cadmpeg_core::CodecError> {
+    let mut index = UniqueIndex::new();
+    for entity in &ir.model.sketch_entities {
+        let Some(native_ref) = entity.native_ref.as_deref() else { continue };
+        let key = resource::copy_retained_str(ctx, native_ref,
+            "catia_sketch_entity_native_key")?;
+        let id = resource::copy_id(ctx, entity.id().as_str(), SketchEntityId::mint,
+            "catia_sketch_entity_index_id")?;
+        let sketch = resource::copy_id(ctx, entity.sketch.as_str(), SketchId::mint,
+            "catia_sketch_entity_index_sketch")?;
+        index.insert(ctx, key, (id, sketch), "catia_sketch_entity_native_index")?;
+    }
+    Ok(index)
 }
 
 fn constraint_binding(
@@ -852,37 +860,50 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
     }
 }
 
-fn unique_entity_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaEntityRecord> {
-    native
+fn unique_entity_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, native: &'a CatiaNative,
+) -> Result<UniqueIndex<&'a str, &'a CatiaEntityRecord>, cadmpeg_core::CodecError> {
+    UniqueIndex::collect(ctx, native
         .entity_records
         .iter()
-        .map(|entity| (entity.id.as_str(), entity))
-        .collect()
+        .map(|entity| (entity.id.as_str(), entity)),
+        "catia_sketch_entity_records")
 }
 
-fn unique_object_records(native: &CatiaNative) -> UniqueIndex<&str, &CatiaObjectRecord> {
-    native
+fn unique_object_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, native: &'a CatiaNative,
+) -> Result<UniqueIndex<&'a str, &'a CatiaObjectRecord>, cadmpeg_core::CodecError> {
+    UniqueIndex::collect(ctx, native
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record))
-        .collect()
+        .map(|record| (record.id.as_str(), record)),
+        "catia_sketch_object_records")
 }
 
-fn unique_design_objects(native: &CatiaNative) -> UniqueIndex<&str, &CatiaDesignObject> {
-    native
+fn unique_design_objects<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, native: &'a CatiaNative,
+) -> Result<UniqueIndex<&'a str, &'a CatiaDesignObject>, cadmpeg_core::CodecError> {
+    UniqueIndex::collect(ctx, native
         .design_objects
         .iter()
-        .map(|object| (object.id.as_str(), object))
-        .collect()
+        .map(|object| (object.id.as_str(), object)),
+        "catia_sketch_design_objects")
 }
 
-fn sketch_ids_by_native_ref(ir: &CadIr) -> UniqueIndex<String, SketchId> {
-    ir.model
-        .sketches
-        .iter()
-        .filter_map(|sketch| Some((sketch.native_ref.as_deref()?.to_string(), sketch.id.clone())))
-        .collect()
+fn sketch_ids_by_native_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr,
+) -> Result<UniqueIndex<String, SketchId>, cadmpeg_core::CodecError> {
+    let mut index = UniqueIndex::new();
+    for sketch in &ir.model.sketches {
+        let Some(native_ref) = sketch.native_ref.as_deref() else { continue };
+        let key = resource::copy_retained_str(ctx, native_ref,
+            "catia_sketch_native_key")?;
+        let id = resource::copy_id(ctx, sketch.id.as_str(), SketchId::mint,
+            "catia_sketch_native_id")?;
+        index.insert(ctx, key, id, "catia_sketch_native_index")?;
+    }
+    Ok(index)
 }
 
 #[cfg(test)]
@@ -1115,6 +1136,50 @@ mod tests {
             feature_transfer,
             crate::decode::ModelingGraphScope::Scoped("graph".to_string()),
         )
+    }
+
+    #[test]
+    fn sketch_unique_record_indexes_refuse_collection_limit() {
+        let (_, native, _, _) = fixture(false);
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::unique_entity_records(ctx, &native)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_sketch_entity_records"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::unique_entity_records(ctx, &native)
+        }).expect("service profile admits sketch entity index");
+        assert!(admitted.get(native.entity_records[0].id.as_str()).is_some());
+    }
+
+    #[test]
+    fn sketch_native_identity_indexes_refuse_retained_limit() {
+        let (mut ir, _, _, _) = fixture(false);
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::sketch_ids_by_native_ref(ctx, &ir)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_sketch_native_key"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::sketch_ids_by_native_ref(ctx, &ir)
+        }).expect("service profile admits sketch identity index");
+        assert!(admitted.get("sketch-object").is_some());
+
+        ir.model.sketch_entities.push(SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:sketch-entity#0".to_string())
+                .expect("identity grammar"),
+            ir.model.sketches[0].id.clone(),
+            SketchGeometry::native(cadmpeg_core::nonblank_literal!("2DPoint")),
+        ).with_native_ref(Some("field-record".to_string())));
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::sketch_entities_by_native_ref(ctx, &ir)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_sketch_entity_native_key"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::sketch_entities_by_native_ref(ctx, &ir)
+        }).expect("service profile admits native entity index");
+        assert!(admitted.get("field-record").is_some());
     }
 
     fn native_sketch_fixture(
