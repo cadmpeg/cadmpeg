@@ -649,7 +649,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let mut certified_bound = 0.0_f64;
         while let Some([u0, u1, v0, v1]) = rectangles.pop() {
             if !geometry_budget.charge() {
-                return None;
+                return geometry_budget.resource_refusal().map(Err);
             }
             let u = u0 + (u1 - u0) * 0.5;
             let v = v0 + (v1 - v0) * 0.5;
@@ -1084,7 +1084,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     if geometry_budget.exhausted() {
-        return Ok(None);
+        return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     }
     let Some(carrier) = index.surfaces(surface.as_str()) else {
         return Ok(None);
@@ -1148,7 +1148,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         |mut parameters: Point2| -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
             for _ in 0..OFFSET_NEWTON_ITERATIONS {
                 if !geometry_budget.charge() {
-                    break;
+                    return geometry_budget.resource_refusal().map_or(Ok(None), Err);
                 }
                 let Some((position, du, dv)) = model_surface_point_and_derivatives(
                     index,
@@ -1335,7 +1335,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
         let mut scale = 1.0;
         for _ in 0..8 {
             if !geometry_budget.charge() {
-                return Ok(None);
+                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
             }
             let mut candidate =
                 Point2::new(parameters.u - scale * step_u, parameters.v - scale * step_v);
