@@ -9,6 +9,8 @@ pub mod bounds;
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -998,6 +1000,50 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Copy the retained knot and pole lanes after charging every collection.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let u_knots = ctx.try_collection(self.u_knots.len(), operation, || self.u_knots.try_clone())?;
+        let v_knots = ctx.try_collection(self.v_knots.len(), operation, || self.v_knots.try_clone())?;
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, rows.len(), operation)?;
+                for row in rows {
+                    let mut lane = Vec::new();
+                    ctx.try_reserve_items(&mut lane, row.len(), operation)?;
+                    lane.extend_from_slice(row);
+                    copy.push(lane);
+                }
+                NurbsPoleGrid::Polynomial { rows: copy }
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, rows.len(), operation)?;
+                for row in rows {
+                    let mut lane = Vec::new();
+                    ctx.try_reserve_items(&mut lane, row.len(), operation)?;
+                    lane.extend_from_slice(row);
+                    copy.push(lane);
+                }
+                NurbsPoleGrid::Rational { rows: copy }
+            }
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1334,6 +1380,35 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Copy the retained knot and pole lanes after charging both collections.
+    pub fn copy_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let knots = ctx.try_collection(self.knots.len(), operation, || self.knots.try_clone())?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, points.len(), operation)?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Polynomial { points: copy }
+            }
+            NurbsPoles3::Rational { points } => {
+                let mut copy = Vec::new();
+                ctx.try_reserve_items(&mut copy, points.len(), operation)?;
+                copy.extend_from_slice(points);
+                NurbsPoles3::Rational { points: copy }
+            }
+        };
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
+    }
+
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
