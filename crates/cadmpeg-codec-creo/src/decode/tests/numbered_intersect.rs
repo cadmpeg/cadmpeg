@@ -26,7 +26,7 @@ use crate::decode::holes::sweep::extrusion_extent_and_direction;
 use crate::decode::sketch::coordinates::section_linear_distance_coordinate;
 use crate::decode::sketch::equations_coordinate::{
     solve_section_coordinate_equations, solve_unsigned_dimension_coordinates,
-    SectionCoordinateEquation,
+    SectionCoordinateEquation, SectionEquationFixture,
 };
 use crate::decode::surfaces::fc05_model_frame;
 use crate::decode::sweep::nurbs::{
@@ -459,12 +459,12 @@ fn hole_outline_placement_preserves_stored_plane_order() {
 #[test]
 fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_on_conflict() {
     let mut sum = SectionCoordinateEquation::default();
-    sum.add_point(1, SectionAxis::U, 1.0);
-    sum.add_point(2, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut sum, 1, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut sum, 2, SectionAxis::U, 1.0);
     sum.rhs = 10.0;
     let mut difference = SectionCoordinateEquation::default();
-    difference.add_point(1, SectionAxis::U, 1.0);
-    difference.add_point(2, SectionAxis::U, -1.0);
+    SectionEquationFixture::add_point(&mut difference, 1, SectionAxis::U, 1.0);
+    SectionEquationFixture::add_point(&mut difference, 2, SectionAxis::U, -1.0);
     difference.rhs = 2.0;
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
@@ -472,8 +472,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
             &[
                 sum,
                 difference,
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(2, SectionAxis::V, 4.0),
             ],
             &BTreeMap::new(),
         ))
@@ -486,9 +486,9 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 2.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 2.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
             ],
             &stored,
         ))
@@ -505,13 +505,13 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
-                SectionCoordinateEquation::point_value(1, SectionAxis::U, 1.0),
-                SectionCoordinateEquation::point_value(1, SectionAxis::V, 3.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::U, 2.0),
-                SectionCoordinateEquation::point_value(2, SectionAxis::V, 4.0),
-                SectionCoordinateEquation::point_difference(1, 3, SectionAxis::U, 0.0),
-                SectionCoordinateEquation::point_difference(2, 3, SectionAxis::U, 0.0),
-                SectionCoordinateEquation::point_value(3, SectionAxis::V, 5.0),
+                SectionEquationFixture::point_value(1, SectionAxis::U, 1.0),
+                SectionEquationFixture::point_value(1, SectionAxis::V, 3.0),
+                SectionEquationFixture::point_value(2, SectionAxis::U, 2.0),
+                SectionEquationFixture::point_value(2, SectionAxis::V, 4.0),
+                SectionEquationFixture::point_difference(1, 3, SectionAxis::U, 0.0),
+                SectionEquationFixture::point_difference(2, 3, SectionAxis::U, 0.0),
+                SectionEquationFixture::point_value(3, SectionAxis::V, 5.0),
             ],
             &stored,
         ))
@@ -526,8 +526,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
             ctx,
             &[
-                SectionCoordinateEquation::point_value(3, SectionAxis::U, 1.0e12),
-                SectionCoordinateEquation::point_value(3, SectionAxis::V, -1.0e12),
+                SectionEquationFixture::point_value(3, SectionAxis::U, 1.0e12),
+                SectionEquationFixture::point_value(3, SectionAxis::V, -1.0e12),
             ],
             &BTreeMap::new(),
         ))
@@ -537,7 +537,7 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_section_coordinate_equations(
             ctx,
-            &[SectionCoordinateEquation::point_value(
+            &[SectionEquationFixture::point_value(
                 4,
                 SectionAxis::U,
                 7.0
@@ -552,8 +552,8 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 #[test]
 fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     let equations = [
-        SectionCoordinateEquation::point_value(1, SectionAxis::U, 0.0),
-        SectionCoordinateEquation::point_value(2, SectionAxis::U, 10.0),
+        SectionEquationFixture::point_value(1, SectionAxis::U, 0.0),
+        SectionEquationFixture::point_value(2, SectionAxis::U, 10.0),
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0), ((2, SectionAxis::U), 10.0)]);
     assert_eq!(
@@ -569,7 +569,7 @@ fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
     assert_eq!(
         crate::decode::with_test_decode_ctx(|ctx| solve_unsigned_dimension_coordinates(
             ctx,
-            &[SectionCoordinateEquation::point_value(
+            &[SectionEquationFixture::point_value(
                 1,
                 SectionAxis::U,
                 0.0

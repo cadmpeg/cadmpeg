@@ -79,10 +79,11 @@ pub(in crate::decode) fn saved_section_coordinate_witnesses(
 }
 
 fn append_point_on_line_equations(
+    ctx: &DecodeContext<'_>,
     constraints: &[(u32, u32, u32)],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     equations: &mut Vec<SectionCoordinateEquation>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let mut appended = false;
     for &(target, first, second) in constraints {
         let (
@@ -104,8 +105,8 @@ fn append_point_on_line_equations(
         let delta_u = second_u - first_u;
         let delta_v = second_v - first_v;
         let mut equation = SectionCoordinateEquation::default();
-        equation.add_point(target, SectionAxis::U, -delta_v);
-        equation.add_point(target, SectionAxis::V, delta_u);
+        equation.add_point(ctx, target, SectionAxis::U, -delta_v)?;
+        equation.add_point(ctx, target, SectionAxis::V, delta_u)?;
         equation.rhs = delta_u * first_v - delta_v * first_u;
         let Some(rhs) = FiniteReal::new(equation.rhs) else {
             continue;
@@ -127,20 +128,21 @@ fn append_point_on_line_equations(
             appended = true;
         }
     }
-    appended
+    Ok(appended)
 }
 
 fn append_equal_length_coordinate_values(
+    ctx: &DecodeContext<'_>,
     constraints: &[SectionEqualLengthConstraint],
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     equations: &mut Vec<SectionCoordinateEquation>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let mut appended = false;
     for (variable, value) in section_equal_length_coordinate_values(constraints, coordinates) {
         let Some(value) = value else {
             continue;
         };
-        let equation = SectionCoordinateEquation::point_value(variable.0, variable.1, value);
+        let equation = SectionCoordinateEquation::point_value(ctx, variable.0, variable.1, value)?;
         if equations.iter().any(|candidate| {
             candidate.terms == equation.terms
                 && (FiniteReal::new(candidate.rhs))
@@ -152,7 +154,7 @@ fn append_equal_length_coordinate_values(
         equations.push(equation);
         appended = true;
     }
-    appended
+    Ok(appended)
 }
 
 fn append_unique_auxiliary_coordinate_constraints(
@@ -208,17 +210,18 @@ fn solve_section_coordinates_with_derived_constraints(
         .saturating_add(1);
     for _ in 0..max_passes {
         let mut appended = false;
-        if append_point_on_line_equations(point_on_line_constraints, &solved_coordinates, equations)
+        if append_point_on_line_equations(ctx, point_on_line_constraints, &solved_coordinates, equations)?
         {
             appended = true;
             solved_coordinates =
                 solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
         }
         if append_equal_length_coordinate_values(
+            ctx,
             equal_length_constraints,
             &solved_coordinates,
             equations,
-        ) {
+        )? {
             appended = true;
             solved_coordinates =
                 solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
@@ -493,104 +496,104 @@ pub(in crate::decode) fn resolved_section_coordinates(
             .zip(coordinates.iter().copied())
         {
             if let Some(value) = value {
-                equations.push(SectionCoordinateEquation::point_value(
+                equations.push(SectionCoordinateEquation::point_value(ctx,
                     point_id, coordinate, value,
-                ));
+                )?);
             }
         }
     }
     for &(point_id, coordinates) in &saved_segment_points {
         for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
-            equations.push(SectionCoordinateEquation::point_value(
+            equations.push(SectionCoordinateEquation::point_value(ctx,
                 point_id, coordinate, value,
-            ));
+            )?);
         }
     }
     for segment in &segments {
         if let Some(coordinate) = section_line_fixed_coordinate(definition, segment) {
-            equations.push(SectionCoordinateEquation::point_difference(
+            equations.push(SectionCoordinateEquation::point_difference(ctx,
                 segment.point_ids()[0],
                 segment.point_ids()[1],
                 coordinate,
                 0.0,
-            ));
+            )?);
         }
     }
     for &(first, second, coordinate, delta) in &signed_dimensions {
-        equations.push(SectionCoordinateEquation::point_difference(
+        equations.push(SectionCoordinateEquation::point_difference(ctx,
             first, second, coordinate, delta,
-        ));
+        )?);
     }
     for &[first, second] in &coincident_points {
         for coordinate in SectionAxis::ALL {
-            equations.push(SectionCoordinateEquation::source_difference(
+            equations.push(SectionCoordinateEquation::source_difference(ctx,
                 first, second, coordinate, 0.0,
-            ));
+            )?);
         }
     }
     for (first, second, coordinate) in
         section_equation_coordinate_equalities(ctx, definition, &ambiguous_point_ids)?
     {
-        equations.push(SectionCoordinateEquation::point_difference(
+        equations.push(SectionCoordinateEquation::point_difference(ctx,
             first, second, coordinate, 0.0,
-        ));
+        )?);
     }
     let point_on_line_constraints =
         section_equation_point_on_line_constraints(ctx, definition, &ambiguous_point_ids)?;
     for constraint in &radial_constraints {
         if let Some(offset) = constraint.offset() {
-            equations.push(SectionCoordinateEquation::point_difference(
+            equations.push(SectionCoordinateEquation::point_difference(ctx,
                 constraint.first,
                 constraint.second,
                 SectionAxis::U,
                 offset[0],
-            ));
-            equations.push(SectionCoordinateEquation::point_difference(
+            )?);
+            equations.push(SectionCoordinateEquation::point_difference(ctx,
                 constraint.first,
                 constraint.second,
                 SectionAxis::V,
                 offset[1],
-            ));
+            )?);
         }
     }
     for &([first, second], coordinate) in &same_coordinate_points {
-        equations.push(SectionCoordinateEquation::source_difference(
+        equations.push(SectionCoordinateEquation::source_difference(ctx,
             first, second, coordinate, 0.0,
-        ));
+        )?);
     }
     for &(first, second, coordinate) in &point_on_line_coordinates {
-        equations.push(SectionCoordinateEquation::point_difference(
+        equations.push(SectionCoordinateEquation::point_difference(ctx,
             first, second, coordinate, 0.0,
-        ));
+        )?);
     }
     for &(point, coordinate, value) in &saved_point_on_line_coordinates {
-        equations.push(SectionCoordinateEquation::point_value(
+        equations.push(SectionCoordinateEquation::point_value(ctx,
             point, coordinate, value,
-        ));
+        )?);
     }
     for &(point_sources, point) in &line_midpoint_constraints {
         for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
-            equation.add_source(point_sources[0], coordinate, 1.0);
-            equation.add_source(point_sources[1], coordinate, 1.0);
-            equation.add_source(point, coordinate, -2.0);
+            equation.add_source(ctx, point_sources[0], coordinate, 1.0)?;
+            equation.add_source(ctx, point_sources[1], coordinate, 1.0)?;
+            equation.add_source(ctx, point, coordinate, -2.0)?;
             equations.push(equation);
         }
     }
     for &(axis, first, second, fixed_coordinate) in &symmetric_point_constraints {
         let parallel_coordinate = fixed_coordinate.other();
-        equations.push(SectionCoordinateEquation::source_difference(
+        equations.push(SectionCoordinateEquation::source_difference(ctx,
             first,
             second,
             parallel_coordinate,
             0.0,
-        ));
+        )?);
         let mut equation = SectionCoordinateEquation::default();
-        equation.add_source(first, fixed_coordinate, 1.0);
-        equation.add_source(second, fixed_coordinate, 1.0);
+        equation.add_source(ctx, first, fixed_coordinate, 1.0)?;
+        equation.add_source(ctx, second, fixed_coordinate, 1.0)?;
         match axis {
             SectionSymmetryAxis::Point(point_id) => {
-                equation.add_point(point_id, fixed_coordinate, -2.0);
+                equation.add_point(ctx, point_id, fixed_coordinate, -2.0)?;
             }
             SectionSymmetryAxis::Value(value) => equation.rhs += 2.0 * value,
         }
@@ -599,9 +602,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
     for &(center, first, second) in &point_symmetric_constraints {
         for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
-            equation.add_source(first, coordinate, 1.0);
-            equation.add_source(second, coordinate, 1.0);
-            equation.add_point(center, coordinate, -2.0);
+            equation.add_source(ctx, first, coordinate, 1.0)?;
+            equation.add_source(ctx, second, coordinate, 1.0)?;
+            equation.add_point(ctx, center, coordinate, -2.0)?;
             equations.push(equation);
         }
     }
@@ -628,9 +631,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &unsigned_dimension_candidates,
     )?;
     for ((point, coordinate), value) in unsigned_coordinates {
-        equations.push(SectionCoordinateEquation::point_value(
+        equations.push(SectionCoordinateEquation::point_value(ctx,
             point, coordinate, value,
-        ));
+        )?);
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
         ctx,
@@ -649,18 +652,18 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &auxiliary_scalar_values,
     )? {
         if let Some(offset) = constraint.offset() {
-            equations.push(SectionCoordinateEquation::point_difference(
+            equations.push(SectionCoordinateEquation::point_difference(ctx,
                 constraint.first,
                 constraint.second,
                 SectionAxis::U,
                 offset[0],
-            ));
-            equations.push(SectionCoordinateEquation::point_difference(
+            )?);
+            equations.push(SectionCoordinateEquation::point_difference(ctx,
                 constraint.first,
                 constraint.second,
                 SectionAxis::V,
                 offset[1],
-            ));
+            )?);
         }
     }
     let second_unsigned_coordinates = solve_unsigned_dimension_coordinates(
@@ -670,9 +673,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &unsigned_dimension_candidates,
     )?;
     for ((point, coordinate), value) in second_unsigned_coordinates {
-        equations.push(SectionCoordinateEquation::point_value(
+        equations.push(SectionCoordinateEquation::point_value(ctx,
             point, coordinate, value,
-        ));
+        )?);
     }
     let solved_coordinates = solve_section_coordinates_with_derived_constraints(
         ctx,
@@ -696,9 +699,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
         .collect::<Vec<_>>();
     for &(point_id, midpoint) in &arc_midpoint_constraints {
         for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint) {
-            equations.push(SectionCoordinateEquation::point_value(
+            equations.push(SectionCoordinateEquation::point_value(ctx,
                 point_id, coordinate, value,
-            ));
+            )?);
         }
     }
     solve_section_coordinate_equations(ctx, &equations, &stored_coordinates)
@@ -838,7 +841,7 @@ mod tests {
 
     use super::super::equations_scalar::resolved_section_scalar_values;
     use super::resolved_section_points;
-    use super::{append_point_on_line_equations, SectionAxis, SectionCoordinateEquation};
+    use super::{append_point_on_line_equations as append_point_on_line_equations_checked, SectionAxis, SectionCoordinateEquation};
     use crate::feature::definitions::FeatureSolverTableHeader;
     use crate::feature::definitions::FeatureVariableTable;
     use crate::feature::definitions::{
@@ -847,6 +850,16 @@ mod tests {
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
         FeatureVariableRow,
     };
+
+    fn append_point_on_line_equations(
+        constraints: &[(u32, u32, u32)],
+        coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+        equations: &mut Vec<SectionCoordinateEquation>,
+    ) -> bool {
+        crate::decode::with_test_decode_ctx(|ctx| {
+            append_point_on_line_equations_checked(ctx, constraints, coordinates, equations)
+        }).expect("test coordinate equations")
+    }
 
     #[test]
     fn infinite_point_on_line_rhs_is_not_admitted() {
@@ -872,8 +885,10 @@ mod tests {
             (3, [Some(0.0), None]),
         ]);
         let mut existing = SectionCoordinateEquation::default();
-        existing.add_point(3, SectionAxis::U, 0.0);
-        existing.add_point(3, SectionAxis::V, 1.0);
+        crate::decode::with_test_decode_ctx(|ctx| {
+            existing.add_point(ctx, 3, SectionAxis::U, 0.0)?;
+            existing.add_point(ctx, 3, SectionAxis::V, 1.0)
+        }).expect("test equation terms");
         existing.rhs = f64::INFINITY;
         let mut equations = vec![existing];
         assert!(append_point_on_line_equations(

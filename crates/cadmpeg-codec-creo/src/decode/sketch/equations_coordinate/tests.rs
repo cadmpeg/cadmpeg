@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::axis::SectionAxis;
-use super::{SectionCoordinateEquation, SectionCoordinateVariable, SectionEqualLengthConstraint};
+use super::{SectionCoordinateVariable, SectionEqualLengthConstraint, SectionEquationFixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use std::collections::BTreeMap;
 
@@ -29,6 +29,26 @@ fn solve_matrix_with_limit(
     with_collection_limit(limit, |ctx| {
         super::uniquely_solved_linear_variables(ctx, &mut matrix, variable_count)
     })
+}
+
+#[test]
+fn coordinate_equation_refuses_before_first_term_node() {
+    assert!(matches!(with_collection_limit(0, |ctx| {
+        super::SectionCoordinateEquation::point_value(ctx, 7, SectionAxis::U, 2.0)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo coordinate equation term nodes"));
+    assert_eq!(SectionEquationFixture::point_value(7, SectionAxis::U, 2.0).terms.len(), 1);
+}
+
+#[test]
+fn coordinate_difference_refuses_before_second_term_node() {
+    assert!(matches!(with_collection_limit(1, |ctx| {
+        super::SectionCoordinateEquation::point_difference(ctx, 7, 8, SectionAxis::V, 3.0)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo coordinate equation term nodes"));
+    assert_eq!(SectionEquationFixture::point_difference(7, 8, SectionAxis::V, 3.0).terms.len(), 2);
 }
 
 #[test]
@@ -84,7 +104,7 @@ fn section_solved_columns_refuse_before_vector_growth() {
 
 #[test]
 fn section_coordinate_unique_variables_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -102,7 +122,7 @@ fn section_coordinate_unique_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -120,7 +140,7 @@ fn section_coordinate_ordered_variables_refuse_before_vector_reserve() {
 
 #[test]
 fn section_coordinate_variable_indices_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -156,7 +176,7 @@ fn unsigned_dimension_unique_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_remaining_variables_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -174,7 +194,7 @@ fn section_remaining_variables_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_seed_refuses_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -192,7 +212,7 @@ fn section_component_seed_refuses_before_tree_insert() {
 
 #[test]
 fn section_pending_seed_refuses_before_deque_growth() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -210,7 +230,7 @@ fn section_pending_seed_refuses_before_deque_growth() {
 
 #[test]
 fn section_component_neighbors_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -233,7 +253,7 @@ fn section_component_neighbors_refuse_before_tree_insert() {
 
 #[test]
 fn section_pending_neighbors_refuse_before_deque_growth() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -288,7 +308,7 @@ fn unsigned_component_distances_refuse_before_vector_growth() {
 
 #[test]
 fn unsigned_component_equation_rows_refuse_before_vector_growth() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -313,7 +333,7 @@ fn unsigned_component_equation_rows_refuse_before_vector_growth() {
 
 #[test]
 fn unsigned_component_equation_terms_refuse_before_tree_clone() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -337,7 +357,7 @@ fn unsigned_component_equation_terms_refuse_before_tree_clone() {
 }
 
 fn unsigned_branch_with_collection_limit(limit: u64) -> cadmpeg_core::CodecError {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -396,7 +416,7 @@ fn unsigned_signed_equation_terms_refuse_before_tree_creation() {
 
 #[test]
 fn unsigned_signed_branch_charges_work_before_expansion() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -425,8 +445,8 @@ fn unsigned_value_fixture(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<SectionCoordinateVariable, f64>, cadmpeg_core::CodecError> {
     let equations = [
-        SectionCoordinateEquation::point_value(1, SectionAxis::U, 0.0),
-        SectionCoordinateEquation::point_value(2, SectionAxis::U, 1.0),
+        SectionEquationFixture::point_value(1, SectionAxis::U, 0.0),
+        SectionEquationFixture::point_value(2, SectionAxis::U, 1.0),
     ];
     let stored = BTreeMap::from([((1, SectionAxis::U), 0.0)]);
     super::solve_unsigned_dimension_coordinates(
@@ -501,7 +521,7 @@ fn unsigned_resolved_values_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_columns_refuse_before_vector_reserve() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -519,7 +539,7 @@ fn section_component_columns_refuse_before_vector_reserve() {
 
 #[test]
 fn section_local_columns_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -537,7 +557,7 @@ fn section_local_columns_refuse_before_tree_insert() {
 
 #[test]
 fn section_component_equations_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -555,7 +575,7 @@ fn section_component_equations_refuse_before_tree_insert() {
 
 #[test]
 fn section_matrix_rows_refuse_before_vector_reserve() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -573,7 +593,7 @@ fn section_matrix_rows_refuse_before_vector_reserve() {
 
 #[test]
 fn section_matrix_coefficients_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -591,7 +611,7 @@ fn section_matrix_coefficients_refuse_before_tree_insert() {
 
 #[test]
 fn section_solved_coordinates_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -623,7 +643,7 @@ fn section_stored_fallback_refuses_before_solved_node() {
 
 #[test]
 fn section_solved_points_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -641,7 +661,7 @@ fn section_solved_points_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_adjacency_reports_collection_limit() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -659,7 +679,7 @@ fn section_coordinate_adjacency_reports_collection_limit() {
 
 #[test]
 fn section_coordinate_equation_membership_reports_collection_limit() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -695,7 +715,7 @@ fn unsigned_dimension_adjacency_reports_collection_limit() {
 
 #[test]
 fn unsigned_dimension_equation_members_refuse_before_vector_growth() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -737,7 +757,7 @@ fn unsigned_dimension_adjacency_links_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_members_refuse_before_vector_growth() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,
@@ -759,7 +779,7 @@ fn section_coordinate_members_refuse_before_vector_growth() {
 
 #[test]
 fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_difference(
+    let equations = [SectionEquationFixture::point_difference(
         1,
         2,
         SectionAxis::U,
@@ -778,7 +798,7 @@ fn section_coordinate_adjacency_links_refuse_before_tree_insert() {
 
 #[test]
 fn section_coordinate_equation_links_refuse_before_tree_insert() {
-    let equations = [SectionCoordinateEquation::point_value(
+    let equations = [SectionEquationFixture::point_value(
         1,
         SectionAxis::U,
         1.0,

@@ -860,8 +860,8 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             continue;
         }
         let mut equation = SectionCoordinateEquation::default();
-        equation.add_point(constraint.first.0, constraint.first.1, 1.0);
-        equation.add_point(constraint.second.0, constraint.second.1, 1.0);
+        equation.add_point(ctx, constraint.first.0, constraint.first.1, 1.0)?;
+        equation.add_point(ctx, constraint.second.0, constraint.second.1, 1.0)?;
         let Some(rhs) = FiniteReal::new(2.0 * value) else {
             continue;
         };
@@ -908,11 +908,11 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             .filter_map(|(coordinate, value)| Some((coordinate, value?)))
         {
             ctx.try_reserve_items(equations, 1, "creo auxiliary coordinate equations")?;
-            equations.push(SectionCoordinateEquation::point_value(
+            equations.push(SectionCoordinateEquation::point_value(ctx,
                 constraint.point,
                 coordinate,
                 value,
-            ));
+            )?);
         }
     }
     Ok(())

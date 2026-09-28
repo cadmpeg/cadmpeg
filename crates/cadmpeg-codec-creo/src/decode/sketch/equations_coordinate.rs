@@ -658,58 +658,86 @@ pub(in crate::decode) struct SectionCoordinateEquation {
 }
 
 impl SectionCoordinateEquation {
-    pub(in crate::decode) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> Self {
+    pub(in crate::decode) fn point_value(
+        ctx: &DecodeContext<'_>,
+        point: u32,
+        coordinate: SectionAxis,
+        value: f64,
+    ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
-        equation.add_point(point, coordinate, 1.0);
+        equation.add_point(ctx, point, coordinate, 1.0)?;
         equation.rhs = value;
-        equation
+        Ok(equation)
     }
 
     pub(in crate::decode) fn point_difference(
+        ctx: &DecodeContext<'_>,
         first: u32,
         second: u32,
         coordinate: SectionAxis,
         delta: f64,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
+        Self::point_difference_with_operation(
+            ctx, first, second, coordinate, delta, "creo coordinate equation term nodes",
+        )
+    }
+
+    fn point_difference_with_operation(
+        ctx: &DecodeContext<'_>,
+        first: u32,
+        second: u32,
+        coordinate: SectionAxis,
+        delta: f64,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(if first == second { 1 } else { 2 }, operation)?;
         let mut equation = Self::default();
-        equation.add_point(first, coordinate, -1.0);
-        equation.add_point(second, coordinate, 1.0);
+        equation.terms.insert((first, coordinate), -1.0);
+        *equation.terms.entry((second, coordinate)).or_default() += 1.0;
         equation.rhs = delta;
-        equation
+        Ok(equation)
     }
 
     pub(super) fn source_difference(
+        ctx: &DecodeContext<'_>,
         first: SectionPointSource,
         second: SectionPointSource,
         coordinate: SectionAxis,
         delta: f64,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut equation = Self::default();
-        equation.add_source(first, coordinate, -1.0);
-        equation.add_source(second, coordinate, 1.0);
+        equation.add_source(ctx, first, coordinate, -1.0)?;
+        equation.add_source(ctx, second, coordinate, 1.0)?;
         equation.rhs += delta;
-        equation
+        Ok(equation)
     }
 
     pub(in crate::decode) fn add_point(
         &mut self,
+        ctx: &DecodeContext<'_>,
         point: u32,
         coordinate: SectionAxis,
         coefficient: f64,
-    ) {
+    ) -> Result<(), CodecError> {
+        if !self.terms.contains_key(&(point, coordinate)) {
+            ctx.charge_collection_items(1, "creo coordinate equation term nodes")?;
+        }
         *self.terms.entry((point, coordinate)).or_default() += coefficient;
+        Ok(())
     }
 
     pub(super) fn add_source(
         &mut self,
+        ctx: &DecodeContext<'_>,
         source: SectionPointSource,
         coordinate: SectionAxis,
         coefficient: f64,
-    ) {
+    ) -> Result<(), CodecError> {
         match source {
-            SectionPointSource::Point(point) => self.add_point(point, coordinate, coefficient),
+            SectionPointSource::Point(point) => self.add_point(ctx, point, coordinate, coefficient)?,
             SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate.index()],
         }
+        Ok(())
     }
 }
 
@@ -930,13 +958,9 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                     -magnitude
                 };
                 ctx.try_reserve_items(&mut branched, 1, "creo section signed equation rows")?;
-                ctx.charge_collection_items(
-                    if first == second { 1 } else { 2 },
-                    "creo section signed equation terms",
-                )?;
-                branched.push(SectionCoordinateEquation::point_difference(
-                    first, second, coordinate, delta,
-                ));
+                branched.push(SectionCoordinateEquation::point_difference_with_operation(ctx,
+                    first, second, coordinate, delta, "creo section signed equation terms",
+                )?);
             }
             let candidate = solve_section_coordinate_equations(ctx, &branched, stored_coordinates)?;
             ctx.charge_collection_items(
@@ -1400,6 +1424,27 @@ fn uniquely_solved_linear_variables(
         }
     }
     Ok(Some(solution))
+}
+
+#[cfg(test)]
+pub(in crate::decode) struct SectionEquationFixture;
+
+#[cfg(test)]
+impl SectionEquationFixture {
+    pub(in crate::decode) fn point_value(point: u32, coordinate: SectionAxis, value: f64) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| SectionCoordinateEquation::point_value(ctx, point, coordinate, value))
+            .expect("test coordinate equation")
+    }
+
+    pub(in crate::decode) fn point_difference(first: u32, second: u32, coordinate: SectionAxis, delta: f64) -> SectionCoordinateEquation {
+        crate::decode::with_test_decode_ctx(|ctx| SectionCoordinateEquation::point_difference(ctx, first, second, coordinate, delta))
+            .expect("test coordinate equation")
+    }
+
+    pub(in crate::decode) fn add_point(equation: &mut SectionCoordinateEquation, point: u32, coordinate: SectionAxis, coefficient: f64) {
+        crate::decode::with_test_decode_ctx(|ctx| equation.add_point(ctx, point, coordinate, coefficient))
+            .expect("test coordinate equation term");
+    }
 }
 
 #[cfg(test)]
