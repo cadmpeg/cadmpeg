@@ -12,6 +12,10 @@ use crate::om::datum_plane_descriptor_block;
 use crate::om::draft_construction_binary32_lanes;
 use crate::om::draft_construction_fixed_lanes;
 use crate::om::draft_construction_identity_frames;
+
+fn draft_construction_identity_frames_test(bytes: &[u8]) -> Vec<crate::om::draft_identity::DraftIdentityFrame> {
+    crate::test_support::with_decode_context(|ctx| draft_construction_identity_frames(ctx, bytes)).unwrap()
+}
 use crate::om::hole_package_construction_group_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_named_point;
@@ -803,7 +807,7 @@ fn om_datum_csys_descriptor_route_refuses_retained_limit() {
 #[test]
 fn om_draft_identity_frames_require_complete_typed_framing() {
     let bytes = b"\x00A\x81\x54\xf0\x38\x02\x01abc123?A\xf0\x27\xff\x02\x01def456?\x00";
-    let frames = draft_construction_identity_frames(bytes);
+    let frames = draft_construction_identity_frames_test(bytes);
     assert_eq!(frames.len(), 2);
     assert_eq!(frames[0].offset(), 1);
     assert_eq!(frames[0].prefix(), b"A\x81\x54\xf0\x38\x02\x01");
@@ -825,9 +829,9 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
     );
     assert_eq!(frames[1].identity(), "def456");
 
-    assert!(draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty());
-    assert!(draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?").is_empty());
-    assert!(draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty());
+    assert!(draft_construction_identity_frames_test(b"A\x81\x54\xf0\x38\x02\x01abc123").is_empty());
+    assert!(draft_construction_identity_frames_test(b"A\x81\x54\xf0\x38\x04\x01abc123?").is_empty());
+    assert!(draft_construction_identity_frames_test(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty());
 }
 
 #[test]
