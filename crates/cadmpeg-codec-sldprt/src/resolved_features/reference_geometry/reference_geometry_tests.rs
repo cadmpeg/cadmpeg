@@ -849,6 +849,44 @@ fn explicit_reference_axis_does_not_rank_unanchored_candidates() {
 }
 
 #[test]
+fn reference_axis_enrichment_refuses_collection_limit() {
+    let feature = Feature {
+        id: "axis".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(2080),
+        ordinal: 0,
+        name: "Axis1".into(),
+        kind: String::new(),
+        input_class: Some("moRefAxis_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::enrich_history_reference_axes(&ctx, &mut [history], &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT reference axis sources"));
+}
+
+#[test]
 fn two_points_axis_data_frame_is_anchored_after_class_name() {
     let class_name = b"moTwoPtsAxisData_c";
     let class_offset = 16;
