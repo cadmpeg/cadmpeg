@@ -1338,7 +1338,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_expression_parameters(ctx, &mut ir, &expressions, &[], &[], &mut annotations))
         .expect("valid exactness fields");
     let parameter_owners = ir
         .model
@@ -1403,7 +1403,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_expression_parameters(ctx, &mut ir, &expressions, &[], &[], &mut annotations))
         .expect("valid exactness fields");
 
     assert_eq!(
@@ -1450,7 +1450,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-    attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations)
+    crate::test_support::with_decode_context(|ctx| attach_expression_parameters(ctx, &mut ir, &[expression], &[], &[], &mut annotations))
         .expect("valid exactness fields");
 
     assert_eq!(ir.model.parameters[0].value, None);
