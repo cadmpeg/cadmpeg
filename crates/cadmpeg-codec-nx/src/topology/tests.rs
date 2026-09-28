@@ -20,7 +20,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
+    intersection_data_curves, FaceLoopError, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
@@ -149,7 +149,7 @@ fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
 
     assert_eq!(graph.body_shape_shells().count(), 1);
     assert_eq!(graph.body_shape_face_count(), 1);
-    assert!(graph.has_complete_body_topology());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx)).unwrap());
     assert!(graph
         .nodes
         .values()
@@ -183,7 +183,7 @@ fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
         Some(u32::MAX)
     );
     assert_eq!(graph.body_shape_face_count(), 1);
-    assert!(graph.has_complete_body_topology());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx)).unwrap());
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
             Some(u32::MAX)
         );
     }
-    assert!(graph.has_complete_body_topology());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx)).unwrap());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -242,7 +242,7 @@ fn topology_rejects_unreferenced_high_identity_carrier() {
 
     assert!(graph.get(NodeKind::Plane, 99).is_none());
     assert!(graph.get(NodeKind::Line, 100).is_some());
-    assert!(graph.has_complete_body_topology());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx)).unwrap());
 }
 
 #[test]
@@ -259,7 +259,7 @@ fn topology_admits_high_identity_region_from_shell_ownership() {
         graph.get(NodeKind::Region, 12).and_then(Node::node_id),
         Some(u32::MAX)
     );
-    assert!(graph.has_complete_body_topology());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.has_complete_body_topology(ctx)).unwrap());
 }
 
 #[test]
@@ -324,6 +324,50 @@ fn topology_carrier_references_refuse_collection_limit() {
     let error = graph.referenced_carrier_xmts(&ctx).expect_err("carrier reference refusal");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+fn face_ring_refusal(policy: &cadmpeg_core::decode::DecodePolicy) -> FaceLoopError {
+    let stream = topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, policy).unwrap();
+    graph.face_loop_rings(&ctx, 4).expect_err("face ring resource refusal")
+}
+
+#[test]
+fn topology_face_ring_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(face_ring_refusal(&policy),
+        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn topology_face_ring_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(face_ring_refusal(&policy),
+        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn topology_face_ring_refuses_scoped_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    assert!(matches!(face_ring_refusal(&policy),
+        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn topology_face_ring_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(face_ring_refusal(&policy),
+        FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
@@ -401,7 +445,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut stream, fin + 8, 99);
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
-    assert!(graph.face_loop_rings(4).is_err());
+    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_err());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -417,9 +461,8 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("fin record");
     put_ref(&mut broken_partner, fin + 14, 99);
-    assert!(crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &broken_partner)).unwrap()
-        .face_loop_rings(4)
-        .is_err());
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &broken_partner)).unwrap();
+    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_err());
 }
 
 #[test]
@@ -430,14 +473,15 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
         .position(|window| window == [0, 17, 0, 7])
         .expect("FIN");
     put_ref(&mut stream, fin + 16, 99);
-    assert_eq!(
-        crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap().face_loop_rings(4),
-        Err(FaceLoopFailure::UnresolvedFinEdge {
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    assert!(matches!(
+        crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)),
+        Err(FaceLoopError::Invalid(FaceLoopFailure::UnresolvedFinEdge {
             loop_xmt: 5,
             fin_xmt: 7,
             edge_xmt: Some(99),
-        })
-    );
+        }))
+    ));
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -458,7 +502,8 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
     let vertex = graph.get(NodeKind::Vertex, 10).expect("vertex");
     put_ref(&mut stream, vertex.pos + 16, 99);
-    assert!(crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap().face_loop_rings(4).is_ok());
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    assert!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).is_ok());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -495,7 +540,7 @@ fn linked_fin_ring_order_is_emitted() {
     stream.extend(third_fin);
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
     assert_eq!(
-        graph.face_loop_rings(4).expect("source ring")[0].1,
+        crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).expect("source ring")[0].1,
         vec![13, 7, 6]
     );
 
@@ -526,7 +571,7 @@ fn face_loop_chain_order_is_emitted() {
     put_ref(&mut stream, second_loop.pos + 14, 5);
     put_ref(&mut stream, first_loop.pos + 14, 1);
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let source = graph.face_loop_rings(4).expect("linked loop chain");
+    let source = crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).expect("linked loop chain");
     assert_eq!(
         source.iter().map(|(xmt, _)| *xmt).collect::<Vec<_>>(),
         vec![21, 5]
@@ -567,7 +612,7 @@ fn topology_accepts_fixed_record_envelope_escape() {
             .attribute_field_offset(),
         Some(fin + 5)
     );
-    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| graph.face_loop_rings(ctx, 4)).unwrap().len(), 1);
 }
 
 #[test]

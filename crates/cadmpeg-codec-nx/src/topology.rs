@@ -171,6 +171,24 @@ pub(crate) enum FaceLoopFailure {
     },
 }
 
+#[derive(Debug)]
+pub(crate) enum FaceLoopError {
+    Invalid(FaceLoopFailure),
+    Codec(CodecError),
+}
+
+impl From<FaceLoopFailure> for FaceLoopError {
+    fn from(failure: FaceLoopFailure) -> Self {
+        Self::Invalid(failure)
+    }
+}
+
+impl From<CodecError> for FaceLoopError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
 impl std::fmt::Display for FaceLoopFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -906,8 +924,8 @@ impl Graph {
             baseline_bytes.commit()?;
             return Ok(baseline);
         }
-        if !baseline.has_complete_body_topology()
-            && full_domain.has_complete_body_topology()
+        if !baseline.has_complete_body_topology(ctx)?
+            && full_domain.has_complete_body_topology(ctx)?
             && full_domain.body_shape_face_count() != 0
         {
             full_domain_bytes.commit()?;
@@ -1362,27 +1380,36 @@ impl Graph {
     /// Return whether every body-shape face has a non-empty valid loop chain
     /// and every non-null radial FIN partner belongs to the same reachable
     /// body topology.
-    pub(crate) fn has_complete_body_topology(&self) -> bool {
+    pub(crate) fn has_complete_body_topology(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let mut shells = self.body_shape_shells().peekable();
         if shells.peek().is_none() {
-            return false;
+            return Ok(false);
         }
         let mut reachable_fins = BTreeSet::new();
         for shell in shells {
             let Some(face_xmts) = self.shell_face_xmts(shell) else {
-                return false;
+                return Ok(false);
             };
             for face_xmt in face_xmts {
-                let Ok(rings) = self.face_loop_rings(face_xmt) else {
-                    return false;
+                let rings = match self.face_loop_rings(ctx, face_xmt) {
+                    Ok(rings) => rings,
+                    Err(FaceLoopError::Invalid(_)) => return Ok(false),
+                    Err(FaceLoopError::Codec(error)) => return Err(error),
                 };
                 if rings.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
-                reachable_fins.extend(rings.into_iter().flat_map(|(_, ring)| ring));
+                for (_, ring) in rings {
+                    for xmt in ring {
+                        if !reachable_fins.contains(&xmt) {
+                            ctx.charge_collection_items(1, "NX reachable FIN identities")?;
+                        }
+                        reachable_fins.insert(xmt);
+                    }
+                }
             }
         }
-        reachable_fins.iter().all(|xmt| {
+        Ok(reachable_fins.iter().all(|xmt| {
             self.get(NodeKind::Fin, *xmt)
                 .and_then(Node::fin_fields)
                 .is_some_and(|fields| {
@@ -1390,7 +1417,7 @@ impl Graph {
                         .other
                         .is_none_or(|other| reachable_fins.contains(&u32::from(other)))
                 })
-        })
+        }))
     }
 
     /// Count faces owned by validated body-shape shells.
@@ -1408,53 +1435,71 @@ impl Graph {
     /// its edge and vertex.
     pub(crate) fn face_loop_rings(
         &self,
+        ctx: &DecodeContext<'_>,
         face_xmt: u32,
-    ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopFailure> {
+    ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopError> {
         let face = self
             .get(NodeKind::Face, face_xmt)
             .and_then(Node::face_fields)
             .ok_or(FaceLoopFailure::InvalidFace { face_xmt })?;
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();
+        let mut seen_reservation = ctx.reserve_scoped(0, "NX face loop identities")?;
         let mut rings = Vec::new();
         while let Some(target) = loop_xmt {
             let current = u32::from(target);
-            if !seen_loops.insert(current) {
-                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current });
+            if seen_loops.contains(&current) {
+                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current }.into());
             }
+            ctx.charge_work(1, "walk NX face loops")?;
+            ctx.charge_collection_items(1, "NX face loop identities")?;
+            seen_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+            seen_loops.insert(current);
             let fields = self
                 .get(NodeKind::Loop, current)
                 .and_then(Node::loop_fields)
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             if fields.face.map(u32::from) != Some(face_xmt) {
-                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current });
+                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current }.into());
             }
             let first_fin = fields
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
-            rings.push((current, self.fin_ring(current, first_fin)?));
+            let ring = self.fin_ring(ctx, current, first_fin)?;
+            ctx.charge_collection_items(1, "NX face loop rings")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Vec<u32>)>()), "NX face loop rings")?;
+            rings.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX face loop rings", 0, 1))?;
+            rings.push((current, ring));
             loop_xmt = fields.next_loop;
         }
         Ok(rings)
     }
 
-    fn fin_ring(&self, loop_xmt: u32, first: XmtTarget) -> Result<Vec<u32>, FaceLoopFailure> {
+    fn fin_ring(&self, ctx: &DecodeContext<'_>, loop_xmt: u32, first: XmtTarget) -> Result<Vec<u32>, FaceLoopError> {
         let first = u32::from(first);
         let mut current = first;
         let mut previous = None;
         let mut seen = BTreeSet::new();
+        let mut seen_reservation = ctx.reserve_scoped(0, "NX FIN ring identities")?;
         let mut ring = Vec::new();
         loop {
-            if !seen.insert(current) {
+            if seen.contains(&current) {
                 return if current == first {
                     Ok(ring)
                 } else {
                     Err(FaceLoopFailure::InvalidFinRing {
                         loop_xmt,
                         fin_xmt: current,
-                    })
+                    }.into())
                 };
             }
+            ctx.charge_work(1, "walk NX FIN ring")?;
+            ctx.charge_collection_items(1, "NX FIN ring identities")?;
+            seen_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+            seen.insert(current);
+            ctx.charge_collection_items(1, "NX FIN ring entries")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()), "NX FIN ring entries")?;
+            ring.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX FIN ring entries", 0, 1))?;
             ring.push(current);
             let invalid_fin = FaceLoopFailure::InvalidFinRing {
                 loop_xmt,
@@ -1473,10 +1518,10 @@ impl Graph {
                     loop_xmt,
                     fin_xmt: current,
                     edge_xmt: fields.edge.map(u32::from),
-                });
+                }.into());
             }
             if fields.loop_xmt.map(u32::from) != Some(loop_xmt) || !vertex_resolves {
-                return Err(invalid_fin);
+                return Err(invalid_fin.into());
             }
             if let Some(other_xmt) = fields.other {
                 let other = self
@@ -1484,12 +1529,12 @@ impl Graph {
                     .and_then(Node::fin_fields)
                     .ok_or(invalid_fin)?;
                 if other.other.map(u32::from) != Some(current) || other.edge != fields.edge {
-                    return Err(invalid_fin);
+                    return Err(invalid_fin.into());
                 }
             }
             if let Some(previous) = previous {
                 if fields.backward.map(u32::from) != Some(previous) {
-                    return Err(invalid_fin);
+                    return Err(invalid_fin.into());
                 }
             }
             let next = self
@@ -1497,7 +1542,7 @@ impl Graph {
                 .and_then(Node::fin_fields)
                 .ok_or(invalid_fin)?;
             if next.backward.map(u32::from) != Some(current) {
-                return Err(invalid_fin);
+                return Err(invalid_fin.into());
             }
             previous = Some(current);
             current = u32::from(fields.forward.ok_or(invalid_fin)?);

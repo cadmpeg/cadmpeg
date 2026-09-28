@@ -16,7 +16,7 @@ use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{FaceLoopFailure, Graph, Node};
+use crate::topology::{FaceLoopError, FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
@@ -59,6 +59,7 @@ struct PendingFace {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     stream_index: usize,
     graph: &Graph,
@@ -87,13 +88,14 @@ pub(super) fn emit_topology(
     let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for face_xmt in &valid_face_xmts {
-        match graph.face_loop_rings(*face_xmt) {
+        match graph.face_loop_rings(ctx, *face_xmt) {
             Ok(rings) => {
                 face_loop_rings.insert(*face_xmt, rings);
             }
-            Err(failure) => {
+            Err(FaceLoopError::Invalid(failure)) => {
                 face_loop_failures.insert(*face_xmt, failure);
             }
+            Err(FaceLoopError::Codec(error)) => return Err(error),
         }
     }
     let valid_loop_rings: BTreeMap<u32, &[u32]> = face_loop_rings

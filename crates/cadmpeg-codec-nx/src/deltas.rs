@@ -2000,8 +2000,8 @@ fn merge_records(
     }
     let (merged, merged_reservation) = build(true)?;
     let merged_graph = crate::topology::Graph::parse(ctx, &merged)?;
-    let base_complete = graph.has_complete_body_topology();
-    let merged_complete = merged_graph.has_complete_body_topology();
+    let base_complete = graph.has_complete_body_topology(ctx)?;
+    let merged_complete = merged_graph.has_complete_body_topology(ctx)?;
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
     let unaccounted_face_loss = !deletes_owner
