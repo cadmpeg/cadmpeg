@@ -173,6 +173,18 @@ pub(crate) fn collect_vec<T>(
     Ok(collected)
 }
 
+pub(crate) fn try_collect_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = Result<T, CodecError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut collected = Vec::new();
+    for value in values {
+        push(ctx, &mut collected, value?, operation)?;
+    }
+    Ok(collected)
+}
+
 pub(crate) fn collect_options<T>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = Option<T>>,
