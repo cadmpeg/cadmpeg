@@ -412,22 +412,17 @@ pub(super) fn emit_faces(
     let components = ownership.components(admission.ctx)?;
     let loop_orientation = &plan.loop_orientation;
 
-    let body_id = BodyId::compose(
+    let body_id = crate::resource::compose_index_id(admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "b5", "body"),
-        cadmpeg_ir::identity_key!("0"),
-    );
-    let region_ids: BTreeMap<usize, RegionId> = components
-        .keys()
-        .map(|&component| {
-            (
-                component,
-                RegionId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "b5", "region"),
-                    component,
-                ),
-            )
-        })
-        .collect();
+        0, BodyId::mint, "catia_b5_body_id")?;
+    let mut region_ids = BTreeMap::new();
+    for &component in components.keys() {
+        let id = crate::resource::compose_index_id(admission.context(),
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "region"),
+            component, RegionId::mint, "catia_b5_region_id")?;
+        crate::resource::insert_btree_map(admission.context(), &mut region_ids,
+            component, id, "catia_b5_region_ids")?;
+    }
     annotate(
         annotations,
         &body_id,
@@ -442,22 +437,32 @@ pub(super) fn emit_faces(
     {
         return Ok(false);
     }
+    let mut body_regions = Vec::new();
+    for id in region_ids.values() {
+        let id = crate::resource::copy_id(admission.context(), id.as_str(),
+            RegionId::mint, "catia_b5_body_region_id")?;
+        crate::resource::push(admission.context(), &mut body_regions, id,
+            "catia_b5_body_regions")?;
+    }
+    let body_record_id = crate::resource::copy_id(admission.context(), body_id.as_str(),
+        BodyId::mint, "catia_b5_body_record_id")?;
     admission.reserve_entity(&mut ir.model.bodies, "catia_b5_emit_bodies")?;
     ir.model.bodies.push(Body {
-        id: body_id.clone(),
+        id: body_record_id,
         kind: ownership.body_kind,
-        regions: region_ids.values().cloned().collect(),
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     for (component_index, component_faces) in &components {
-        let region_id = region_ids[component_index].clone();
-        let shell_id = ShellId::compose(
+        let region_id = crate::resource::copy_id(admission.context(),
+            region_ids[component_index].as_str(), RegionId::mint,
+            "catia_b5_region_ref_id")?;
+        let shell_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
-            component_index,
-        );
+            *component_index, ShellId::mint, "catia_b5_shell_id")?;
         annotate(
             annotations,
             &region_id,
@@ -472,11 +477,20 @@ pub(super) fn emit_faces(
         {
             return Ok(false);
         }
+        let region_record_id = crate::resource::copy_id(admission.context(),
+            region_id.as_str(), RegionId::mint, "catia_b5_region_record_id")?;
+        let region_body_id = crate::resource::copy_id(admission.context(),
+            body_id.as_str(), BodyId::mint, "catia_b5_region_body_id")?;
+        let region_shell_id = crate::resource::copy_id(admission.context(),
+            shell_id.as_str(), ShellId::mint, "catia_b5_region_shell_id")?;
+        let mut region_shells = Vec::new();
+        crate::resource::push(admission.context(), &mut region_shells, region_shell_id,
+            "catia_b5_region_shells")?;
         admission.reserve_entity(&mut ir.model.regions, "catia_b5_emit_regions")?;
         ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id.clone()],
+            id: region_record_id,
+            body: region_body_id,
+            shells: region_shells,
         });
         annotate(
             annotations,
@@ -492,20 +506,23 @@ pub(super) fn emit_faces(
         {
             return Ok(false);
         }
+        let mut shell_faces = Vec::new();
+        for face in component_faces {
+            let face_id = crate::resource::compose_index_id(admission.context(),
+                &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                usize::try_from(graph.faces[*face].object_id).map_err(|_|
+                    admission.context().refuse_codec_limit(
+                        "catia_b5_shell_face_id", u64::MAX, u64::MAX))?,
+                FaceId::mint, "catia_b5_shell_face_id")?;
+            crate::resource::push(admission.context(), &mut shell_faces, face_id,
+                "catia_b5_shell_faces")?;
+        }
         admission.reserve_entity(&mut ir.model.shells, "catia_b5_emit_shells")?;
         ir.model.shells.push(
             match Shell::new(
                 shell_id,
                 region_id,
-                component_faces
-                    .iter()
-                    .map(|face| {
-                        FaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
-                            graph.faces[*face].object_id,
-                        )
-                    })
-                    .collect(),
+                shell_faces,
                 Vec::new(),
                 Vec::new(),
             ) {
