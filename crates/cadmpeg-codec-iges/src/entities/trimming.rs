@@ -2518,7 +2518,7 @@ pub(super) fn project(
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
             candidate.model_mut().surfaces.push(Surface {
                 id: derived_surface_id.clone(),
-                geometry: support_geometry.clone(),
+                geometry: support_geometry,
                 source_object: Some(match source_object(entry, Some(ctx)) {
                     Ok(source) => source,
                     Err(error) => {
