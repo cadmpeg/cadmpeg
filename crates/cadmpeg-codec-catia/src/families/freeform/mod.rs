@@ -1444,21 +1444,27 @@ pub(super) fn append_freeform_surface_pools(
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let mut surfaces =
         crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
-    surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(
         admission.context(),
         data,
         records,
         refusal,
-    )?);
-    let mut carrier_ids = Vec::with_capacity(surfaces.len());
+    )?;
+    crate::resource::reserve_vec(admission.context(), &mut surfaces, a5.len(),
+        "catia_freeform_surface_pool")?;
+    surfaces.extend(a5);
+    let mut carrier_ids = Vec::new();
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(admission.context(), surface)?;
         let index = ir.model.surfaces.len();
-        let id = SurfaceId::compose(
+        let id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "freeform", "surf"),
             index,
-        );
-        carrier_ids.push(id.clone());
+            SurfaceId::mint, "catia_freeform_surface_pool_id")?;
+        crate::resource::push(admission.context(), &mut carrier_ids,
+            crate::resource::copy_id(admission.context(), id.as_str(), SurfaceId::mint,
+                "catia_freeform_surface_pool_carrier_id")?,
+            "catia_freeform_surface_pool_carrier_ids")?;
         annotate(
             admission.context(),
             annotations,
@@ -1471,14 +1477,17 @@ pub(super) fn append_freeform_surface_pools(
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                surface.geometry.clone(),
+                crate::resource::copy_nurbs_surface(admission.context(), &surface.geometry,
+                    "catia_freeform_surface_pool_geometry")?,
             )),
             source_object: Some(source_object),
         });
     }
 
-    let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records);
-    let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces);
+    let offsets = crate::families::b2::records::b2_offset_supports_from_records(
+        admission.context(), data, records)?;
+    let bindings = crate::families::b2::records::offset_support_carriers(
+        admission.context(), &offsets, &surfaces)?;
     for (offset, carrier) in offsets
         .iter()
         .zip(bindings)
@@ -1523,7 +1532,8 @@ pub(super) fn append_freeform_surface_pools(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                        carrier_ids[carrier].clone(),
+                        crate::resource::copy_id(admission.context(), carrier_ids[carrier].as_str(),
+                            SurfaceId::mint, "catia_freeform_offset_carrier_id")?,
                         offset.distance,
                         None,
                         None,
@@ -1549,49 +1559,35 @@ pub(super) fn append_freeform_surface_pools(
         data,
         records,
     )? {
-        let ctx = admission.context();
-        let mut points = Vec::new();
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        crate::resource::reserve_vec(ctx, &mut points, guide.sites.len(), "catia A5 guide points")?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut first,
-            guide.sites.len(),
-            "catia A5 guide first jets",
-        )?;
-        crate::resource::reserve_vec(
-            ctx,
-            &mut second,
-            guide.sites.len(),
-            "catia A5 guide second jets",
-        )?;
-        for site in &guide.sites {
-            points.push(site.point.get());
-            {
-                let value = site.first_derivative;
-                first.push([value[0], value[1], value[2]]);
+        let solution = {
+            let ctx = admission.context();
+            let (mut points, _points_reservation) = crate::resource::temporary_vec(ctx,
+                guide.sites.len(), "catia A5 guide points")?;
+            let (mut first, _first_reservation) = crate::resource::temporary_vec(ctx,
+                guide.sites.len(), "catia A5 guide first jets")?;
+            let (mut second, _second_reservation) = crate::resource::temporary_vec(ctx,
+                guide.sites.len(), "catia A5 guide second jets")?;
+            for site in &guide.sites {
+                points.push(site.point.get());
+                {
+                    let value = site.first_derivative;
+                    first.push([value[0], value[1], value[2]]);
+                }
+                {
+                    let value = site.second_derivative;
+                    second.push([value[0], value[1], value[2]]);
+                }
             }
-            {
-                let value = site.second_derivative;
-                second.push([value[0], value[1], value[2]]);
-            }
-        }
-        let distinct_knots = guide.knots(ctx)?;
-        let Some((knots, control_points)) = crate::nurbs::quintic_jet_bspline(
-            ctx,
-            guide.degree,
-            &distinct_knots,
-            &points,
-            &first,
-            &second,
-        )?
-        else {
+            let distinct_knots = guide.knots(ctx)?;
+            crate::nurbs::quintic_jet_bspline(ctx, guide.degree, &distinct_knots,
+                &points, &first, &second)?
+        };
+        let Some((knots, control_points)) = solution else {
             continue;
         };
         let mut poles = Vec::new();
         crate::resource::reserve_vec(
-            ctx,
+            admission.context(),
             &mut poles,
             control_points.len(),
             "catia A5 guide poles",
@@ -4144,6 +4140,51 @@ mod tests {
             consolidated_line_profiles(ctx, &bytes, &records)
         }).expect("service profile admits line profile");
         assert_eq!(service.len(), 1);
+    }
+
+    #[test]
+    fn freeform_surface_pool_refuses_carrier_collection_limit() {
+        let bytes = crate::test_support::test_a5a8::a5_surface_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            append_freeform_surface_pools(&mut ir, &mut annotations, &bytes, &records,
+                &HashMap::new(), &mut crate::nurbs::LaneRefusals::new(), &mut admission)
+                .map(|_| ir.model.surfaces.len())
+        };
+        let mut refused_at_carrier = false;
+        for limit in 0..96 {
+            let result = crate::test_support::with_collection_limit(limit, &run);
+            if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_freeform_surface_pool_carrier_ids") {
+                refused_at_carrier = true;
+                break;
+            }
+        }
+        assert!(refused_at_carrier);
+        assert_eq!(crate::test_support::with_service_context(run)
+            .expect("service profile admits freeform surface pool"), 1);
+    }
+
+    #[test]
+    fn a5_guide_scratch_points_refuse_materialized_limit() {
+        let bytes = crate::test_support::test_a5a8::a5_guide_curve_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            append_freeform_surface_pools(&mut ir, &mut annotations, &bytes, &records,
+                &HashMap::new(), &mut crate::nurbs::LaneRefusals::new(), &mut admission)
+                .map(|_| ir.model.curves.len())
+        };
+        let refused = crate::test_support::with_materialized_limit(0, &run);
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia A5 guide points"));
+        assert_eq!(crate::test_support::with_service_context(run)
+            .expect("service profile admits A5 guide curve"), 1);
     }
 
     #[test]
