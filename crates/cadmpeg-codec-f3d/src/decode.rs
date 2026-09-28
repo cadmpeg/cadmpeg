@@ -5377,12 +5377,13 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     );
     crate::history::bind_edge_operand_history_candidates(
+        Some(ctx),
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     native.design_edge_treatment_vertex_operands =
         crate::design::decode::operands::decode_edge_treatment_vertex_operands(
             scan,
@@ -5432,13 +5433,14 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     );
     crate::history::bind_face_operand_history_candidates(
+        Some(ctx),
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     crate::history::bind_mirror_selection_planes(
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,

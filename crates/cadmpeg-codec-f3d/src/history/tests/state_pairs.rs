@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+mod limits;
+
 use crate::history::{
     bind_scope_histories, bodies_intersecting, bound_history_state_pair, bound_scope_history,
     boundary_edges_in_changes, edge_changes_across_state_chain, edge_recipe_reference_context,
@@ -19,7 +21,7 @@ use crate::history::{
     historical_edge_context, historical_face_support_contexts, historical_identity_edge,
     historical_identity_kind, historical_loop_boundary, historical_pattern_identity_axes,
     historical_pattern_identity_axes_for_selection, historical_selection_identity_kind,
-    historical_topology, incident_loop_counts_satisfy_sides, preceding_support_face_slots,
+    historical_topology, history_state_index, incident_loop_counts_satisfy_sides, preceding_support_face_slots,
     recipe_selector_candidates, resolve_pattern_face_by_surface_radius,
     snapshot_edge_identity_revision, terminal_edge_recipe_faces,
     terminal_edge_recipe_reference_faces, treatment_radius_candidates,
@@ -1216,29 +1218,9 @@ fn active_face_support_retains_invariant_preceding_owners() {
 
 #[test]
 fn topology_changes_span_only_complete_acyclic_state_chains() {
-    let state = |state_id| AsmDeltaState {
-        id: format!("state-{state_id}"),
-        parent: "history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(
-            AsmHistoricalTopology::default(),
-        ),
-        transition: None,
-    };
-    let preceding = state(1);
-    let mut intermediate = state(2);
-    let mut result = state(3);
+    let preceding = limits::change_state(1);
+    let mut intermediate = limits::change_state(2);
+    let mut result = limits::change_state(3);
     let mut first = AsmHistoricalTransition {
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
@@ -1262,20 +1244,20 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
     ]);
 
     assert_eq!(
-        face_changes_across_state_chain(&result, 1, &states),
+        face_changes_across_state_chain(None, &result, 1, &states).unwrap(),
         Some(HashSet::from([10, 11]))
     );
     let incomplete = HashMap::from([(1, Some(&preceding)), (3, Some(&result))]);
     assert_eq!(
-        face_changes_across_state_chain(&result, 1, &incomplete),
+        face_changes_across_state_chain(None, &result, 1, &incomplete).unwrap(),
         None
     );
     assert_eq!(
-        edge_changes_across_state_chain(&result, 1, &states),
+        edge_changes_across_state_chain(None, &result, 1, &states).unwrap(),
         Some((HashSet::from([21]), HashSet::from([20])))
     );
     assert_eq!(
-        edge_changes_across_state_chain(&result, 1, &incomplete),
+        edge_changes_across_state_chain(None, &result, 1, &incomplete).unwrap(),
         None
     );
     let mut cyclic_intermediate = intermediate.clone();
@@ -1289,8 +1271,8 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
         (2, Some(&cyclic_intermediate)),
         (3, Some(&result)),
     ]);
-    assert_eq!(face_changes_across_state_chain(&result, 1, &cyclic), None);
-    assert_eq!(edge_changes_across_state_chain(&result, 1, &cyclic), None);
+    assert_eq!(face_changes_across_state_chain(None, &result, 1, &cyclic).unwrap(), None);
+    assert_eq!(edge_changes_across_state_chain(None, &result, 1, &cyclic).unwrap(), None);
 }
 
 #[test]
