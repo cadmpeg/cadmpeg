@@ -8,6 +8,35 @@ use crate::decode::analytic::equations::PlaneEquation;
 
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
 
+#[test]
+fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 40,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_circular_sweep_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("feature ID node exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo circular sweep feature ID nodes"));
+}
+
 fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylinderFrame {
     crate::surface::PositionalCylinderFrame::new(
         origin,

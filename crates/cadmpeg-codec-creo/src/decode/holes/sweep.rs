@@ -278,9 +278,11 @@ pub(in crate::decode) struct CircularSweepGeometry<'a> {
 }
 
 pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry<'a>> {
+) -> Result<Option<CircularSweepGeometry<'a>>, CodecError> {
+    let candidate = (|| {
     let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
         table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
     }))?;
@@ -332,13 +334,21 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         transform.normal(),
         [(plane.1, plane.2)],
     )?;
-    Some(CircularSweepGeometry {
-        cylinder_rows: vec![cylinder_row],
-        section_definition_id: Some(transform.definition_id),
+        Some((cylinder_row, transform.definition_id, direction, extent, cylinder_from_single_cap_outline(cap)?))
+    })();
+    let Some((cylinder_row, definition_id, direction, extent, geometry)) = candidate else {
+        return Ok(None);
+    };
+    let mut cylinder_rows = Vec::new();
+    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo single-cap circular cylinder rows")?;
+    cylinder_rows.push(cylinder_row);
+    Ok(Some(CircularSweepGeometry {
+        cylinder_rows,
+        section_definition_id: Some(definition_id),
         direction,
         extent,
-        geometry: cylinder_from_single_cap_outline(cap)?,
-    })
+        geometry,
+    }))
 }
 
 pub(in crate::decode) fn circular_sweep_feature_definition(
@@ -369,17 +379,24 @@ pub(in crate::decode) fn circular_sweep_feature_definition(
 }
 
 pub(in crate::decode) fn circular_sweep_geometry<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry<'a>> {
-    two_cap_circular_sweep_geometry(scan, feature_id)
-        .or_else(|| single_cap_circular_sweep_geometry(scan, feature_id))
+) -> Result<Option<CircularSweepGeometry<'a>>, CodecError> {
+    let two_cap = two_cap_circular_sweep_geometry(ctx, scan, feature_id)?;
+    if two_cap.is_some() {
+        Ok(two_cap)
+    } else {
+        single_cap_circular_sweep_geometry(ctx, scan, feature_id)
+    }
 }
 
 pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<CircularSweepGeometry<'a>> {
+) -> Result<Option<CircularSweepGeometry<'a>>, CodecError> {
+    let candidate = (|| {
     let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
         table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
     }))?;
@@ -428,21 +445,31 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
             |row| row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder,
         )?;
     let (_, direction, termination) = hole_placement([first, second])?;
-    Some(CircularSweepGeometry {
-        cylinder_rows: vec![cylinder_row],
-        section_definition_id: None,
-        direction,
-        extent: ExtrudeExtent::OneSided {
+        let extent = ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination,
                 draft: None,
             },
-        },
-        geometry: circular_sweep_cylinder_from_cap_outlines(
+        };
+        let geometry = circular_sweep_cylinder_from_cap_outlines(
             [first, second],
             [cap(first), cap(second)].into_iter().flatten(),
-        )?,
-    })
+        )?;
+        Some((cylinder_row, direction, extent, geometry))
+    })();
+    let Some((cylinder_row, direction, extent, geometry)) = candidate else {
+        return Ok(None);
+    };
+    let mut cylinder_rows = Vec::new();
+    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo two-cap circular cylinder rows")?;
+    cylinder_rows.push(cylinder_row);
+    Ok(Some(CircularSweepGeometry {
+        cylinder_rows,
+        section_definition_id: None,
+        direction,
+        extent,
+        geometry,
+    }))
 }
 
 pub(in crate::decode) fn extrusion_span(

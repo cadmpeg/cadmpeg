@@ -40,6 +40,26 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::BTreeSet;
 
+fn service_single_cap_circular_sweep_geometry<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        single_cap_circular_sweep_geometry(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
+
+fn service_two_cap_circular_sweep_geometry<'a>(
+    scan: &'a crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<crate::decode::holes::sweep::CircularSweepGeometry<'a>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        two_cap_circular_sweep_geometry(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
+
 #[test]
 fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let entry =
@@ -116,7 +136,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         .expect("valid section frame"),
     );
 
-    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_some());
 
     let reversed_entries = vec![
         entry(143, 204, None),
@@ -173,7 +193,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         )
         .expect("valid section frame"),
     );
-    assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 41).is_some());
 
     assert!(section_entity_is_generated_profile(
         true,
@@ -185,7 +205,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     ));
 
     scan.features.entity_tables[0].unmark_surface_id(51);
-    assert!(single_cap_circular_sweep_geometry(&scan, 40).is_none());
+    assert!(service_single_cap_circular_sweep_geometry(&scan, 40).is_none());
     assert!(!section_entity_is_generated_profile(
         true,
         Some(40),
@@ -272,7 +292,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         .with_surface_ids([828, 831, 836]),
     );
 
-    let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
+    let sweep = service_two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
     assert_eq!(
         sweep
             .cylinder_rows
@@ -302,7 +322,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     );
 
     scan.features.entity_tables[0].unmark_surface_id(831);
-    assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
+    assert!(service_two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
 #[test]
