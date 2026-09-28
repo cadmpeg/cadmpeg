@@ -1839,11 +1839,12 @@ pub(crate) fn project_marker_backed_sketches(
                 }
             }
             resolve_two_center_semicircle_profile(
+                ctx,
                 &lane.native_payload,
                 &object_markers,
                 &mut projected,
                 QUANTUM,
-            );
+            )?;
             resolve_slot_marker_arcs(
                 &lane.native_payload,
                 &object_markers,

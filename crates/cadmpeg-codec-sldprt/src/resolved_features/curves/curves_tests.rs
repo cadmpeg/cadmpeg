@@ -1014,8 +1014,7 @@ fn compact_line_profile_reports_collection_limit() {
             && limit.operation == "SLDPRT compact line profile usage"));
 }
 
-#[test]
-fn linked_semicircle_records_close_a_two_center_profile() {
+fn linked_semicircle_fixture() -> (Vec<u8>, [SketchInputEntity; 2], Vec<SketchEntity>) {
     let mut payload = vec![0; 224];
     for (offset, addresses) in [(0, [1u16, 2]), (112, [3, 5])] {
         payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -1065,7 +1064,6 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         marker("curve-a", 0, "center-a"),
         marker("curve-b", 112, "center-b"),
     ];
-    let markers = records.iter().collect::<Vec<_>>();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         SketchEntity::new(
@@ -1086,7 +1084,7 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         )
         .with_native_ref(Some(id.into()))
     };
-    let mut entities = vec![
+    let entities = vec![
         point("center-a", Point2::new(0.0, 0.0)),
         point("a-plus", Point2::new(0.0, 2.0)),
         point("a-minus", Point2::new(0.0, -2.0)),
@@ -1097,7 +1095,47 @@ fn linked_semicircle_records_close_a_two_center_profile() {
         curve("curve-b"),
     ];
 
-    resolve_two_center_semicircle_profile(&payload, &markers, &mut entities, 1.0e-9);
+    (payload, records, entities)
+}
+
+#[test]
+fn linked_semicircle_refuses_collection_limit() {
+    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+        .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT semicircle records"));
+}
+
+#[test]
+fn linked_semicircle_refuses_retained_limit() {
+    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+        .unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT semicircle point identity"));
+}
+
+#[test]
+fn linked_semicircle_records_close_a_two_center_profile() {
+    let (payload, records, mut entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities
