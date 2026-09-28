@@ -24,6 +24,30 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn legacy_native_projection_refuses_collection_and_retained_limits() {
+    let mut bytes = vec![0xea];
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x81, 0xfd, 0x8c]);
+    bytes.extend_from_slice(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::legacy_entity_runs(ctx, &bytes)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_legacy_run_id"));
+    let collection = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::legacy_entity_runs(ctx, &bytes)
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_legacy_identities"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::legacy_entity_runs(ctx, &bytes)
+    })
+    .expect("service profile admits one legacy entity run");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].identities.len(), 1);
+}
+
+#[test]
 fn native_graph_projection_refuses_caller_limits() {
     use cadmpeg_core::CodecError;
 

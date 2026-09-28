@@ -7071,104 +7071,165 @@ fn consolidated_circles(
     Ok(circles)
 }
 
-fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
-    legacy_entity::parse_runs(bytes)
-        .into_iter()
-        .enumerate()
-        .map(|(index, run)| {
-            let id = format!("catia:legacy:entity-run#{index:08}");
+fn legacy_role_selector(role: legacy_entity::LegacyRoleSelector) -> CatiaLegacyRoleSelector {
+    CatiaLegacyRoleSelector {
+        byte_offset: role.offset as u64,
+        entity_id: role.entity_id,
+        name: role.name,
+        encoding: match role.encoding {
+            legacy_entity::LegacyRoleSelectorEncoding::FixedU32 =>
+                CatiaLegacyRoleSelectorEncoding::FixedU32,
+            legacy_entity::LegacyRoleSelectorEncoding::Paged =>
+                CatiaLegacyRoleSelectorEncoding::Paged,
+        },
+        selector: role.selector,
+        field_code: role.field_code,
+    }
+}
+
+fn legacy_entity_runs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<CatiaLegacyEntityRun>, CodecError> {
+    let mut converted = Vec::new();
+    for (index, run) in legacy_entity::parse_runs(bytes).into_iter().enumerate() {
+            let id = crate::resource::format_retained(ctx,
+                format_args!("catia:legacy:entity-run#{index:08}"), "catia_native_legacy_run_id")?;
             let byte_offset = run.first_identity.offset;
-            let identities = run
+            let identities = crate::resource::collect_vec(ctx, run
                 .identities()
                 .map(|identity| CatiaLegacyEntityIdentity {
                     byte_offset: identity.offset as u64,
                     entity_id: identity.entity_id,
                     lead: identity.lead,
-                })
-                .collect();
-            CatiaLegacyEntityRun {
-                id: id.clone(),
-                byte_offset: byte_offset as u64,
-                byte_len: (run.catalog_offset - byte_offset) as u64,
-                catalog_offset: run.catalog_offset as u64,
-                schema_program: run.schema_program.map(|program| CatiaLegacySchemaProgram {
+                }), "catia_native_legacy_identities")?;
+            let schema_program = run.schema_program.map(|program| -> Result<_, CodecError> {
+                Ok(CatiaLegacySchemaProgram {
                     byte_offset: program.offset as u64,
                     boundary_byte_offset: program.boundary_offset as u64,
                     boundary: match program.boundary {
-                        legacy_entity::LegacySchemaProgramBoundary::VendorFooter => {
-                            CatiaLegacySchemaProgramBoundary::VendorFooter
-                        }
-                        legacy_entity::LegacySchemaProgramBoundary::StreamDirectory => {
-                            CatiaLegacySchemaProgramBoundary::StreamDirectory
-                        }
+                        legacy_entity::LegacySchemaProgramBoundary::VendorFooter =>
+                            CatiaLegacySchemaProgramBoundary::VendorFooter,
+                        legacy_entity::LegacySchemaProgramBoundary::StreamDirectory =>
+                            CatiaLegacySchemaProgramBoundary::StreamDirectory,
                     },
                     data: program.bytes,
-                    identifiers: program
-                        .identifiers
-                        .into_iter()
-                        .map(|identifier| CatiaLegacySchemaIdentifier {
+                    identifiers: crate::resource::collect_vec(ctx,
+                        program.identifiers.into_iter().map(|identifier| CatiaLegacySchemaIdentifier {
                             byte_offset: identifier.offset as u64,
                             value: identifier.value,
-                        })
-                        .collect(),
-                }),
+                        }), "catia_native_legacy_schema_identifiers")?,
+                })
+            }).transpose()?;
+            let role_selectors = crate::resource::collect_vec(ctx,
+                run.role_selectors.into_iter().map(legacy_role_selector),
+                "catia_native_legacy_roles")?;
+            let text_fields = crate::resource::collect_vec(ctx,
+                run.text_fields.into_iter().map(|field| CatiaLegacyTextField {
+                    byte_offset: field.offset as u64,
+                    entity_id: field.entity_id,
+                    encoding: match field.encoding {
+                        legacy_entity::LegacyTextEncoding::U8InclusiveLength =>
+                            CatiaLegacyTextEncoding::U8InclusiveLength,
+                        legacy_entity::LegacyTextEncoding::ZeroU32Length =>
+                            CatiaLegacyTextEncoding::ZeroU32Length,
+                        legacy_entity::LegacyTextEncoding::U8InclusiveLengthE3RoleTail =>
+                            CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail,
+                    },
+                    role: field.role.map(legacy_role_selector),
+                    value: field.value,
+                }), "catia_native_legacy_text_fields")?;
+            let relations = crate::resource::try_collect_vec(ctx,
+                run.relations.into_iter().map(|relation| -> Result<_, CodecError> {
+                    let (inputs, output, result_type) = relation.signature.into_parts(ctx)?;
+                    let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
+                        CatiaLegacyRelationParameter {
+                            parameter: parameter.parameter,
+                            value_type: parameter.value_type,
+                        }
+                    };
+                    Ok(CatiaLegacyRelation {
+                        entity_id: relation.entity_id,
+                        body_selector: relation.body_selector,
+                        parameter_selector: relation.parameter_selector,
+                        parameter_entity_id: relation.parameter_entity_id,
+                        expression_offset: relation.expression_offset as u64,
+                        expression: relation.expression,
+                        signature_offset: relation.signature_offset as u64,
+                        type_signature: relation.type_signature,
+                        inputs: crate::resource::collect_vec(ctx,
+                            inputs.into_iter().map(parameter), "catia_native_legacy_relation_inputs")?,
+                        output: output.map(parameter),
+                        result_type,
+                    })
+                }), "catia_native_legacy_relations")?;
+            let scalar_values = crate::resource::try_collect_vec(ctx,
+                run.scalar_values.into_iter().map(|value| -> Result<_, CodecError> {
+                    Ok(CatiaLegacyScalarValue {
+                        id: crate::resource::format_retained(ctx,
+                            format_args!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
+                            "catia_native_legacy_scalar_id")?,
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        encoding: match value.encoding {
+                            legacy_entity::LegacyScalarEncoding::Named84 =>
+                                CatiaLegacyScalarEncoding::Named84,
+                            legacy_entity::LegacyScalarEncoding::Standalone85 =>
+                                CatiaLegacyScalarEncoding::Standalone85,
+                        },
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
+                        evaluation: match value.evaluation {
+                            legacy_entity::LegacyScalarEvaluation::Value(bits) =>
+                                CatiaLegacyScalarEvaluation::Value { bits },
+                            legacy_entity::LegacyScalarEvaluation::Unset =>
+                                CatiaLegacyScalarEvaluation::Unset,
+                        },
+                    })
+                }), "catia_native_legacy_scalars")?;
+            let string_values = crate::resource::try_collect_vec(ctx,
+                run.string_values.into_iter().map(|value| -> Result<_, CodecError> {
+                    Ok(CatiaLegacyStringValue {
+                        id: crate::resource::format_retained(ctx,
+                            format_args!("catia:legacy:string#{index:08}-{:016}", value.offset),
+                            "catia_native_legacy_string_id")?,
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
+                        value: value.value,
+                    })
+                }), "catia_native_legacy_strings")?;
+            let integer_values = crate::resource::try_collect_vec(ctx,
+                run.integer_values.into_iter().map(|value| -> Result<_, CodecError> {
+                    Ok(CatiaLegacyIntegerValue {
+                        id: crate::resource::format_retained(ctx,
+                            format_args!("catia:legacy:integer#{index:08}-{:016}", value.offset),
+                            "catia_native_legacy_integer_id")?,
+                        byte_offset: value.offset as u64,
+                        entity_id: value.entity_id,
+                        encoding: match value.encoding {
+                            legacy_entity::LegacyIntegerEncoding::Inline =>
+                                CatiaLegacyIntegerEncoding::Inline,
+                            legacy_entity::LegacyIntegerEncoding::WideI32 =>
+                                CatiaLegacyIntegerEncoding::WideI32,
+                        },
+                        name_field: value.name_offset.map(|offset| offset as u64),
+                        name: value.name,
+                        value: value.value,
+                    })
+                }), "catia_native_legacy_integers")?;
+            let row = CatiaLegacyEntityRun {
+                id,
+                byte_offset: byte_offset as u64,
+                byte_len: (run.catalog_offset - byte_offset) as u64,
+                catalog_offset: run.catalog_offset as u64,
+                schema_program,
                 outer_container: None,
                 identities,
-                role_selectors: run
-                    .role_selectors
-                    .into_iter()
-                    .map(|role| CatiaLegacyRoleSelector {
-                        byte_offset: role.offset as u64,
-                        entity_id: role.entity_id,
-                        name: role.name,
-                        encoding: match role.encoding {
-                            legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
-                                CatiaLegacyRoleSelectorEncoding::FixedU32
-                            }
-                            legacy_entity::LegacyRoleSelectorEncoding::Paged => {
-                                CatiaLegacyRoleSelectorEncoding::Paged
-                            }
-                        },
-                        selector: role.selector,
-                        field_code: role.field_code,
-                    })
-                    .collect(),
-                text_fields: run
-                    .text_fields
-                    .into_iter()
-                    .map(|field| CatiaLegacyTextField {
-                        byte_offset: field.offset as u64,
-                        entity_id: field.entity_id,
-                        encoding: match field.encoding {
-                            legacy_entity::LegacyTextEncoding::U8InclusiveLength => {
-                                CatiaLegacyTextEncoding::U8InclusiveLength
-                            }
-                            legacy_entity::LegacyTextEncoding::ZeroU32Length => {
-                                CatiaLegacyTextEncoding::ZeroU32Length
-                            }
-                            legacy_entity::LegacyTextEncoding::U8InclusiveLengthE3RoleTail => {
-                                CatiaLegacyTextEncoding::U8InclusiveLengthE3RoleTail
-                            }
-                        },
-                        role: field.role.map(|role| CatiaLegacyRoleSelector {
-                            byte_offset: role.offset as u64,
-                            entity_id: role.entity_id,
-                            name: role.name,
-                            encoding: match role.encoding {
-                                legacy_entity::LegacyRoleSelectorEncoding::FixedU32 => {
-                                    CatiaLegacyRoleSelectorEncoding::FixedU32
-                                }
-                                legacy_entity::LegacyRoleSelectorEncoding::Paged => {
-                                    CatiaLegacyRoleSelectorEncoding::Paged
-                                }
-                            },
-                            selector: role.selector,
-                            field_code: role.field_code,
-                        }),
-                        value: field.value,
-                    })
-                    .collect(),
-                schema_fields: run
+                role_selectors,
+                text_fields,
+                schema_fields: crate::resource::collect_vec(ctx, run
                     .schema_fields
                     .into_iter()
                     .map(|field| CatiaLegacySchemaField {
@@ -7178,40 +7239,9 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         boundary_role_byte_offset: field.boundary_role_offset as u64,
                         field_code: field.field_code,
                         payload: field.payload,
-                    })
-                    .collect(),
-                relations: run
-                    .relations
-                    .into_iter()
-                    .map(|relation| {
-                        let parameter = |parameter: legacy_entity::LegacyRelationParameter| {
-                            CatiaLegacyRelationParameter {
-                                parameter: parameter.parameter,
-                                value_type: parameter.value_type,
-                            }
-                        };
-                        CatiaLegacyRelation {
-                            entity_id: relation.entity_id,
-                            body_selector: relation.body_selector,
-                            parameter_selector: relation.parameter_selector,
-                            parameter_entity_id: relation.parameter_entity_id,
-                            expression_offset: relation.expression_offset as u64,
-                            expression: relation.expression,
-                            signature_offset: relation.signature_offset as u64,
-                            type_signature: relation.type_signature,
-                            inputs: relation
-                                .signature
-                                .inputs
-                                .iter()
-                                .cloned()
-                                .map(parameter)
-                                .collect(),
-                            output: relation.signature.output().cloned().map(parameter),
-                            result_type: relation.signature.result_type().to_owned(),
-                        }
-                    })
-                    .collect(),
-                synchronous_states: run
+                    }), "catia_native_legacy_schema_fields")?,
+                relations,
+                synchronous_states: crate::resource::collect_vec(ctx, run
                     .synchronous_states
                     .into_iter()
                     .map(|state| CatiaLegacyRelationSynchronousState {
@@ -7219,9 +7249,8 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                         entity_id: state.entity_id,
                         selector: state.selector,
                         synchronous: state.synchronous,
-                    })
-                    .collect(),
-                type_descriptors: run
+                    }), "catia_native_legacy_synchronous_states")?,
+                type_descriptors: crate::resource::collect_vec(ctx, run
                     .type_descriptors
                     .into_iter()
                     .map(|descriptor| CatiaLegacyTypeDescriptor {
@@ -7235,70 +7264,14 @@ fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
                                 CatiaLegacyTypeValue::Selector { value }
                             }
                         },
-                    })
-                    .collect(),
-                scalar_values: run
-                    .scalar_values
-                    .into_iter()
-                    .map(|value| CatiaLegacyScalarValue {
-                        id: format!("catia:legacy:scalar#{index:08}-{:016}", value.offset),
-                        byte_offset: value.offset as u64,
-                        entity_id: value.entity_id,
-                        encoding: match value.encoding {
-                            legacy_entity::LegacyScalarEncoding::Named84 => {
-                                CatiaLegacyScalarEncoding::Named84
-                            }
-                            legacy_entity::LegacyScalarEncoding::Standalone85 => {
-                                CatiaLegacyScalarEncoding::Standalone85
-                            }
-                        },
-                        name_field: value.name_offset.map(|offset| offset as u64),
-                        name: value.name,
-                        evaluation: match value.evaluation {
-                            legacy_entity::LegacyScalarEvaluation::Value(bits) => {
-                                CatiaLegacyScalarEvaluation::Value { bits }
-                            }
-                            legacy_entity::LegacyScalarEvaluation::Unset => {
-                                CatiaLegacyScalarEvaluation::Unset
-                            }
-                        },
-                    })
-                    .collect(),
-                string_values: run
-                    .string_values
-                    .into_iter()
-                    .map(|value| CatiaLegacyStringValue {
-                        id: format!("catia:legacy:string#{index:08}-{:016}", value.offset),
-                        byte_offset: value.offset as u64,
-                        entity_id: value.entity_id,
-                        name_field: value.name_offset.map(|offset| offset as u64),
-                        name: value.name,
-                        value: value.value,
-                    })
-                    .collect(),
-                integer_values: run
-                    .integer_values
-                    .into_iter()
-                    .map(|value| CatiaLegacyIntegerValue {
-                        id: format!("catia:legacy:integer#{index:08}-{:016}", value.offset),
-                        byte_offset: value.offset as u64,
-                        entity_id: value.entity_id,
-                        encoding: match value.encoding {
-                            crate::legacy_entity::LegacyIntegerEncoding::Inline => {
-                                CatiaLegacyIntegerEncoding::Inline
-                            }
-                            crate::legacy_entity::LegacyIntegerEncoding::WideI32 => {
-                                CatiaLegacyIntegerEncoding::WideI32
-                            }
-                        },
-                        name_field: value.name_offset.map(|offset| offset as u64),
-                        name: value.name,
-                        value: value.value,
-                    })
-                    .collect(),
-            }
-        })
-        .collect()
+                    }), "catia_native_legacy_type_descriptors")?,
+                scalar_values,
+                string_values,
+                integer_values,
+            };
+            crate::resource::push(ctx, &mut converted, row, "catia_native_legacy_runs")?;
+    }
+    Ok(converted)
 }
 
 pub(crate) fn legacy_evaluated_value_name<'a>(
@@ -9618,7 +9591,7 @@ impl CatiaNative {
         }
         let preview_images = preview_views(ctx, &finjpl_segments)?;
         let external_references = external_reference_views(ctx, &finjpl_segments)?;
-        let mut legacy_entity_runs = legacy_entity_runs(bytes);
+        let mut legacy_entity_runs = legacy_entity_runs(ctx, bytes)?;
         for run in &mut legacy_entity_runs {
             run.outer_container = outer_directory
                 .as_ref()

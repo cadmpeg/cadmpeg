@@ -23,6 +23,31 @@ mod transfer;
 
 use crate::container;
 
+#[test]
+fn void_relation_result_type_refuses_retained_limit() {
+    let signature = super::LegacyRelationSignature {
+        inputs: Vec::new(),
+        result: super::LegacyRelationResult::Void {
+            output: super::LegacyRelationParameter {
+                parameter: "#2_".to_string(),
+                value_type: "Length".to_string(),
+            },
+        },
+    };
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        signature.clone().into_parts(ctx)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_legacy_void_result_type"));
+    let (inputs, output, result_type) = crate::test_support::with_service_context(|ctx| {
+        signature.into_parts(ctx)
+    })
+    .expect("service profile admits relation result type");
+    assert!(inputs.is_empty());
+    assert_eq!(output.expect("void relation has output").parameter, "#2_");
+    assert_eq!(result_type, "VoidType");
+}
+
 fn identity(bytes: &mut Vec<u8>, entity_id: u32) {
     identity_with_lead(bytes, entity_id, 0x81);
 }

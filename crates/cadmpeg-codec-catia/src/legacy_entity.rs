@@ -145,6 +145,21 @@ pub(crate) struct LegacyRelationSignature {
 }
 
 impl LegacyRelationSignature {
+    pub(crate) fn into_parts(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<(Vec<LegacyRelationParameter>, Option<LegacyRelationParameter>, String),
+        cadmpeg_core::CodecError> {
+        let (output, result_type) = match self.result {
+            LegacyRelationResult::Void { output } => (
+                Some(output),
+                crate::resource::copy_retained_str(ctx, "VoidType", "catia_legacy_void_result_type")?,
+            ),
+            LegacyRelationResult::Typed(result_type) => (None, result_type),
+        };
+        Ok((self.inputs, output, result_type))
+    }
+
     pub(crate) fn output(&self) -> Option<&LegacyRelationParameter> {
         match &self.result {
             LegacyRelationResult::Void { output } => Some(output),
