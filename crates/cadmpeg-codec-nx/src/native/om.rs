@@ -591,13 +591,14 @@ pub(super) enum ExpressionUnit {
 const INCH_TO_MILLIMETERS: f64 = 25.4;
 
 impl ExpressionUnit {
-    pub(super) fn property_name(&self) -> String {
-        match self {
-            Self::Millimeter => "millimeter".to_string(),
-            Self::Inch => "inch".to_string(),
-            Self::Degree => "degree".to_string(),
-            Self::Native(unit) => unit.clone(),
-        }
+    pub(super) fn property_name(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        let name = match self {
+            Self::Millimeter => "millimeter",
+            Self::Inch => "inch",
+            Self::Degree => "degree",
+            Self::Native(unit) => unit.as_str(),
+        };
+        copy_om_retained_text(ctx, name, "NX expression unit property")
     }
 }
 
@@ -6537,13 +6538,14 @@ mod tests {
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(ir.model.parameters[2].value, None);
@@ -6575,13 +6577,14 @@ mod tests {
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert!(ir.model.parameters[2].dependencies.is_empty());
@@ -6629,13 +6632,14 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(
@@ -6718,13 +6722,14 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(ir.model.features.len(), 2);
@@ -6843,13 +6848,14 @@ mod tests {
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
@@ -6903,13 +6909,14 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
 
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &expressions,
             &[],
             &[],
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(
@@ -6996,13 +7003,14 @@ mod tests {
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &[expression],
             &[],
             &uses,
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
         assert_eq!(
             ir.model.parameters[0].properties["consumer.0"],
@@ -7046,13 +7054,14 @@ mod tests {
         ];
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &[expression],
             &[],
             &uses,
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
 
         assert_eq!(
@@ -7091,13 +7100,14 @@ mod tests {
         };
         let mut ir = cadmpeg_ir::CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        crate::native::attach::attach_expression_parameters(
+        crate::test_support::with_decode_context(|ctx| crate::native::attach::attach_expression_parameters(
+            ctx,
             &mut ir,
             &[expression],
             &[],
             std::slice::from_ref(&parameter_use),
             &mut annotations,
-        )
+        ))
         .expect("valid exactness fields");
         let parameter_owners = ir
             .model

@@ -423,6 +423,7 @@ pub(super) fn attach(
         }
     }
     attach_expression_parameters(
+        ctx,
         ir,
         &model.om.expressions,
         &model.om.expression_declarations,
@@ -9085,6 +9086,7 @@ fn body_writes_match_boolean_target(
 }
 
 pub(super) fn attach_expression_parameters(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     expressions: &[crate::native::om::Expression],
     declarations: &[crate::native::om::ExpressionDeclaration],
@@ -9289,7 +9291,7 @@ pub(super) fn attach_expression_parameters(
                 crate::native::om::ExpressionUnit::Native(_) => None,
             });
             let mut properties = BTreeMap::new();
-            properties.insert("unit".to_string(), expression.unit.property_name());
+            properties.insert("unit".to_string(), expression.unit.property_name(ctx)?);
             annotations
                 .derived(id.as_str(), "properties")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
