@@ -26,6 +26,7 @@ mod hem_allocation;
 mod reference_assignment_allocation;
 mod radius_allocation;
 mod transition_recipe_allocation;
+mod partial_historical_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -1238,7 +1239,9 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         &cadmpeg_ir::identity_key!("feature"),
         state.clone(),
         "group",
+        None,
     )
+    .unwrap()
     .expect("mixed proof state");
     assert_eq!(
         selection,
@@ -1259,7 +1262,9 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
         &cadmpeg_ir::identity_key!("feature"),
         FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
         "group",
+        None,
     )
+    .unwrap()
     .is_none());
     assert_eq!(
         partial_historical_edge_selection(
@@ -1269,7 +1274,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             FeatureInputTopologyId::mint("test:model:feature-input#state")
                 .expect("identity grammar"),
             "group",
-        ),
+            None,
+        ).unwrap(),
         None
     );
 }

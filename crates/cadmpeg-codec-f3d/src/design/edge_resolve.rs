@@ -564,13 +564,12 @@ fn resolved_edge_group_with_transition_chain(
     };
 
     let feature_key = feature_id.key();
-    let unmatched_selection = |state_id: Option<i64>| {
+    let unmatched_selection = |state_id: Option<i64>| -> Result<EdgeSelection, CodecError> {
         if group.lost_edge_references.is_empty() {
-            EdgeSelection::Native(group.id.clone())
+            native_edge_selection(group, ctx)
         } else {
-            state_id
-                .and_then(|state_id| {
-                    partial_historical_edge_selection(
+            let Some(state_id) = state_id else { return Ok(EdgeSelection::Unresolved); };
+            Ok(partial_historical_edge_selection(
                         group
                             .lost_edge_references
                             .iter()
@@ -579,9 +578,8 @@ fn resolved_edge_group_with_transition_chain(
                         &feature_key,
                         feature_input_topology_id(feature_id, state_id),
                         &group.id,
-                    )
-                })
-                .unwrap_or(EdgeSelection::Unresolved)
+                        ctx,
+                    )?.unwrap_or(EdgeSelection::Unresolved))
         }
     };
     let stream = native_stream(&group.id);
@@ -600,7 +598,7 @@ fn resolved_edge_group_with_transition_chain(
             .map(|member| &member.value)
             .any(|member| !member_ids.insert(*member))
         {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         }
         let matched_operands = members
             .iter()
@@ -616,13 +614,13 @@ fn resolved_edge_group_with_transition_chain(
             })
             .collect::<Option<Vec<_>>>();
         let Some(matched_operands) = matched_operands else {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         };
         if matched_operands
             .iter()
             .any(|operand| operand.surface_patch_recipe_structure.is_none())
         {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         }
         let state_id = previous_state_id.or_else(|| {
             let mut states = matched_operands
@@ -636,14 +634,14 @@ fn resolved_edge_group_with_transition_chain(
             .then_some(state_id)
         });
         let Some(state_id) = state_id else {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         };
         let Some(edges) = matched_operands
             .iter()
             .map(|operand| operand.resolved_edge_slot)
             .collect::<Option<Vec<_>>>()
         else {
-            return Ok(unmatched_selection(Some(state_id)));
+            return unmatched_selection(Some(state_id));
         };
         let mut resolved_edges = Vec::new();
         for edge_slot in edges {
@@ -652,7 +650,7 @@ fn resolved_edge_group_with_transition_chain(
             }
         }
         if resolved_edges.is_empty() {
-            return Ok(unmatched_selection(Some(state_id)));
+            return unmatched_selection(Some(state_id));
         }
         return Ok(EdgeSelection::historical(
             feature_input_topology_id(feature_id, state_id),
@@ -711,7 +709,7 @@ fn resolved_edge_group_with_transition_chain(
                 })
             });
     if has_recipe_operands && has_unstructured_recipe_operand {
-        return Ok(unmatched_selection(previous_state_id));
+        return unmatched_selection(previous_state_id);
     }
     let has_standard_recipe_operands =
         members
@@ -832,10 +830,10 @@ fn resolved_edge_group_with_transition_chain(
                 || all_member_identities_are_lost)
     }) {
         if identity_matches.is_empty() {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         }
         let Some(previous_state_id) = previous_state_id else {
-            return Ok(unmatched_selection(None));
+            return unmatched_selection(None);
         };
         let state = feature_input_topology_id(feature_id, previous_state_id);
         if identity_matches.iter().all(|operand| {
@@ -930,20 +928,23 @@ fn resolved_edge_group_with_transition_chain(
             return Ok(EdgeSelection::historical(state, edges, group.id.clone())
                 .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
         }
-        return Ok(partial_historical_edge_selection(
+        return match partial_historical_edge_selection(
             members,
             previous_state_id,
             &feature_key,
             state,
             &group.id,
-        )
-        .unwrap_or_else(|| EdgeSelection::Native(group.id.clone())));
+            ctx,
+        )? {
+            Some(selection) => Ok(selection),
+            None => native_edge_selection(group, ctx),
+        };
     }
     let mut matched_operands = Vec::with_capacity(members.len());
     let mut member_identities = HashSet::new();
     for member in members.iter().map(|member| &member.value) {
         if !member_identities.insert(*member) {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         }
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
@@ -951,10 +952,10 @@ fn resolved_edge_group_with_transition_chain(
                 && operand.record_index() == *member
         });
         let Some(operand) = matches.next() else {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         };
         if matches.next().is_some() {
-            return Ok(unmatched_selection(previous_state_id));
+            return unmatched_selection(previous_state_id);
         }
         matched_operands.push(operand);
     }
@@ -1051,7 +1052,7 @@ fn resolved_edge_group_with_transition_chain(
         };
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
-            return Ok(lost_selection());
+            return lost_selection();
         }
         if has_standard_recipe_operands {
             return Ok(EdgeSelection::Native(group.id.clone()));
@@ -1071,7 +1072,7 @@ fn resolved_edge_group_with_transition_chain(
             })
             .collect::<Option<Vec<_>>>();
         let Some(combined_edges) = combined_edges else {
-            return Ok(unmatched_selection(Some(previous_state_id)));
+            return unmatched_selection(Some(previous_state_id));
         };
         if combined_edges.iter().all(Option::is_some) {
             let mut edges = Vec::new();
@@ -1098,14 +1099,17 @@ fn resolved_edge_group_with_transition_chain(
                     .then_some((operand.id.as_str(), resolved))
             })
             .collect::<Vec<_>>();
-        return Ok(partial_historical_edge_selection(
+        return match partial_historical_edge_selection(
             partial_members,
             previous_state_id,
             &feature_key,
             state,
             &group.id,
-        )
-        .unwrap_or_else(|| EdgeSelection::Native(group.id.clone())));
+            ctx,
+        )? {
+            Some(selection) => Ok(selection),
+            None => native_edge_selection(group, ctx),
+        };
     };
     let mut edges = Vec::new();
     for edge_slot in resolved_slots {
@@ -1323,7 +1327,8 @@ fn partial_historical_edge_selection<'a>(
     feature_key: &cadmpeg_ir::ids::IdentityKey,
     state: cadmpeg_ir::ids::FeatureInputTopologyId,
     native: &str,
-) -> Option<cadmpeg_ir::features::EdgeSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::EdgeSelection>, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
 
     let mut edges = Vec::new();
@@ -1331,32 +1336,35 @@ fn partial_historical_edge_selection<'a>(
     for (identity, edge) in members {
         if let Some(edge) = edge {
             if !edges.contains(&edge) {
-                edges.push(edge);
+                push_edge_item(ctx, &mut edges, edge, "f3d partial edge slot")?;
             }
         } else {
-            unresolved.push(identity.to_owned());
+            let id = copy_edge_text(ctx, identity, "f3d partial unresolved id")?;
+            push_edge_item(ctx, &mut unresolved, id, "f3d partial unresolved member")?;
         }
     }
     if unresolved.is_empty() || edges.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(
-        EdgeSelection::historical_partial(
+    let mut historical_edges = Vec::new();
+    for edge_slot in edges {
+        let edge = ids::history_input_edge_id(
+            &ids::history_input_prefix(feature_key, previous_state_id), edge_slot);
+        push_edge_item(ctx, &mut historical_edges, edge, "f3d partial historical edge")?;
+    }
+    let native_id = copy_edge_text(ctx, native, "f3d partial native id")?;
+    Ok(Some(
+        match EdgeSelection::historical_partial(
             state,
-            edges
-                .into_iter()
-                .map(|edge_slot| {
-                    ids::history_input_edge_id(
-                        &ids::history_input_prefix(feature_key, previous_state_id),
-                        edge_slot,
-                    )
-                })
-                .collect(),
+            historical_edges,
             unresolved,
-            native.to_owned(),
-        )
-        .unwrap_or_else(|_| EdgeSelection::Native(native.to_owned())),
-    )
+            native_id,
+        ) {
+            Ok(selection) => selection,
+            Err(_) => EdgeSelection::Native(copy_edge_text(ctx, native,
+                "f3d partial native fallback id")?),
+        },
+    ))
 }
 
 fn context_only_edge_group_candidates<'a>(
