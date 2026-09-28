@@ -8,7 +8,7 @@ use crate::feature::definitions::positional_saved_section;
 use crate::feature::definitions::saved_arc_scalar;
 use crate::feature::definitions::saved_circular_entities;
 use crate::feature::definitions::saved_conic_entities;
-use crate::feature::definitions::saved_line_entities;
+use crate::feature::definitions::saved_line_entities as parse_saved_line_entities;
 use crate::feature::definitions::saved_positional_generated_entities;
 use crate::feature::definitions::saved_section as parse_saved_section;
 use crate::feature::definitions::saved_section_scalar;
@@ -55,6 +55,71 @@ fn saved_spline_entities(
         parse_saved_spline_entities(ctx, payload, start, end, cache)
     })
     .expect("saved spline entities admitted")
+}
+
+fn saved_line_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_saved_line_entities(ctx, payload, start, end, cache)
+    })
+    .expect("saved line entities admitted")
+}
+
+const SAVED_LINE_LIMIT_INPUT: &[u8] =
+    b"\xe0\x00entity(line)\0\xf7\x2a\xeb\x01\x02\x03\x04\x05\x07\xe2\x0f\x0f\x0f\xe3";
+
+fn saved_line_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(SAVED_LINE_LIMIT_INPUT, &arena, &policy)
+        .expect("saved line fits root policy");
+    parse_saved_line_entities(
+        &ctx,
+        SAVED_LINE_LIMIT_INPUT,
+        0,
+        SAVED_LINE_LIMIT_INPUT.len(),
+        &scalar::ScalarCache::default(),
+    )
+}
+
+macro_rules! saved_line_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(saved_line_with_limits($limit, u64::MAX),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == $operation));
+            let entities = saved_line_with_limits(4, u64::MAX).expect("saved line admitted");
+            let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
+                panic!("saved line");
+            };
+            assert_eq!(line.references, [42]);
+            assert_eq!(line.attributes, [[1, 2, 3, 4, 5]]);
+        }
+    };
+}
+
+saved_line_collection_limit_test!(saved_line_references_refuse_before_vec_growth, 0, "creo saved line references");
+saved_line_collection_limit_test!(saved_line_attributes_refuse_before_vec_growth, 1, "creo saved line attributes");
+saved_line_collection_limit_test!(saved_line_block_refuses_before_entity_append, 2, "creo saved line block entities");
+saved_line_collection_limit_test!(saved_line_group_refuses_before_entity_extend, 3, "creo saved line entities");
+
+#[test]
+fn saved_line_body_refuses_before_retained_copy() {
+    assert!(matches!(saved_line_with_limits(4, 12), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved line body"));
+    assert_eq!(saved_line_with_limits(4, 13).expect("saved line admitted").len(), 1);
 }
 
 const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
