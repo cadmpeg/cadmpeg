@@ -557,13 +557,13 @@ fn parameter_curve_carrier_id(
 }
 
 fn surface_parameter_bound_intervals(
-    index: &ModelIndex<'_>,
+    bounds: Option<[Option<f64>; 4]>,
     surface_id: &SurfaceId,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     precision: RealPrecision,
 ) -> Option<[Option<DeclaredInterval>; 4]> {
-    let bounds = surface_parameter_bounds(index, surface_id)?;
+    let bounds = bounds?;
     let mut intervals = bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0)));
     let Some(sequence) = native_sequence_from_id(surface_id.as_str(), "iges:model:surface#D")
     else {
@@ -1521,16 +1521,27 @@ fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
 fn surface_parameter_bounds(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
-) -> Option<[Option<f64>; 4]> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[Option<f64>; 4]>, CodecError> {
     fn visit(
         index: &ModelIndex<'_>,
         surface_id: &SurfaceId,
         visiting: &mut BTreeSet<SurfaceId>,
-    ) -> Option<[Option<f64>; 4]> {
-        if !visiting.insert(surface_id.clone()) {
-            return None;
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<[Option<f64>; 4]>, CodecError> {
+        let _nested = ctx.enter_nested("iges support-bound surface chain")?;
+        if visiting.contains(surface_id) {
+            return Ok(None);
         }
-        let procedural = index.procedural_surface_for_surface(surface_id.as_str())?;
+        let visited_id = copy_optional_identity(
+            Some(ctx), surface_id.as_str(), "iges support-bound visiting surface ID",
+        )?;
+        insert_optional_btree_set(
+            Some(ctx), visiting, visited_id, "iges support-bound visiting surface nodes",
+        )?;
+        let Some(procedural) = index.procedural_surface_for_surface(surface_id.as_str()) else {
+            return Ok(None);
+        };
         let bounds = match procedural.definition() {
             ProceduralSurfaceDefinition::Ruled { .. } => procedural
                 .record_bounds()
@@ -1557,7 +1568,7 @@ fn surface_parameter_bounds(
             _ => procedural.record_bounds().map(RecordBounds::get),
         };
         if let Some(bounds) = bounds {
-            return Some(bounds);
+            return Ok(Some(bounds));
         }
         let support = match procedural.definition() {
             ProceduralSurfaceDefinition::Offset(definition_payload) => {
@@ -1569,12 +1580,12 @@ fn surface_parameter_bounds(
                 support
             }
             ProceduralSurfaceDefinition::Replica { source, .. } => source,
-            _ => return None,
+            _ => return Ok(None),
         };
-        visit(index, support, visiting)
+        visit(index, support, visiting, ctx)
     }
 
-    visit(index, surface_id, &mut BTreeSet::new())
+    visit(index, surface_id, &mut BTreeSet::new(), ctx)
 }
 
 fn pcurves_agree(
@@ -2129,9 +2140,9 @@ pub(super) fn project(
         let face_id = crate::ids::face(&stem);
         sequences.record_face(&face_id, entry.sequence, Some(ctx))?;
         let mut candidate_boundary_vertex_derivations = Vec::new();
-        let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
+        let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id, ctx)?;
         let support_parameter_intervals = surface_parameter_bound_intervals(
-            &carrier_index,
+            support_parameter_bounds,
             &surface_id,
             &entries,
             &records,
