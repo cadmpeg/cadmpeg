@@ -224,7 +224,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     pub(super) fn try_map_charged<U>(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut map: impl FnMut(T) -> Option<U>,
+        mut map: impl FnMut(T) -> Result<Option<U>, cadmpeg_core::CodecError>,
     ) -> Result<Option<CountedIndexMembers<U, RESERVED>>, cadmpeg_core::CodecError> {
         let count = self.0.len();
         let count_u64 = cadmpeg_core::decode::u64_from_index(count);
@@ -241,7 +241,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
             .try_reserve_exact(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         for member in self.0 {
-            let Some(value) = map(member) else {
+            let Some(value) = map(member)? else {
                 return Ok(None);
             };
             mapped.push(value);

@@ -4714,16 +4714,23 @@ pub(super) fn data_block_control_index_values(
 }
 
 fn control_index_data_block(
+    ctx: &DecodeContext<'_>,
     section_ordinal: usize,
     block_count: usize,
     value: u32,
-) -> Option<String> {
-    let ordinal = usize::try_from(value)
-        .ok()
-        .filter(|ordinal| *ordinal < block_count)?;
-    Some(format!(
-        "nx:om-data-blocks-{section_ordinal}:block#{ordinal}"
-    ))
+) -> Result<Option<String>, CodecError> {
+    let Some(ordinal) = usize::try_from(value).ok().filter(|ordinal| *ordinal < block_count) else {
+        return Ok(None);
+    };
+    retained_om_index_id(
+        ctx,
+        "nx:om-data-blocks-",
+        section_ordinal,
+        ":block#",
+        cadmpeg_core::decode::u64_from_index(ordinal),
+        "NX control index data block",
+    )
+    .map(Some)
 }
 
 fn column_storage_block_at(
@@ -6750,10 +6757,10 @@ mod tests {
         .unwrap()
         .is_none());
         assert_eq!(
-            super::control_index_data_block(2, 700, 496).as_deref(),
+            crate::test_support::with_decode_context(|ctx| super::control_index_data_block(ctx, 2, 700, 496)).unwrap().as_deref(),
             Some("nx:om-data-blocks-2:block#496")
         );
-        assert!(super::control_index_data_block(2, 700, 700).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| super::control_index_data_block(ctx, 2, 700, 700)).unwrap().is_none());
     }
 
     fn control_form_route_refusal(

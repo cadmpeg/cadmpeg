@@ -75,9 +75,9 @@ impl<O> CountedLane<(), O> {
     pub(crate) fn try_resolve_charged<T>(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,
+        mut resolve: impl FnMut(CompactIndexAtom) -> Result<Option<T>, cadmpeg_core::CodecError>,
     ) -> Result<Option<CountedLane<T, O>>, cadmpeg_core::CodecError> {
-        let Some(target) = resolve(self.anchor.atom) else {
+        let Some(target) = resolve(self.anchor.atom)? else {
             return Ok(None);
         };
         let anchor = CompactIndexTarget {
@@ -85,10 +85,13 @@ impl<O> CountedLane<(), O> {
             target,
         };
         let Some(members) = self.members.try_map_charged(ctx, |index| {
-            Some(CompactIndexTarget {
+            Ok(Some(CompactIndexTarget {
                 atom: index.atom,
-                target: resolve(index.atom)?,
-            })
+                target: match resolve(index.atom)? {
+                    Some(target) => target,
+                    None => return Ok(None),
+                },
+            }))
         })?
         else {
             return Ok(None);
@@ -172,22 +175,25 @@ impl<T> AbrLane<T, usize> {
 impl<O> AbrLane<(), O> {
     pub(crate) fn try_resolve<T>(
         self,
-        mut resolve: impl FnMut(CompactIndexAtom) -> Option<T>,
-    ) -> Option<AbrLane<T, O>> {
+        mut resolve: impl FnMut(CompactIndexAtom) -> Result<Option<T>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<AbrLane<T, O>>, cadmpeg_core::CodecError> {
         let mut slots = std::array::from_fn(|_| None);
         for (slot, source) in slots.iter_mut().zip(self.slots) {
             *slot = match source {
                 Some(index) => Some(CompactIndexTarget {
                     atom: index.atom,
-                    target: resolve(index.atom)?,
+                    target: match resolve(index.atom)? {
+                        Some(target) => target,
+                        None => return Ok(None),
+                    },
                 }),
                 None => None,
             };
         }
-        Some(AbrLane {
+        Ok(Some(AbrLane {
             offset: self.offset,
             slots,
-        })
+        }))
     }
 }
 
