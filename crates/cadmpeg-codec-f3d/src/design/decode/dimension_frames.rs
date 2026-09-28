@@ -51,6 +51,71 @@ pub(crate) struct DimensionDecodeInputs<'a> {
     pub(crate) curves: &'a [SketchCurveIdentity],
 }
 
+fn dimension_parameter_index<'a>(
+    ctx: &DecodeContext<'_>,
+    parameters: &'a [DesignParameter],
+    operation: &'static str,
+    allocation_operation: &'static str,
+) -> Result<HashMap<(&'a str, u32), &'a DesignParameter>, CodecError> {
+    let mut index = HashMap::new();
+    for parameter in parameters {
+        let Some(stream) = native_stream(&parameter.id) else { continue };
+        ctx.charge_collection_items(1, operation)?;
+        index.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(allocation_operation, 0, 1)
+        })?;
+        index.insert((stream, parameter.record_index), parameter);
+    }
+    Ok(index)
+}
+
+fn dimension_companion_keys<'a>(
+    ctx: &DecodeContext<'_>,
+    owners: &'a [DesignParameterOwner],
+    parameters: &HashMap<(&str, u32), &DesignParameter>,
+    operation: &'static str,
+    allocation_operation: &'static str,
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+    let mut keys = HashSet::new();
+    for owner in owners {
+        let Some(stream) = native_stream(owner.id()) else { continue };
+        if parameters
+            .get(&(stream, owner.parameter_record_index()))
+            .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
+        {
+            ctx.charge_collection_items(1, operation)?;
+            keys.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(allocation_operation, 0, 1)
+            })?;
+            keys.insert((stream, owner.companion_record_index()));
+        }
+    }
+    Ok(keys)
+}
+
+fn dimension_geometry_indices(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> Result<HashSet<u32>, CodecError> {
+    let mut indices = HashSet::new();
+    for index in points.iter()
+        .filter(|point| native_stream(&point.id) == Some(stream))
+        .map(|point| point.record_index)
+        .chain(curves.iter()
+            .filter(|curve| native_stream(&curve.id) == Some(stream))
+            .map(|curve| curve.record_index))
+    {
+        ctx.charge_collection_items(1, "f3d dimension geometry indices")?;
+        indices.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension geometry index allocation", 0, 1)
+        })?;
+        indices.insert(index);
+    }
+    Ok(indices)
+}
+
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
 pub(crate) fn decode_dimension_recipe_records(
@@ -61,15 +126,10 @@ pub(crate) fn decode_dimension_recipe_records(
     companions: &[DesignParameterCompanion],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
-    let mut parameter_index = HashMap::new();
-    for parameter in parameters {
-        let Some(stream) = native_stream(&parameter.id) else { continue };
-        ctx.charge_collection_items(1, "f3d dimension recipe parameter index")?;
-        parameter_index.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d dimension recipe parameter index allocation", 0, 1)
-        })?;
-        parameter_index.insert((stream, parameter.record_index), parameter);
-    }
+    let parameter_index = dimension_parameter_index(
+        ctx, parameters, "f3d dimension recipe parameter index",
+        "f3d dimension recipe parameter index allocation",
+    )?;
     let mut dimension_owners = HashSet::new();
     for owner in owners {
         let Some(stream) = native_stream(owner.id()) else { continue };
@@ -981,52 +1041,26 @@ pub(crate) fn decode_dimension_locus_pairs(
         curves,
         ..
     } = inputs;
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_companions = owners
-        .iter()
-        .filter_map(|owner| {
-            let scope = native_stream(owner.id())?;
-            parameters
-                .get(&(scope, owner.parameter_record_index()))
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-                .then_some((scope.to_owned(), owner.companion_record_index()))
-        })
-        .collect::<HashSet<_>>();
+    let parameters = dimension_parameter_index(
+        ctx, parameters, "f3d dimension locus parameter index",
+        "f3d dimension locus parameter index allocation",
+    )?;
+    let dimension_companions = dimension_companion_keys(
+        ctx, owners, &parameters, "f3d dimension locus companions",
+        "f3d dimension locus companion allocation",
+    )?;
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         dimension_companions
-            .contains(&(scope.to_owned(), companion.record_index()))
+            .contains(&(scope, companion.record_index()))
             .then_some((companion, scope))
     }) {
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && companion
-                    .id()
-                    .starts_with(&ids::native_scope_prefix(&entry.name))
-        });
+        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(scope))
-            .map(|point| point.record_index)
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(scope))
-                    .map(|curve| curve.record_index),
-            )
-            .collect::<HashSet<_>>();
+        let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
@@ -1048,7 +1082,10 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = ids::native_design_dimension_locus_pair_id(&entry.name, pair.byte_offset());
+        pair.id = design_record_id_charged(
+            ctx, &entry.name, ":design-dimension-locus-pair#", pair.byte_offset(),
+            "f3d dimension locus pair ID", "f3d dimension locus pair ID allocation",
+        )?;
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1058,6 +1095,10 @@ pub(crate) fn decode_dimension_locus_pairs(
             continue;
         };
         pair.governing_companion_record_index = governing_companion_record_index;
+        ctx.charge_collection_items(1, "f3d dimension locus pairs")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension locus pair allocation", 0, 1)
+        })?;
         out.push(pair);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1216,67 +1257,40 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         curves,
         ..
     } = inputs;
-    let parameters = parameters
+    let parameters = dimension_parameter_index(
+        ctx, parameters, "f3d dimension locus parameter index",
+        "f3d dimension locus parameter index allocation",
+    )?;
+    let dimension_companions = dimension_companion_keys(
+        ctx, owners, &parameters, "f3d dimension locus companions",
+        "f3d dimension locus companion allocation",
+    )?;
+    let mut typed_companions = HashSet::new();
+    for key in pairs
         .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_companions = owners
-        .iter()
-        .filter_map(|owner| {
-            let scope = native_stream(owner.id())?;
-            parameters
-                .get(&(scope, owner.parameter_record_index()))
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-                .then_some((scope.to_owned(), owner.companion_record_index()))
-        })
-        .collect::<HashSet<_>>();
-    let typed_companions = pairs
-        .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
-            ))
-        })
+        .filter_map(|pair| Some((native_stream(&pair.id)?, pair.companion_record_index)))
         .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
+            Some((native_stream(&group.id)?, group.companion_record_index))
         }))
-        .collect::<HashSet<_>>();
+    {
+        ctx.charge_collection_items(1, "f3d typed dimension companions")?;
+        typed_companions.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d typed dimension companion allocation", 0, 1)
+        })?;
+        typed_companions.insert(key);
+    }
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
-        let key = (scope.to_owned(), companion.record_index());
+        let key = (scope, companion.record_index());
         (dimension_companions.contains(&key) && !typed_companions.contains(&key))
             .then_some((companion, scope))
     }) {
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && companion
-                    .id()
-                    .starts_with(&ids::native_scope_prefix(&entry.name))
-        });
+        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(scope))
-            .map(|point| point.record_index)
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(scope))
-                    .map(|curve| curve.record_index),
-            )
-            .collect::<HashSet<_>>();
+        let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
@@ -1298,7 +1312,10 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = ids::native_design_dimension_null_locus_pair_id(&entry.name, pair.byte_offset());
+        pair.id = design_record_id_charged(
+            ctx, &entry.name, ":design-dimension-null-locus-pair#", pair.byte_offset(),
+            "f3d dimension null locus pair ID", "f3d dimension null locus pair ID allocation",
+        )?;
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1308,6 +1325,10 @@ pub(crate) fn decode_dimension_null_locus_pairs(
             continue;
         };
         pair.governing_companion_record_index = governing_companion_record_index;
+        ctx.charge_collection_items(1, "f3d dimension null locus pairs")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension null locus pair allocation", 0, 1)
+        })?;
         out.push(pair);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2002,52 +2023,26 @@ pub(crate) fn decode_dimension_locus_groups(
         curves,
         ..
     } = inputs;
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_companions = owners
-        .iter()
-        .filter_map(|owner| {
-            let scope = native_stream(owner.id())?;
-            parameters
-                .get(&(scope, owner.parameter_record_index()))
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-                .then_some((scope.to_owned(), owner.companion_record_index()))
-        })
-        .collect::<HashSet<_>>();
+    let parameters = dimension_parameter_index(
+        ctx, parameters, "f3d dimension locus parameter index",
+        "f3d dimension locus parameter index allocation",
+    )?;
+    let dimension_companions = dimension_companion_keys(
+        ctx, owners, &parameters, "f3d dimension locus companions",
+        "f3d dimension locus companion allocation",
+    )?;
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         dimension_companions
-            .contains(&(scope.to_owned(), companion.record_index()))
+            .contains(&(scope, companion.record_index()))
             .then_some((companion, scope))
     }) {
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && companion
-                    .id()
-                    .starts_with(&ids::native_scope_prefix(&entry.name))
-        });
+        let entry = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope);
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(scope))
-            .map(|point| point.record_index)
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(scope))
-                    .map(|curve| curve.record_index),
-            )
-            .collect::<HashSet<_>>();
+        let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
         let sketch_entities = entities
             .iter()
             .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
@@ -2066,30 +2061,39 @@ pub(crate) fn decode_dimension_locus_groups(
             continue;
         };
         let candidates = find_dimension_locus_groups(
+            ctx,
             bytes,
             start,
             end,
             companion.record_index(),
             &geometry_indices,
             &sketch_entities,
-        );
-        out.extend(candidates.into_iter().map(|mut group| {
-            group.id = ids::native_design_dimension_locus_group_id(&entry.name, group.byte_offset);
-            group
-        }));
+        )?;
+        for mut group in candidates {
+            group.id = design_record_id_charged(
+                ctx, &entry.name, ":design-dimension-locus-group#", group.byte_offset,
+                "f3d dimension locus group ID", "f3d dimension locus group ID allocation",
+            )?;
+            ctx.charge_collection_items(1, "f3d dimension locus groups")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension locus group allocation", 0, 1)
+            })?;
+            out.push(group);
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
 fn find_dimension_locus_groups(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-) -> Vec<DesignDimensionLocusGroup> {
+) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
     let parse = |at| {
         parse_dimension_locus_group(
             bytes,
@@ -2100,20 +2104,31 @@ fn find_dimension_locus_groups(
         )
         .filter(|group| group.next_byte_offset <= u64_from_index(end))
     };
-    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    if let Some(group) = parse(start) {
+        ctx.charge_collection_items(1, "f3d dimension locus group candidates")?;
+        candidates.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension locus group candidate allocation", 0, 1)
+        })?;
+        candidates.push(group);
+    }
     let mut position = start.saturating_add(1);
     while let Some(at) = next_indexed_record_offset(bytes, position) {
         if at >= end {
             break;
         }
         if let Some(group) = parse(at) {
+            ctx.charge_collection_items(1, "f3d dimension locus group candidates")?;
+            candidates.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension locus group candidate allocation", 0, 1)
+            })?;
             candidates.push(group);
         }
         position = at.saturating_add(1);
     }
     candidates.sort_by_key(|group| group.byte_offset);
     candidates.dedup_by_key(|group| group.byte_offset);
-    candidates
+    Ok(candidates)
 }
 
 pub(super) fn companion_owned_interval<'a>(
