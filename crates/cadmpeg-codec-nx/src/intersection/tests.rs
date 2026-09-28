@@ -77,6 +77,19 @@ fn intersection_chart_route_refuses_scoped_limit() {
 }
 
 #[test]
+fn intersection_solved_route_refuses_retained_limit() {
+    let stream = charted_intersection_curve_topology_partition_stream();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+        .unwrap();
+    assert!(matches!(crate::intersection::curves(&ctx, &stream, crate::intersection::ChartPointLayout::Xyz3),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
     use cadmpeg_ir::geometry::{
         pcurve::Pcurve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
