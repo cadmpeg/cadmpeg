@@ -2100,83 +2100,152 @@ pub(super) fn complete_ordered_compact_line_profile(
     ordered_compact_line_profile(ctx, lines)
 }
 
-pub(super) fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+pub(super) fn compact_line_region_addresses(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<Vec<u16>>, CodecError> {
     const NAME: &[u8] = b"moSketchRegion_c";
-    let matches = payload
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "scan SLDPRT compact region",
+    )?;
+    let mut matches = payload
         .windows(NAME.len())
         .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == NAME).then_some(offset))
-        .collect::<Vec<_>>();
-    let [offset] = matches.as_slice() else {
-        return None;
+        .filter_map(|(offset, bytes)| (bytes == NAME).then_some(offset));
+    let Some(offset) = matches.next() else {
+        return Ok(None);
     };
-    let header = offset.checked_add(NAME.len())?;
-    let region_token = View::u16_le_at(payload, header)?;
-    if region_token == 0 {
-        return None;
+    if matches.next().is_some() {
+        return Ok(None);
     }
-    let count = usize::from(View::u16_le_at(payload, header + 2)?);
+    let Some(header) = offset.checked_add(NAME.len()) else {
+        return Ok(None);
+    };
+    let Some(region_token) = View::u16_le_at(payload, header) else {
+        return Ok(None);
+    };
+    if region_token == 0 {
+        return Ok(None);
+    }
+    let Some(count) = View::u16_le_at(payload, header + 2).map(usize::from) else {
+        return Ok(None);
+    };
     if count < 3 {
-        return None;
+        return Ok(None);
     }
     // Each region entry consumes a 12-byte record from `header + 4` onward.
-    bounded_len(count as u64, 12, payload.len().saturating_sub(header + 4))?;
-    let mut addresses = Vec::with_capacity(count);
+    let Some(entries_start) = header.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(remaining) = payload.len().checked_sub(entries_start) else {
+        return Ok(None);
+    };
+    if bounded_len(count as u64, 12, remaining).is_none() {
+        return Ok(None);
+    }
+    let mut addresses = ctx.alloc_filled(count, 0u16, "collect SLDPRT compact region addresses")?;
     let mut entry_token = None;
     for index in 0..count {
-        let entry = header.checked_add(4 + index * 12)?;
-        let token = View::u16_le_at(payload, entry)?;
+        let Some(entry) = header.checked_add(4 + index * 12) else {
+            return Ok(None);
+        };
+        let Some(token) = View::u16_le_at(payload, entry) else {
+            return Ok(None);
+        };
         if !matches!(token, 0x80e1 | 0x8386 | 0xbc87)
             || entry_token.is_some_and(|existing| existing != token)
-            || payload.get(entry + 4..entry + 8)? != [0xff; 4]
-            || payload.get(entry + 8..entry + 12)? != [0; 4]
+            || payload.get(entry + 4..entry + 8) != Some(&[0xff; 4])
+            || payload.get(entry + 8..entry + 12) != Some(&[0; 4])
         {
-            return None;
+            return Ok(None);
         }
         entry_token = Some(token);
-        addresses.push(View::u16_le_at(payload, entry + 2)?);
+        let Some(address) = View::u16_le_at(payload, entry + 2) else {
+            return Ok(None);
+        };
+        addresses[index] = address;
     }
-    let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();
-    (addresses.iter().copied().collect::<HashSet<_>>() == expected).then_some(addresses)
+    ctx.charge_work(count as u64, "validate SLDPRT compact region addresses")?;
+    let mut seen = ctx.alloc_filled(count, false, "validate SLDPRT compact region addresses")?;
+    for address in &addresses {
+        let Some(index) = usize::from(*address).checked_sub(1).filter(|index| *index < count) else {
+            return Ok(None);
+        };
+        if seen[index] {
+            return Ok(None);
+        }
+        seen[index] = true;
+    }
+    Ok(Some(addresses))
 }
 
-pub(super) fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
-    let matches = (0..payload.len()).filter_map(|offset| {
-        let bytes = payload.get(offset..)?;
-        let count = usize::from(View::u16_le_at(bytes, 0)?);
-        if !(3..=64).contains(&count) {
-            return None;
+pub(super) fn compact_line_chain_addresses(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<Vec<u16>>, CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "scan SLDPRT compact line chain",
+    )?;
+    let mut selected = None;
+    for offset in 0..payload.len() {
+        let Some((bytes, count)) = (|| {
+            let bytes = payload.get(offset..)?;
+            let count = usize::from(View::u16_le_at(bytes, 0)?);
+            if !(3..=64).contains(&count) {
+                return None;
+            }
+            let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
+            let trailer = bytes.get(addresses_end..addresses_end.checked_add(40)?)?;
+            if View::u32_le_at(trailer, 0)? != 1
+                || trailer.get(4..6)? != [0, 0]
+                || View::u32_le_at(trailer, 6)? != u32::try_from(count + 2).ok()?
+                || trailer.get(10..14)? != [0xff; 4]
+                || trailer.get(14..22)?.iter().any(|byte| *byte != 0)
+                || View::u32_le_at(trailer, 22)? != u32::try_from(count + 1).ok()?
+                || View::u32_le_at(trailer, 26)? != u32::try_from(count + 1).ok()?
+                || trailer.get(30..36)? != [0xff, 0xfe, 0xff, 0, 0, 0]
+                || trailer.get(36..40)? != [0xff; 4]
+            {
+                return None;
+            }
+            Some((bytes, count))
+        })() else {
+            continue;
+        };
+        ctx.charge_work(count as u64, "validate SLDPRT compact line chain")?;
+        let mut addresses = ctx.alloc_filled(count, 0u16, "collect SLDPRT compact chain addresses")?;
+        let mut seen = [false; 64];
+        let mut valid = true;
+        for (index, address) in addresses.iter_mut().enumerate() {
+            let parsed = View::u32_le_at(bytes, 2 + index * 4)
+                .and_then(|value| u16::try_from(value).ok());
+            let Some(parsed) = parsed else {
+                valid = false;
+                break;
+            };
+            let Some(position) = usize::from(parsed).checked_sub(1).filter(|value| *value < count) else {
+                valid = false;
+                break;
+            };
+            if seen[position] {
+                valid = false;
+                break;
+            }
+            seen[position] = true;
+            *address = parsed;
         }
-        let addresses_end = 2usize.checked_add(count.checked_mul(4)?)?;
-        let trailer = bytes.get(addresses_end..addresses_end.checked_add(40)?)?;
-        if View::u32_le_at(trailer, 0)? != 1
-            || trailer.get(4..6)? != [0, 0]
-            || View::u32_le_at(trailer, 6)? != u32::try_from(count + 2).ok()?
-            || trailer.get(10..14)? != [0xff; 4]
-            || trailer.get(14..22)?.iter().any(|byte| *byte != 0)
-            || View::u32_le_at(trailer, 22)? != u32::try_from(count + 1).ok()?
-            || View::u32_le_at(trailer, 26)? != u32::try_from(count + 1).ok()?
-            || trailer.get(30..36)? != [0xff, 0xfe, 0xff, 0, 0, 0]
-            || trailer.get(36..40)? != [0xff; 4]
-        {
-            return None;
+        if !valid {
+            continue;
         }
-        let addresses = (0..count)
-            .filter_map(|index| {
-                let offset = 2 + index * 4;
-                u16::try_from(View::u32_le_at(bytes, offset)?).ok()
-            })
-            .collect::<Vec<_>>();
-        let expected = (1..=u16::try_from(count).ok()?).collect::<HashSet<_>>();
-        (addresses.len() == count && addresses.iter().copied().collect::<HashSet<_>>() == expected)
-            .then_some(addresses)
-    });
-    let mut matches = matches.collect::<Vec<_>>();
-    matches.dedup();
-    let [addresses] = matches.as_slice() else {
-        return None;
-    };
-    Some(addresses.clone())
+        match selected.as_ref() {
+            Some(previous) if previous != &addresses => return Ok(None),
+            Some(_) => {}
+            None => selected = Some(addresses),
+        }
+    }
+    Ok(selected)
 }
 
 #[cfg(test)]
