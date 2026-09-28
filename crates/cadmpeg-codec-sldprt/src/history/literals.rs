@@ -156,20 +156,19 @@ pub(super) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
 }
 
 fn parse_length_components_mm(value: &str) -> Option<[Length; 3]> {
-    value
-        .split(',')
-        .map(|component| parse_length_mm(component.trim()))
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let mut components = value.split(',');
+    let x = parse_length_mm(components.next()?.trim())?;
+    let y = parse_length_mm(components.next()?.trim())?;
+    let z = parse_length_mm(components.next()?.trim())?;
+    components.next().is_none().then_some([x, y, z])
 }
 
 pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
-    let values = value
-        .split(',')
-        .map(|component| component.trim().parse::<f64>().ok())
-        .collect::<Option<Vec<_>>>()?;
-    (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
+    let mut components = value.split(',');
+    let x = components.next()?.trim().parse::<f64>().ok()?;
+    let y = components.next()?.trim().parse::<f64>().ok()?;
+    let z = components.next()?.trim().parse::<f64>().ok()?;
+    components.next().is_none().then(|| Vector3::new(x, y, z))
 }
 
 pub(super) fn parse_valid_direction(
@@ -181,12 +180,16 @@ pub(super) fn parse_valid_direction(
 }
 
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
-    match value.to_ascii_lowercase().as_str() {
-        "join" => Some(BooleanOp::Join),
-        "cut" => Some(BooleanOp::Cut),
-        "intersect" => Some(BooleanOp::Intersect),
-        "newbody" | "new_body" => Some(BooleanOp::NewBody),
-        _ => None,
+    if value.eq_ignore_ascii_case("join") {
+        Some(BooleanOp::Join)
+    } else if value.eq_ignore_ascii_case("cut") {
+        Some(BooleanOp::Cut)
+    } else if value.eq_ignore_ascii_case("intersect") {
+        Some(BooleanOp::Intersect)
+    } else if value.eq_ignore_ascii_case("newbody") || value.eq_ignore_ascii_case("new_body") {
+        Some(BooleanOp::NewBody)
+    } else {
+        None
     }
 }
 
