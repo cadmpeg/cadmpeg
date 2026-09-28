@@ -16,6 +16,10 @@ use crate::native::{
 };
 use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
 
+fn drawing_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "fcstd drawing diagnostic")
+}
+
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
@@ -147,7 +151,7 @@ pub(crate) fn transfer_neutral(
             (None, None) => None,
             (Some(x), Some(y)) => Some([x, y]),
             _ => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(drawing_malformed(ctx, format_args!(
                     "drawing {} position requires both X and Y",
                     record.id
                 )))
@@ -214,7 +218,7 @@ pub(crate) fn transfer_neutral(
             id: neutral_ids
                 .get(record.object.as_str())
                 .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    drawing_malformed(ctx, format_args!(
                         "drawing {} has no admitted neutral identity",
                         record.id
                     ))
@@ -323,15 +327,15 @@ fn scalar_property(
     let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing property {name} has no root value"
         )));
     };
     scalar_value(name, &property.type_name, value)
         .map(Some)
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            drawing_malformed(ctx, format_args!(
                 "drawing property {name} has an invalid scalar value"
             ))
         })
@@ -345,13 +349,13 @@ fn vector_property(
     let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
         return Ok(None);
     };
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing property {name} has no root value"
         )));
     };
     vector_value(value).map(Some).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        drawing_malformed(ctx, format_args!(
             "drawing property {name} has an invalid vector value"
         ))
     })
@@ -375,14 +379,14 @@ fn source_links(
         _ => false,
     };
     if !valid_type {
-        return Err(CodecError::malformed(format_args!(
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing source {name} has runtime type {}, which is not a source carrier",
             property.type_name
         )));
     }
     let is_list = is_link_list_type(&property.type_name);
     if !is_list && property.links().len() > 1 {
-        return Err(CodecError::malformed(format_args!(
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing source {name} has multiple targets",
         )));
     }
@@ -448,7 +452,7 @@ fn typed_single_link<'a>(
     match property.links() {
         [] => Ok(None),
         [link] => Ok(link.as_ref()),
-        _ => Err(CodecError::malformed(format_args!(
+        _ => Err(drawing_malformed(ctx, format_args!(
             "{name} has multiple links"
         ))),
     }
@@ -464,7 +468,7 @@ fn typed_property<'a>(
         return Ok(None);
     };
     if property.type_name != type_name {
-        return Err(CodecError::malformed(format_args!(
+        return Err(drawing_malformed(ctx, format_args!(
             "{name} has runtime type {}, expected {type_name}",
             property.type_name
         )));
@@ -501,9 +505,9 @@ fn drawing_parameters(
         let Some(property) = sole_named_property(ctx, "drawing", properties, name)? else {
             continue;
         };
-        validate_drawing_property(name, property)?;
-        let value = root_value(property, name)?.ok_or_else(|| {
-            CodecError::malformed(format_args!("drawing property {name} has no root value"))
+        validate_drawing_property(ctx, name, property)?;
+        let value = root_value(ctx, property, name)?.ok_or_else(|| {
+            drawing_malformed(ctx, format_args!("drawing property {name} has no root value"))
         })?;
         ctx.charge_collection_items(1, "fcstd drawing parameters")?;
         parameters.insert(
@@ -513,34 +517,34 @@ fn drawing_parameters(
     }
     for name in VALIDATED_ONLY_NAMES {
         if let Some(property) = sole_named_property(ctx, "drawing", properties, name)? {
-            validate_drawing_property(name, property)?;
+            validate_drawing_property(ctx, name, property)?;
         }
     }
     Ok(parameters)
 }
 
-fn validate_drawing_property(name: &str, property: &PropertyRecord) -> Result<(), CodecError> {
+fn validate_drawing_property(ctx: &DecodeContext<'_>, name: &str, property: &PropertyRecord) -> Result<(), CodecError> {
     if !drawing_property_type_matches(name, &property.type_name) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing property {name} has runtime type {}, which is not its registered carrier",
             property.type_name
         )));
     }
-    let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::malformed(format_args!(
+    let Some(value) = root_value(ctx, property, name)? else {
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing property {name} has no root value"
         )));
     };
     if matches!(name, "Direction" | "XDirection") {
         if vector_value(value).is_none() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(drawing_malformed(ctx, format_args!(
                 "drawing property {name} has an invalid vector value"
             )));
         }
     } else if matches!(name, "X" | "Y" | "Scale" | "Rotation")
         && scalar_value(name, &property.type_name, value).is_none()
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(drawing_malformed(ctx, format_args!(
             "drawing property {name} has an invalid scalar value"
         )));
     }
@@ -574,7 +578,7 @@ fn ensure_unique_property_names(ctx: &DecodeContext<'_>, properties: &[&Property
     let mut names = BTreeSet::new();
     for property in properties {
         if names.contains(property.name.as_str()) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(drawing_malformed(ctx, format_args!(
                 "drawing property {} occurs more than once", property.name
             )));
         }
@@ -585,6 +589,7 @@ fn ensure_unique_property_names(ctx: &DecodeContext<'_>, properties: &[&Property
 }
 
 fn root_value<'a>(
+    ctx: &DecodeContext<'_>,
     property: &'a PropertyRecord,
     name: &str,
 ) -> Result<Option<&'a ValueRecord>, CodecError> {
@@ -599,7 +604,7 @@ fn root_value<'a>(
         _ => return Ok(None),
     };
     let xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
+        drawing_malformed(ctx, format_args!(
             "drawing property {} has invalid XML: {error}",
             property.id
         ))
@@ -620,13 +625,13 @@ fn root_value<'a>(
         {
             let tag = node.tag_name().name();
             if tag != expected_tag && !allowed_extra_tags.contains(&tag) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(drawing_malformed(ctx, format_args!(
                     "drawing property {name} has unexpected root element {tag}"
                 )));
             }
             if tag == expected_tag {
                 if selected_order.replace(order).is_some() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(drawing_malformed(ctx, format_args!(
                         "drawing property {name} has multiple root values"
                     )));
                 }
@@ -642,7 +647,7 @@ fn root_value<'a>(
             .find(|value| value.order == selected_order)
             .map(Some)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                drawing_malformed(ctx, format_args!(
                     "drawing property {} has an unretained root value",
                     property.id
                 ))

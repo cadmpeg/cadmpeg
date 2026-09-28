@@ -11,6 +11,17 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn drawing_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd drawing diagnostic", |ctx| {
+            Err::<(), _>(super::drawing_malformed(
+                ctx, format_args!("drawing property {} has invalid XML", "Caption"),
+            ))
+        },
+    );
+}
+
+#[test]
 fn drawing_record_collection_refuses_at_caller_limit() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Page".into(),
