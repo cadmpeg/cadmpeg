@@ -1558,7 +1558,8 @@ fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
     payload.extend(0.0f64.to_le_bytes());
     payload.extend(1.0f64.to_le_bytes());
     assert_eq!(
-        constraint_midplane_frame(&payload),
+        constraint_midplane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
         Some((
             Point3::new(0.0, 0.0, 145.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1568,7 +1569,11 @@ fn constraint_midplane_uses_its_normal_form_with_opaque_prefix() {
 
     let normal = payload.len() - 24;
     payload[normal..normal + 8].copy_from_slice(&1.0f64.to_le_bytes());
-    assert_eq!(constraint_midplane_frame(&payload), None);
+    assert_eq!(
+        constraint_midplane_frame(&cadmpeg_test_support::service_decode_context(), &payload)
+            .unwrap(),
+        None
+    );
 }
 
 #[test]
