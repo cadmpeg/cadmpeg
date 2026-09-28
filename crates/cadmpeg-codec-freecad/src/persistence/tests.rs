@@ -38,6 +38,15 @@ fn persistence_object_identity_refuses_at_retained_limit() {
 }
 
 #[test]
+fn persistence_object_data_name_refuses_at_matching_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Body"/></Objects><ObjectData Count="1"><Object name="Body"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    crate::test_support::assert_retained_refusal_at(document.as_bytes(),
+        "FCStd object data name", |ctx| {
+            super::parse_with_context(document.as_bytes(), "4", Some(ctx))
+        });
+}
+
+#[test]
 fn persistence_property_identity_refuses_at_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let owner = "fcstd:native:object#Body";
