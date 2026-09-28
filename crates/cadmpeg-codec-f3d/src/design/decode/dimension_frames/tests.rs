@@ -1497,6 +1497,54 @@ fn dimension_annotation_interval_refuses_collection_limit() {
 }
 
 #[test]
+fn dimension_annotation_stream_scan_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let companion = crate::records::parameters::DesignParameterCompanion::unbound(
+        format!("{}:parameter-companion#0", crate::ids::native_scope(STREAM)),
+        0,
+        crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
+        11,
+        10,
+        std::num::NonZeroU64::MIN,
+        42,
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&[0; 58]).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let companions = [companion.clone(), companion];
+        let inputs = super::DimensionDecodeInputs {
+            scan,
+            placements: &[],
+            parameters: &[],
+            owners: &[],
+            companions: &companions,
+            scopes: &[],
+            headers: &[],
+            points: &[],
+            curves: &[],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::decode_dimension_annotation_frames(&ctx, &inputs, &[]),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == "f3d dimension annotation stream scan"
+        ));
+    });
+}
+
+#[test]
 fn dimension_recipe_indexes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
