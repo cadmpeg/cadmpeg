@@ -5,6 +5,22 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 
 #[test]
+fn work_point_input_copy_refuses_collection_limit() {
+    let input = crate::records::feature::work_geometry::DesignWorkPointInput::try_new(7, 14, None)
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::copy_work_point_inputs(&ctx, std::slice::from_ref(&input)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d WorkPoint input copy"
+    ));
+}
+
+#[test]
 fn direct_sketch_point_selection_reads_owner_and_persistent_ids() {
     let record_index = 100;
     let mut bytes = Vec::new();

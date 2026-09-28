@@ -342,6 +342,22 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
 }
 
 /// Bind each `WorkPoint` input to its exact edge, vertex, or `WorkPlane` carrier.
+fn copy_work_point_inputs(
+    ctx: &DecodeContext<'_>,
+    source: &[crate::records::feature::work_geometry::DesignWorkPointInput],
+) -> Result<Vec<crate::records::feature::work_geometry::DesignWorkPointInput>, CodecError> {
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(source.len()),
+        "f3d WorkPoint input copy",
+    )?;
+    let mut inputs = Vec::new();
+    inputs.try_reserve(source.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d WorkPoint input copy allocation", 0, 1)
+    })?;
+    inputs.extend_from_slice(source);
+    Ok(inputs)
+}
+
 pub(crate) fn bind_work_point_input_carriers(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -407,7 +423,7 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
         };
-        let mut inputs = construction.rule.inputs().to_vec();
+        let mut inputs = copy_work_point_inputs(ctx, construction.rule.inputs())?;
         for input in &mut inputs {
             let mut edge_matches = edge_operands
                 .iter()

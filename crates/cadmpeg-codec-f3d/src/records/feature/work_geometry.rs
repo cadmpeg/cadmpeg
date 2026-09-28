@@ -947,25 +947,31 @@ impl DesignWorkPointRule {
         reference_type: u32,
         inputs: Vec<DesignWorkPointInput>,
     ) -> Result<Self, String> {
-        let form = match (reference_type, inputs.as_slice()) {
-            (5, [input]) => DesignWorkPointRuleForm::CircleCenter {
-                input: input.clone(),
+        let form = match (reference_type, inputs.len()) {
+            (5, 1) => {
+                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?;
+                DesignWorkPointRuleForm::CircleCenter { input }
+            }
+            (7, 2) => DesignWorkPointRuleForm::TwoEdgeIntersection {
+                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
             },
-            (7, [first, second]) => DesignWorkPointRuleForm::TwoEdgeIntersection {
-                inputs: [first.clone(), second.clone()],
+            (8, 3) => DesignWorkPointRuleForm::ThreePlaneIntersection {
+                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
             },
-            (8, [first, second, third]) => DesignWorkPointRuleForm::ThreePlaneIntersection {
-                inputs: [first.clone(), second.clone(), third.clone()],
+            (10, 1) => {
+                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?;
+                DesignWorkPointRuleForm::Vertex { input }
+            }
+            (14, 2) => DesignWorkPointRuleForm::EdgePlaneIntersection {
+                inputs: inputs.try_into().map_err(|_| "WorkPoint input arity changed")?,
             },
-            (10, [input]) => DesignWorkPointRuleForm::Vertex {
-                input: input.clone(),
-            },
-            (14, [first, second]) => DesignWorkPointRuleForm::EdgePlaneIntersection {
-                inputs: [first.clone(), second.clone()],
-            },
-            (20, [input]) => DesignWorkPointRuleForm::DistanceOnEdge {
-                input: input.clone(),
-            },
+            (20, 1) => {
+                let [input]: [DesignWorkPointInput; 1] = inputs.try_into()
+                    .map_err(|_| "WorkPoint input arity changed")?;
+                DesignWorkPointRuleForm::DistanceOnEdge { input }
+            }
             _ => DesignWorkPointRuleForm::Native {
                 reference_type,
                 inputs,
