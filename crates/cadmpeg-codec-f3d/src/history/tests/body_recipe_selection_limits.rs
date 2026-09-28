@@ -177,6 +177,22 @@ fn face_candidate(max_work_units: u64) -> Result<(bool, bool), cadmpeg_core::Cod
     )
 }
 
+fn external_body(max_items: u64, max_retained_bytes: u64, source: Option<&str>)
+    -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError>
+{
+    let (_, _, operands, _) = selection_fixture();
+    let (body, region, shell) = face_geometry();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained_bytes;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::unique_external_body_candidate(
+        &ctx, &operands[0], source, std::slice::from_ref(&body),
+        std::slice::from_ref(&region), std::slice::from_ref(&shell),
+    )
+}
+
 fn linked_body(max_work_units: u64, max_retained_bytes: u64) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
     use crate::records::identity::RecordedValue;
     use crate::records::recipes::{
@@ -325,4 +341,59 @@ fn body_recipe_face_carrier_refuses_work_limit() {
 #[test]
 fn body_recipe_face_carrier_preserves_selected_candidate() {
     assert_eq!(face_candidate(u64::MAX).unwrap(), (true, true));
+}
+
+#[test]
+fn external_body_region_index_refuses_collection_limit() {
+    let error = external_body(0, u64::MAX, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D external body regions"));
+}
+
+#[test]
+fn external_body_face_index_refuses_collection_limit() {
+    let error = external_body(1, u64::MAX, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D external body faces"));
+}
+
+#[test]
+fn external_body_metadata_index_refuses_collection_limit() {
+    let error = external_body(2, u64::MAX, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D external body metadata"));
+}
+
+#[test]
+fn external_body_candidate_refuses_collection_limit() {
+    let error = external_body(3, u64::MAX, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D external body candidates"));
+}
+
+#[test]
+fn external_body_displayed_refuses_collection_limit() {
+    let error = external_body(4, u64::MAX, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D displayed external bodies"));
+}
+
+#[test]
+fn external_body_prefix_refuses_retained_limit() {
+    let error = external_body(u64::MAX, 0, Some("other")).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D current history prefix"));
+}
+
+#[test]
+fn external_body_candidate_id_refuses_retained_limit() {
+    let error = external_body(u64::MAX, 0, None).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D external body candidate"));
+}
+
+#[test]
+fn external_body_preserves_selected_identity() {
+    assert_eq!(external_body(5, u64::MAX, None).unwrap().unwrap().as_str(),
+        "f3d:brep:body#1");
 }

@@ -99,7 +99,8 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     .unwrap();
 
     assert_eq!(
-        unique_external_body_candidate(&operand, None, &bodies, &regions, &shells),
+        unique_external_body_candidate(&cadmpeg_test_support::service_decode_context(),
+            &operand, None, &bodies, &regions, &shells).unwrap(),
         None
     );
 
