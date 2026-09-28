@@ -1838,6 +1838,37 @@ fn native_loop_ring(
     })
 }
 
+fn push_untransferred_pcurve_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    curve_id: u32,
+    face_id: u32,
+    record: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(
+        format_args!(
+            "VisibGeom curve row {curve_id} on face {face_id} states no \
+             pcurve carrier: {record}"
+        ),
+        "creo B-rep untransferred pcurve loss text",
+    )?;
+    ctx.try_reserve_items(losses, 1, "creo B-rep untransferred pcurve losses")?;
+    losses.push(crate::loss::CreoLossCode::VisibGeomCurveUntransferred.note(message));
+    Ok(())
+}
+
+fn one_coedge_pcurve_use(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: Option<PcurveUse>,
+) -> Result<Vec<PcurveUse>, cadmpeg_core::CodecError> {
+    let mut pcurves = Vec::new();
+    if let Some(value) = value {
+        ctx.try_reserve_items(&mut pcurves, 1, "creo B-rep coedge pcurve uses")?;
+        pcurves.push(value);
+    }
+    Ok(pcurves)
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -2519,15 +2550,20 @@ pub(in super::super) fn transfer_native_brep(
                     ctx,
                     ir,
                     Surface {
-                        id: surface.clone(),
+                        id: crate::identity::copy_checked_id(
+                            ctx,
+                            surface.as_str(),
+                            "creo B-rep surface entity ID copies",
+                        )?,
                         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                             record: geometry_section_record(scan, face_offset),
                         }),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                                "VisibGeom:{face_id}"
-                            ))
+                            object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                                format_args!("VisibGeom:{face_id}"),
+                                "creo B-rep surface source object IDs",
+                            )?)
                             .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "source object_id must not be empty",
@@ -2661,25 +2697,25 @@ pub(in super::super) fn transfer_native_brep(
                                     .iter()
                                     .filter(|candidate| matches_native_surface_id(scan, *face_id, &candidate.id)),
                             )?;
-                            let curve_id = CurveId::compose(
-                                &crate::identity::VISIBGEOM_CURVE,
-                                half_edge.curve_id,
-                            );
                             let curve = exactly_one(
                                 ir.model
                                     .curves
                                     .iter()
-                                    .filter(|candidate| candidate.id == curve_id),
+                                    .filter(|candidate| crate::identity::matches_numbered_identity(
+                                        candidate.id.as_str(),
+                                        "creo:visibgeom:curve#",
+                                        half_edge.curve_id,
+                                    )),
                             )?;
-                            let edge_id = EdgeId::compose(
-                                &crate::identity::VISIBGEOM_EDGE,
-                                half_edge.curve_id,
-                            );
                             let edge = exactly_one(
                                 ir.model
                                     .edges
                                     .iter()
-                                    .filter(|candidate| candidate.id == edge_id),
+                                    .filter(|candidate| crate::identity::matches_numbered_identity(
+                                        candidate.id.as_str(),
+                                        "creo:visibgeom:edge#",
+                                        half_edge.curve_id,
+                                    )),
                             )?;
                             let (geometry, tag) = planar_curve_pcurve(
                                 ctx,
@@ -2723,18 +2759,16 @@ pub(in super::super) fn transfer_native_brep(
                     let refused = refusal.take_records_checked()?;
                     if pcurve_geometry.is_none() {
                         for record in refused {
-                            losses.push(
-                                crate::loss::CreoLossCode::VisibGeomCurveUntransferred.note(
-                                    format!(
-                                        "VisibGeom curve row {} on face {face_id} states no \
-                                         pcurve carrier: {record}",
-                                        half_edge.curve_id
-                                    ),
-                                ),
-                            );
+                            push_untransferred_pcurve_loss(
+                                ctx,
+                                losses,
+                                half_edge.curve_id,
+                                *face_id,
+                                record,
+                            )?;
                         }
                     }
-                    let pcurves = pcurve_geometry
+                    let pcurve_use = pcurve_geometry
                         .map(|(geometry, parameter_range, offset, tag)| -> Result<_, cadmpeg_core::CodecError> {
                             let parameter_range = match parameter_range {
                                 Some(range) => {
@@ -2750,11 +2784,12 @@ pub(in super::super) fn transfer_native_brep(
                                 parameter_range,
                                 None,
                             );
-                            let pcurve = PcurveId::compose(
+                            let pcurve = crate::identity::compose_checked::<PcurveId>(
+                                ctx,
                                 &crate::identity::VISIBGEOM_PCURVE,
-                                cadmpeg_ir::ids::IdentityKey::from(half_edge.curve_id)
-                                    .colon(*face_id),
-                            );
+                                format_args!("{}:{face_id}", half_edge.curve_id),
+                                "creo B-rep pcurve identities",
+                            )?;
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
                                 annotate(
                                     annotations,
@@ -2769,7 +2804,11 @@ pub(in super::super) fn transfer_native_brep(
                                     ctx,
                                     ir,
                                     Pcurve {
-                                        id: pcurve.clone(),
+                                        id: crate::identity::copy_checked_id(
+                                            ctx,
+                                            pcurve.as_str(),
+                                            "creo B-rep pcurve entity ID copies",
+                                        )?,
                                         geometry,
                                         metadata,
                                     },
@@ -2783,20 +2822,25 @@ pub(in super::super) fn transfer_native_brep(
                             }))
                         })
                         .transpose()?
-                        .flatten()
-                        .into_iter()
-                        .collect();
+                        .flatten();
+                    let pcurves = one_coedge_pcurve_use(ctx, pcurve_use)?;
                     ctx.charge_entities(1, "admit Creo model coedges")?;
                     source_carriers.admit_coedge(
                         ctx,
                         ir,
                         Coedge {
                             id,
-                            owner_loop: loop_id.clone(),
-                            edge: EdgeId::compose(
+                            owner_loop: crate::identity::copy_checked_id(
+                                ctx,
+                                loop_id.as_str(),
+                                "creo B-rep coedge owner loop ID copies",
+                            )?,
+                            edge: crate::identity::compose_checked(
+                                ctx,
                                 &crate::identity::VISIBGEOM_EDGE,
                                 half_edge.curve_id,
-                            ),
+                                "creo B-rep coedge edge identities",
+                            )?,
                             radial_next,
                             sense: match half_edge.side {
                                 crate::topology::Side::Zero => Sense::Forward,

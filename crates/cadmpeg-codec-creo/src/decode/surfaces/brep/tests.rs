@@ -29,6 +29,7 @@ mod component_topology;
 mod shell_references;
 mod face_references;
 mod loop_ring;
+mod pcurve_emission;
 
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
