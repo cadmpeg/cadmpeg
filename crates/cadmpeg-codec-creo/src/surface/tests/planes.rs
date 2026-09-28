@@ -15,7 +15,6 @@ use crate::surface::complete_plane_compact_scalar_suffix;
 use crate::surface::complete_plane_local_system_slots;
 use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
-use crate::surface::frame_bound_outline_planes;
 use crate::surface::opaque_spans;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
@@ -43,6 +42,18 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn frame_bound_outline_planes(
+    envelopes: &[PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+) -> Vec<OutlinePlane> {
+    let mut result = envelopes
+        .iter()
+        .filter_map(|record| crate::surface::frame_bound_outline_plane(record, frames))
+        .collect::<Vec<_>>();
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
 
 fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
     super::with_decode_ctx(&[], |ctx| crate::surface::outline_planes(ctx, envelopes))
@@ -167,15 +178,22 @@ fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 }
 
 #[test]
-fn placed_outline_refuses_frame_bound_id_node() {
+fn placed_outline_refuses_frame_bound_vector() {
     let error = placed_frame_bound_limit_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline planes"));
+}
+
+#[test]
+fn placed_outline_refuses_frame_bound_id_node() {
+    let error = placed_frame_bound_limit_error(1);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo frame-bound outline ID nodes"));
 }
 
 #[test]
 fn placed_outline_refuses_output_vector() {
-    let error = placed_frame_bound_limit_error(1);
+    let error = placed_frame_bound_limit_error(2);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.operation == "creo placed outline planes"));
 }
