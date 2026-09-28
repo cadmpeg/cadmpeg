@@ -687,6 +687,68 @@ fn sweep_body_kind_index_refuses_collection_limit() {
 }
 
 #[test]
+fn solid_sweep_section_conversion_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureId, FeatureOperation, SweepMode, SweepSection,
+    };
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let body_id = BodyId::mint("test:model:body#solid").unwrap();
+    let body = Body {
+        id: body_id.clone(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let feature = Feature {
+        id: FeatureId::mint("synthetic:test:id#solid-sweep").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::Sweep {
+                shape: cadmpeg_ir::features::SweepShape::sheet_sections(
+                    SweepMode::Unresolved {},
+                    SweepSection::Unresolved(None),
+                    vec![SweepSection::Unresolved(None)],
+                ),
+                path: None,
+                orientation: None,
+                transition: None,
+                transformation: None,
+                path_tangent: false,
+                linearize: false,
+                twist: None,
+                path_extent: None,
+                guide_rail: None,
+                taper: None,
+                scale: None,
+                allow_multi_profile_faces: None,
+            }),
+            vec![body_id].try_into().unwrap(),
+        ),
+        native_ref: None,
+    };
+    let error = bind_sweep_result_modes(&ctx, &mut [feature], &[body]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "convert F3D solid sweep sections"));
+}
+
+#[test]
 fn historical_brep_source_qualifies_state_local_candidates() {
     assert_eq!(
         historical_brep_source("f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#42"),
