@@ -1854,7 +1854,7 @@ pub(crate) fn project_marker_backed_sketches(
             )?;
             resolve_connected_marker_arcs(ctx, &mut projected, QUANTUM)?;
             let Ok(profiles) =
-                cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))
+                cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(ctx, &projected)?)
             else {
                 continue;
             };
@@ -1927,12 +1927,13 @@ struct SketchBlockProfileInput<'a> {
 /// the assembled geometry planar when the reusable definition frame is a
 /// source-local construction frame rather than the consuming profile plane.
 pub(crate) fn project_sketch_block_profiles(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     for lane in lanes {
         for history in histories {
             let mut objects = history
@@ -2105,7 +2106,7 @@ pub(crate) fn project_sketch_block_profiles(
                 )) else {
                     continue;
                 };
-                let Some(assembled) = assemble_sketch_block_profile(&SketchBlockProfileInput {
+                let Some(assembled) = assemble_sketch_block_profile(ctx, &SketchBlockProfileInput {
                     sketch_id: &sketch_id,
                     native_profile,
                     native_ref: &lane.id,
@@ -2114,7 +2115,7 @@ pub(crate) fn project_sketch_block_profiles(
                     instances: &instances,
                     sketches,
                     sketch_entities,
-                }) else {
+                })? else {
                     continue;
                 };
                 if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
@@ -2133,6 +2134,7 @@ pub(crate) fn project_sketch_block_profiles(
             }
         }
     }
+    Ok(())
 }
 
 fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
@@ -2154,104 +2156,193 @@ fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
 }
 
 fn assemble_sketch_block_profile(
+    ctx: &DecodeContext<'_>,
     input: &SketchBlockProfileInput<'_>,
-) -> Option<AssembledSketchBlockProfile> {
-    let (placement, rotations) = sketch_block_assembly_frame(
-        &input
-            .instances
-            .iter()
-            .map(|instance| instance.transform)
-            .collect::<Vec<_>>(),
-    )?;
+) -> Result<Option<AssembledSketchBlockProfile>, CodecError> {
+    let Some((placement, rotations)) = sketch_block_assembly_frame(ctx, input.instances)? else {
+        return Ok(None);
+    };
     let mut assembled_profiles = Vec::new();
     let mut assembled_entities = Vec::new();
     for (instance, rotation) in input.instances.iter().zip(rotations) {
-        let source_sketch_id = input.block_sketches.get(&instance.block_source)?;
-        let source_sketch = input
+        let Some(source_sketch_id) = input.block_sketches.get(&instance.block_source) else {
+            return Ok(None);
+        };
+        let Some(source_sketch) = input
             .sketches
             .iter()
-            .find(|sketch| sketch.id == *source_sketch_id)?;
-        let source_entities = input
-            .sketch_entities
-            .iter()
-            .filter(|entity| entity.sketch == source_sketch.id)
-            .cloned()
-            .collect::<Vec<_>>();
-        let entity_ids = source_entities
-            .iter()
-            .map(|entity| {
-                Some((
-                    entity.id().clone(),
-                    SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
-                        id_key(input.sketch_id.as_str()),
-                        id_key(&instance.feature_id),
-                        id_key(entity.id().as_str())
-                    ))
-                    .ok()?,
-                ))
-            })
-            .collect::<Option<HashMap<_, _>>>()?;
+            .find(|sketch| sketch.id == *source_sketch_id) else {
+            return Ok(None);
+        };
+        let mut source_entities = Vec::new();
+        for entity in input.sketch_entities {
+            if entity.sketch == source_sketch.id {
+                ctx.reserve_collection_vec(&mut source_entities, 1, "collect SLDPRT sketch block source entities")?;
+                source_entities.push(entity);
+            }
+        }
+        let mut entity_ids = HashMap::new();
+        for entity in &source_entities {
+            let id_text = ctx.format_retained(
+                format_args!(
+                    "sldprt:model:sketch-entity#{}:instance:{}:entity:{}",
+                    id_key(input.sketch_id.as_str()),
+                    id_key(&instance.feature_id),
+                    id_key(entity.id().as_str())
+                ),
+                "format SLDPRT sketch block entity identity",
+            )?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                return Ok(None);
+            };
+            if !entity_ids.contains_key(entity.id()) {
+                ctx.charge_collection_items(1, "index SLDPRT sketch block entity identities")?;
+                entity_ids.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT sketch block entity identities", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            entity_ids.insert(entity.id(), id);
+        }
         for source_entity in &source_entities {
-            let id = entity_ids.get(source_entity.id())?.clone();
-            assembled_entities.push(
-                SketchEntity::new(
-                    id,
-                    input.sketch_id.clone(),
-                    transform_sketch_block_geometry(
-                        &source_entity.geometry,
-                        instance.transform,
-                        placement,
-                        rotation,
-                    )?,
-                )
-                .with_construction(source_entity.construction)
-                .with_native_ref(Some(format!(
+            let Some(id) = entity_ids.get(source_entity.id()) else {
+                return Ok(None);
+            };
+            let id_text = ctx.format_retained(
+                format_args!("{}", id.as_str()),
+                "copy SLDPRT sketch block entity identity",
+            )?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                return Ok(None);
+            };
+            let sketch_text = ctx.format_retained(
+                format_args!("{}", input.sketch_id.as_str()),
+                "copy SLDPRT sketch block sketch identity",
+            )?;
+            let Ok(sketch_id) = SketchId::mint(sketch_text) else {
+                return Ok(None);
+            };
+            let Some(geometry) = transform_sketch_block_geometry(
+                &source_entity.geometry,
+                instance.transform,
+                placement,
+                rotation,
+            ) else {
+                return Ok(None);
+            };
+            let native_ref = ctx.format_retained(
+                format_args!(
                     "{}:{}",
                     instance.feature_id,
                     source_entity
                         .native_ref
                         .as_deref()
                         .unwrap_or(source_entity.id().as_str())
-                )))
-                .with_geometry_ref(source_entity.geometry_ref.clone())
-                .with_endpoint_refs(source_entity.endpoint_refs.clone()),
+                ),
+                "format SLDPRT sketch block native reference",
+            )?;
+            let geometry_ref = match source_entity.geometry_ref.as_deref() {
+                Some(value) => Some(ctx.format_retained(
+                    format_args!("{value}"),
+                    "copy SLDPRT sketch block geometry reference",
+                )?),
+                None => None,
+            };
+            let mut endpoint_refs = Vec::new();
+            for reference in &source_entity.endpoint_refs {
+                let reference = ctx.format_retained(
+                    format_args!("{reference}"),
+                    "copy SLDPRT sketch block endpoint reference",
+                )?;
+                ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT sketch block endpoint references")?;
+                endpoint_refs.push(reference);
+            }
+            ctx.reserve_collection_vec(&mut assembled_entities, 1, "collect SLDPRT assembled sketch block entities")?;
+            assembled_entities.push(
+                SketchEntity::new(id, sketch_id, geometry)
+                .with_construction(source_entity.construction)
+                .with_native_ref(Some(native_ref))
+                .with_geometry_ref(geometry_ref)
+                .with_endpoint_refs(endpoint_refs),
             );
         }
-        let source_profiles = if source_sketch.profiles.is_empty() {
-            closed_marker_profiles_allowing_shared_endpoints(&source_entities)
+        let recovered_profiles = if source_sketch.profiles.is_empty() {
+            Some(closed_marker_profiles_allowing_shared_endpoints(ctx, &source_entities)?)
         } else {
-            source_sketch.profiles.to_vec()
+            None
         };
-        for profile in &source_profiles {
-            let mut assembled_profile = Vec::with_capacity(profile.len());
+        let source_profiles = recovered_profiles
+            .as_deref()
+            .unwrap_or(source_sketch.profiles.as_slice());
+        for profile in source_profiles {
+            let mut assembled_profile = Vec::new();
             for use_ in profile {
+                let Some(id) = entity_ids.get(&use_.entity) else {
+                    return Ok(None);
+                };
+                let id_text = ctx.format_retained(
+                    format_args!("{}", id.as_str()),
+                    "copy SLDPRT sketch block profile entity identity",
+                )?;
+                let Ok(id) = SketchEntityId::mint(id_text) else {
+                    return Ok(None);
+                };
+                ctx.reserve_collection_vec(&mut assembled_profile, 1, "collect SLDPRT assembled sketch block profile")?;
                 assembled_profile.push(SketchEntityUse {
-                    entity: entity_ids.get(&use_.entity)?.clone(),
+                    entity: id,
                     reversed: use_.reversed,
                 });
             }
+            ctx.reserve_collection_vec(&mut assembled_profiles, 1, "collect SLDPRT assembled sketch block profiles")?;
             assembled_profiles.push(assembled_profile);
         }
     }
-    (!assembled_profiles.is_empty()).then_some(())?;
-    Some(AssembledSketchBlockProfile {
+    if assembled_profiles.is_empty() {
+        return Ok(None);
+    }
+    let Some(placement) = SketchPlacement::try_resolved(
+        placement.origin,
+        placement.normal,
+        placement.u_axis,
+    ).ok() else {
+        return Ok(None);
+    };
+    let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(assembled_profiles) else {
+        return Ok(None);
+    };
+    let sketch_text = ctx.format_retained(
+        format_args!("{}", input.sketch_id.as_str()),
+        "copy SLDPRT assembled sketch block identity",
+    )?;
+    let Ok(sketch_id) = SketchId::mint(sketch_text) else {
+        return Ok(None);
+    };
+    let name = ctx.format_retained(
+        format_args!("{}", input.native_profile.name),
+        "copy SLDPRT assembled sketch block name",
+    )?;
+    let configuration = match input.configuration {
+        Some(value) => Some(ctx.format_retained(
+            format_args!("{value}"),
+            "copy SLDPRT assembled sketch block configuration",
+        )?),
+        None => None,
+    };
+    let native_ref = ctx.format_retained(
+        format_args!("{}", input.native_ref),
+        "copy SLDPRT assembled sketch block native reference",
+    )?;
+    Ok(Some(AssembledSketchBlockProfile {
         sketch: Sketch {
-            id: input.sketch_id.clone(),
-            name: Some(input.native_profile.name.clone()),
-            configuration: input.configuration.map(str::to_string),
+            id: sketch_id,
+            name: Some(name),
+            configuration,
             visible: None,
-            placement: SketchPlacement::try_resolved(
-                placement.origin,
-                placement.normal,
-                placement.u_axis,
-            )
-            .ok()?,
-            profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(assembled_profiles).ok()?,
-            native_ref: Some(input.native_ref.to_string()),
+            placement,
+            profiles,
+            native_ref: Some(native_ref),
         },
         entities: assembled_entities,
-    })
+    }))
 }
 
 fn id_key(id: &str) -> &str {
@@ -2259,28 +2350,34 @@ fn id_key(id: &str) -> &str {
 }
 
 fn sketch_block_assembly_frame(
-    placements: &[Transform],
-) -> Option<(SketchBlockAssemblyFrame, Vec<f64>)> {
+    ctx: &DecodeContext<'_>,
+    instances: &[SketchBlockInstancePlacement],
+) -> Result<Option<(SketchBlockAssemblyFrame, Vec<f64>)>, CodecError> {
     const TOLERANCE: f64 = 1.0e-8;
-    let first = *placements.first()?;
-    if !first.is_proper_rigid() {
-        return None;
-    }
-    let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0))?.get();
-    let u_axis = first.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.unit()?;
-    let first_v = first.apply_vector(Vector3::new(0.0, 1.0, 0.0))?.unit()?;
-    let normal = u_axis.cross(first_v).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    let frame = SketchBlockAssemblyFrame {
-        origin,
-        normal,
-        u_axis,
+    let Some(first) = instances.first().map(|instance| instance.transform) else {
+        return Ok(None);
     };
-    let mut rotations = Vec::with_capacity(placements.len());
-    for placement in placements {
+    if !first.is_proper_rigid() {
+        return Ok(None);
+    }
+    let Some((frame, v_axis)) = (|| {
+        let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0))?.get();
+        let u_axis = first.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.unit()?;
+        let first_v = first.apply_vector(Vector3::new(0.0, 1.0, 0.0))?.unit()?;
+        let normal = u_axis.cross(first_v).unit()?;
+        let v_axis = normal.cross(u_axis).unit()?;
+        Some((SketchBlockAssemblyFrame { origin, normal, u_axis }, v_axis))
+    })() else {
+        return Ok(None);
+    };
+    let SketchBlockAssemblyFrame { origin, normal, u_axis } = frame;
+    let mut rotations = Vec::new();
+    for instance in instances {
+        let placement = instance.transform;
         if !placement.is_proper_rigid() {
-            return None;
+            return Ok(None);
         }
+        let Some(rotation) = (|| {
         let instance_origin = placement.apply_point(Point3::new(0.0, 0.0, 0.0))?.get();
         let origin_delta = instance_origin.vector_from(origin);
         if origin_delta.dot(normal).abs()
@@ -2307,9 +2404,14 @@ fn sketch_block_assembly_frame(
         {
             return None;
         }
-        rotations.push(projected_u.v.atan2(projected_u.u));
+        Some(projected_u.v.atan2(projected_u.u))
+        })() else {
+            return Ok(None);
+        };
+        ctx.reserve_collection_vec(&mut rotations, 1, "collect SLDPRT sketch block rotations")?;
+        rotations.push(rotation);
     }
-    Some((frame, rotations))
+    Ok(Some((frame, rotations)))
 }
 
 fn transform_sketch_block_geometry(
@@ -2931,7 +3033,8 @@ mod detached_legacy_sketch_tests {
     use super::super::bindings::bind_detached_legacy_sketch_objects;
     use super::{
         assemble_sketch_block_profile, legacy_config_collinear_sketch, legacy_config_hex_sketch,
-        project_marker_backed_sketches, terminal_relation_display_carrier,
+        project_marker_backed_sketches, sketch_block_assembly_frame,
+        terminal_relation_display_carrier,
         SketchBlockInstancePlacement, SketchBlockProfileInput,
     };
     use crate::layout::current_terminal_relation_carrier as terminal;
@@ -3508,6 +3611,26 @@ mod detached_legacy_sketch_tests {
     }
 
     #[test]
+    fn sketch_block_rotations_refuse_collection_limit() {
+        let instances = [SketchBlockInstancePlacement {
+            feature_id: "sldprt:model:feature#instance".into(),
+            block_source: "23".into(),
+            transform: Transform::identity(),
+        }];
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let error = sketch_block_assembly_frame(&ctx, &instances)
+            .err()
+            .expect("rotation collection must refuse the configured limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT sketch block rotations"));
+    }
+
+    #[test]
     fn sketch_block_profile_assembly_projects_each_instance_into_one_frame() {
         let block_sketch_id = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
         let block_entity_id = SketchEntityId::mint("synthetic:test:id#block-circle").unwrap();
@@ -3573,7 +3696,14 @@ mod detached_legacy_sketch_tests {
                 transform: quarter_turn,
             },
         ];
-        let assembled = assemble_sketch_block_profile(&SketchBlockProfileInput {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let assembled = assemble_sketch_block_profile(&ctx, &SketchBlockProfileInput {
             sketch_id: &assembled_id,
             native_profile: &feature(),
             native_ref: "lane",
@@ -3583,6 +3713,7 @@ mod detached_legacy_sketch_tests {
             sketches: &[block_sketch],
             sketch_entities: &block_entities,
         })
+        .unwrap()
         .expect("rigid coplanar block placements assemble");
 
         assert_eq!(assembled.sketch.profiles.len(), 2);
