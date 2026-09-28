@@ -369,7 +369,11 @@ impl CatiaNative {
                 let expected_owner = expected_head_roles.owner.map(CatiaObjectOwner::from);
                 let expected_design_object = record
                     .owner_entity_id()
-                    .map(|owner| design_object_id(graph.byte_offset, owner));
+                    .map(|owner| crate::test_support::with_service_context(|ctx| {
+                        design_object_id(ctx, graph.byte_offset, owner)
+                    }))
+                    .transpose()
+                    .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
                 let paired_entity = graph_entities.get(ordinal).copied();
                 let expected_storage = record.storage_ref()
                     .and_then(|identity| record_indices.get(&identity))
@@ -453,7 +457,10 @@ impl CatiaNative {
                 .schema_selections
                 .sort_by_key(|selection| selection.offset);
         }
-        let design_objects = design_objects(&graphs, &entity_records);
+        let design_objects = crate::test_support::with_service_context(|ctx| {
+            design_objects(ctx, &graphs, &entity_records)
+        })
+        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
         let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
         let stored_by_id = stored
             .iter()

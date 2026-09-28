@@ -3993,257 +3993,296 @@ pub(crate) struct CatiaDesignObject {
 }
 
 fn design_objects(
+    ctx: &DecodeContext<'_>,
     graphs: &[CatiaObjectGraph],
     entity_records: &[CatiaEntityRecord],
-) -> Vec<CatiaDesignObject> {
-    let definition_value_entities = entity_records
+) -> Result<Vec<CatiaDesignObject>, CodecError> {
+    let definition_value_entities = crate::resource::collect_set(ctx, entity_records
         .iter()
         .filter(|entity| entity.definition_value().is_some())
-        .map(|entity| entity.id.as_str())
-        .collect::<HashSet<_>>();
-    let definition_chain_value_entities = entity_records
+        .map(|entity| entity.id.as_str()), "catia_design_definition_values")?;
+    let definition_chain_value_entities = crate::resource::collect_set(ctx, entity_records
         .iter()
         .filter(|entity| entity.definition_chain_value().is_some())
-        .map(|entity| entity.id.as_str())
-        .collect::<HashSet<_>>();
-    graphs
-        .iter()
-        .flat_map(|graph| {
-            let record_indices = graph
+        .map(|entity| entity.id.as_str()), "catia_design_definition_chains")?;
+    let mut objects = Vec::new();
+    for graph in graphs {
+            let record_indices = crate::resource::collect_map(ctx, graph
                 .records
                 .iter()
                 .enumerate()
-                .filter_map(|(index, record)| Some((record.entity_id()?, index)))
-                .collect::<HashMap<_, _>>();
+                .filter_map(|(index, record)| Some((record.entity_id()?, index))),
+                "catia_design_record_indices")?;
             let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
             let mut owner_indices = HashMap::<u32, usize>::new();
             for record in &graph.records {
                 if let Some(owner) = record.owner_entity_id() {
-                    let index = owner_indices.get(&owner).copied().unwrap_or_else(|| {
+                    let index = if let Some(index) = owner_indices.get(&owner) {
+                        *index
+                    } else {
                         let index = fields.len();
-                        fields.push((owner, Vec::new()));
-                        owner_indices.insert(owner, index);
+                        crate::resource::push(ctx, &mut fields, (owner, Vec::new()),
+                            "catia_design_owner_groups")?;
+                        crate::resource::insert_map(ctx, &mut owner_indices, owner, index,
+                            "catia_design_owner_indices")?;
                         index
-                    });
-                    fields[index].1.push(record);
+                    };
+                    crate::resource::push(ctx, &mut fields[index].1, record,
+                        "catia_design_owner_fields")?;
                 }
             }
-            let definition_value_entities = &definition_value_entities;
-            let definition_chain_value_entities = &definition_chain_value_entities;
-            fields
-                .into_iter()
-                .enumerate()
-                .map(move |(ordinal, (owner_entity_id, records))| {
+            for (ordinal, (owner_entity_id, records)) in fields.into_iter().enumerate() {
+                    let Some(first_record) = records.first() else { continue };
                     let owner_record = record_indices
                         .get(&owner_entity_id)
                         .and_then(|index| graph.records.get(*index));
-                    let id = design_object_id(graph.byte_offset, owner_entity_id);
-                    CatiaDesignObject {
-                        id: id.clone(),
-                        parent: graph.id.clone(),
-                        ordinal: ordinal as u64,
-                        first_field_byte_offset: records[0].byte_offset,
+                    let id = design_object_id(ctx, graph.byte_offset, owner_entity_id)?;
+                    let owner_design_object = owner_record
+                        .and_then(CatiaObjectRecord::owner_entity_id)
+                        .filter(|owner| *owner != owner_entity_id && owner_indices.contains_key(owner))
+                        .map(|owner| design_object_id(ctx, graph.byte_offset, owner))
+                        .transpose()?;
+                    let owner_class = match owner_record.filter(|record| record_has_separator_roles(record)) {
+                        Some(record) => design_class(ctx, record)?,
+                        None => None,
+                    };
+                    let mut field_ids = Vec::new();
+                    let mut field_classes = Vec::new();
+                    let mut definition_values = Vec::new();
+                    let mut definition_chain_values = Vec::new();
+                    let mut relations = Vec::new();
+                    for record in &records {
+                        crate::resource::push(ctx, &mut field_ids,
+                            crate::resource::copy_retained_str(ctx, &record.id, "catia_design_field_id")?,
+                            "catia_design_fields")?;
+                        if let Some(class) = design_class(ctx, record)? {
+                            if !field_classes.contains(&class) {
+                                crate::resource::push(ctx, &mut field_classes, class,
+                                    "catia_design_field_classes")?;
+                            }
+                        }
+                        if let Some(entity) = record.entity_record() {
+                            if definition_value_entities.contains(entity) {
+                                crate::resource::push(ctx, &mut definition_values,
+                                    crate::resource::copy_retained_str(ctx, entity,
+                                        "catia_design_definition_value_id")?,
+                                    "catia_design_definition_value_rows")?;
+                            }
+                            if definition_chain_value_entities.contains(entity) {
+                                crate::resource::push(ctx, &mut definition_chain_values,
+                                    crate::resource::copy_retained_str(ctx, entity,
+                                        "catia_design_definition_chain_id")?,
+                                    "catia_design_definition_chain_rows")?;
+                            }
+                        }
+                        if let (Some(target_field), Some(storage_ref)) =
+                            (record.storage_record(), record.storage_ref())
+                        {
+                            if let Some(target_record) = record_indices.get(&storage_ref)
+                                .and_then(|index| graph.records.get(*index)) {
+                                let relation = CatiaDesignObjectRelation {
+                                    source_field: crate::resource::copy_retained_str(ctx, &record.id,
+                                        "catia_design_relation_source")?,
+                                    source_class: design_class(ctx, record)?,
+                                    source: CatiaDesignObjectRelationSource::Storage,
+                                    target_entity_id: storage_ref,
+                                    target_field: crate::resource::copy_retained_str(ctx, target_field,
+                                        "catia_design_relation_target")?,
+                                    target_class: design_class(ctx, target_record)?,
+                                    target_design_object: record.storage_design_object()
+                                        .map(|id| crate::resource::copy_retained_str(ctx, id,
+                                            "catia_design_relation_object")).transpose()?,
+                                };
+                                crate::resource::push(ctx, &mut relations, relation,
+                                    "catia_design_relations")?;
+                            }
+                        }
+                        for reference in &record.references {
+                            let Some(target_field) = reference.target() else { continue };
+                            let Some(target_record) = record_indices.get(&reference.entity_id())
+                                .and_then(|index| graph.records.get(*index)) else { continue };
+                            let relation = CatiaDesignObjectRelation {
+                                source_field: crate::resource::copy_retained_str(ctx, &record.id,
+                                    "catia_design_relation_source")?,
+                                source_class: design_class(ctx, record)?,
+                                source: CatiaDesignObjectRelationSource::Payload {
+                                    payload_offset: reference.payload_offset(),
+                                    container: reference.source().clone(),
+                                },
+                                target_entity_id: reference.entity_id(),
+                                target_field: crate::resource::copy_retained_str(ctx, target_field,
+                                    "catia_design_relation_target")?,
+                                target_class: design_class(ctx, target_record)?,
+                                target_design_object: reference.design_object()
+                                    .map(|id| crate::resource::copy_retained_str(ctx, id,
+                                        "catia_design_relation_object")).transpose()?,
+                            };
+                            crate::resource::push(ctx, &mut relations, relation,
+                                "catia_design_relations")?;
+                        }
+                    }
+                    let parallel_reference_table = design_parallel_reference_table(
+                        ctx, &records, graph, &record_indices)?;
+                    let object = CatiaDesignObject {
+                        id,
+                        parent: crate::resource::copy_retained_str(ctx, &graph.id,
+                            "catia_design_parent")?,
+                        ordinal: u64::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                            "catia_design_ordinal", u64::MAX, u64::MAX))?,
+                        first_field_byte_offset: first_record.byte_offset,
                         owner_entity_id,
-                        owner_record: owner_record.map(|record| record.id.clone()),
-                        owner_design_object: owner_record
-                            .and_then(CatiaObjectRecord::owner_entity_id)
-                            .filter(|owner| {
-                                *owner != owner_entity_id && owner_indices.contains_key(owner)
-                            })
-                            .map(|owner| design_object_id(graph.byte_offset, owner)),
-                        owner_class: owner_record
-                            .filter(|record| record_has_separator_roles(record))
-                            .and_then(design_class),
+                        owner_record: owner_record.map(|record| crate::resource::copy_retained_str(
+                            ctx, &record.id, "catia_design_owner_record")).transpose()?,
+                        owner_design_object,
+                        owner_class,
                         owner_storage_ref: owner_record
                             .filter(|record| record_has_separator_roles(record))
                             .and_then(CatiaObjectRecord::storage_ref),
-                        fields: records.iter().map(|record| record.id.clone()).collect(),
-                        field_classes: records
-                            .iter()
-                            .filter_map(|record| design_class(record))
-                            .fold(Vec::new(), |mut classes, class| {
-                                if !classes.contains(&class) {
-                                    classes.push(class);
-                                }
-                                classes
-                            }),
-                        definition_values: records
-                            .iter()
-                            .filter_map(|record| record.entity_record())
-                            .filter(|entity| definition_value_entities.contains(*entity))
-                            .map(str::to_owned)
-                            .collect(),
-                        definition_chain_values: records
-                            .iter()
-                            .filter_map(|record| record.entity_record())
-                            .filter(|entity| definition_chain_value_entities.contains(*entity))
-                            .map(str::to_owned)
-                            .collect(),
-                        relations: records
-                            .iter()
-                            .flat_map(|record| {
-                                let storage = record.storage_record().and_then(|target_field| {
-                                    let target_record = record_indices
-                                        .get(&record.storage_ref()?)
-                                        .and_then(|index| graph.records.get(*index))?;
-                                    let target_design_object =
-                                        record.storage_design_object().map(str::to_owned);
-                                    Some(CatiaDesignObjectRelation {
-                                        source_field: record.id.clone(),
-                                        source_class: design_class(record),
-                                        source: CatiaDesignObjectRelationSource::Storage,
-                                        target_entity_id: record.storage_ref()?,
-                                        target_field: target_field.to_owned(),
-                                        target_class: design_class(target_record),
-                                        target_design_object,
-                                    })
-                                });
-                                storage
-                                    .into_iter()
-                                    .chain(record.references.iter().filter_map(|reference| {
-                                        let target_field = reference.target()?.to_owned();
-                                        let target_record = record_indices
-                                            .get(&reference.entity_id())
-                                            .and_then(|index| graph.records.get(*index))?;
-                                        let target_design_object =
-                                            reference.design_object().map(str::to_owned);
-                                        Some(CatiaDesignObjectRelation {
-                                            source_field: record.id.clone(),
-                                            source_class: design_class(record),
-                                            source: CatiaDesignObjectRelationSource::Payload {
-                                                payload_offset: reference.payload_offset(),
-                                                container: reference.source().clone(),
-                                            },
-                                            target_entity_id: reference.entity_id(),
-                                            target_field,
-                                            target_class: design_class(target_record),
-                                            target_design_object,
-                                        })
-                                    }))
-                            })
-                            .collect(),
-                        parallel_reference_table: design_parallel_reference_table(
-                            &records,
-                            graph,
-                            &record_indices,
-                        ),
-                    }
-                })
-        })
-        .collect()
+                        fields: field_ids,
+                        field_classes,
+                        definition_values,
+                        definition_chain_values,
+                        relations,
+                        parallel_reference_table,
+                    };
+                    crate::resource::push(ctx, &mut objects, object, "catia_design_objects")?;
+            }
+    }
+    Ok(objects)
 }
 
 fn design_parallel_reference_table(
+    ctx: &DecodeContext<'_>,
     records: &[&CatiaObjectRecord],
     graph: &CatiaObjectGraph,
     record_indices: &HashMap<u32, usize>,
-) -> Option<CatiaDesignParallelReferenceTable> {
+) -> Result<Option<CatiaDesignParallelReferenceTable>, CodecError> {
     if records.len() < 2 {
-        return None;
+        return Ok(None);
     }
-    let columns = records
-        .iter()
-        .map(|record| {
+    let mut columns = Vec::new();
+    for record in records {
             let [PayloadField::List {
                 declared_count,
                 items,
                 offset: list_offset,
             }, middle @ .., PayloadField::Terminator] = record.payload.fields.as_slice()
             else {
-                return None;
+                return Ok(None);
             };
             if *declared_count < 2
                 || usize::try_from(*declared_count).ok() != Some(items.len())
                 || !middle
                     .iter()
                     .all(|field| matches!(field, PayloadField::Atom { .. }))
+                || !items.iter().all(|item| matches!(item, ListItem::Reference { .. }))
             {
-                return None;
+                return Ok(None);
             }
-            let references = items
-                .iter()
-                .map(|item| match item {
-                    ListItem::Reference { value, offset } => Some((*value, *offset)),
-                    ListItem::Atom { .. } => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some((
+            let column = (
                 CatiaDesignReferenceColumn {
-                    field: record.id.clone(),
-                    field_class: design_class(record),
+                    field: crate::resource::copy_retained_str(ctx, &record.id,
+                        "catia_design_column_field")?,
+                    field_class: design_class(ctx, record)?,
                     list_payload_offset: *list_offset as u64,
                 },
-                references,
-            ))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let row_count = columns.first()?.1.len();
+                items.as_slice(),
+            );
+            crate::resource::push(ctx, &mut columns, column, "catia_design_columns")?;
+    }
+    let Some((_, first_items)) = columns.first() else { return Ok(None) };
+    let row_count = first_items.len();
     let terminal_null_entity_id = terminal_null_entity_id(record_indices);
     if columns
         .iter()
         .any(|(_, references)| references.len() != row_count)
     {
-        return None;
+        return Ok(None);
     }
-    let rows = (0..row_count)
-        .map(|row| {
-            let cells = columns
-                .iter()
-                .map(|(_, references)| {
-                    let (target_entity_id, payload_offset) = references[row];
+    let mut rows = Vec::new();
+    for row in 0..row_count {
+            let mut cells = Vec::new();
+            for (_, references) in &columns {
+                    let ListItem::Reference { value: target_entity_id, offset: payload_offset } = &references[row]
+                    else { return Ok(None) };
                     let target = record_indices
-                        .get(&target_entity_id)
+                        .get(target_entity_id)
                         .and_then(|index| graph.records.get(*index));
-                    CatiaDesignReferenceCell::from_parts(
-                        payload_offset as u64,
-                        target_entity_id,
-                        Some(target_entity_id) == terminal_null_entity_id,
-                        target.map(|record| record.id.clone()),
-                        target.and_then(design_class),
-                        target.and_then(|record| record.design_object.clone()),
-                    )
-                })
-                .collect::<Vec<_>>();
+                    let cell = CatiaDesignReferenceCell::from_parts(
+                        *payload_offset as u64,
+                        *target_entity_id,
+                        Some(*target_entity_id) == terminal_null_entity_id,
+                        target.map(|record| crate::resource::copy_retained_str(ctx, &record.id,
+                            "catia_design_cell_target")).transpose()?,
+                        target.map(|record| design_class(ctx, record)).transpose()?.flatten(),
+                        target.and_then(|record| record.design_object.as_deref())
+                            .map(|id| crate::resource::copy_retained_str(ctx, id,
+                                "catia_design_cell_object")).transpose()?,
+                    );
+                    crate::resource::push(ctx, &mut cells, cell, "catia_design_row_cells")?;
+            }
+            if cells.first().and_then(|cell| cell.design_object()).is_some() {
+                let count = u64::try_from(cells.len()).map_err(|_| ctx.refuse_codec_limit(
+                    "catia_design_row_match_work", u64::MAX, u64::MAX))?;
+                let units = count.checked_mul(count).ok_or_else(|| ctx.refuse_codec_limit(
+                    "catia_design_row_match_work", u64::MAX, u64::MAX))?;
+                ctx.charge_work(units, "catia_design_row_match_work")?;
+            }
             let matching_design_object = cells
                 .first()
-                .and_then(|cell| cell.design_object().map(str::to_owned))
+                .and_then(|cell| cell.design_object())
                 .filter(|member| {
-                    let distinct_fields = cells
-                        .iter()
-                        .filter_map(|cell| cell.field())
-                        .collect::<HashSet<_>>();
                     columns.iter().zip(&cells).all(|((column, _), cell)| {
                         column.field_class.is_some()
                             && cell.field().is_some()
                             && cell.field_class() == column.field_class.as_ref()
-                            && cell.design_object() == Some(member.as_str())
-                    }) && distinct_fields.len() == cells.len()
-                });
-            CatiaDesignReferenceRow {
+                            && cell.design_object() == Some(*member)
+                    }) && cells.iter().enumerate().all(|(index, cell)| {
+                        !cells[..index].iter().any(|prior| prior.field() == cell.field())
+                    })
+                })
+                .map(|member| crate::resource::copy_retained_str(ctx, member,
+                    "catia_design_matching_object"))
+                .transpose()?;
+            let reference_row = CatiaDesignReferenceRow {
                 cells,
                 matching_design_object,
-            }
-        })
-        .collect();
-    CatiaDesignParallelReferenceTable::new(
-        columns.into_iter().map(|(column, _)| column).collect(),
+            };
+            crate::resource::push(ctx, &mut rows, reference_row, "catia_design_reference_rows")?;
+    }
+    let columns = crate::resource::collect_vec(ctx,
+        columns.into_iter().map(|(column, _)| column), "catia_design_table_columns")?;
+    Ok(CatiaDesignParallelReferenceTable::new(
+        columns,
         rows,
-    )
+    ))
 }
 
-fn design_class(record: &CatiaObjectRecord) -> Option<CatiaDesignClass> {
-    Some(CatiaDesignClass {
-        entry: record.class_entry()?.to_owned(),
-        name: record.class_name()?.to_owned(),
-    })
+fn design_class(
+    ctx: &DecodeContext<'_>,
+    record: &CatiaObjectRecord,
+) -> Result<Option<CatiaDesignClass>, CodecError> {
+    let (Some(entry), Some(name)) = (record.class_entry(), record.class_name()) else {
+        return Ok(None);
+    };
+    Ok(Some(CatiaDesignClass {
+        entry: crate::resource::copy_retained_str(ctx, entry, "catia_design_class_entry")?,
+        name: crate::resource::copy_retained_str(ctx, name, "catia_design_class_name")?,
+    }))
 }
 
 fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
     matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
-fn design_object_id(graph_offset: u64, owner_entity_id: u32) -> String {
-    format!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}")
+fn design_object_id(
+    ctx: &DecodeContext<'_>,
+    graph_offset: u64,
+    owner_entity_id: u32,
+) -> Result<String, CodecError> {
+    crate::resource::format_retained(ctx,
+        format_args!("catia:outer:design-object#{graph_offset:010}-{owner_entity_id:010}"),
+        "catia_design_object_id")
 }
 
 fn payload_references(
@@ -9527,7 +9566,7 @@ impl CatiaNative {
                 })
         });
         resolve_alias_surface_tags(ctx, &mut alias_rows)?;
-        let design_objects = design_objects(&object_graphs, &entity_records);
+        let design_objects = design_objects(ctx, &object_graphs, &entity_records)?;
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
                 graph
@@ -9946,9 +9985,7 @@ fn native_object_graph(
     for record in &mut records {
         record.design_object = record
             .owner_entity_id()
-            .map(|owner| crate::resource::format_retained(ctx,
-                format_args!("catia:outer:design-object#{:010}-{owner:010}", graph.pos),
-                "catia_native_record_design_object"))
+            .map(|owner| design_object_id(ctx, graph.pos as u64, owner))
             .transpose()?;
     }
     let record_indices = crate::resource::collect_map(ctx, records
