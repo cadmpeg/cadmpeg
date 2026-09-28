@@ -51,6 +51,28 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
 
+fn service_counterbore_cylinder_sources(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<Vec<Vec<u32>>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        counterbore_cylinder_sources(ctx, scan, feature_id)
+    })
+    .expect("service resources")
+}
+
+fn service_counterbore_source_patch_geometries(
+    sources: &[Vec<u32>],
+    existing: &BTreeMap<u32, SurfaceGeometry>,
+    bore_diameter: f64,
+    counterbore_diameter: f64,
+) -> Option<Vec<(u32, cadmpeg_ir::geometry::analytic::CylinderSurface)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        counterbore_source_patch_geometries(ctx, sources, existing, bore_diameter, counterbore_diameter)
+    })
+    .expect("service resources")
+}
+
 fn admitted_spans(raw: [[Option<f64>; 2]; 3]) -> [[Option<PositiveLength>; 2]; 3] {
     raw.map(|axis| {
         axis.map(|span| span.map(|value| PositiveLength::new(value).expect("positive span")))
@@ -986,11 +1008,11 @@ fn counterbore_sources_require_materialized_table_membership() {
         .extend([row(11), row(12), row(15), row(16)]);
 
     assert_eq!(
-        counterbore_cylinder_sources(&scan, 9),
+        service_counterbore_cylinder_sources(&scan, 9),
         Some(vec![vec![15, 16]])
     );
     scan.features.entity_tables.push(duplicate_productive_table);
-    assert!(counterbore_cylinder_sources(&scan, 9).is_none());
+    assert!(service_counterbore_cylinder_sources(&scan, 9).is_none());
 }
 
 #[test]
@@ -1230,7 +1252,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
     let sources = vec![vec![10, 11], vec![30, 31]];
 
-    let patches = counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625)
+    let patches = service_counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625)
         .expect("coaxial patches");
 
     assert_eq!(patches.len(), 4);
@@ -1275,7 +1297,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     );
     existing.insert(10, carrier);
     assert_eq!(
-        counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
+        service_counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
         None
     );
     let duplicate = existing[&30].clone();
