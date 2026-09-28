@@ -231,7 +231,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_surface_prototype_record",
         Exactness::ByteExact,
     )?;
-    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
+    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
@@ -244,7 +244,7 @@ pub(super) fn emit_geometry_arenas(
         "tabulated_cylinder_curve_replay",
         Exactness::ByteExact,
     )?;
-    let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom");
+    let curve_parameters = curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -258,7 +258,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_curve_parameters =
-        curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom");
+        curve_parameter_records(ctx, scan, &scan.curves.nonvisible_parameters, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -348,7 +348,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let curve_topology_rows =
-        curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom");
+        curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -362,7 +362,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_curve_topology_rows =
-        curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom");
+        curve_topology_row_records(ctx, scan, &scan.curves.nonvisible_topology_rows, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -375,7 +375,7 @@ pub(super) fn emit_geometry_arenas(
         "nonvisible_curve_topology_row",
         Exactness::ByteExact,
     )?;
-    let cross_section_curve_rows = cross_section_curve_row_records(scan);
+    let cross_section_curve_rows = cross_section_curve_row_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
