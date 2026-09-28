@@ -53,6 +53,16 @@ fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     }
 }
 
+fn service_modeling_scope(
+    has_outer_declarations: bool,
+    graphs: &[CatiaObjectGraph],
+) -> super::ModelingGraphScope {
+    crate::test_support::with_service_context(|ctx| {
+        modeling_graph_scope(ctx, has_outer_declarations, graphs)
+    })
+    .expect("service budget admits modeling scope")
+}
+
 #[test]
 fn modeling_scope_includes_only_the_declared_part_graph() {
     let graphs = vec![
@@ -63,8 +73,26 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
     ];
 
     assert_eq!(
-        modeling_graph_scope(true, &graphs),
+        service_modeling_scope(true, &graphs),
         super::ModelingGraphScope::Scoped("part-graph".to_string())
+    );
+}
+
+#[test]
+fn modeling_scope_refuses_retained_graph_identity_limit() {
+    let graphs = vec![graph("part-graph", "part", "CATPrtCont")];
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        modeling_graph_scope(ctx, true, &graphs)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_modeling_scope_graph"
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    ));
+    assert_eq!(
+        service_modeling_scope(true, &graphs),
+        super::ModelingGraphScope::Scoped("part-graph".to_owned())
     );
 }
 
@@ -76,7 +104,7 @@ fn modeling_scope_does_not_promote_application_extension_graphs() {
     ];
 
     assert_eq!(
-        modeling_graph_scope(true, &graphs),
+        service_modeling_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -89,7 +117,7 @@ fn modeling_scope_rejects_multiple_graphs_in_one_part_stream() {
     ];
 
     assert_eq!(
-        modeling_graph_scope(true, &graphs),
+        service_modeling_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -102,7 +130,7 @@ fn modeling_scope_rejects_multiple_declared_part_graphs() {
     ];
 
     assert_eq!(
-        modeling_graph_scope(true, &graphs),
+        service_modeling_scope(true, &graphs),
         super::ModelingGraphScope::Unresolved
     );
 }
@@ -112,7 +140,7 @@ fn modeling_scope_without_outer_declarations_remains_unbounded() {
     let graphs = vec![graph("fragment-graph", "part", "CATPrtCont")];
 
     assert_eq!(
-        modeling_graph_scope(false, &graphs),
+        service_modeling_scope(false, &graphs),
         super::ModelingGraphScope::Unscoped
     );
 }
