@@ -202,7 +202,7 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
-            if let Some(placement) = exact_coil_placement(bytes, &records, &scope, recipes) {
+            if let Some(placement) = exact_coil_placement(ctx, bytes, &records, &scope, recipes)? {
                 if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
                 | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
                 {

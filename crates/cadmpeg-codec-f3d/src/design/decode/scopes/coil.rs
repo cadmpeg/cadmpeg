@@ -29,7 +29,8 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::recipes::ConstructionRecipe;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1.0e-10;
 
@@ -64,11 +65,13 @@ pub(super) struct CoilDiscriminators {
 /// class-450 matrix carrier with a 315-byte span. A malformed or ambiguous
 /// carrier leaves the complete placement native.
 pub(super) fn exact_coil_placement(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignCoilPlacement> {
+) -> Result<Option<DesignCoilPlacement>, CodecError> {
+    (|| {
     if scope.kind() != scope::DesignFeatureKind::CoilPrimitive {
         return None;
     }
@@ -223,7 +226,7 @@ pub(super) fn exact_coil_placement(
     {
         return None;
     }
-    let selection = parse_entity_selection_frame(
+    let persistent_selection = parse_entity_selection_frame(
         bytes,
         selection_record_index,
         u64::try_from(selection_start).ok()?,
@@ -242,9 +245,11 @@ pub(super) fn exact_coil_placement(
                 }
             }),
         })
-    })
-    .or_else(|| {
-        exact_coil_face_selection(
+    });
+    let selection = match persistent_selection {
+        Some(selection) => selection,
+        None => match exact_coil_face_selection(
+            ctx,
             bytes,
             records,
             scope,
@@ -253,9 +258,13 @@ pub(super) fn exact_coil_placement(
             &selection_class_tag,
             transform_start,
             recipes,
-        )
-    })?;
-    Some(DesignCoilPlacement {
+        ) {
+            Ok(Some(selection)) => selection,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        },
+    };
+    Some(Ok(DesignCoilPlacement {
         selection_record_index,
         selection_record_byte_offset: u64::try_from(selection_start).ok()?,
         selection_class_tag: selection_class_tag.try_into().ok()?,
@@ -264,7 +273,8 @@ pub(super) fn exact_coil_placement(
         transform_record_byte_offset: u64::try_from(transform_start).ok()?,
         transform_class_tag: transform_class_tag.try_into().ok()?,
         explicit_transform,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_coil_modern_placement_matrix_frame(
@@ -418,6 +428,7 @@ fn exact_coil_legacy_identity_frame(
 }
 
 fn exact_coil_face_selection(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -426,10 +437,15 @@ fn exact_coil_face_selection(
     selection_class_tag: &str,
     transform_start: usize,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignCoilSelection> {
+) -> Result<Option<DesignCoilSelection>, CodecError> {
+    (|| {
     let prefix = parse_entity_selection_prefix(bytes, selection_start, selection_record_index)?;
+    let id = match copy_coil_text(ctx, &scope.id, "f3d Coil selection header ID") {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
     let header = DesignRecordHeader {
-        id: scope.id.clone(),
+        id,
         byte_offset: u64::try_from(selection_start).ok()?,
         class_tag: selection_class_tag.to_owned().try_into().ok()?,
         record_index: selection_record_index,
@@ -448,12 +464,16 @@ fn exact_coil_face_selection(
         return None;
     }
     let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
-    Some(DesignCoilSelection::FaceRecipe {
+    let recipe_id = match copy_coil_text(ctx, &recipe.id, "f3d Coil face recipe ID") {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(DesignCoilSelection::FaceRecipe {
         asset_id: prefix.asset_id.try_into().ok()?,
         context_id: prefix.context_id.try_into().ok()?,
         recipe_record_index: face.recipe_record_index(),
         recipe_record_byte_offset: face.recipe_record_byte_offset(),
-        recipe_id: recipe.id.clone(),
+        recipe_id,
         recipe_kind: scope::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
         design: recipe.design.as_ref().map(|design| {
             crate::records::recipes::ConstructionRecipeDesign {
@@ -461,7 +481,17 @@ fn exact_coil_face_selection(
                 selector: design.selector,
             }
         }),
-    })
+    }))
+    })().transpose()
+}
+
+fn copy_coil_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("F3D Coil text must be UTF-8"))
 }
 
 fn valid_right_handed_coil_transform(
