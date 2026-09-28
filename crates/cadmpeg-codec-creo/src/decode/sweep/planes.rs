@@ -11,8 +11,8 @@ use crate::vecmath::unit_length;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::{IdentityKey, SurfaceId};
 use std::collections::{BTreeMap, BTreeSet};
+use super::super::uniqueness::exactly_one;
 
 const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
 
@@ -20,27 +20,25 @@ fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<P
     if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
         return Err(());
     }
-    let outlines = scan
+    let mut outlines = scan
         .planes
         .outlines
         .iter()
-        .filter(|plane| plane.surface_id == surface_id)
-        .collect::<Vec<_>>();
-    match outlines.as_slice() {
-        [plane] => Ok(Some(PlaneEquation {
+        .filter(|plane| plane.surface_id == surface_id);
+    match (outlines.next(), outlines.next()) {
+        (Some(plane), None) => Ok(Some(PlaneEquation {
             origin: plane.origin,
             normal: plane.normal(),
         })),
-        [] => {
-            let frames = scan
+        (None, None) => {
+            let mut frames = scan
                 .planes
                 .local_systems
                 .iter()
-                .filter(|frame| frame.surface_id == surface_id)
-                .collect::<Vec<_>>();
-            match frames.as_slice() {
-                [] => Ok(None),
-                [frame] => {
+                .filter(|frame| frame.surface_id == surface_id);
+            match (frames.next(), frames.next()) {
+                (None, None) => Ok(None),
+                (Some(frame), None) => {
                     let frame = frame.frame();
                     Ok(frame
                         .origin
@@ -104,19 +102,24 @@ pub(in super::super) fn feature_outline_plane(
     let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
     (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
         .then_some(())?;
-    let outlines = scan
+    let mut outlines = scan
         .planes
         .outlines
         .iter()
         .filter(|plane| plane.surface_id == surface_id);
-    let outlines = outlines.cloned().collect::<Vec<_>>();
-    let positional_frames = scan
+    let outline = outlines.next();
+    if outlines.next().is_some() {
+        return None;
+    }
+    let mut positional_frames = scan
         .planes
         .positional_frames
         .iter()
-        .filter(|plane| plane.surface_id == surface_id)
-        .cloned()
-        .collect::<Vec<_>>();
+        .filter(|plane| plane.surface_id == surface_id);
+    let positional = positional_frames.next();
+    if positional_frames.next().is_some() {
+        return None;
+    }
     let agrees = |left: &crate::surface::OutlinePlane, right: &crate::surface::OutlinePlane| {
         left.origin
             .into_iter()
@@ -134,10 +137,10 @@ pub(in super::super) fn feature_outline_plane(
                         <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
                 })
     };
-    let plane = match (outlines.as_slice(), positional_frames.as_slice()) {
-        ([], []) => return None,
-        ([plane], []) | ([], [plane]) => plane,
-        ([outline], [positional]) if agrees(outline, positional) => outline,
+    let plane = match (outline, positional) {
+        (None, None) => return None,
+        (Some(plane), None) | (None, Some(plane)) => plane,
+        (Some(outline), Some(positional)) if agrees(outline, positional) => outline,
         _ => return None,
     };
     Some((surface_id, plane.origin, plane.normal()))
@@ -211,11 +214,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
             cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
         })
         .then_some(())?;
-    let frames = frame_records
-        .into_iter()
-        .map(|(_, frame)| frame)
-        .collect::<Vec<_>>();
-    agreed_generated_cylinder_extent(transform, &frames)
+    agreed_generated_cylinder_extent(transform, frame_records.iter().map(|(_, frame)| frame))
 }
 
 fn cylinder_frame_agrees_with_model(
@@ -224,19 +223,16 @@ fn cylinder_frame_agrees_with_model(
     frame: &crate::surface::PositionalCylinderFrame,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> bool {
-    let model_id = SurfaceId::compose(
-        &crate::identity::VISIBGEOM_SURFACE,
-        IdentityKey::from(surface_id),
-    );
-    let model_surfaces = ir
+    let mut model_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| surface.id == model_id)
-        .collect::<Vec<_>>();
-    let surface = match model_surfaces.as_slice() {
-        [] => return true,
-        [surface] => surface,
+        .filter(|surface| crate::identity::matches_numbered_identity(
+            surface.id.as_str(), "creo:visibgeom:surface#", surface_id,
+        ));
+    let surface = match (model_surfaces.next(), model_surfaces.next()) {
+        (None, None) => return true,
+        (Some(surface), None) => surface,
         _ => return false,
     };
     let geometry = source_carriers.surface_geometry(surface);
@@ -320,15 +316,11 @@ pub(in super::super) fn generated_cap_plane_extent(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let tables = scan
+    let table = exactly_one(scan
         .features
         .entity_tables
         .iter()
-        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29)
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+        .filter(|table| table.feature_id == feature_id && table.table_class_id == 29))?;
     let mut start_id = None;
     let mut end_id = None;
     let mut side_count = 0_usize;
@@ -374,20 +366,19 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     Some(frames)
 }
 
-pub(in super::super) fn agreed_generated_cylinder_extent(
+pub(in super::super) fn agreed_generated_cylinder_extent<'a>(
     transform: &crate::placement::FeatureSectionTransform,
-    frames: &[crate::surface::PositionalCylinderFrame],
+    frames: impl IntoIterator<Item = &'a crate::surface::PositionalCylinderFrame>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let normal = transform.normal();
-    let first = *frames.first()?;
+    let mut frames = frames.into_iter();
+    let first = *frames.next()?;
     let length = first.length()?;
     let direction = unit_length(*first.frame().orthonormal_frame().axis());
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
-    frames
-        .iter()
-        .all(|frame| {
+    let agrees = |frame: &crate::surface::PositionalCylinderFrame| {
             frame
                 .length()
                 .is_some_and(|candidate| close(candidate.get(), length.get()))
@@ -404,8 +395,8 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
                     ),
                     0.0,
                 )
-        })
-        .then_some(())?;
+        };
+    (agrees(&first) && frames.all(agrees)).then_some(())?;
     close(dot(direction, normal).abs(), 1.0).then_some(())?;
     Some((
         ExtrudeExtent::OneSided {
