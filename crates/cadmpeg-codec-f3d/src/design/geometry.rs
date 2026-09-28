@@ -1342,7 +1342,8 @@ fn arrangement_edge_tubes(
             edge.boundary.parameter_range.endpoints()[0],
             edge.boundary.parameter_range.endpoints()[1],
             target_error,
-        ),
+            ctx,
+        )?,
         SketchGeometryDefinition::Nurbs { curve }
             if !curve.periodic()
                 && sketch_geometry_parameter_range(&entity.geometry)
@@ -1588,8 +1589,10 @@ pub(super) fn region_containing_points(
     for (outer_index, outer) in boundaries.iter().enumerate() {
         let mut row = Vec::new();
         for (inner_index, inner) in boundaries.iter().enumerate() {
+            let contains = outer_index != inner_index
+                && outer.strictly_contains(inner, ctx)?;
             push_geometry_item(ctx, &mut row,
-                outer_index != inner_index && outer.strictly_contains(inner),
+                contains,
                 "f3d profile containment cell")?;
         }
         push_geometry_item(ctx, &mut containment, row,
@@ -1708,12 +1711,14 @@ pub(super) fn profile_loops_are_independent(
         push_geometry_item(ctx, &mut boundaries, boundary,
             "f3d independent profile boundaries")?;
     }
-    Ok(boundaries.iter().enumerate().all(|(left_index, left)| {
-        boundaries
-            .iter()
-            .skip(left_index + 1)
-            .all(|right| left.is_provably_disjoint(right))
-    }))
+    for (left_index, left) in boundaries.iter().enumerate() {
+        for right in boundaries.iter().skip(left_index + 1) {
+            if !left.is_provably_disjoint(right, ctx)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn immediate_containment_children(
@@ -1784,8 +1789,12 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self) -> bool {
-        match (self, inner) {
+    fn strictly_contains(
+        &self,
+        inner: &Self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<bool, CodecError> {
+        Ok(match (self, inner) {
             (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
                 Self::Circle {
@@ -1835,14 +1844,23 @@ impl ProfileBoundary {
                         point_in_circular_arc_loop(boundary_segment_endpoints(segment).0, outer)
                     })
             }
-            (outer, inner) => outer
-                .certified_loop()
-                .zip(inner.certified_loop())
-                .is_some_and(|(outer, inner)| outer.strictly_contains(&inner)),
-        }
+            (outer, inner) => {
+                let Some(outer) = outer.certified_loop(ctx)? else {
+                    return Ok(false);
+                };
+                let Some(inner) = inner.certified_loop(ctx)? else {
+                    return Ok(false);
+                };
+                outer.strictly_contains(&inner)
+            }
+        })
     }
 
-    fn is_provably_disjoint(&self, other: &Self) -> bool {
+    fn is_provably_disjoint(
+        &self,
+        other: &Self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<bool, CodecError> {
         let intersects = match (self, other) {
             (Self::Polygon(left), Self::Polygon(right)) => polygon_edges(left).any(|left_edge| {
                 polygon_edges(right).any(|right_edge| segments_intersect(left_edge, right_edge))
@@ -1874,18 +1892,28 @@ impl ProfileBoundary {
             | (Self::Circle { center, radius }, Self::CircularArcLoop(arc_loop)) => arc_loop
                 .iter()
                 .any(|segment| point_boundary_segment_distance(*center, segment) <= radius.get()),
-            (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
+            (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return Ok(false),
         };
-        !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
+        Ok(!intersects
+            && !self.strictly_contains(other, ctx)?
+            && !other.strictly_contains(self, ctx)?)
     }
 
-    fn certified_loop(&self) -> Option<CertifiedProfileLoop> {
-        match self {
-            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices),
-            Self::CircularArcLoop(segments) => certified_analytic_loop(segments),
-            Self::Circle { center, radius } => certified_circle(*center, *radius),
-            Self::CertifiedLoop(loop_) => Some(loop_.clone()),
-        }
+    fn certified_loop(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<std::borrow::Cow<'_, CertifiedProfileLoop>>, CodecError> {
+        use std::borrow::Cow;
+
+        Ok(match self {
+            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices, ctx)?
+                .map(Cow::Owned),
+            Self::CircularArcLoop(segments) => certified_analytic_loop(segments, ctx)?
+                .map(Cow::Owned),
+            Self::Circle { center, radius } => certified_circle(*center, *radius, ctx)?
+                .map(Cow::Owned),
+            Self::CertifiedLoop(loop_) => Some(Cow::Borrowed(loop_)),
+        })
     }
 }
 
@@ -1898,16 +1926,17 @@ impl CertifiedProfileLoop {
         self.tubes.iter().map(|tube| tube.start)
     }
 
-    fn from_vertices(vertices: &[Point2]) -> Option<Self> {
-        Self::new(
-            polygon_edges(vertices)
-                .map(|(start, end)| CertifiedCurveTube {
-                    start,
-                    end,
-                    error: 0.0,
-                })
-                .collect(),
-        )
+    fn from_vertices(
+        vertices: &[Point2],
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<Self>, CodecError> {
+        let mut tubes = Vec::new();
+        for (start, end) in polygon_edges(vertices) {
+            push_geometry_item(ctx, &mut tubes,
+                CertifiedCurveTube { start, end, error: 0.0 },
+                "f3d certified polygon tube")?;
+        }
+        Ok(Self::new(tubes))
     }
 
     fn contains_point(&self, point: Point2) -> bool {
@@ -2002,7 +2031,8 @@ fn certified_profile_loop(
                 start_angle.get(),
                 end_angle.get(),
                 target_error,
-            )),
+                ctx,
+            )?),
             SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
                 geometric!(certified_nurbs_tubes(curve, target_error, ctx)?)
             }
@@ -2037,7 +2067,10 @@ fn certified_profile_loop(
     Ok(CertifiedProfileLoop::new(tubes))
 }
 
-fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
+fn certified_analytic_loop(
+    segments: &[ProfileBoundarySegment],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     let scale = segments
         .iter()
         .flat_map(|segment| {
@@ -2059,18 +2092,29 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
                 radius,
                 start_angle,
                 end_angle,
-            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance)?,
+            } => geometric!(certified_arc_tubes(
+                *center, *radius, *start_angle, *end_angle, tolerance, ctx
+            )?),
         };
-        tubes.extend(segment_tubes);
+        for tube in segment_tubes {
+            push_geometry_item(ctx, &mut tubes, tube,
+                "f3d certified analytic tube")?;
+        }
     }
-    CertifiedProfileLoop::new(tubes)
+    Ok(CertifiedProfileLoop::new(tubes))
 }
 
-fn certified_circle(center: Point2, radius: PositiveLength) -> Option<CertifiedProfileLoop> {
+fn certified_circle(
+    center: Point2,
+    radius: PositiveLength,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<CertifiedProfileLoop>, CodecError> {
     let tolerance = EPS_GEOMETRY_CERTIFIED_CIRCLE_E6
         * (1.0 + center.u.abs().max(center.v.abs()).max(radius.get()));
-    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
-    CertifiedProfileLoop::new(tubes)
+    let tubes = geometric!(certified_arc_tubes(
+        center, radius, 0.0, std::f64::consts::TAU, tolerance, ctx
+    )?);
+    Ok(CertifiedProfileLoop::new(tubes))
 }
 
 fn certified_arc_tubes(
@@ -2079,30 +2123,38 @@ fn certified_arc_tubes(
     start: f64,
     end: f64,
     target_error: f64,
-) -> Option<Vec<CertifiedCurveTube>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let sweep = end - start;
     if !sweep.is_finite() || sweep == 0.0 {
-        return None;
+        return Ok(None);
     }
     let radius = radius.get();
-    let count = subdivision_count(radius * sweep.abs(), target_error)?;
+    let count = geometric!(subdivision_count(radius * sweep.abs(), target_error));
     let error = radius * sweep.abs() / count as f64;
-    (0..count)
-        .map(|index| {
-            let parameter = |ordinal: usize| start + sweep * ordinal as f64 / count as f64;
-            let point = |angle: f64| {
-                Point2::new(
-                    center.u + radius * angle.cos(),
-                    center.v + radius * angle.sin(),
-                )
-            };
-            Some(CertifiedCurveTube {
-                start: point(parameter(index)),
-                end: point(parameter(index + 1)),
-                error,
-            })
-        })
-        .collect()
+    let mut tubes = Vec::new();
+    if let Some(ctx) = ctx {
+        let charged_count = u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit("f3d certified arc tubes", 0, 1))?;
+        ctx.charge_collection_items(charged_count, "f3d certified arc tubes")?;
+        tubes.try_reserve(count)
+            .map_err(|_| ctx.refuse_codec_limit("f3d certified arc tubes allocation", 0, 1))?;
+    }
+    for index in 0..count {
+        let parameter = |ordinal: usize| start + sweep * ordinal as f64 / count as f64;
+        let point = |angle: f64| {
+            Point2::new(
+                center.u + radius * angle.cos(),
+                center.v + radius * angle.sin(),
+            )
+        };
+        tubes.push(CertifiedCurveTube {
+            start: point(parameter(index)),
+            end: point(parameter(index + 1)),
+            error,
+        });
+    }
+    Ok(Some(tubes))
 }
 
 fn certified_nurbs_tubes(
