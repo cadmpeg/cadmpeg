@@ -1696,16 +1696,21 @@ fn design_projection_gaps(
             native
                 .design_parameters
                 .iter()
-                .filter(|parameter| {
+                .try_fold(0usize, |count, parameter| {
                     let stream = crate::ids::native_stream(&parameter.id)
                         .unwrap_or(crate::ids::DEFAULT_STREAM);
-                    parameter.kind() == crate::records::parameters::DesignParameterKind::Dimension
-                        && relation_bearing_parameters.contains(&(stream, parameter.record_index))
-                        && !projected_dimension_parameters
-                            .contains(&crate::ids::neutral_parameter_id(parameter))
-                        && !container_only.contains(&crate::ids::neutral_parameter_id(parameter))
+                    if parameter.kind() != crate::records::parameters::DesignParameterKind::Dimension
+                        || !relation_bearing_parameters.contains(&(stream, parameter.record_index))
+                    {
+                        return Ok(count);
+                    }
+                    let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
+                    Ok::<_, CodecError>(count + usize::from(
+                        !projected_dimension_parameters.contains(&id)
+                            && !container_only.contains(&id),
+                    ))
                 })
-                .count()
+                ?
         },
         active_face_substitutions: native
             .design_face_operands
