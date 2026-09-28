@@ -1692,6 +1692,22 @@ impl From<CatiaValueBlock> for CatiaValueBlockWire {
     }
 }
 
+impl CatiaValueBlockWire {
+    fn from_charged(ctx: &DecodeContext<'_>, block: CatiaValueBlock) -> Result<Self, CodecError> {
+        Ok(Self {
+            byte_len: block.byte_len(),
+            declared_len: block.declared_len(),
+            fields: value_block::tokenize_charged(ctx, &block.payload)?,
+            id: block.id,
+            byte_offset: block.byte_offset,
+            object_graph: block.object_graph,
+            catalog: block.catalog,
+            payload: block.payload,
+            schema_selections: block.schema_selections,
+        })
+    }
+}
+
 impl TryFrom<CatiaValueBlockWire> for CatiaValueBlock {
     type Error = &'static str;
 
@@ -3316,6 +3332,22 @@ impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
     fn from(value: CatiaObjectRecord) -> Self {
         let subtype = value.subtype();
         let repeated_reference_suffix = value.repeated_reference_suffix();
+        Self::from_parts(value, subtype, repeated_reference_suffix)
+    }
+}
+
+impl CatiaObjectRecordWire {
+    fn from_charged(ctx: &DecodeContext<'_>, value: CatiaObjectRecord) -> Result<Self, CodecError> {
+        let subtype = value.subtype();
+        let suffix = object_graph::repeated_reference_suffix_charged(ctx, &value.payload)?;
+        Ok(Self::from_parts(value, subtype, suffix))
+    }
+
+    fn from_parts(
+        value: CatiaObjectRecord,
+        subtype: PayloadSubtype,
+        repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
+    ) -> Self {
         let (entity_record, entity_id) = match value.entity {
             Some(entity) => (Some(entity.record), Some(entity.id)),
             None => (None, None),
@@ -7101,6 +7133,8 @@ macro_rules! define_catia_arenas {
     (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
     (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
     (@type entity_records, $kind:ident, $record:ty) => { Vec<CatiaEntityRecordWire> };
+    (@type object_graph_records, $kind:ident, $record:ty) => { Vec<CatiaObjectRecordWire> };
+    (@type value_blocks, $kind:ident, $record:ty) => { Vec<CatiaValueBlockWire> };
     (@type schema_configuration_row_chains, $kind:ident, $record:ty) => {
         Vec<schema_configuration_chain::ChainWire>
     };
@@ -7115,6 +7149,22 @@ macro_rules! define_catia_arenas {
             "catia_native_entity_wires",
         )?;
     };
+    (@prepare $ctx:ident, object_graph_records, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = crate::resource::try_collect_vec(
+            $ctx,
+            std::mem::take(&mut $native.object_graph_records).into_iter()
+                .map(|record| CatiaObjectRecordWire::from_charged($ctx, record)),
+            "catia_native_object_record_wires",
+        )?;
+    };
+    (@prepare $ctx:ident, value_blocks, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = crate::resource::try_collect_vec(
+            $ctx,
+            std::mem::take(&mut $native.value_blocks).into_iter()
+                .map(|block| CatiaValueBlockWire::from_charged($ctx, block)),
+            "catia_native_value_block_wires",
+        )?;
+    };
     (@prepare $ctx:ident, schema_configuration_row_chains, $native:ident, $kind:ident, $binding:ident) => {
         let $binding = crate::resource::try_collect_vec(
             $ctx,
@@ -7125,6 +7175,8 @@ macro_rules! define_catia_arenas {
     };
     (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
     (@stored_value stored, $native:ident, entity_records, $binding:ident) => { $binding };
+    (@stored_value stored, $native:ident, object_graph_records, $binding:ident) => { $binding };
+    (@stored_value stored, $native:ident, value_blocks, $binding:ident) => { $binding };
     (@stored_value stored, $native:ident, schema_configuration_row_chains, $binding:ident) => { $binding };
     (@type catalogs, $kind:ident, $record:ty) => {
         Vec<CatiaCatalogWire>

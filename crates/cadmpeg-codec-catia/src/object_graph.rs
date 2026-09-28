@@ -1447,6 +1447,27 @@ pub(crate) fn repeated_reference_suffix(
     })
 }
 
+pub(crate) fn repeated_reference_suffix_charged(
+    ctx: &DecodeContext<'_>,
+    payload: &ObjectPayload,
+) -> Result<Option<RepeatedReferenceSuffix>, CodecError> {
+    let Some(view) = repeated_reference_suffix_view(payload) else {
+        return Ok(None);
+    };
+    let repeated_references = crate::resource::collect_vec(ctx,
+        view.repeated.iter().filter_map(|field| match field {
+            PayloadField::Reference { value, .. } => Some(*value),
+            _ => None,
+        }), "catia_native_repeated_reference_suffix")?;
+    Ok(Some(RepeatedReferenceSuffix {
+        schema_preamble: view.schema_preamble,
+        repeated_references,
+        terminal_reference: view.terminal_reference,
+        first_count_offset: view.first_count_offset,
+        repeated_count_offset: view.repeated_count_offset,
+    }))
+}
+
 fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
     let mut matches = fields.windows(4).filter_map(|fields| match fields {
         [
