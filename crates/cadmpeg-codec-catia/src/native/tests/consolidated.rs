@@ -1970,7 +1970,10 @@ fn cone_face_followed_by_spanning_parameter_point_terminates() {
         &bytes,
         [[0..split, split..bytes.len()]],
     );
-    let faces = crate::native::consolidated_cone_faces(&bytes, &records, &[]);
+    let faces = crate::test_support::with_service_context(|ctx| {
+        crate::native::consolidated_cone_faces(ctx, &bytes, &records, &[])
+            .expect("service decode")
+    });
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());
 }

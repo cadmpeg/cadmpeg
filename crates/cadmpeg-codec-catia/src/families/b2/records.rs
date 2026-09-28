@@ -741,9 +741,10 @@ pub(crate) fn b2_edge_nodes_from_records<'a>(
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
 #[must_use]
-pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
+pub(crate) fn b2_cone_faces(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<B2ConeFace>, CodecError> {
     let mut faces = Vec::new();
-    for pos in 0..data.len().saturating_sub(5) {
+    let Some(last) = data.len().checked_sub(5) else { return Ok(faces) };
+    for pos in 0..last {
         let Some(width) = data[pos]
             .checked_sub(0xb1)
             .filter(|width| (1..=3).contains(width))
@@ -786,16 +787,18 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
             && program.ends_with(&[0x03, 0x11])
             && half_angle.get() < std::f64::consts::FRAC_PI_2
         {
-            faces.push(B2ConeFace {
+            let program = crate::resource::copy_retained_slice(ctx, program,
+                "catia_b2_cone_face_program")?;
+            crate::resource::push(ctx, &mut faces, B2ConeFace {
                 pos,
                 end,
-                program: program.to_vec(),
+                program,
                 angular_scale,
                 half_angle,
-            });
+            }, "catia_b2_cone_faces")?;
         }
     }
-    faces
+    Ok(faces)
 }
 
 /// Decode `b2/b3/b4 03 37` compact reference lists with their unit tail.
