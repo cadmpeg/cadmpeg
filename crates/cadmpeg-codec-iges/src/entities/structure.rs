@@ -1406,10 +1406,8 @@ fn linear_nurbs_boundary_points(
     parameter_range: [f64; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    if nurbs
-        .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
-    {
+    if (0..nurbs.pole_count())
+        .any(|index| nurbs.pole_rows().weight_at(index).is_some_and(|weight| weight <= 0.0)) {
         return Ok(None);
     }
     let Some(parameters) = linear_nurbs_parameters(
@@ -1499,6 +1497,7 @@ fn bounded_plane_curve_is_simple(
     parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
 ) -> Result<bool, CodecError> {
+    let _nested = context.ctx.enter_nested("iges plane boundary simplicity")?;
     match geometry {
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Line(_)
@@ -1519,10 +1518,13 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                context
-                    .ctx
-                    .charge_collection_items(1, "iges plane boundary active curve")?;
-                active.insert(segment.curve.clone());
+                let active_id = copy_optional_identity(
+                    Some(context.ctx), segment.curve.as_str(),
+                    "iges plane boundary child curve ID",
+                )?;
+                crate::decode_resource::insert_optional_btree_set(
+                    Some(context.ctx), active, active_id, "iges plane boundary active curve",
+                )?;
                 let Some(geometry) = curve.geometry.solved() else {
                     active.remove(&segment.curve);
                     return Ok(false);
@@ -2527,11 +2529,15 @@ pub(super) fn project(
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
         let mut attribute_types = BTreeSet::new();
-        let mut shape = Vec::new();
+        let mut shape = reserve_vec(ctx, attribute_count.unwrap_or_default(), "iges attribute shape descriptors")?;
         for _ in 0..attribute_count.unwrap_or_default() {
-            let attribute_type_valid = record
-                .integer(cursor)
-                .is_some_and(|value| (0..=9999).contains(&value) && attribute_types.insert(value));
+            let attribute_type_valid = match record.integer(cursor) {
+                Some(value) if (0..=9999).contains(&value) =>
+                    crate::decode_resource::insert_optional_btree_set(
+                        Some(ctx), &mut attribute_types, value, "iges attribute type nodes",
+                    )?,
+                _ => false,
+            };
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 0..=6));
@@ -2575,7 +2581,10 @@ pub(super) fn project(
         if name_valid && list_type_valid && attributes_valid {
             crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
             if entry.form == 0 {
-                attribute_shapes.insert(entry.sequence, shape);
+                crate::decode_resource::insert_optional_btree_map(
+                    Some(ctx), &mut attribute_shapes, entry.sequence, shape,
+                    "iges attribute shape index nodes",
+                )?;
             }
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
@@ -2774,7 +2783,13 @@ pub(super) fn project(
                     sequences,
                 ) {
                     Ok(Some((candidate, plane_sequences))) => {
-                        legacy_plane_sequences.extend(plane_sequences);
+                        for sequence in plane_sequences {
+                            crate::decode_resource::insert_optional_btree_set(
+                                Some(ctx), &mut legacy_plane_sequences, sequence,
+                                "iges legacy plane sequence nodes",
+                            )?;
+                        }
+                        reserve_vec_growth(ctx, &mut legacy_face_candidates, 1, "iges legacy face candidates")?;
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
@@ -2836,7 +2851,10 @@ pub(super) fn project(
                         ctx,
                     );
                     match candidate {
-                        Ok(candidate) => legacy_face_candidates.push((entry, candidate)),
+                        Ok(candidate) => {
+                            reserve_vec_growth(ctx, &mut legacy_face_candidates, 1, "iges legacy face candidates")?;
+                            legacy_face_candidates.push((entry, candidate));
+                        }
                         Err(reason) => super::push_optional_entity_loss(
                             Some(ctx), &mut losses, entry, format_args!("{}", reason.non_resource()?),
                         )?,
@@ -3276,7 +3294,10 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            placement_rejections.insert(entry.sequence, PlacementRejection::MissingRecord);
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut placement_rejections, entry.sequence,
+                PlacementRejection::MissingRecord, "iges placement rejection nodes",
+            )?;
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
@@ -3300,18 +3321,30 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut placement_rejections, entry.sequence,
+                PlacementRejection::InvalidPlacement, "iges placement rejection nodes",
+            )?;
         }
         let Some(definition) = definition else {
-            placement_rejections
-                .entry(entry.sequence)
-                .or_insert(PlacementRejection::InvalidDefinition);
+            if !placement_rejections.contains_key(&entry.sequence) {
+                crate::decode_resource::insert_optional_btree_map(
+                    Some(ctx), &mut placement_rejections, entry.sequence,
+                    PlacementRejection::InvalidDefinition, "iges placement rejection nodes",
+                )?;
+            }
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure-instance definition pointer is invalid"))?;
             continue;
         };
-        instances.insert(entry.sequence, definition);
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut instances, entry.sequence, definition,
+            "iges subfigure instance nodes",
+        )?;
         if placement_valid {
-            instance_fields_valid.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx), &mut instance_fields_valid, entry.sequence,
+                "iges valid subfigure instance nodes",
+            )?;
         }
     }
 
@@ -3395,7 +3428,10 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            placement_rejections.insert(entry.sequence, PlacementRejection::MissingRecord);
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut placement_rejections, entry.sequence,
+                PlacementRejection::MissingRecord, "iges placement rejection nodes",
+            )?;
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
@@ -3435,27 +3471,38 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            placement_rejections.insert(entry.sequence, PlacementRejection::InvalidPlacement);
+            crate::decode_resource::insert_optional_btree_map(
+                Some(ctx), &mut placement_rejections, entry.sequence,
+                PlacementRejection::InvalidPlacement, "iges placement rejection nodes",
+            )?;
         }
         let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
-            placement_rejections
-                .entry(entry.sequence)
-                .or_insert(match definition {
+            if !placement_rejections.contains_key(&entry.sequence) {
+                let rejection = match definition {
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
-                });
+                };
+                crate::decode_resource::insert_optional_btree_map(
+                    Some(ctx), &mut placement_rejections, entry.sequence,
+                    rejection, "iges placement rejection nodes",
+                )?;
+            }
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network instance definition or count is invalid"))?;
             continue;
         };
-        network_instances.insert(
-            entry.sequence,
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut network_instances, entry.sequence,
             NetworkInstance {
                 definition,
                 connect_points,
             },
-        );
+            "iges network instance nodes",
+        )?;
         if placement_valid && type_flag_valid && designator_valid && display_valid {
-            network_instance_fields_valid.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx), &mut network_instance_fields_valid, entry.sequence,
+                "iges valid network instance nodes",
+            )?;
         }
     }
 

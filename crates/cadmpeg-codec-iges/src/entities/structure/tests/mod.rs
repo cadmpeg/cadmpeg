@@ -1509,6 +1509,8 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
         "iges legacy plane shell faces",
         "iges legacy plane region shells",
         "iges legacy plane body regions",
+        "iges legacy plane sequence nodes",
+        "iges legacy face candidates",
     ] {
         let mut cap = 0_u64;
         let mut reached = false;
@@ -1580,6 +1582,45 @@ fn structure_lists_and_indexes_refuse_unadmitted_storage() {
         }
         assert!(reached, "structure storage refusal was not reached: {operation}");
         assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    }
+}
+
+#[test]
+fn structure_projection_refuses_attribute_and_occurrence_nodes() {
+    for (bytes, operation) in [
+        (attribute_definition_forms_file(), "iges attribute type nodes"),
+        (attribute_definition_forms_file(), "iges attribute shape descriptors"),
+        (attribute_definition_forms_file(), "iges attribute shape index nodes"),
+        (nested_subfigure_file(), "iges subfigure instance nodes"),
+        (nested_subfigure_file(), "iges valid subfigure instance nodes"),
+        (network_subfigure_file(), "iges network instance nodes"),
+        (network_subfigure_file(), "iges valid network instance nodes"),
+        (owned_test_file(&[OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "MISSING".into(),
+            status: "00000000",
+            parameters: "408,99,0,0,0,1;".into(),
+        }]), "iges placement rejection nodes"),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure index refusal at {operation}"),
+            }
+        }
+        assert!(reached, "structure index refusal was not reached: {operation}");
     }
 }
 
