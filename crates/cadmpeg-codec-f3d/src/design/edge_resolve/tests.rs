@@ -19,6 +19,7 @@ use super::{
 
 mod surface_patch_allocation;
 mod edge_flange_allocation;
+mod treatment_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,

@@ -72,6 +72,14 @@ fn copy_edge_id(
     cadmpeg_ir::ids::EdgeId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn native_edge_selection(
+    group: &DesignConstructionOperandGroup,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    Ok(cadmpeg_ir::features::EdgeSelection::Native(copy_edge_text(ctx,
+        &group.id, "f3d native edge group id")?))
+}
+
 pub(super) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -91,6 +99,7 @@ pub(super) fn resolved_edge_group(
             feature_id,
         },
         EdgeGroupProof::Generic,
+        None,
         ctx,
     )
 }
@@ -413,10 +422,10 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
             EdgeGroupProof::Treatment {
                 radius: treatment_radius,
             },
+            None,
             ctx,
         );
     }
-    let mut edge_group = group.clone();
     let mut corner_slots = Vec::new();
     let mut edge_members = Vec::new();
     for (ordinal, member) in group.members().iter().copied().enumerate() {
@@ -441,25 +450,27 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
         });
         match (edge_count, corner) {
             (1, None) => {
-                edge_members.push(member);
+                push_edge_item(ctx, &mut edge_members, member,
+                    "f3d treatment edge member")?;
             }
             (0, Some(corner)) => {
                 let Some(resolution) = corner.recipe.resolution else {
-                    return Ok(EdgeSelection::Native(group.id.clone()));
+                    return native_edge_selection(group, ctx);
                 };
                 if Some(resolution.state_id) != previous_state_id {
-                    return Ok(EdgeSelection::Native(group.id.clone()));
+                    return native_edge_selection(group, ctx);
                 }
-                corner_slots.push(resolution.vertex_slot());
+                push_edge_item(ctx, &mut corner_slots, resolution.vertex_slot(),
+                    "f3d treatment corner slot")?;
             }
-            _ => return Ok(EdgeSelection::Native(group.id.clone())),
+            _ => return native_edge_selection(group, ctx),
         }
     }
-    if edge_members.is_empty() || edge_group.try_set_members(edge_members).is_err() {
-        return Ok(EdgeSelection::Native(group.id.clone()));
+    if edge_members.is_empty() {
+        return native_edge_selection(group, ctx);
     }
     let selection = resolved_edge_group_with_transition_chain(
-        &edge_group,
+        group,
         groups,
         operands,
         identity_operands,
@@ -470,16 +481,17 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
         EdgeGroupProof::Treatment {
             radius: treatment_radius,
         },
+        Some(&edge_members),
         ctx,
     )?;
     if corner_slots.is_empty() {
         return Ok(selection);
     }
     let EdgeSelection::Historical { edges, .. } = &selection else {
-        return Ok(EdgeSelection::Native(group.id.clone()));
+        return native_edge_selection(group, ctx);
     };
     let Some(state_id) = previous_state_id else {
-        return Ok(EdgeSelection::Native(group.id.clone()));
+        return native_edge_selection(group, ctx);
     };
     let mut states = histories
         .iter()
@@ -487,43 +499,31 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == state_id);
     let Some(topology) = states.next().and_then(|state| state.topology()) else {
-        return Ok(EdgeSelection::Native(group.id.clone()));
+        return native_edge_selection(group, ctx);
     };
     if states.next().is_some() {
-        return Ok(EdgeSelection::Native(group.id.clone()));
+        return native_edge_selection(group, ctx);
     }
-    let edge_slots = edges
-        .iter()
-        .map(|edge| edge.as_str().rsplit(':').next()?.parse::<i64>().ok())
-        .collect::<Option<Vec<_>>>();
-    let Some(edge_slots) = edge_slots else {
-        return Ok(EdgeSelection::Native(group.id.clone()));
-    };
-    let endpoints = edge_slots
-        .iter()
-        .map(|edge_slot| {
-            let mut matches = topology
-                .edge_vertices
-                .iter()
-                .filter(|edge| edge.edge == *edge_slot);
-            let edge = matches.next()?;
-            matches
-                .next()
-                .is_none()
-                .then_some([edge.start_vertex, edge.end_vertex])
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(endpoints) = endpoints else {
-        return Ok(EdgeSelection::Native(group.id.clone()));
-    };
-    let endpoints = endpoints.into_iter().flatten().collect::<HashSet<_>>();
-    Ok(
-        if corner_slots.iter().all(|corner| endpoints.contains(corner)) {
-            selection
-        } else {
-            EdgeSelection::Native(group.id.clone())
-        },
-    )
+    let mut endpoints = HashSet::new();
+    for edge in edges {
+        let Some(edge_slot) = edge.as_str().rsplit(':').next()
+            .and_then(|slot| slot.parse::<i64>().ok()) else {
+            return native_edge_selection(group, ctx);
+        };
+        let mut matches = topology.edge_vertices.iter()
+            .filter(|edge| edge.edge == edge_slot);
+        let Some(edge) = matches.next() else { return native_edge_selection(group, ctx); };
+        if matches.next().is_some() { return native_edge_selection(group, ctx); }
+        insert_edge_set(ctx, &mut endpoints, edge.start_vertex,
+            "f3d treatment endpoint vertex")?;
+        insert_edge_set(ctx, &mut endpoints, edge.end_vertex,
+            "f3d treatment endpoint vertex")?;
+    }
+    if corner_slots.iter().all(|corner| endpoints.contains(corner)) {
+        Ok(selection)
+    } else {
+        native_edge_selection(group, ctx)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -547,6 +547,7 @@ fn resolved_edge_group_with_transition_chain(
     identity_operands: &[DesignEdgeIdentityOperand],
     transition: EdgeGroupTransition<'_>,
     proof: EdgeGroupProof,
+    members_override: Option<&[crate::records::identity::Located<u32>]>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
@@ -555,6 +556,7 @@ fn resolved_edge_group_with_transition_chain(
         previous_state_id,
         feature_id,
     } = transition;
+    let members = members_override.unwrap_or_else(|| group.members());
 
     let (allow_edge_treatment_transition_chain, treatment_radius) = match proof {
         EdgeGroupProof::Generic => (false, None),
@@ -586,24 +588,21 @@ fn resolved_edge_group_with_transition_chain(
     let has_surface_patch_operand = operands.iter().any(|operand| {
         native_stream(&operand.id) == stream
             && operand.scope_record_index == group.scope_record_index
-            && group
-                .members()
+            && members
                 .iter()
                 .any(|member| member.value == operand.record_index())
             && operand.surface_patch_recipe_structure.is_some()
     });
     if has_surface_patch_operand {
         let mut member_ids = HashSet::new();
-        if group
-            .members()
+        if members
             .iter()
             .map(|member| &member.value)
             .any(|member| !member_ids.insert(*member))
         {
             return Ok(unmatched_selection(previous_state_id));
         }
-        let matched_operands = group
-            .members()
+        let matched_operands = members
             .iter()
             .map(|member| &member.value)
             .map(|member| {
@@ -670,8 +669,7 @@ fn resolved_edge_group_with_transition_chain(
         )
         .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
     }
-    let identity_matches = group
-        .members()
+    let identity_matches = members
         .iter()
         .map(|member| &member.value)
         .map(|member| {
@@ -685,8 +683,7 @@ fn resolved_edge_group_with_transition_chain(
             matches.next().is_none().then_some(operand)
         })
         .collect::<Option<Vec<_>>>();
-    let has_recipe_operands = group
-        .members()
+    let has_recipe_operands = members
         .iter()
         .map(|member| &member.value)
         .all(|member| {
@@ -701,8 +698,7 @@ fn resolved_edge_group_with_transition_chain(
             matches.len() == 1
         });
     let has_unstructured_recipe_operand =
-        group
-            .members()
+        members
             .iter()
             .map(|member| &member.value)
             .any(|member| {
@@ -718,8 +714,7 @@ fn resolved_edge_group_with_transition_chain(
         return Ok(unmatched_selection(previous_state_id));
     }
     let has_standard_recipe_operands =
-        group
-            .members()
+        members
             .iter()
             .map(|member| &member.value)
             .any(|member| {
@@ -731,8 +726,7 @@ fn resolved_edge_group_with_transition_chain(
                 })
             });
     let has_concrete_recipe_evidence =
-        group
-            .members()
+        members
             .iter()
             .map(|member| &member.value)
             .any(|member| {
@@ -756,7 +750,7 @@ fn resolved_edge_group_with_transition_chain(
             });
     let identity_transition_slots = (allow_edge_treatment_transition_chain
         && treatment_radius.is_none()
-        && group.members().len() == 1)
+        && members.len() == 1)
         .then(|| {
             let [operand] = identity_matches.as_ref()?.as_slice() else {
                 return None;
@@ -786,8 +780,7 @@ fn resolved_edge_group_with_transition_chain(
         is_uniform_compact_transition_chain.then_some(edges)
     });
     let recipe_supports_transition_chain = |chain: &[i64]| {
-        let member_operands = group
-            .members()
+        let member_operands = members
             .iter()
             .map(|member| &member.value)
             .map(|member| {
@@ -803,7 +796,7 @@ fn resolved_edge_group_with_transition_chain(
         let Some(member_operands) = member_operands else {
             return false;
         };
-        transition_chain_is_supported_by_recipe(chain, group.members().len(), member_operands)
+        transition_chain_is_supported_by_recipe(chain, members.len(), member_operands)
     };
     let identity_transition_is_supported = identity_transition_slots
         .as_deref()
@@ -815,7 +808,7 @@ fn resolved_edge_group_with_transition_chain(
     let identity_group_transition_is_admitted = identity_group_transition_slots
         .as_deref()
         .is_some_and(|edges| {
-            edges.len() == group.members().len() || recipe_supports_transition_chain(edges)
+            edges.len() == members.len() || recipe_supports_transition_chain(edges)
         });
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
@@ -829,7 +822,7 @@ fn resolved_edge_group_with_transition_chain(
                 || identity_radius_slots.is_some())
     });
     let all_member_identities_are_lost =
-        !group.members().is_empty() && group.lost_edge_references.len() == group.members().len();
+        !members.is_empty() && group.lost_edge_references.len() == members.len();
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         has_complete_identity_selection
             && !has_standard_recipe_operands
@@ -946,9 +939,9 @@ fn resolved_edge_group_with_transition_chain(
         )
         .unwrap_or_else(|| EdgeSelection::Native(group.id.clone())));
     }
-    let mut matched_operands = Vec::with_capacity(group.members().len());
+    let mut matched_operands = Vec::with_capacity(members.len());
     let mut member_identities = HashSet::new();
-    for member in group.members().iter().map(|member| &member.value) {
+    for member in members.iter().map(|member| &member.value) {
         if !member_identities.insert(*member) {
             return Ok(unmatched_selection(previous_state_id));
         }
@@ -1042,7 +1035,7 @@ fn resolved_edge_group_with_transition_chain(
             slots = deleted_boundary_edge_group_candidates(&matched_operands);
         }
         if slots.is_none() {
-            slots = scope_partition_edge_group_candidates(group, groups, operands);
+            slots = scope_partition_edge_group_candidates(group, groups, operands, members);
         }
         Ok(slots)
     };
@@ -1804,6 +1797,7 @@ fn scope_partition_edge_group_candidates(
     target: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
+    target_members: &[crate::records::identity::Located<u32>],
 ) -> Option<Vec<i64>> {
     let stream = native_stream(&target.id)?;
     let mut scope_groups = Vec::new();
@@ -1812,11 +1806,12 @@ fn scope_partition_edge_group_candidates(
         native_stream(&group.id) == Some(stream)
             && group.scope_record_index == target.scope_record_index
             && group.lost_edge_references.is_empty()
-            && !group.members().is_empty()
+            && !(if group.id == target.id { target_members } else { group.members() }).is_empty()
     }) {
-        let mut members = Vec::with_capacity(group.members().len());
+        let group_members = if group.id == target.id { target_members } else { group.members() };
+        let mut members = Vec::with_capacity(group_members.len());
         let mut complete = true;
-        for member in group.members().iter().map(|member| &member.value) {
+        for member in group_members.iter().map(|member| &member.value) {
             let matches = operands
                 .iter()
                 .filter(|operand| {
