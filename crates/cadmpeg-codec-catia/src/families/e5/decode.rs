@@ -2287,19 +2287,21 @@ fn e5_pcurve_on_surface(
             radius,
             range,
             ..
-        } => Ok((|| {
+        } => {
             let (center, radius) = (center.map(FiniteReal::get), radius.get());
             let angular_range = ordered_range([range[0].get() / radius, range[1].get() / radius]);
             if !angular_range.into_iter().all(f64::is_finite) {
-                return None;
+                return Ok(None);
             }
-            let geometry = rational_pcurve_arc(
+            let Some(geometry) = rational_pcurve_arc(
+                ctx,
                 center,
                 radius,
                 angular_range,
                 refusal,
                 "e5 arc pcurve record",
-            )?;
+            )? else { return Ok(None) };
+            Ok((|| {
             let PcurveGeometry::Nurbs { mut nurbs } = geometry else {
                 return None;
             };
@@ -2321,7 +2323,8 @@ fn e5_pcurve_on_surface(
             });
             let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, angular_range, endpoints))
-        })()),
+            })())
+        }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
             let mut knots = Vec::new();
@@ -3154,7 +3157,7 @@ mod route_tests {
     mod ownership_limits;
     mod plane_frames;
 
-    use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
+    use crate::assemble::quintic_jet_pcurve;
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_circle_carriers_have_same_ordered_sweep, e5_native_uv_endpoints,
         e5_occurrence_intersection_context, e5_ownership_plan, e5_pcurve_on_surface,
@@ -3184,6 +3187,47 @@ mod route_tests {
 
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
+
+    fn rational_pcurve_arc(
+        center: [f64; 2], radius: f64, range: [f64; 2],
+        refusal: &mut crate::nurbs::LaneRefusals, record: &str,
+    ) -> Option<PcurveGeometry> {
+        crate::test_support::with_service_context(|ctx| {
+            crate::assemble::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
+        }).expect("service budget admits rational arc")
+    }
+
+    #[test]
+    fn e5_circle_pcurve_propagates_arc_collection_refusal() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ).expect("valid plane fixture"),
+            )),
+            uv_scale: finite_pair([1.0, 1.0]),
+        };
+        let pcurve = E5Pcurve::Circle {
+            surface: 0,
+            center: finite_pair([0.0, 0.0]),
+            codes: [0, 0],
+            radius: positive(2.0),
+            range: finite_pair([0.0, std::f64::consts::PI]),
+            tail: finite_pair([0.0, 0.0]),
+        };
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            e5_pcurve_on_surface(ctx, &pcurve, &surface,
+                &mut crate::nurbs::LaneRefusals::new())
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_rational_arc_controls"));
+        assert!(fixture_pcurve_on_surface(&pcurve, &surface,
+            &mut crate::nurbs::LaneRefusals::new()).is_some());
+    }
 
     fn fixture_pcurve_on_surface(
         pcurve: &E5Pcurve,

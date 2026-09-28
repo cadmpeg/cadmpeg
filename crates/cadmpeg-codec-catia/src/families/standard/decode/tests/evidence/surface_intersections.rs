@@ -70,6 +70,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[
@@ -200,6 +201,7 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
@@ -291,6 +293,7 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[
@@ -395,6 +398,7 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
     let (id, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut annotations,
             &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
@@ -524,6 +528,7 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -608,6 +613,7 @@ fn standard_intersection_entity_limit_refuses_before_procedural_curve_creation()
     crate::test_support::with_entity_limit(3, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[],
@@ -772,7 +778,9 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
         ),
         (Point3::new(0.1, 0., 1.), true),
     ] {
-        let result = crate::families::standard::decode::standard_pcurve_geometry(
+        let result = crate::test_support::with_service_context(|ctx| {
+            crate::families::standard::decode::standard_pcurve_geometry(
+            ctx,
             &surface,
             &support,
             start,
@@ -780,7 +788,8 @@ fn numerical_ranges_standard_line_rejects_cylinder_chord_mismatch() {
             None,
             None,
             &mut crate::nurbs::LaneRefusals::new(),
-        );
+            )
+        }).expect("service budget admits standard pcurve");
         assert_eq!(result.is_some(), accepted);
     }
 }

@@ -696,12 +696,13 @@ pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
 }
 
 pub(crate) fn rational_pcurve_arc(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     center: [f64; 2],
     radius: f64,
     range: [f64; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
     record: &str,
-) -> Option<PcurveGeometry> {
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let span = range[1] - range[0];
     if !center.into_iter().all(f64::is_finite)
         || !range.into_iter().all(f64::is_finite)
@@ -710,28 +711,45 @@ pub(crate) fn rational_pcurve_arc(
         || radius <= 0.0
         || !span.is_finite()
     {
-        return None;
+        return Ok(None);
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
-        return None;
+        return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let segment_count = std::num::NonZeroUsize::new(segment_count as usize)?.get();
-    let control_count = segment_count.checked_mul(2)?.checked_add(1)?;
+    let Some(segment_count) = std::num::NonZeroUsize::new(segment_count as usize) else {
+        return Ok(None);
+    };
+    let segment_count = segment_count.get();
+    let Some(control_count) = segment_count.checked_mul(2).and_then(|count| count.checked_add(1)) else {
+        return Ok(None);
+    };
+    let Some(knot_count) = segment_count.checked_mul(2).and_then(|count| count.checked_add(4)) else {
+        return Ok(None);
+    };
+    ctx.charge_work(u64::try_from(segment_count).map_err(|_| {
+        ctx.refuse_codec_limit("catia_rational_arc_segments", u64::MAX, u64::MAX)
+    })?, "catia_rational_arc_segments")?;
     let step = span / segment_count as f64;
-    let mut control_points = Vec::with_capacity(control_count);
-    let mut weights = Vec::with_capacity(control_count);
-    let mut knots = vec![range[0]; 3];
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, control_count,
+        "catia_rational_arc_controls")?;
+    let mut weights = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut weights, control_count,
+        "catia_rational_arc_weights")?;
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, knot_count, "catia_rational_arc_knots")?;
+    knots.extend([range[0]; 3]);
     for index in 0..segment_count {
         let start = range[0] + index as f64 * step;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();
         if !middle_weight.is_finite() || middle_weight == 0.0 {
-            return None;
+            return Ok(None);
         }
         if index == 0 {
             control_points.push(Point2::new(
@@ -761,7 +779,7 @@ pub(crate) fn rational_pcurve_arc(
             .all(|point| point.is_finite())
         || !weights.iter().copied().all(f64::is_finite)
     {
-        return None;
+        return Ok(None);
     }
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         2,
@@ -770,8 +788,8 @@ pub(crate) fn rational_pcurve_arc(
         Some(weights),
         false,
     ) {
-        Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
-        Err(error) => crate::nurbs::note_refusal(Err(error), refusal, record),
+        Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
+        Err(error) => Ok(crate::nurbs::note_refusal(Err(error), refusal, record)),
     }
 }
 
@@ -808,7 +826,7 @@ pub(crate) fn quintic_jet_pcurve(
 mod route_tests {
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
-        rational_pcurve_arc, source_meta, unresolved_carrier_counts,
+        source_meta, unresolved_carrier_counts,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -823,6 +841,27 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    fn rational_pcurve_arc(
+        center: [f64; 2], radius: f64, range: [f64; 2],
+        refusal: &mut crate::nurbs::LaneRefusals, record: &str,
+    ) -> Option<PcurveGeometry> {
+        crate::test_support::with_service_context(|ctx| {
+            super::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
+        }).expect("service budget admits rational arc")
+    }
+
+    #[test]
+    fn rational_pcurve_arc_refuses_control_count_limit() {
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::rational_pcurve_arc(ctx, [0.0, 0.0], 2.0, [0.0, std::f64::consts::PI],
+                &mut crate::nurbs::LaneRefusals::new(), "test record")
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_rational_arc_controls"));
+        assert!(rational_pcurve_arc([0.0, 0.0], 2.0, [0.0, std::f64::consts::PI],
+            &mut crate::nurbs::LaneRefusals::new(), "test record").is_some());
+    }
 
     #[test]
     fn source_metadata_refuses_attribute_collection_limit() {

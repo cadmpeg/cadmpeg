@@ -1,6 +1,5 @@
 use crate::assemble::circle_parameter_range_from_surface_branch;
 use crate::assemble::ordered_range;
-use crate::assemble::rational_pcurve_arc;
 use crate::families::b2::records::B2OwnerReferenceEncoding;
 use crate::families::b5::graph::B5LogicalVertex;
 use crate::families::standard::decode::associate_standard_freeform_e5_rolling_ball_jets;
@@ -26,11 +25,11 @@ use crate::families::standard::decode::standard_analytic_curve_parameter_range;
 use crate::families::standard::decode::standard_circle_endpoint_candidates;
 use crate::families::standard::decode::standard_curve_edge_classes;
 use crate::families::standard::decode::standard_curve_geometry_gauge_keys;
-use crate::families::standard::decode::standard_endpoint_pair_supports_topology;
+use crate::families::standard::decode::standard_endpoint_pair_supports_topology as charged_endpoint_pair_supports_topology;
 use crate::families::standard::decode::standard_face_point_membership;
 use crate::families::standard::decode::standard_face_boundary_witnesses;
 use crate::families::standard::decode::standard_oriented_analytic_curve_parameter_range;
-use crate::families::standard::decode::standard_pcurve_geometry;
+use crate::families::standard::decode::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_native_support_edge_ids;
 use crate::families::standard::decode::standard_successor_endpoint_points;
@@ -73,6 +72,77 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+
+fn rational_pcurve_arc(
+    center: [f64; 2], radius: f64, range: [f64; 2],
+    refusal: &mut crate::nurbs::LaneRefusals, record: &str,
+) -> Option<PcurveGeometry> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::assemble::rational_pcurve_arc(ctx, center, radius, range, refusal, record)
+    }).expect("service budget admits rational arc")
+}
+
+fn standard_pcurve_geometry(
+    surface: &SurfaceGeometry, support: &StandardCurveSupport,
+    start: Point3, end: Point3, witness: Option<FinitePoint3>,
+    edge_curve: Option<&CurveGeometry>, refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_standard_pcurve_geometry(ctx, surface, support, start, end,
+            witness, edge_curve, refusal)
+    }).expect("service budget admits standard pcurve")
+}
+
+fn standard_endpoint_pair_supports_topology(
+    surface: &SurfaceGeometry, support: &StandardCurveSupport,
+    start: Point3, end: Point3, witness: Option<FinitePoint3>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        charged_endpoint_pair_supports_topology(ctx, surface, support, start, end,
+            witness, refusal)
+    }).expect("service budget admits endpoint topology")
+}
+
+fn arc_support_fixture() -> (SurfaceGeometry, StandardCurveSupport, Point3, Point3) {
+    let center = Point3::new(0.0, 0.0, 0.0);
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            center, Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0),
+        ).expect("valid plane fixture"),
+    ));
+    let support = StandardCurveSupport {
+        pos: 0, tag: 1, faces: [0, 0],
+        geometry: super::checked_circle(center, 2.0),
+    };
+    (surface, support, Point3::new(2.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0))
+}
+
+#[test]
+fn standard_pcurve_propagates_arc_collection_refusal() {
+    let (surface, support, start, end) = arc_support_fixture();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_standard_pcurve_geometry(ctx, &surface, &support, start, end,
+            None, None, &mut crate::nurbs::LaneRefusals::new())
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_rational_arc_controls"));
+    assert!(standard_pcurve_geometry(&surface, &support, start, end,
+        None, None, &mut crate::nurbs::LaneRefusals::new()).is_some());
+}
+
+#[test]
+fn standard_endpoint_filter_propagates_arc_collection_refusal() {
+    let (surface, support, start, end) = arc_support_fixture();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_endpoint_pair_supports_topology(ctx, &surface, &support, start, end,
+            None, &mut crate::nurbs::LaneRefusals::new())
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_rational_arc_controls"));
+    assert!(standard_endpoint_pair_supports_topology(&surface, &support, start, end,
+        None, &mut crate::nurbs::LaneRefusals::new()));
+}
 
 fn unit_square_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
@@ -1609,6 +1679,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[(surface_id.clone(), false, 0)],

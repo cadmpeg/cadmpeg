@@ -1,5 +1,5 @@
 use crate::families::standard::decode::build_standard_edge_curve;
-use crate::families::standard::decode::standard_pcurve_geometry;
+use crate::families::standard::decode::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::records::StandardCurveSupport;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::Curve;
@@ -15,6 +15,17 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::HashMap;
+
+fn standard_pcurve_geometry(
+    surface: &SurfaceGeometry, support: &StandardCurveSupport,
+    start: Point3, end: Point3, witness: Option<cadmpeg_ir::features::FinitePoint3>,
+    edge_curve: Option<&CurveGeometry>, refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<(cadmpeg_ir::geometry::pcurve::PcurveGeometry, [f64; 2])> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_standard_pcurve_geometry(ctx, surface, support, start, end,
+            witness, edge_curve, refusal)
+    }).expect("service budget admits standard pcurve")
+}
 
 #[test]
 fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() {
@@ -72,6 +83,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
     let (curve, range) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
+            ctx,
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bindings,
