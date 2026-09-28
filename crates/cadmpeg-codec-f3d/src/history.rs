@@ -4478,22 +4478,24 @@ fn history_state_reaches(
     state: &AsmDeltaState,
     previous_state_id: i64,
 ) -> bool {
-    let states = history_state_index(history);
     let mut current = state;
-    let mut visited = HashSet::new();
-    while current.state_id != previous_state_id {
-        if !visited.insert(current.state_id) {
-            return false;
+    for _ in 0..=history.states.len() {
+        if current.state_id == previous_state_id {
+            return true;
         }
         let Some(previous_state_id) = linked_previous_state_id(history, current) else {
             return false;
         };
-        let Some(previous) = states.get(&previous_state_id).and_then(|state| *state) else {
+        let mut states = history.states.iter().filter(|state| state.state_id == previous_state_id);
+        let Some(previous) = states.next() else {
             return false;
         };
+        if states.next().is_some() {
+            return false;
+        }
         current = previous;
     }
-    true
+    false
 }
 
 /// Return the state ID reached by a delta state's `next` link.
