@@ -2198,15 +2198,17 @@ fn decode_graph(
     // Surfaces + faces.
     let bind_bridges = |body_records: &[BodyRecord],
                         faces: &[WalkedFace]|
-     -> (HashMap<u16, usize>, HashMap<u16, u16>) {
+     -> Result<(HashMap<u16, usize>, HashMap<u16, u16>), cadmpeg_core::CodecError> {
         let mut bridge_group = HashMap::new();
         let mut bridge_shell = HashMap::new();
         for (group, body_record) in body_records.iter().enumerate() {
             for face in faces {
+                ctx.charge_work(1, "bind Parasolid face bridges")?;
                 let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
                 if body_record.refs.contains(&face.bridge_attr)
                     || owner.is_some_and(|owner| body_record.refs.contains(&owner))
                 {
+                    reserve_graph_map_key(ctx, &mut bridge_group, &face.bridge_attr, "index Parasolid bridge groups")?;
                     bridge_group.insert(face.bridge_attr, group);
                     if let Some(shell) = body_record
                         .regions
@@ -2217,14 +2219,15 @@ fn decode_graph(
                                 || owner.is_some_and(|owner| shell.refs.contains(&owner))
                         })
                     {
+                        reserve_graph_map_key(ctx, &mut bridge_shell, &face.bridge_attr, "index Parasolid bridge shells")?;
                         bridge_shell.insert(face.bridge_attr, shell.attr);
                     }
                 }
             }
         }
-        (bridge_group, bridge_shell)
+        Ok((bridge_group, bridge_shell))
     };
-    let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces);
+    let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
         out.stats.unclaimed_faces += faces
             .iter()
@@ -2234,26 +2237,32 @@ fn decode_graph(
     }
     let mut face_edges_by_surface_carrier = HashMap::<u16, Vec<HashSet<u16>>>::new();
     for face in &faces {
-        let edges = face
-            .loops
-            .iter()
-            .flat_map(|(_, ring)| ring)
-            .filter_map(|coedge| t.coedges().get(coedge))
-            .map(|coedge| coedge.refs[6])
-            .filter(|edge| *edge != 0)
-            .collect();
-        face_edges_by_surface_carrier
-            .entry(face.surface_attr)
-            .or_default()
-            .push(edges);
+        let mut edges = HashSet::new();
+        for (_, ring) in &face.loops {
+            for coedge in ring {
+                ctx.charge_work(1, "index Parasolid face edges")?;
+                if let Some(edge) = t.coedges().get(coedge).map(|coedge| coedge.refs[6]) {
+                    if edge != 0 {
+                        reserve_graph_set_key(ctx, &mut edges, &edge, "track Parasolid face edges")?;
+                        edges.insert(edge);
+                    }
+                }
+            }
+        }
+        reserve_graph_map_key(ctx, &mut face_edges_by_surface_carrier, &face.surface_attr, "index Parasolid surface face edges")?;
+        let groups = face_edges_by_surface_carrier.entry(face.surface_attr).or_default();
+        ctx.reserve_collection_vec(groups, 1, "collect Parasolid surface face edges")?;
+        groups.push(edges);
     }
     let mut emitted_face_surface_by_carrier = HashMap::<u16, u16>::new();
     for face in &faces {
+        ctx.charge_work(1, "select Parasolid face surface carriers")?;
         if face
             .loops
             .iter()
             .any(|(loop_attr, _)| loop_set.contains(loop_attr))
         {
+            reserve_graph_map_key(ctx, &mut emitted_face_surface_by_carrier, &face.surface_attr, "index Parasolid face surface carriers")?;
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -2261,12 +2270,14 @@ fn decode_graph(
         }
     }
     for f in &faces {
-        let loops: Vec<LoopId> = f
-            .loops
-            .iter()
-            .filter(|(la, _)| loop_set.contains(la))
-            .map(|(la, _)| id_loop(*la))
-            .collect();
+        let mut loops = Vec::new();
+        for (loop_attr, _) in &f.loops {
+            ctx.charge_work(1, "select Parasolid face loops")?;
+            if loop_set.contains(loop_attr) {
+                ctx.reserve_collection_vec(&mut loops, 1, "collect Parasolid face loops")?;
+                loops.push(id_loop(*loop_attr));
+            }
+        }
         if loops.is_empty() {
             continue;
         }
