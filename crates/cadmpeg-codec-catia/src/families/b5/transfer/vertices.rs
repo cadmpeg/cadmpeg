@@ -122,9 +122,8 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         )?;
-        annotations
-            .derived(&vertex_id, "point")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        crate::resource::derived_annotation(admission.context(), annotations,
+            vertex_id.as_str(), "point", "catia_b5_vertex_annotation")?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
@@ -167,9 +166,8 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::ByteExact,
         )?;
-        annotations
-            .derived(&vertex_id, "point")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        crate::resource::derived_annotation(admission.context(), annotations,
+            vertex_id.as_str(), "point", "catia_b5_vertex_annotation")?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,

@@ -41,6 +41,34 @@ fn b5_annotation_admits_retained_strings_and_map_entries() {
             && limit.operation == "catia_b5_annotation_id"));
 }
 
+#[test]
+fn b5_derived_field_admits_both_exactness_entries() {
+    let operations = b5_collection_refusals(|ctx| {
+        crate::resource::derived_annotation(
+            ctx,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            "catia:b5:vertex#0",
+            "point",
+            "catia_b5_vertex_annotation",
+        )
+    });
+    assert!(operations.contains("catia_b5_vertex_annotation"));
+
+    let annotations = crate::test_support::with_service_context(|ctx| {
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        crate::resource::derived_annotation(
+            ctx,
+            &mut annotations,
+            "catia:b5:vertex#0",
+            "point",
+            "catia_b5_vertex_annotation",
+        )?;
+        Ok::<_, cadmpeg_core::CodecError>(annotations.build())
+    })
+    .expect("service budget admits the field note");
+    assert!(annotations.exactness().contains_key("catia:b5:vertex#0"));
+}
+
 fn b5_collection_refusals(
     mut run: impl FnMut(
         &cadmpeg_core::decode::DecodeContext<'_>,

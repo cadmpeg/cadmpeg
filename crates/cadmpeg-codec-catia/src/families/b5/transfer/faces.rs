@@ -462,12 +462,9 @@ pub(super) fn emit_faces(
         "single_body",
         Exactness::Inferred,
     )?;
-    if annotations
-        .derived(&body_id, "kind")
-        .and_then(|builder| builder.derived(&body_id, "regions"))
-        .is_err()
-    {
-        return Ok(false);
+    for field in ["kind", "regions"] {
+        crate::resource::derived_annotation(admission.context(), annotations,
+            body_id.as_str(), field, "catia_b5_body_annotation")?;
     }
     let mut body_regions = Vec::new();
     for id in region_ids.values() {
@@ -503,12 +500,9 @@ pub(super) fn emit_faces(
             "derived_region",
             Exactness::Inferred,
         )?;
-        if annotations
-            .derived(&region_id, "body")
-            .and_then(|builder| builder.derived(&region_id, "shells"))
-            .is_err()
-        {
-            return Ok(false);
+        for field in ["body", "shells"] {
+            crate::resource::derived_annotation(admission.context(), annotations,
+                region_id.as_str(), field, "catia_b5_region_annotation")?;
         }
         let region_record_id = crate::resource::copy_id(admission.context(),
             region_id.as_str(), RegionId::mint, "catia_b5_region_record_id")?;
@@ -533,12 +527,9 @@ pub(super) fn emit_faces(
             "derived_shell",
             Exactness::Inferred,
         )?;
-        if annotations
-            .derived(&shell_id, "region")
-            .and_then(|builder| builder.derived(&shell_id, "faces"))
-            .is_err()
-        {
-            return Ok(false);
+        for field in ["region", "faces"] {
+            crate::resource::derived_annotation(admission.context(), annotations,
+                shell_id.as_str(), field, "catia_b5_shell_annotation")?;
         }
         let mut shell_faces = Vec::new();
         for face in component_faces {
@@ -589,13 +580,9 @@ pub(super) fn emit_faces(
             "5f_face",
             Exactness::Inferred,
         )?;
-        if annotations
-            .derived(&face_id, "shell")
-            .and_then(|builder| builder.derived(&face_id, "surface"))
-            .and_then(|builder| builder.derived(&face_id, "loops"))
-            .is_err()
-        {
-            return Ok(false);
+        for field in ["shell", "surface", "loops"] {
+            crate::resource::derived_annotation(admission.context(), annotations,
+                face_id.as_str(), field, "catia_b5_face_annotation")?;
         }
         let face_record_id = crate::resource::copy_id(admission.context(), face_id.as_str(),
             FaceId::mint, "catia_b5_face_record_id")?;
@@ -669,18 +656,13 @@ pub(super) fn emit_faces(
                 "62_loop",
                 Exactness::ByteExact,
             )?;
-            if annotations
-                .derived(&loop_id, "face")
-                .and_then(|builder| builder.derived(&loop_id, "coedges"))
-                .and_then(|builder| builder.derived(&loop_id, "vertex_uses"))
-                .is_err()
-            {
-                return Ok(false);
+            for field in ["face", "coedges", "vertex_uses"] {
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    loop_id.as_str(), field, "catia_b5_loop_annotation")?;
             }
-            if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified
-                && annotations.derived(&loop_id, "boundary_role").is_err()
-            {
-                return Ok(false);
+            if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified {
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    loop_id.as_str(), "boundary_role", "catia_b5_loop_annotation")?;
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids, vertex_uses)
             else {
@@ -711,9 +693,8 @@ pub(super) fn emit_faces(
                     Exactness::ByteExact,
                 )?;
                 for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
-                    if annotations.derived(&id, field).is_err() {
-                        return Ok(false);
-                    }
+                    crate::resource::derived_annotation(admission.context(), annotations,
+                        id.as_str(), field, "catia_b5_coedge_annotation")?;
                 }
                 let arena_index = ir.model.coedges.len();
                 crate::resource::admit_map_entry(admission.context(), &mut coedges_by_edge,

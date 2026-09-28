@@ -746,9 +746,8 @@ pub(super) fn emit_surfaces(
             },
         )?;
         if revolution_cache {
-            annotations
-                .derived(&id, "geometry")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations,
+                id.as_str(), "geometry", "catia_b5_surface_annotation")?;
         }
         let model_id = crate::resource::copy_id(admission.context(), id.as_str(),
             SurfaceId::mint, "catia_b5_model_surface_id")?;
@@ -783,9 +782,8 @@ pub(super) fn emit_surfaces(
                     "2d_profile_curve",
                     Exactness::Derived,
                 )?;
-                annotations
-                    .derived(&directrix_id, "geometry")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                crate::resource::derived_annotation(admission.context(), annotations,
+                    directrix_id.as_str(), "geometry", "catia_b5_profile_annotation")?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
                     id: directrix_id.clone(),
