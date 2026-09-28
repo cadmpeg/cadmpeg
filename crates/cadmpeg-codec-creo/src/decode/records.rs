@@ -2329,17 +2329,17 @@ mod curve_plane_projection_limit_tests {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfaceParameterRecord {
+pub(super) struct CreoSurfaceParameterRecord<'a> {
     pub(super) id: String,
     surface_id: u32,
     surface_type_byte: u8,
     surface_family: &'static str,
     boundary: &'static str,
-    body: Vec<u8>,
-    slots: Vec<SurfaceParameterScalar>,
-    opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
-    scalar_frames: Vec<SurfaceParameterScalarFrame>,
-    terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
+    body: &'a [u8],
+    slots: &'a [SurfaceParameterScalar],
+    opaque_spans: &'a [SurfaceParameterOpaqueSpan],
+    scalar_frames: &'a [SurfaceParameterScalarFrame],
+    terminal_scalar_frame: Option<&'a SurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
     split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
@@ -2354,7 +2354,7 @@ pub(super) struct CreoSurfaceParameterRecord {
     extrusion_direction: Option<[f64; 3]>,
     row_offset: usize,
     pub(super) body_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
@@ -3224,16 +3224,18 @@ mod curve_projection_limit_tests {
     }
 }
 
-pub(super) fn surface_parameter_records(
-    scan: &ContainerScan,
-    rows: &[crate::surface::SurfaceRow],
-    parameters: &[crate::surface::SurfaceParameterRecord],
+pub(super) fn surface_parameter_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    rows: &'a [crate::surface::SurfaceRow],
+    parameters: &'a [crate::surface::SurfaceParameterRecord],
     namespace: &str,
-) -> Vec<CreoSurfaceParameterRecord> {
-    parameters
-        .iter()
-        .filter_map(|record| {
-            let row = crate::surface::unique_surface_row(rows, record.surface_id)?;
+) -> Result<Vec<CreoSurfaceParameterRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in parameters {
+            let Some(row) = crate::surface::unique_surface_row(rows, record.surface_id) else {
+                continue;
+            };
             let surface_family = surface_family(row.kind);
             let boundary = match record.boundary {
                 crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
@@ -3241,18 +3243,22 @@ pub(super) fn surface_parameter_records(
                 crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
                 crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
             };
-            let source_section = source_section(scan, record.body_offset);
-            Some(CreoSurfaceParameterRecord {
-                id: format!("creo:{namespace}:surface_parameter#{}", record.surface_id),
+            let id = ctx.format_retained(
+                format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
+                "creo native surface parameter record id",
+            )?;
+            ctx.try_reserve_items(&mut records, 1, "creo native surface parameter records")?;
+            records.push(CreoSurfaceParameterRecord {
+                id,
                 surface_id: record.surface_id,
                 surface_type_byte: row.kind.canonical_type_byte(),
                 surface_family,
                 boundary,
-                body: record.body.clone(),
-                slots: record.scalar_tokens.clone(),
-                opaque_spans: record.opaque_spans.clone(),
-                scalar_frames: record.scalar_frames.clone(),
-                terminal_scalar_frame: record.terminal_scalar_frame().cloned(),
+                body: &record.body,
+                slots: &record.scalar_tokens,
+                opaque_spans: &record.opaque_spans,
+                scalar_frames: &record.scalar_frames,
+                terminal_scalar_frame: record.terminal_scalar_frame(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
                         values: frame.values().get(),
@@ -3328,10 +3334,87 @@ pub(super) fn surface_parameter_records(
                 extrusion_direction: record.extrusion_direction(),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
-                source_section,
-            })
-        })
-        .collect()
+                source_section: source_section_ref(scan, record.body_offset),
+            });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod surface_parameter_projection_limit_tests {
+    use super::surface_parameter_records;
+    use crate::surface::{
+        BoundaryType, SurfaceBodyBoundary, SurfaceKind, SurfaceParameterCarrier,
+        SurfaceParameterOpaqueSpan, SurfaceParameterRecord, SurfaceParameterScalar,
+        SurfaceParameterScalarFrame, SurfaceRow,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.push(SurfaceRow {
+            id: 7, kind: SurfaceKind::Plane, feature_id: 2, reversed: false,
+            boundary_type: BoundaryType::Code01, next_surface: 0, offset: 3,
+        });
+        let token = SurfaceParameterScalar { value: Some(1.0), raw: vec![0xf9, 0], offset: 0 };
+        scan.surfaces.parameters.push(SurfaceParameterRecord {
+            surface_id: 7, body: vec![0xf9, 0], scalar_tokens: vec![token.clone()],
+            opaque_spans: vec![SurfaceParameterOpaqueSpan { raw: vec![0xe3], offset: 2 }],
+            scalar_frames: vec![SurfaceParameterScalarFrame { offset: 0, slots: vec![token] }],
+            carrier: SurfaceParameterCarrier::Unresolved(SurfaceKind::Plane),
+            boundary: SurfaceBodyBoundary::CompoundClose, offset: 3, body_offset: 4,
+        });
+        scan
+    }
+
+    #[test]
+    fn surface_parameter_record_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("one parameter record exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native surface parameter records"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_parameter_record_id_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:visibgeom:surface_parameter#7".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("one parameter ID exceeds the retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native surface parameter record id"), "{error:?}");
+    }
+
+    #[test]
+    fn borrowed_surface_parameter_preserves_nested_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let records = surface_parameter_records(&ctx, &scan, &scan.surfaces.rows, &scan.surfaces.parameters, "visibgeom")
+            .expect("parameter record is admitted");
+        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        assert_eq!(value["body"], serde_json::json!([249, 0]));
+        assert_eq!(value["slots"], serde_json::json!([{"value":1.0,"raw":[249,0],"offset":0,"length":2}]));
+        assert_eq!(value["opaque_spans"], serde_json::json!([{"raw":[227],"offset":2,"length":1}]));
+    }
 }
 
 pub(super) fn feature_operation_state_records<'a>(
