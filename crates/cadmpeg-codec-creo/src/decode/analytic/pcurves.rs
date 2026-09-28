@@ -1451,15 +1451,16 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         let mut retain_path = |curve_id: u32,
                                face_id: Option<NonZeroU32>,
                                endpoints: [[f64; 2]; 2],
-                               offset: usize| {
+                               offset: usize|
+         -> Result<(), cadmpeg_core::CodecError> {
             let Some(face_id) = face_id.map(NonZeroU32::get) else {
-                return;
+                return Ok(());
             };
             if ignored_surface_ids.contains(&face_id) {
-                return;
+                return Ok(());
             }
             let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
-                return;
+                return Ok(());
             };
             let geometry = source_carriers.surface_geometry(surface);
             // A path whose endpoint evaluates to a non-finite point is
@@ -1470,14 +1471,36 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                     Err(cadmpeg_ir::eval::EvaluationFailure::NoValue)
                 )
             }) {
-                *evaluable_path_counts.entry(curve_id).or_default() += 1;
+                match evaluable_path_counts.entry(curve_id) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        *entry.get_mut() += 1;
+                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo evaluable pcurve path count nodes")?;
+                        entry.insert(1);
+                    }
+                }
             }
             if let Some(carrier) = linear_pcurve_carrier(geometry, endpoints) {
-                candidates
-                    .entry(curve_id)
-                    .or_default()
-                    .push((carrier, offset));
+                match candidates.entry(curve_id) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        ctx.try_reserve_items(
+                            entry.get_mut(), 1, "creo analytic pcurve candidates",
+                        )?;
+                        entry.get_mut().push((carrier, offset));
+                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo analytic pcurve candidate nodes")?;
+                        let mut values = Vec::new();
+                        ctx.try_reserve_items(
+                            &mut values, 1, "creo analytic pcurve candidates",
+                        )?;
+                        values.push((carrier, offset));
+                        entry.insert(values);
+                    }
+                }
             }
+            Ok(())
         };
         for pcurve in &scan.curves.pcurves {
             let endpoint_sets = canonicalized_pcurve_endpoints(
@@ -1487,7 +1510,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_1_endpoints,
             );
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
-                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
         }
         for pcurve in &scan.curves.bound_prototype_pcurves {
@@ -1498,7 +1521,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_1_endpoints,
             );
             for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets) {
-                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
+                retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
             }
         }
         for pcurve in &scan.curves.two_chart_pcurves {
@@ -1510,7 +1533,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             };
             for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets.paths()) {
                 if let Some(endpoints) = endpoints {
-                    retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset);
+                    retain_path(pcurve.curve_id, face_id, endpoints, pcurve.offset)?;
                 }
             }
         }
@@ -1526,7 +1549,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 pcurve.face_0_endpoints,
                 pcurve.face_0_endpoints,
             );
-            retain_path(pcurve.curve_id, faces[0], face_0_endpoints, pcurve.offset);
+            retain_path(pcurve.curve_id, faces[0], face_0_endpoints, pcurve.offset)?;
         }
     }
     let mut transferred = BTreeSet::new();
@@ -1562,6 +1585,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
+        ctx.charge_collection_items(1, "creo transferred analytic pcurve nodes")?;
         annotate(
             annotations,
             &id,
@@ -2159,6 +2183,24 @@ mod tests {
         .expect_err("pcurve evidence collection exceeds limit")
     }
 
+    fn analytic_pcurve_transfer_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+        let (scan, mut ir) = one_plane_pcurve_fixture();
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut source_carriers =
+            crate::decode::source_carriers::SourceUnitCarriers::default();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        transfer_analytic_pcurve_carriers(
+            &ctx, &scan, &mut ir, &mut annotations, &mut source_carriers,
+        )
+        .expect_err("analytic pcurve collection exceeds limit")
+    }
+
     fn assert_pcurve_collection_refusal(error: cadmpeg_core::CodecError, operation: &str) {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -2340,6 +2382,54 @@ mod tests {
         assert_eq!(evidence.get(&7).map(|entry| entry.points),
             Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]]));
         assert_eq!(diagnostics.accepted_records, 1);
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_refuses_evaluable_count_node() {
+        assert_pcurve_collection_refusal(
+            analytic_pcurve_transfer_limit_error(11),
+            "creo evaluable pcurve path count nodes",
+        );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_refuses_candidate_node() {
+        assert_pcurve_collection_refusal(
+            analytic_pcurve_transfer_limit_error(12),
+            "creo analytic pcurve candidate nodes",
+        );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_refuses_candidate_member() {
+        assert_pcurve_collection_refusal(
+            analytic_pcurve_transfer_limit_error(13),
+            "creo analytic pcurve candidates",
+        );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_refuses_transferred_node() {
+        assert_pcurve_collection_refusal(
+            analytic_pcurve_transfer_limit_error(14),
+            "creo transferred analytic pcurve nodes",
+        );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_preserves_service_curve() {
+        let (scan, mut ir) = one_plane_pcurve_fixture();
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let mut source_carriers =
+            crate::decode::source_carriers::SourceUnitCarriers::default();
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(
+                ctx, &scan, &mut ir, &mut annotations, &mut source_carriers,
+            )
+        })
+        .expect("service analytic pcurve transfer");
+        assert_eq!(transferred.len(), 1);
+        assert_eq!(ir.model.curves.len(), 1);
     }
 
     #[test]
