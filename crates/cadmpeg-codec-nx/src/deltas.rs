@@ -1888,7 +1888,7 @@ fn merge_records(
     census: &Census,
     unmatched_tombstones: Option<&mut BTreeMap<&'static str, usize>>,
 ) -> Result<Vec<u8>, CodecError> {
-    let current_scopes = current_revision_scopes(census, deltas.len());
+    let current_scopes = current_revision_scopes(ctx, census, deltas.len())?;
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
     let mut replacement_reservation = ctx.reserve_scoped(0, "NX deltas replacement keys")?;
     let mut unmatched_events = unmatched_tombstones.map(|totals| (totals, BTreeMap::new()));
@@ -2052,7 +2052,7 @@ fn collect_unmatched_events<'ctx>(
     census: &Census,
     stream_len: usize,
 ) -> Result<(BTreeMap<(u8, u32), Vec<MergeEvent>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
-    let current_scopes = current_revision_scopes(census, stream_len);
+    let current_scopes = current_revision_scopes(ctx, census, stream_len)?;
     let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX unmatched deltas events")?;
     for record in census
@@ -2141,39 +2141,54 @@ enum RevisionDirection {
     Descending,
 }
 
-fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionScope> {
+fn current_revision_scopes(
+    ctx: &DecodeContext<'_>,
+    census: &Census,
+    stream_len: usize,
+) -> Result<Vec<RevisionScope>, CodecError> {
     // Only xmt 3 BODY envelopes delimit snapshots. Other validated type-12
     // envelopes remain available to the byte ledger without changing scope.
-    let snapshot_revisions = census
-        .body_revisions
-        .iter()
-        .enumerate()
-        .filter(|(_, revision)| u32::from(revision.xmt) == 3)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+    ctx.charge_work(u64_from_index(census.body_revisions.len()), "scan NX BODY revisions")?;
+    let count = census.body_revisions.iter().filter(|revision| u32::from(revision.xmt) == 3).count();
+    ctx.charge_collection_items(u64_from_index(count), "NX snapshot revision indices")?;
+    let snapshot_bytes = count.checked_mul(std::mem::size_of::<usize>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count)))?;
+    let _snapshot_reservation = ctx.reserve_scoped(u64_from_index(snapshot_bytes), "NX snapshot revision indices")?;
+    let mut snapshot_revisions = Vec::new();
+    snapshot_revisions.try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count)))?;
+    for (index, revision) in census.body_revisions.iter().enumerate() {
+        if u32::from(revision.xmt) == 3 {
+            snapshot_revisions.push(index);
+        }
+    }
     if snapshot_revisions.is_empty() {
-        return vec![RevisionScope {
+        ctx.charge_collection_items(1, "NX current revision scopes")?;
+        ctx.charge_retained(u64_from_index(std::mem::size_of::<RevisionScope>()), "NX current revision scopes")?;
+        return Ok(vec![RevisionScope {
             start: 0,
             end: stream_len,
-        }];
+        }]);
     }
 
-    let direction = revision_direction(
-        &snapshot_revisions
-            .iter()
-            .map(|index| census.body_revisions[*index].node_id)
-            .collect::<Vec<_>>(),
-    );
+    let direction = revision_direction(census, &snapshot_revisions);
+    ctx.charge_collection_items(1, "NX revision run starts")?;
+    let mut _run_reservation = ctx.reserve_scoped(u64_from_index(std::mem::size_of::<usize>()), "NX revision run starts")?;
     let mut run_starts = vec![0];
     for (position, pair) in snapshot_revisions.windows(2).enumerate() {
         let previous = census.body_revisions[pair[0]].node_id;
         let current = census.body_revisions[pair[1]].node_id;
         if !revision_follows_direction(previous, current, direction) {
+            ctx.charge_collection_items(1, "NX revision run starts")?;
+            _run_reservation.grow(u64_from_index(std::mem::size_of::<usize>()))?;
+            run_starts.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX revision run starts", 0, 1))?;
             run_starts.push(position + 1);
         }
     }
 
     let mut scopes = Vec::new();
+    let mut scopes_reservation = ctx.reserve_scoped(0, "NX current revision scopes")?;
     for run in 0..run_starts.len() {
         let next_run_start = run_starts.get(run + 1).copied();
         // `run_starts` opens at zero, ascends strictly, and every pushed
@@ -2185,21 +2200,30 @@ fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionSc
             census.body_revisions[snapshot_revisions[next_run_start]].offset
         });
         if current_revision.offset < end {
+            ctx.charge_collection_items(1, "NX current revision scopes")?;
+            scopes_reservation.grow(u64_from_index(std::mem::size_of::<RevisionScope>()))?;
+            scopes.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX current revision scopes", 0, 1))?;
             scopes.push(RevisionScope {
                 start: current_revision.offset,
                 end,
             });
         }
     }
-    scopes
+    scopes_reservation.commit()?;
+    Ok(scopes)
 }
 
-fn revision_direction(node_ids: &[u32]) -> RevisionDirection {
+fn revision_direction(census: &Census, revision_indices: &[usize]) -> RevisionDirection {
     // A stream can serialize one revision sequence in either direction. The
     // direction with fewer violations is the sequence direction; the opposite
     // transitions are the resets that begin another sequence.
-    let ascending_violations = node_ids.windows(2).filter(|pair| pair[1] < pair[0]).count();
-    let descending_violations = node_ids.windows(2).filter(|pair| pair[1] > pair[0]).count();
+    let ascending_violations = revision_indices.windows(2)
+        .filter(|pair| census.body_revisions[pair[1]].node_id < census.body_revisions[pair[0]].node_id)
+        .count();
+    let descending_violations = revision_indices.windows(2)
+        .filter(|pair| census.body_revisions[pair[1]].node_id > census.body_revisions[pair[0]].node_id)
+        .count();
     if ascending_violations <= descending_violations {
         RevisionDirection::Ascending
     } else {
@@ -2229,7 +2253,7 @@ pub(crate) fn semantic_residual(
     stream: &[u8],
 ) -> Result<Vec<u8>, CodecError> {
     let census = walk(ctx, stream)?;
-    Ok(semantic_residual_with_census(stream, &census))
+    semantic_residual_with_census(ctx, stream, &census)
 }
 
 /// Return the semantic residual using a census already produced for the stream.
@@ -2238,21 +2262,22 @@ pub(crate) fn semantic_residual(
 /// both topology merging and semantic scanning. Reusing it avoids a second
 /// full walk of a large delta stream while keeping this transformation
 /// byte-for-byte identical to `semantic_residual`.
-pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> Vec<u8> {
-    let current_scopes = current_revision_scopes(census, stream.len());
+pub(crate) fn semantic_residual_with_census(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &Census,
+) -> Result<Vec<u8>, CodecError> {
+    let current_scopes = current_revision_scopes(ctx, census, stream.len())?;
     // Mask the whole stream and restore each current-revision scope. Restoring
     // the kept spans, rather than filling the gaps between them, needs no
     // ordering or disjointness relation between the scopes: every byte outside
     // every scope reads 0xff whatever order the scopes arrive in.
-    let mut residual = stream.to_vec();
-    residual.fill(0xff);
-    for scope in &current_scopes {
-        residual[scope.start..scope.end].copy_from_slice(&stream[scope.start..scope.end]);
-    }
-    let canonical_residual_records = census
-        .records
-        .iter()
-        .filter(|record| {
+    let scan_work = u64_from_index(census.records.len())
+        .checked_mul(u64_from_index(current_scopes.len()))
+        .and_then(|value| value.checked_add(u64_from_index(census.tombstones.len())))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX semantic residual scan", 0, u64_from_index(census.records.len())))?;
+    ctx.charge_work(scan_work, "NX semantic residual scan")?;
+    let is_semantic = |record: &Record| {
             let is_current = current_scope_contains(&current_scopes, record.offset);
             let is_semantic = matches!(
                 record.kind(),
@@ -2260,29 +2285,41 @@ pub(crate) fn semantic_residual_with_census(stream: &[u8], census: &Census) -> V
             ) || record.kind() == 90
                 && record.canonical_bytes.first() == Some(&0x5a);
             is_current && is_semantic
-        })
-        .map(|record| {
-            if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
-                let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
-                let mut anchored = Vec::new();
-                anchored.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
-                anchored.extend_from_slice(&record.canonical_bytes);
-                anchored
-            } else {
-                record.canonical_bytes.clone()
-            }
-        })
-        .collect::<Vec<_>>();
+    };
+    let mut total_len = stream.len();
+    for record in census.records.iter().filter(|record| is_semantic(record)) {
+        let prefix_len = if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+            crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1
+        } else {
+            0
+        };
+        total_len = total_len.checked_add(prefix_len)
+            .and_then(|length| length.checked_add(record.canonical_bytes.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(stream.len())))?;
+    }
+    ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
+    let mut residual = Vec::new();
+    residual.try_reserve_exact(total_len)
+        .map_err(|_| ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(total_len)))?;
+    residual.extend_from_slice(stream);
+    residual.fill(0xff);
+    for scope in &current_scopes {
+        residual[scope.start..scope.end].copy_from_slice(&stream[scope.start..scope.end]);
+    }
     for record in &census.records {
         residual[record.offset..record.end].fill(0xff);
     }
     for tombstone in &census.tombstones {
         residual[tombstone.offset..tombstone.offset + 6].fill(0xff);
     }
-    for record in canonical_residual_records {
-        residual.extend_from_slice(&record);
+    for record in census.records.iter().filter(|record| is_semantic(record)) {
+        if record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+            let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
+            residual.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
+        }
+        residual.extend_from_slice(&record.canonical_bytes);
     }
-    residual
+    Ok(residual)
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {

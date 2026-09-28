@@ -1822,7 +1822,7 @@ fn semantic_residual_with_census_matches_the_standalone_transform() {
 
     let census = crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &deltas)).unwrap();
     assert_eq!(
-        crate::deltas::semantic_residual_with_census(&deltas, &census),
+        crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual_with_census(ctx, &deltas, &census)).unwrap(),
         crate::test_support::with_decode_context(|ctx| crate::deltas::semantic_residual(ctx, &deltas)).unwrap()
     );
 }
