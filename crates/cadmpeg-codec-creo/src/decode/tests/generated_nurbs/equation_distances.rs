@@ -334,7 +334,10 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     );
 
     let equation_id =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::decode::with_test_decode_ctx(|ctx| {
+            crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())
+        })
+            .expect("equation table admitted")
             .expect("equation table")
             .rows
             .iter()

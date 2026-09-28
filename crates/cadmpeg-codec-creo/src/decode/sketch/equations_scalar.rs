@@ -4,6 +4,8 @@
 use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,14 +31,15 @@ const EPS_AXIS_ZERO: f64 = 1.0e-12;
 const EPS_SCALAR_EQUALITY: f64 = 1.0e-9;
 
 pub(super) fn section_equation_coordinate_equalities(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(u32, u32, SectionAxis)> {
-    section_equation_coordinate_equality_rows(definition, ambiguous_point_ids)
+) -> Result<Vec<(u32, u32, SectionAxis)>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_coordinate_equality_rows(ctx, definition, ambiguous_point_ids)?
         .into_iter()
         .filter(|constraint| constraint.active)
         .map(|constraint| (constraint.first, constraint.second, constraint.axis))
-        .collect()
+        , "creo section coordinate equalities")
 }
 
 #[derive(Clone, Copy)]
@@ -51,10 +54,10 @@ pub(in crate::decode) struct SectionEquationCoordinateEquality {
 }
 
 fn section_equation_function_ten_axis_alignment(
-    definition: &crate::feature::definitions::FeatureDefinition,
     equation: &crate::feature::definitions::FeatureEquation,
     variables: &crate::feature::definitions::FeatureVariableTable,
     ambiguous_point_ids: &BTreeSet<u32>,
+    scalar_equality_values: &BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>>,
 ) -> Option<(u32, u32, SectionAxis)> {
     if equation.function_id != 10 || equation.arguments.len() != 7 {
         return None;
@@ -112,7 +115,6 @@ fn section_equation_function_ten_axis_alignment(
         return None;
     }
 
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let auxiliary_is_zero = |row: &crate::feature::definitions::FeatureVariableRow| {
         reconcile_equation_value(
             row.value.value(),
@@ -171,38 +173,40 @@ fn section_equation_function_ten_axis_alignment(
 }
 
 pub(in crate::decode) fn section_equation_coordinate_equality_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionEquationCoordinateEquality> {
+) -> Result<Vec<SectionEquationCoordinateEquality>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
         .filter_map(|equation| {
             if equation.function_id == 10 {
                 let (first, second, axis) = section_equation_function_ten_axis_alignment(
-                    definition,
                     equation,
                     variables,
                     ambiguous_point_ids,
+                    &scalar_equality_values,
                 )?;
                 return Some(SectionEquationCoordinateEquality {
                     first,
@@ -266,7 +270,7 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation coordinate equality rows")
 }
 
 pub(in crate::decode) type SectionScalarVariable = (VariableType, u32);
@@ -291,26 +295,27 @@ pub(super) struct SectionEquationAuxiliaryConstraints {
 }
 
 pub(super) fn section_equation_auxiliary_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> SectionEquationAuxiliaryConstraints {
+) -> Result<SectionEquationAuxiliaryConstraints, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return SectionEquationAuxiliaryConstraints::default();
+        return Ok(SectionEquationAuxiliaryConstraints::default());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return SectionEquationAuxiliaryConstraints::default();
+        return Ok(SectionEquationAuxiliaryConstraints::default());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return SectionEquationAuxiliaryConstraints::default();
+        return Ok(SectionEquationAuxiliaryConstraints::default());
     };
     if declared_count != equations.rows.len() + 1 {
-        return SectionEquationAuxiliaryConstraints::default();
+        return Ok(SectionEquationAuxiliaryConstraints::default());
     }
 
     let row = |ordinal: Option<u32>| {
@@ -342,9 +347,8 @@ pub(super) fn section_equation_auxiliary_constraints(
                 let Some(coordinate) = SectionAxis::from_variable(first.variable_type) else {
                     continue;
                 };
-                constraints
-                    .midpoints
-                    .push(SectionEquationMidpointConstraint {
+                ctx.try_reserve_items(&mut constraints.midpoints, 1, "creo section equation midpoint constraints")?;
+                constraints.midpoints.push(SectionEquationMidpointConstraint {
                         first: (first.key, coordinate),
                         second: (second.key, coordinate),
                         result: (result.variable_type, result.key),
@@ -369,9 +373,8 @@ pub(super) fn section_equation_auxiliary_constraints(
                 {
                     continue;
                 }
-                constraints
-                    .point_bindings
-                    .push(SectionEquationPointBinding {
+                ctx.try_reserve_items(&mut constraints.point_bindings, 1, "creo section equation point bindings")?;
+                constraints.point_bindings.push(SectionEquationPointBinding {
                         point: first_u.key,
                         coordinates: [
                             (second_u.variable_type, second_u.key),
@@ -382,7 +385,7 @@ pub(super) fn section_equation_auxiliary_constraints(
             _ => {}
         }
     }
-    constraints
+    Ok(constraints)
 }
 
 #[derive(Clone, Copy)]
@@ -429,34 +432,36 @@ pub(super) fn reconcile_equation_value(
 }
 
 pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionFunctionFortyTwoMidpointCoordinate> {
+) -> Result<Vec<SectionFunctionFortyTwoMidpointCoordinate>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -508,38 +513,40 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation function forty two midpoint coordinate rows")
 }
 
 pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionFunctionThirtyOnePointCoordinates> {
+) -> Result<Vec<SectionFunctionThirtyOnePointCoordinates>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -601,24 +608,26 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation function thirty one point coordinate rows")
 }
 
 pub(super) fn merge_scalar_value_candidate(
+    ctx: &DecodeContext<'_>,
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
     variable: SectionScalarVariable,
     value: f64,
-) {
+) -> Result<(), CodecError> {
     if !value.is_finite() {
-        return;
+        return Ok(());
     }
     match values.entry(variable) {
         std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo section scalar value nodes")?;
             entry.insert(Some(value));
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
             let Some(stored) = *entry.get() else {
-                return;
+                return Ok(());
             };
             if !(FiniteReal::new(stored))
                 .zip(FiniteReal::new(value))
@@ -628,19 +637,21 @@ pub(super) fn merge_scalar_value_candidate(
             }
         }
     }
+    Ok(())
 }
 
 pub(super) fn section_relation_radius_scalar_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<(SectionScalarVariable, f64)> {
+) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
     let Some(dimensions) = definition
         .dimensions
         .as_ref()
         .filter(|table| feature_dimension_table_complete(table))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    definition
+    crate::decode::collect_items(ctx, definition
         .relations
         .iter()
         .filter(|table| feature_relation_table_complete(table))
@@ -676,18 +687,19 @@ pub(super) fn section_relation_radius_scalar_values(
             };
             PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
         })
-        .collect()
+        , "creo section relation radius values")
 }
 
 pub(super) fn section_equation_scalar_seed_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<SectionScalarVariable, Option<f64>> {
+) -> Result<BTreeMap<SectionScalarVariable, Option<f64>>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
     let ambiguous_point_ids = variables.reconciled_points().1;
     let mut values = BTreeMap::new();
@@ -698,55 +710,59 @@ pub(super) fn section_equation_scalar_seed_values(
         let variable = (row.variable_type, row.key);
         match row.value.value() {
             Some(value) if value.is_finite() => {
-                merge_scalar_value_candidate(&mut values, variable, value);
+                merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
             }
             Some(_) => {
+                if !values.contains_key(&variable) {
+                    ctx.charge_collection_items(1, "creo section scalar seed nodes")?;
+                }
                 values.insert(variable, None);
             }
             None => {}
         }
     }
-    for (variable, value) in section_equation_scalar_equalities(definition) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    for (variable, value) in section_equation_scalar_equalities(ctx, definition)? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     for constraint in
-        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+        section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?
     {
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value)?;
     }
-    for constraint in section_equation_radius_dimensions(definition)
+    for constraint in section_equation_radius_dimensions(ctx, definition)?
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(
+        merge_scalar_value_candidate(ctx,
             &mut values,
             constraint.radius_variable,
             constraint.value.get(),
-        );
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
+        )?;
+        merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value.get())?;
     }
-    for (variable, value) in section_relation_radius_scalar_values(definition) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    for (variable, value) in section_relation_radius_scalar_values(ctx, definition)? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
-    for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    for (variable, value) in section_equation_function_sixteen_angle_difference_values(ctx, definition)? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
-    values
+    Ok(values)
 }
 
 pub(super) fn propagate_section_equation_scalar_equality_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let Some(_variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return false;
+        return Ok(false);
     };
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    let components = section_equation_scalar_equality_components(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    let components = section_equation_scalar_equality_components(ctx, definition)?;
     let mut changed = false;
     for component in components {
         let mut component_value = None;
@@ -793,6 +809,9 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
         if conflicting {
             for variable in component {
                 if values.get(&variable) != Some(&None) {
+                    if !values.contains_key(&variable) {
+                        ctx.charge_collection_items(1, "creo propagated scalar nodes")?;
+                    }
                     values.insert(variable, None);
                     changed = true;
                 }
@@ -800,21 +819,25 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
         } else if let Some(value) = component_value {
             for variable in component {
                 if values.get(&variable) != Some(&Some(value)) {
+                    if !values.contains_key(&variable) {
+                        ctx.charge_collection_items(1, "creo propagated scalar nodes")?;
+                    }
                     values.insert(variable, Some(value));
                     changed = true;
                 }
             }
         }
     }
-    changed
+    Ok(changed)
 }
 
 pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
+    ctx: &DecodeContext<'_>,
     constraints: &SectionEquationAuxiliaryConstraints,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
     stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
     equations: &mut Vec<SectionCoordinateEquation>,
-) {
+) -> Result<(), CodecError> {
     for constraint in &constraints.midpoints {
         let Some(Some(value)) = scalar_values.get(&constraint.result) else {
             continue;
@@ -837,6 +860,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             continue;
         };
         equation.rhs = rhs.get();
+        ctx.try_reserve_items(equations, 1, "creo auxiliary coordinate equations")?;
         equations.push(equation);
     }
     for constraint in &constraints.point_bindings {
@@ -877,6 +901,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             .zip(values)
             .filter_map(|(coordinate, value)| Some((coordinate, value?)))
         {
+            ctx.try_reserve_items(equations, 1, "creo auxiliary coordinate equations")?;
             equations.push(SectionCoordinateEquation::point_value(
                 constraint.point,
                 coordinate,
@@ -884,18 +909,20 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             ));
         }
     }
+    Ok(())
 }
 
 pub(super) fn section_equation_scalar_values_from_coordinates(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> BTreeMap<SectionScalarVariable, f64> {
+) -> Result<BTreeMap<SectionScalarVariable, f64>, CodecError> {
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
-    let constraints = section_equation_auxiliary_constraints(definition, &ambiguous_point_ids);
-    let seed_values = section_equation_scalar_seed_values(definition);
+    let constraints = section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
+    let seed_values = section_equation_scalar_seed_values(ctx, definition)?;
     let mut derived = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     let compatible = |variable: SectionScalarVariable, value: f64| {
         !seed_values.contains_key(&variable)
@@ -918,7 +945,7 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
         };
         let value = f64::midpoint(first, second);
         if compatible(constraint.result, value) {
-            merge_scalar_value_candidate(&mut derived, constraint.result, value);
+            merge_scalar_value_candidate(ctx, &mut derived, constraint.result, value)?;
         }
     }
     for constraint in constraints.point_bindings {
@@ -926,7 +953,8 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
             continue;
         };
         let mut invalid = false;
-        let mut candidates = Vec::new();
+        let mut candidates = [None; 2];
+        let mut candidate_count = 0;
         for (coordinate, variable) in SectionAxis::ALL.into_iter().zip(constraint.coordinates) {
             let Some(value) = point[coordinate.index()] else {
                 continue;
@@ -936,29 +964,31 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
                 break;
             }
             if !seed_values.contains_key(&variable) {
-                candidates.push((variable, value));
+                candidates[candidate_count] = Some((variable, value));
+                candidate_count += 1;
             }
         }
         if !invalid {
-            for (variable, value) in candidates {
-                merge_scalar_value_candidate(&mut derived, variable, value);
+            for (variable, value) in candidates.into_iter().take(candidate_count).flatten() {
+                merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
             }
         }
     }
     for (variable, value) in
-        section_equation_function_six_distance_values(definition, coordinates, &ambiguous_point_ids)
+        section_equation_function_six_distance_values(ctx, definition, coordinates, &ambiguous_point_ids)?
     {
-        merge_scalar_value_candidate(&mut derived, variable, value);
+        merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
     }
     for (variable, value) in section_equation_function_forty_three_axis_distance_values(
+        ctx,
         definition,
         coordinates,
         &ambiguous_point_ids,
-    ) {
-        merge_scalar_value_candidate(&mut derived, variable, value);
+    )? {
+        merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
     }
     for constraint in
-        section_equation_radial_constraints(definition, coordinates, &ambiguous_point_ids)
+        section_equation_radial_constraints(ctx, definition, coordinates, &ambiguous_point_ids)?
     {
         for (variable, value) in [
             (
@@ -970,13 +1000,17 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
             let Some(value) = value else {
                 continue;
             };
-            merge_scalar_value_candidate(&mut derived, variable, value);
+            merge_scalar_value_candidate(ctx, &mut derived, variable, value)?;
         }
     }
-    derived
-        .into_iter()
-        .filter_map(|(variable, value)| Some((variable, value?)))
-        .collect()
+    let mut resolved = BTreeMap::new();
+    for (variable, value) in derived {
+        if let Some(value) = value {
+            ctx.charge_collection_items(1, "creo section resolved scalar nodes")?;
+            resolved.insert(variable, value);
+        }
+    }
+    Ok(resolved)
 }
 
 fn direct_function_five_scalar_rows<'a>(
@@ -1011,25 +1045,26 @@ fn direct_function_five_scalar_rows<'a>(
 }
 
 pub(super) fn section_equation_scalar_equality_components(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<BTreeSet<SectionScalarVariable>> {
+) -> Result<Vec<BTreeSet<SectionScalarVariable>>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut adjacency = BTreeMap::<SectionScalarVariable, BTreeSet<SectionScalarVariable>>::new();
@@ -1049,6 +1084,7 @@ pub(super) fn section_equation_scalar_equality_components(
             &equation.arguments,
             &variables.rows,
         ) {
+            ctx.try_reserve_items(&mut deferred_function_five, 1, "creo section deferred scalar equations")?;
             deferred_function_five.push((
                 (first.variable_type, first.key),
                 (second.variable_type, second.key),
@@ -1082,12 +1118,12 @@ pub(super) fn section_equation_scalar_equality_components(
         }
         let first = (first.variable_type, first.key);
         let second = (second.variable_type, second.key);
-        adjacency.entry(first).or_default().insert(second);
-        adjacency.entry(second).or_default().insert(first);
+        insert_scalar_adjacency(ctx, &mut adjacency, first, second)?;
+        insert_scalar_adjacency(ctx, &mut adjacency, second, first)?;
     }
 
-    let base_components = scalar_equality_components(&adjacency);
-    let base_values = scalar_equality_values_for_components(&variables.rows, &base_components);
+    let base_components = scalar_equality_components(ctx, &adjacency)?;
+    let base_values = scalar_equality_values_for_components(ctx, &variables.rows, &base_components)?;
     for (first, second, selector, stored_selector) in deferred_function_five {
         let equality_value = base_values.get(&selector).copied().unwrap_or(Ok(None));
         if !matches!(
@@ -1098,20 +1134,46 @@ pub(super) fn section_equation_scalar_equality_components(
         ) {
             continue;
         }
-        adjacency.entry(first).or_default().insert(second);
-        adjacency.entry(second).or_default().insert(first);
+        insert_scalar_adjacency(ctx, &mut adjacency, first, second)?;
+        insert_scalar_adjacency(ctx, &mut adjacency, second, first)?;
     }
-    scalar_equality_components(&adjacency)
+    scalar_equality_components(ctx, &adjacency)
+}
+
+fn insert_scalar_adjacency(
+    ctx: &DecodeContext<'_>,
+    adjacency: &mut BTreeMap<SectionScalarVariable, BTreeSet<SectionScalarVariable>>,
+    first: SectionScalarVariable,
+    second: SectionScalarVariable,
+) -> Result<(), CodecError> {
+    if !adjacency.contains_key(&first) {
+        ctx.charge_collection_items(1, "creo section scalar adjacency nodes")?;
+    }
+    let neighbors = adjacency.entry(first).or_default();
+    if !neighbors.contains(&second) {
+        ctx.charge_collection_items(1, "creo section scalar adjacency edges")?;
+        neighbors.insert(second);
+    }
+    Ok(())
 }
 
 fn scalar_equality_components(
+    ctx: &DecodeContext<'_>,
     adjacency: &BTreeMap<SectionScalarVariable, BTreeSet<SectionScalarVariable>>,
-) -> Vec<BTreeSet<SectionScalarVariable>> {
-    let mut remaining = adjacency.keys().copied().collect::<BTreeSet<_>>();
+) -> Result<Vec<BTreeSet<SectionScalarVariable>>, CodecError> {
+    let mut remaining = BTreeSet::new();
+    for variable in adjacency.keys().copied() {
+        ctx.charge_collection_items(1, "creo section scalar remaining nodes")?;
+        remaining.insert(variable);
+    }
     let mut components = Vec::new();
     while let Some(seed) = remaining.pop_first() {
-        let mut component = BTreeSet::from([seed]);
-        let mut pending = std::collections::VecDeque::from([seed]);
+        let mut component = BTreeSet::new();
+        ctx.charge_collection_items(1, "creo section scalar component nodes")?;
+        component.insert(seed);
+        let mut pending = std::collections::VecDeque::new();
+        ctx.try_collection(1, "creo section scalar pending nodes", || pending.try_reserve(1))?;
+        pending.push_back(seed);
         while let Some(variable) = pending.pop_front() {
             for neighbor in adjacency
                 .get(&variable)
@@ -1119,21 +1181,26 @@ fn scalar_equality_components(
                 .flat_map(|neighbors| neighbors.iter())
                 .copied()
             {
-                if component.insert(neighbor) {
+                if !component.contains(&neighbor) {
+                    ctx.charge_collection_items(1, "creo section scalar component nodes")?;
+                    component.insert(neighbor);
                     remaining.remove(&neighbor);
+                    ctx.try_collection(1, "creo section scalar pending nodes", || pending.try_reserve(1))?;
                     pending.push_back(neighbor);
                 }
             }
         }
+        ctx.try_reserve_items(&mut components, 1, "creo section scalar components")?;
         components.push(component);
     }
-    components
+    Ok(components)
 }
 
 fn scalar_equality_values_for_components(
+    ctx: &DecodeContext<'_>,
     rows: &[crate::feature::definitions::FeatureVariableRow],
     components: &[BTreeSet<SectionScalarVariable>],
-) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
+) -> Result<BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>>, CodecError> {
     let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
     let mut invalid = BTreeSet::<SectionScalarVariable>::new();
     for row in rows {
@@ -1142,9 +1209,19 @@ fn scalar_equality_values_for_components(
         }
         let variable = (row.variable_type, row.key);
         match row.value.value() {
-            Some(value) if value.is_finite() => values.entry(variable).or_default().push(value),
+            Some(value) if value.is_finite() => {
+                if !values.contains_key(&variable) {
+                    ctx.charge_collection_items(1, "creo section scalar sample nodes")?;
+                }
+                let samples = values.entry(variable).or_default();
+                ctx.try_reserve_items(samples, 1, "creo section scalar samples")?;
+                samples.push(value);
+            }
             Some(_) => {
-                invalid.insert(variable);
+                if !invalid.contains(&variable) {
+                    ctx.charge_collection_items(1, "creo section invalid scalar nodes")?;
+                    invalid.insert(variable);
+                }
             }
             None => {}
         }
@@ -1155,54 +1232,61 @@ fn scalar_equality_values_for_components(
         let value = if component.iter().any(|variable| invalid.contains(variable)) {
             Err(())
         } else {
-            let component_values = component
-                .iter()
-                .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
-                .collect::<Vec<_>>();
-            match component_values.first().copied() {
+            let component_values = || {
+                component
+                    .iter()
+                    .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
+            };
+            match component_values().next() {
                 None => Ok(None),
                 Some(first) => {
-                    let scale = component_values
-                        .iter()
+                    let scale = component_values()
                         .map(|value| value.abs())
                         .fold(1.0, f64::max);
-                    component_values
-                        .iter()
-                        .all(|value| (*value - first).abs() <= EPS_SCALAR_EQUALITY * scale)
+                    component_values()
+                        .all(|value| (value - first).abs() <= EPS_SCALAR_EQUALITY * scale)
                         .then_some(Some(first))
                         .ok_or(())
                 }
             }
         };
-        resolved.extend(component.iter().copied().map(|variable| (variable, value)));
+        for variable in component.iter().copied() {
+            if !resolved.contains_key(&variable) {
+                ctx.charge_collection_items(1, "creo section reconciled scalar nodes")?;
+            }
+            resolved.insert(variable, value);
+        }
     }
-    resolved
+    Ok(resolved)
 }
 
 fn section_equation_scalar_equalities(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<SectionScalarVariable, f64> {
-    section_equation_scalar_equality_values(definition)
-        .into_iter()
-        .filter_map(|(variable, value)| match value {
-            Ok(Some(value)) => Some((variable, value)),
-            Ok(None) | Err(()) => None,
-        })
-        .collect()
+) -> Result<BTreeMap<SectionScalarVariable, f64>, CodecError> {
+    let mut equalities = BTreeMap::new();
+    for (variable, value) in section_equation_scalar_equality_values(ctx, definition)? {
+        if let Ok(Some(value)) = value {
+            ctx.charge_collection_items(1, "creo section scalar equality nodes")?;
+            equalities.insert(variable, value);
+        }
+    }
+    Ok(equalities)
 }
 
 pub(super) fn section_equation_scalar_equality_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>> {
+) -> Result<BTreeMap<SectionScalarVariable, Result<Option<f64>, ()>>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
-    let components = section_equation_scalar_equality_components(definition);
-    scalar_equality_values_for_components(&variables.rows, &components)
+    let components = section_equation_scalar_equality_components(ctx, definition)?;
+    scalar_equality_values_for_components(ctx, &variables.rows, &components)
 }
 
 #[derive(Clone, Copy)]
@@ -1230,39 +1314,44 @@ impl SectionRadialConstraint {
 }
 
 pub(super) fn section_equation_radial_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionRadialConstraint> {
-    section_equation_radial_constraint_rows(definition, coordinates, ambiguous_point_ids)
+) -> Result<Vec<SectionRadialConstraint>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_radial_constraint_rows(ctx, definition, coordinates, ambiguous_point_ids)?
         .into_iter()
         .filter(|constraint| constraint.active)
-        .collect()
+        , "creo section radial constraints")
 }
 
 pub(super) fn section_equation_radial_constraints_with_scalar_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
-) -> Vec<SectionRadialConstraint> {
-    section_equation_radial_constraint_rows_with_scalar_values(
+) -> Result<Vec<SectionRadialConstraint>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_radial_constraint_rows_with_scalar_values(
+        ctx,
         definition,
         coordinates,
         ambiguous_point_ids,
         Some(scalar_values),
-    )
+    )?
     .into_iter()
     .filter(|constraint| constraint.active)
-    .collect()
+    , "creo section radial constraints")
 }
 
 pub(in crate::decode) fn section_equation_radial_constraint_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionRadialConstraint> {
+) -> Result<Vec<SectionRadialConstraint>, CodecError> {
     section_equation_radial_constraint_rows_with_scalar_values(
+        ctx,
         definition,
         coordinates,
         ambiguous_point_ids,
@@ -1271,30 +1360,32 @@ pub(in crate::decode) fn section_equation_radial_constraint_rows(
 }
 
 fn section_equation_radial_constraint_rows_with_scalar_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
     scalar_values: Option<&BTreeMap<SectionScalarVariable, Option<f64>>>,
-) -> Vec<SectionRadialConstraint> {
+) -> Result<Vec<SectionRadialConstraint>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -1404,7 +1495,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                 active,
             })
         })
-        .collect()
+        , "creo section equation radial constraint rows with scalar values")
 }
 
 pub(in crate::decode) fn resolved_section_scalar_values(
@@ -1417,52 +1508,55 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         .as_ref()
         .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
     let mut values = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
-    for (variable, value) in section_equation_scalar_equalities(definition) {
+    for (variable, value) in section_equation_scalar_equalities(ctx, definition)? {
+        ctx.charge_collection_items(1, "creo resolved scalar candidate nodes")?;
         values.insert(variable, Some(value));
     }
     for (variable, value) in
-        section_equation_scalar_values_from_coordinates(definition, &coordinates)
+        section_equation_scalar_values_from_coordinates(ctx, definition, &coordinates)?
     {
-        merge_scalar_value_candidate(&mut values, variable, value);
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     for (variable, value) in section_equation_function_six_distance_values(
+        ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
-    ) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    )? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     for (variable, value) in section_equation_function_forty_three_axis_distance_values(
+        ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
-    ) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    )? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
-    for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    for (variable, value) in section_equation_function_sixteen_angle_difference_values(ctx, definition)? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     for constraint in
-        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+        section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?
     {
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value)?;
     }
-    for constraint in section_equation_radius_dimensions(definition)
+    for constraint in section_equation_radius_dimensions(ctx, definition)?
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(
+        merge_scalar_value_candidate(ctx,
             &mut values,
             constraint.radius_variable,
             constraint.value.get(),
-        );
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
+        )?;
+        merge_scalar_value_candidate(ctx, &mut values, constraint.scalar, constraint.value.get())?;
     }
-    for (variable, value) in section_relation_radius_scalar_values(definition) {
-        merge_scalar_value_candidate(&mut values, variable, value);
+    for (variable, value) in section_relation_radius_scalar_values(ctx, definition)? {
+        merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
     }
     for constraint in
-        section_equation_radial_constraints(definition, &coordinates, &ambiguous_point_ids)
+        section_equation_radial_constraints(ctx, definition, &coordinates, &ambiguous_point_ids)?
     {
         for (variable, value) in [
             (
@@ -1474,14 +1568,18 @@ pub(in crate::decode) fn resolved_section_scalar_values(
             let Some(value) = value else {
                 continue;
             };
-            merge_scalar_value_candidate(&mut values, variable, value);
+            merge_scalar_value_candidate(ctx, &mut values, variable, value)?;
         }
     }
-    propagate_section_equation_scalar_equality_values(definition, &mut values);
-    Ok(values
-        .into_iter()
-        .filter_map(|(variable, value)| Some((variable, value?)))
-        .collect())
+    propagate_section_equation_scalar_equality_values(ctx, definition, &mut values)?;
+    let mut resolved = BTreeMap::new();
+    for (variable, value) in values {
+        if let Some(value) = value {
+            ctx.charge_collection_items(1, "creo resolved scalar output nodes")?;
+            resolved.insert(variable, value);
+        }
+    }
+    Ok(resolved)
 }
 
 #[derive(Clone, Copy)]
@@ -1493,27 +1591,29 @@ pub(in crate::decode) struct SectionFunctionFiveScalarEquality {
 }
 
 pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<SectionFunctionFiveScalarEquality> {
+) -> Result<Vec<SectionFunctionFiveScalarEquality>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -1558,7 +1658,7 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
                 offset: equation.offset,
             })
         })
-        .collect()
+        , "creo section equation function five scalar equality rows")
 }
 
 #[derive(Clone, Copy)]
@@ -1573,42 +1673,45 @@ pub(in crate::decode) struct SectionFunctionSixteenAngleDifference {
 }
 
 fn section_equation_function_sixteen_angle_difference_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<(SectionScalarVariable, f64)> {
-    section_equation_function_sixteen_angle_difference_rows(definition)
+) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
         .into_iter()
         .filter(|constraint| constraint.active)
         .map(|constraint| (constraint.difference, constraint.value))
-        .collect()
+        , "creo section angle difference values")
 }
 
 pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<SectionFunctionSixteenAngleDifference> {
+) -> Result<Vec<SectionFunctionSixteenAngleDifference>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: u32| {
         usize::try_from(ordinal)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -1699,7 +1802,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation function sixteen angle difference rows")
 }
 
 #[derive(Clone, Copy)]
@@ -1715,50 +1818,54 @@ pub(in crate::decode) struct SectionFunctionFortyThreeAxisDistance {
 }
 
 fn section_equation_function_forty_three_axis_distance_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(SectionScalarVariable, f64)> {
-    section_equation_function_forty_three_axis_distance_rows(
+) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_function_forty_three_axis_distance_rows(
+        ctx,
         definition,
         coordinates,
         ambiguous_point_ids,
-    )
+    )?
     .into_iter()
     .filter(|constraint| constraint.active)
     .map(|constraint| (constraint.scalar, constraint.value))
-    .collect()
+    , "creo section axis distance values")
 }
 
 pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionFunctionFortyThreeAxisDistance> {
+) -> Result<Vec<SectionFunctionFortyThreeAxisDistance>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: u32| {
         usize::try_from(ordinal)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -1895,7 +2002,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation function forty three axis distance rows")
 }
 
 #[cfg(test)]

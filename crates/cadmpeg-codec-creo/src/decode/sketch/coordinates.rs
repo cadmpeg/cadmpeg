@@ -156,33 +156,36 @@ fn append_equal_length_coordinate_values(
 }
 
 fn append_unique_auxiliary_coordinate_constraints(
+    ctx: &DecodeContext<'_>,
     constraints: &SectionEquationAuxiliaryConstraints,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
     stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
     equations: &mut Vec<SectionCoordinateEquation>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let previous_len = equations.len();
     append_section_equation_auxiliary_coordinate_constraints(
+        ctx,
         constraints,
         scalar_values,
         stored_coordinates,
         equations,
-    );
-    let pending = equations.drain(previous_len..).collect::<Vec<_>>();
+    )?;
     let mut appended = false;
-    for equation in pending {
-        if equations.iter().any(|candidate| {
-            candidate.terms == equation.terms
+    let mut index = previous_len;
+    while index < equations.len() {
+        if equations[..index].iter().any(|candidate| {
+            candidate.terms == equations[index].terms
                 && (FiniteReal::new(candidate.rhs))
-                    .zip(FiniteReal::new(equation.rhs))
+                    .zip(FiniteReal::new(equations[index].rhs))
                     .is_some_and(|(first, second)| approximately_equal(first, second))
         }) {
+            equations.remove(index);
             continue;
         }
-        equations.push(equation);
         appended = true;
+        index += 1;
     }
-    appended
+    Ok(appended)
 }
 
 fn solve_section_coordinates_with_derived_constraints(
@@ -222,18 +225,19 @@ fn solve_section_coordinates_with_derived_constraints(
         }
         let previous_scalar_values = auxiliary_scalar_values.clone();
         for (variable, value) in
-            section_equation_scalar_values_from_coordinates(definition, &solved_coordinates)
+            section_equation_scalar_values_from_coordinates(ctx, definition, &solved_coordinates)?
         {
-            merge_scalar_value_candidate(auxiliary_scalar_values, variable, value);
+            merge_scalar_value_candidate(ctx, auxiliary_scalar_values, variable, value)?;
         }
-        propagate_section_equation_scalar_equality_values(definition, auxiliary_scalar_values);
+        propagate_section_equation_scalar_equality_values(ctx, definition, auxiliary_scalar_values)?;
         if *auxiliary_scalar_values != previous_scalar_values
             && append_unique_auxiliary_coordinate_constraints(
+                ctx,
                 auxiliary_constraints,
                 auxiliary_scalar_values,
                 stored_coordinates,
                 equations,
-            )
+            )?
         {
             appended = true;
             solved_coordinates =
@@ -383,9 +387,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
         })
         .collect::<Vec<_>>();
     let auxiliary_constraints =
-        section_equation_auxiliary_constraints(definition, &ambiguous_point_ids);
-    let mut auxiliary_scalar_values = section_equation_scalar_seed_values(definition);
-    propagate_section_equation_scalar_equality_values(definition, &mut auxiliary_scalar_values);
+        section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
+    let mut auxiliary_scalar_values = section_equation_scalar_seed_values(ctx, definition)?;
+    propagate_section_equation_scalar_equality_values(ctx, definition, &mut auxiliary_scalar_values)?;
     let linear_dimension_candidates = definition
         .relations
         .iter()
@@ -445,7 +449,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         })
         .collect::<Vec<_>>();
     unsigned_dimension_candidates.extend(
-        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+        section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?
             .into_iter()
             .map(|constraint| {
                 (
@@ -457,9 +461,9 @@ pub(in crate::decode) fn resolved_section_coordinates(
             }),
     );
     let radial_constraints =
-        section_equation_radial_constraints(definition, &points, &ambiguous_point_ids);
+        section_equation_radial_constraints(ctx, definition, &points, &ambiguous_point_ids)?;
     let equal_length_constraints =
-        section_equation_equal_length_constraints(definition, &ambiguous_point_ids);
+        section_equation_equal_length_constraints(ctx, definition, &ambiguous_point_ids)?;
     let mut signed_dimensions = BTreeMap::<(u32, u32, SectionAxis), Option<f64>>::new();
     for (first, second, coordinate, delta) in signed_dimension_candidates {
         let (key, canonical_delta) = if first <= second {
@@ -525,14 +529,14 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }
     }
     for (first, second, coordinate) in
-        section_equation_coordinate_equalities(definition, &ambiguous_point_ids)
+        section_equation_coordinate_equalities(ctx, definition, &ambiguous_point_ids)?
     {
         equations.push(SectionCoordinateEquation::point_difference(
             first, second, coordinate, 0.0,
         ));
     }
     let point_on_line_constraints =
-        section_equation_point_on_line_constraints(definition, &ambiguous_point_ids);
+        section_equation_point_on_line_constraints(ctx, definition, &ambiguous_point_ids)?;
     for constraint in &radial_constraints {
         if let Some(offset) = constraint.offset() {
             equations.push(SectionCoordinateEquation::point_difference(
@@ -611,11 +615,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
         })
         .collect();
     append_section_equation_auxiliary_coordinate_constraints(
+        ctx,
         &auxiliary_constraints,
         &auxiliary_scalar_values,
         &stored_coordinates,
         &mut equations,
-    );
+    )?;
     let unsigned_coordinates = solve_unsigned_dimension_coordinates(
         ctx,
         &equations,
@@ -637,11 +642,12 @@ pub(in crate::decode) fn resolved_section_coordinates(
         &mut auxiliary_scalar_values,
     )?;
     for constraint in section_equation_radial_constraints_with_scalar_values(
+        ctx,
         definition,
         &solved_coordinates,
         &ambiguous_point_ids,
         &auxiliary_scalar_values,
-    ) {
+    )? {
         if let Some(offset) = constraint.offset() {
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,

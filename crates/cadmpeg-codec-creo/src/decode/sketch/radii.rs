@@ -81,7 +81,7 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
     for constraint in
-        section_equation_radial_constraints(definition, &radial_coordinates, &ambiguous_point_ids)
+        section_equation_radial_constraints(ctx, definition, &radial_coordinates, &ambiguous_point_ids)?
     {
         if constraint.radius.0 == VariableType::Radius {
             if let Some(value) = constraint.radius_value.filter(|value| value.get() > 0.0) {
@@ -93,15 +93,16 @@ pub(in crate::decode) fn resolved_section_radii(
         }
     }
     for (variable, value) in section_equation_function_six_distance_values(
+        ctx,
         definition,
         &radial_coordinates,
         &ambiguous_point_ids,
-    ) {
+    )? {
         if variable.0 == VariableType::Radius && value.is_finite() && value > 0.0 {
             candidates.entry(variable.1).or_default().push(value);
         }
     }
-    for constraint in section_equation_radius_dimensions(definition)
+    for constraint in section_equation_radius_dimensions(ctx, definition)?
         .into_iter()
         .filter(|constraint| constraint.active)
     {
@@ -146,7 +147,7 @@ pub(in crate::decode) fn resolved_section_radii(
                 .push(radius.get());
         }
     }
-    for ((_, radius_id), value) in section_relation_radius_scalar_values(definition) {
+    for ((_, radius_id), value) in section_relation_radius_scalar_values(ctx, definition)? {
         candidates.entry(radius_id).or_default().push(value);
     }
     if let Some(dimensions) = definition
@@ -230,7 +231,7 @@ pub(in crate::decode) fn resolved_section_radii(
         .as_ref()
         .filter(|table| table.is_complete())
     {
-        for component in section_equation_scalar_equality_components(definition) {
+        for component in section_equation_scalar_equality_components(ctx, definition)? {
             let radius_ids = component
                 .iter()
                 .filter_map(|&(variable_type, radius_id)| {

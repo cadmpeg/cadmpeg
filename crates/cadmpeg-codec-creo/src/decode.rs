@@ -16,6 +16,19 @@ use cadmpeg_ir::codec::Decoded;
 
 use crate::container;
 
+pub(crate) fn collect_items<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut result = Vec::new();
+    for value in values {
+        ctx.try_reserve_items(&mut result, 1, operation)?;
+        result.push(value);
+    }
+    Ok(result)
+}
+
 mod analytic;
 pub(crate) mod axis;
 mod build;
