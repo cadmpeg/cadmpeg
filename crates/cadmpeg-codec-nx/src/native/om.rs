@@ -354,10 +354,13 @@ pub(super) fn operation_state_groups(
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
-        .into_iter()
-        .enumerate()
-        .map(|(section_ordinal, link)| {
+    let mut output = Vec::new();
+    for (section_ordinal, link) in
+        crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
+            .into_iter()
+            .enumerate()
+    {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX roll-forward section")?;
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -366,10 +369,10 @@ pub(super) fn operation_state_groups(
                     })
                     == link.location.section_offset()
             }) else {
-                return Ok(None);
+                continue;
             };
             let Some(table) = section.operation_state_group_table(ctx)? else {
-                return Ok(None);
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let table_end_offset = entry_offset + table.end_offset() as u64;
@@ -377,26 +380,23 @@ pub(super) fn operation_state_groups(
             let frames = table
                 .into_groups()
                 .into_iter()
-                .filter_map(|group| group.into_absolute(entry_offset))
-                .collect();
+                .filter_map(|group| group.into_absolute(entry_offset));
             let table = OmRollForwardStateTable::from_frames(
+                ctx,
                 section_ordinal,
                 &link.id,
                 &entry.name,
                 table_footer,
                 table_end_offset,
                 frames,
-            )
-            .map_err(|error| {
-                CodecError::malformed(format!(
-                    "{}: {error}",
-                    crate::loss::NxLossCode::RollForwardTableRejected.code()
-                ))
-            })?;
-            Ok(Some(table))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()
-        .map(|tables| tables.into_iter().flatten().collect())
+            )?;
+            ctx.charge_collection_items(1, "NX roll-forward state tables")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmRollForwardStateTable>()), "retain NX roll-forward state tables")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward state tables", 0, 1))?;
+            output.push(table);
+    }
+    Ok(output)
 }
 
 /// Decode standalone operation-state messages from canonical feature-history areas.
