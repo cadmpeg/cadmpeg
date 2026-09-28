@@ -13,6 +13,37 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+fn tested_parse_sketch_member_run(
+    bytes: &[u8],
+    from: usize,
+    entity_suffix: u64,
+) -> Vec<crate::records::identity::Located<u32>> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::parse_sketch_member_run(ctx, bytes, from, entity_suffix).unwrap()
+    })
+}
+
+fn tested_parse_legacy_sketch_member_run(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::parse_legacy_sketch_member_run(ctx, bytes, primary_at, entity_suffix).unwrap()
+    })
+}
+
+fn tested_parse_legacy_sketch_container_members(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+) -> Option<Vec<crate::records::identity::Located<u32>>> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::parse_legacy_sketch_container_members(ctx, bytes, primary_at, entity_suffix, records).unwrap()
+    })
+}
+
 fn candidates(
     bytes: &[u8],
     scope_record_index: u32,
@@ -356,7 +387,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     assert!(placement.member_run_head());
     assert_eq!(placement.scope_record_index, None);
     assert_eq!(
-        crate::design::decode::sketch::parse_legacy_sketch_container_members(
+        tested_parse_legacy_sketch_container_members(
             &bytes, 0, 100, &records,
         ),
         Some(Vec::new())
@@ -413,7 +444,7 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let members = crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
+    let members = tested_parse_legacy_sketch_member_run(&bytes, 0, 100)
         .expect("legacy sketch member run");
     assert_eq!(
         members.iter().map(|row| row.value).collect::<Vec<_>>(),
@@ -423,6 +454,41 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         members.iter().map(|row| row.offset).collect::<Vec<_>>(),
         [(paired_at + 46) as u64, (paired_at + 57) as u64]
     );
+}
+
+#[test]
+fn legacy_sketch_member_run_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"380");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.resize(40, 0);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"381");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for member in [300u32, 301] {
+        bytes.push(1);
+        bytes.extend_from_slice(&member.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::parse_legacy_sketch_member_run(&ctx, &bytes, 0, 100)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d legacy sketch member run"));
 }
 
 #[test]
@@ -872,7 +938,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     }
     bytes.extend_from_slice(&[0; 8]);
     assert_eq!(
-        crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 100),
+        tested_parse_sketch_member_run(&bytes, 0, 100),
         vec![99, 20, 21]
             .into_iter()
             .zip(member_offsets)
@@ -880,11 +946,11 @@ fn sketch_member_run_backfills_relation_free_owners() {
             .collect::<Vec<_>>()
     );
     assert_eq!(
-        crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 101),
+        tested_parse_sketch_member_run(&bytes, 0, 101),
         vec![]
     );
     assert_eq!(
-        crate::design::decode::sketch::parse_sketch_member_run(&bytes, paired_at + 1, 100),
+        tested_parse_sketch_member_run(&bytes, paired_at + 1, 100),
         vec![]
     );
 
@@ -957,4 +1023,33 @@ fn sketch_member_run_backfills_relation_free_owners() {
         &mut [],
     )
     .is_err());
+}
+
+#[test]
+fn sketch_member_run_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = vec![0u8; 40];
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 41]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&99u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    for member in [20u32, 21] {
+        bytes.push(1);
+        bytes.extend_from_slice(&member.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::parse_sketch_member_run(&ctx, &bytes, 0, 100)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch member run"));
 }
