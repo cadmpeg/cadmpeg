@@ -48,8 +48,8 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
-    ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
@@ -226,28 +226,35 @@ pub(super) fn try_decode_geometry(
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
-            body_node_ids.extend(topology_body_node_ids(
+            for (body, nodes) in topology_body_node_ids(
+                ctx,
                 si,
                 &parsed.stream(si).view_for_geometry().graph,
-            ));
+            )? {
+                ctx.charge_collection_items(1, "nx geometry body node index")?;
+                body_node_ids.insert(body, nodes);
+            }
         }
     }
-    let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, rmfastload_ids);
-    let rmfastload_preselection = (body_node_ids.len() > 1
+    let rmfastload_selected = rmfastload_selected_bodies(ctx, &body_node_ids, rmfastload_ids)?;
+    let allow_terminal_lineage =
+        rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected);
+    let rmfastload_preselection = if body_node_ids.len() > 1
         && !rmfastload_selected.is_empty()
-        && rmfastload_selected.len() < body_node_ids.len())
-    .then(|| {
-        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
+        && rmfastload_selected.len() < body_node_ids.len()
+    {
+        rmfastload_stream_indices(ctx, &rmfastload_selected)?.map(|streams| {
             (
-                rmfastload_selected.clone(),
+                rmfastload_selected,
                 streams,
                 "rmfastload_object_id_membership",
             )
         })
-    })
-    .flatten();
+    } else {
+        None
+    };
     let terminal_lineage =
-        if rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected) {
+        if allow_terminal_lineage {
             Some(crate::native::model::extract_segment_lineage(
                 ctx,
                 &scan.container,
@@ -273,10 +280,12 @@ pub(super) fn try_decode_geometry(
             &lineage.statuses,
         )?
         .filter(|selected| selected.len() < body_node_ids.len())
-        .and_then(|selected| {
-            rmfastload_stream_indices(&selected)
-                .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
-        }),
+        .map(|selected| {
+            rmfastload_stream_indices(ctx, &selected)
+                .map(|streams| streams.map(|streams| (selected, streams, "terminal_feature_body_lineage")))
+        })
+        .transpose()?
+        .flatten(),
         None => None,
     };
     let preselection = rmfastload_preselection.or(terminal_preselection);
@@ -1269,12 +1278,12 @@ pub(super) fn try_decode_geometry(
             .sum::<usize>();
         apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
     } else {
-        select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
+        select_active_body(ctx, &mut ir, &body_node_ids, rmfastload_ids)?
     };
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(ctx, &mut ir, &model)?;
     }
-    classify_body_kinds(&mut ir);
+    classify_body_kinds(ctx, &mut ir)?;
     match crate::native::attach_annotations(
         ctx,
         &mut ir,
@@ -1292,7 +1301,7 @@ pub(super) fn try_decode_geometry(
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
     prune_unreferenced_unknown_carriers(&mut ir);
-    finalize_point_topology(&mut ir, &mut annotations);
+    finalize_point_topology(ctx, &mut ir, &mut annotations)?;
     let referenced_pcurves: BTreeSet<_> = ir
         .model
         .coedges
@@ -1302,7 +1311,7 @@ pub(super) fn try_decode_geometry(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
+    retain_live_unknown_links(ctx, &ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
     retain_live_annotations(ctx, &ir, &unknowns, &mut annotations)?;
     let completion_budget = CompletionBudgetStatus {
@@ -1501,26 +1510,27 @@ fn insert_live_identity(
 }
 
 fn retain_live_unknown_links(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut ids = BTreeSet::new();
-    ids.extend(ir.model.surfaces.iter().map(|entity| entity.id.to_string()));
-    ids.extend(ir.model.curves.iter().map(|entity| entity.id.to_string()));
-    ids.extend(ir.model.pcurves.iter().map(|entity| entity.id.to_string()));
-    ids.extend(
-        ir.model
-            .procedural_surfaces
-            .iter()
-            .map(|entity| entity.id.to_string()),
-    );
-    ids.extend(
-        ir.model
-            .procedural_curves
-            .iter()
-            .map(|entity| entity.id.to_string()),
-    );
+    for entity in &ir.model.surfaces {
+        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+    }
+    for entity in &ir.model.curves {
+        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+    }
+    for entity in &ir.model.pcurves {
+        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+    }
+    for entity in &ir.model.procedural_surfaces {
+        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+    }
+    for entity in &ir.model.procedural_curves {
+        insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+    }
     for unknown in unknowns.iter_mut() {
         unknown.links_mut().retain(|link| ids.contains(link));
         if !unknown.links().is_empty() {
@@ -1533,109 +1543,132 @@ fn retain_live_unknown_links(
 }
 
 pub(super) fn topology_body_node_ids(
+    ctx: &DecodeContext<'_>,
     stream_index: usize,
     graph: &Graph,
-) -> BTreeMap<BodyId, BTreeSet<u32>> {
-    let scope = IdScope::stream(stream_index);
-    let body_xmts: BTreeSet<_> = graph
-        .body_shape_shells()
-        .filter_map(|shell| {
-            shell
+) -> Result<BTreeMap<BodyId, BTreeSet<u32>>, CodecError> {
+    let scope = IdScope::stream_charged(ctx, stream_index)?;
+    let mut body_xmts = BTreeSet::new();
+    for shell in graph.body_shape_shells() {
+        if let Some(body_xmt) = shell
+            .shell_fields()
+            .and_then(|fields| fields.body.map(u32::from))
+        {
+            ctx.charge_collection_items(1, "nx topology body nodes")?;
+            body_xmts.insert(body_xmt);
+        }
+    }
+    let mut bodies = BTreeMap::new();
+    'body: for body_xmt in body_xmts {
+        let mut shells = BTreeSet::new();
+        for shell in graph.of_kind(NodeKind::Shell) {
+            if shell
                 .shell_fields()
-                .and_then(|fields| fields.body.map(u32::from))
-        })
-        .collect();
-    body_xmts
-        .into_iter()
-        .filter_map(|body_xmt| {
-            let shells: BTreeSet<_> = graph
-                .of_kind(NodeKind::Shell)
-                .filter(|shell| {
-                    shell
-                        .shell_fields()
-                        .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
-                })
-                .map(|shell| shell.xmt)
-                .collect();
-            let faces: Vec<_> = graph
-                .of_kind(NodeKind::Face)
-                .filter(|face| {
-                    face.face_fields().is_some_and(|fields| {
-                        fields
-                            .shell
-                            .is_some_and(|target| shells.contains(&u32::from(target)))
-                    })
-                })
-                .collect();
-            let face_xmts: BTreeSet<_> = faces.iter().map(|face| face.xmt).collect();
-            let loops: BTreeSet<_> = graph
-                .of_kind(NodeKind::Loop)
-                .filter(|loop_| {
-                    loop_.loop_fields().is_some_and(|fields| {
-                        fields
-                            .face
-                            .is_some_and(|target| face_xmts.contains(&u32::from(target)))
-                    })
-                })
-                .map(|loop_| loop_.xmt)
-                .collect();
-            let fins: Vec<_> = graph
-                .of_kind(NodeKind::Fin)
-                .filter(|fin| {
-                    fin.fin_fields().is_some_and(|fields| {
-                        fields
-                            .loop_xmt
-                            .is_some_and(|target| loops.contains(&u32::from(target)))
-                    })
-                })
-                .collect();
-            let edge_xmts: BTreeSet<_> = fins
-                .iter()
-                .filter_map(|fin| fin.fin_fields())
-                .map(|fields| fields.edge.map(u32::from))
-                .collect::<Option<_>>()?;
-            let vertex_xmts: BTreeSet<_> = fins
-                .iter()
-                .filter_map(|fin| fin.fin_fields())
-                .map(|fields| fields.vertex.map(u32::from))
-                .collect::<Option<_>>()?;
-            let face_ids = faces
-                .iter()
-                .map(|face| face.u32_at(4))
-                .collect::<Option<BTreeSet<_>>>()?;
-            let edges = graph
-                .of_kind(NodeKind::Edge)
-                .filter(|edge| edge_xmts.contains(&edge.xmt))
-                .collect::<Vec<_>>();
-            if edges.len() != edge_xmts.len() {
-                return None;
+                .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
+            {
+                ctx.charge_collection_items(1, "nx topology body shells")?;
+                shells.insert(shell.xmt);
             }
-            let edge_ids = edges
-                .iter()
-                .map(|edge| edge.u32_at(4))
-                .collect::<Option<BTreeSet<_>>>()?;
-            let vertices = graph
-                .of_kind(NodeKind::Vertex)
-                .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
-                .collect::<Vec<_>>();
-            if vertices.len() != vertex_xmts.len() {
-                return None;
+        }
+        let mut faces = Vec::new();
+        let mut face_xmts = BTreeSet::new();
+        for face in graph.of_kind(NodeKind::Face) {
+            if face.face_fields().is_some_and(|fields| {
+                fields
+                    .shell
+                    .is_some_and(|target| shells.contains(&u32::from(target)))
+            }) {
+                ctx.charge_collection_items(1, "nx topology body faces")?;
+                faces.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx topology body faces", 0, 1)
+                })?;
+                faces.push(face);
+                ctx.charge_collection_items(1, "nx topology body face nodes")?;
+                face_xmts.insert(face.xmt);
             }
-            let vertex_ids = vertices
-                .iter()
-                .map(|vertex| vertex.u32_at(4))
-                .collect::<Option<BTreeSet<_>>>()?;
-            let ids = face_ids
-                .into_iter()
-                .chain(edge_ids)
-                .chain(vertex_ids)
-                .collect();
-            Some((
-                scope.id::<BodyId>(&cadmpeg_ir::identity_component!("body"), body_xmt),
-                ids,
-            ))
-        })
-        .collect()
+        }
+        let mut loops = BTreeSet::new();
+        for loop_ in graph.of_kind(NodeKind::Loop) {
+            if loop_.loop_fields().is_some_and(|fields| {
+                fields
+                    .face
+                    .is_some_and(|target| face_xmts.contains(&u32::from(target)))
+            }) {
+                ctx.charge_collection_items(1, "nx topology body loops")?;
+                loops.insert(loop_.xmt);
+            }
+        }
+        let mut fins = Vec::new();
+        for fin in graph.of_kind(NodeKind::Fin) {
+            if fin.fin_fields().is_some_and(|fields| {
+                fields
+                    .loop_xmt
+                    .is_some_and(|target| loops.contains(&u32::from(target)))
+            }) {
+                ctx.charge_collection_items(1, "nx topology body fins")?;
+                fins.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx topology body fins", 0, 1)
+                })?;
+                fins.push(fin);
+            }
+        }
+        let mut edge_xmts = BTreeSet::new();
+        let mut vertex_xmts = BTreeSet::new();
+        for fin in fins {
+            let Some(fields) = fin.fin_fields() else {
+                continue;
+            };
+            let (Some(edge), Some(vertex)) = (fields.edge, fields.vertex) else {
+                continue 'body;
+            };
+            ctx.charge_collection_items(1, "nx topology body edge nodes")?;
+            edge_xmts.insert(u32::from(edge));
+            ctx.charge_collection_items(1, "nx topology body vertex nodes")?;
+            vertex_xmts.insert(u32::from(vertex));
+        }
+        let mut ids = BTreeSet::new();
+        for face in faces {
+            let Some(id) = face.u32_at(4) else {
+                continue 'body;
+            };
+            ctx.charge_collection_items(1, "nx topology body identities")?;
+            ids.insert(id);
+        }
+        let mut edge_count = 0;
+        for edge in graph.of_kind(NodeKind::Edge) {
+            if edge_xmts.contains(&edge.xmt) {
+                edge_count += 1;
+                let Some(id) = edge.u32_at(4) else {
+                    continue 'body;
+                };
+                ctx.charge_collection_items(1, "nx topology body identities")?;
+                ids.insert(id);
+            }
+        }
+        if edge_count != edge_xmts.len() {
+            continue;
+        }
+        let mut vertex_count = 0;
+        for vertex in graph.of_kind(NodeKind::Vertex) {
+            if vertex_xmts.contains(&vertex.xmt) {
+                vertex_count += 1;
+                let Some(id) = vertex.u32_at(4) else {
+                    continue 'body;
+                };
+                ctx.charge_collection_items(1, "nx topology body identities")?;
+                ids.insert(id);
+            }
+        }
+        if vertex_count != vertex_xmts.len() {
+            continue;
+        }
+        ctx.charge_collection_items(1, "nx topology body index")?;
+        bodies.insert(
+            scope.id_charged::<BodyId>(ctx, &cadmpeg_ir::identity_component!("body"), body_xmt)?,
+            ids,
+        );
+    }
+    Ok(bodies)
 }
 
 /// Return body images whose complete topology node sets are inside the active
@@ -1643,15 +1676,27 @@ pub(super) fn topology_body_node_ids(
 /// topology emission, applied to graph-only body identities before carrier
 /// construction.
 pub(super) fn rmfastload_selected_bodies(
+    ctx: &DecodeContext<'_>,
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
-) -> BTreeSet<BodyId> {
-    let active = rmfastload_ids.iter().copied().collect::<BTreeSet<_>>();
-    body_node_ids
-        .iter()
-        .filter(|(_, ids)| !ids.is_empty() && ids.is_subset(&active))
-        .map(|(body, _)| body.clone())
-        .collect()
+) -> Result<BTreeSet<BodyId>, CodecError> {
+    let mut active = BTreeSet::new();
+    for id in rmfastload_ids {
+        ctx.charge_collection_items(1, "nx rmfastload active node ids")?;
+        active.insert(*id);
+    }
+    let mut selected = BTreeSet::new();
+    for (body, ids) in body_node_ids {
+        if !ids.is_empty() && ids.is_subset(&active) {
+            ctx.charge_collection_items(1, "nx rmfastload selected bodies")?;
+            selected.insert(copy_typed_id(
+                ctx,
+                body.as_str(),
+                "nx rmfastload selected body identity",
+            )?);
+        }
+    }
+    Ok(selected)
 }
 
 pub(super) fn rmfastload_allows_terminal_lineage(
@@ -1664,18 +1709,24 @@ pub(super) fn rmfastload_allows_terminal_lineage(
 /// Return the stream ordinals that can contain selected body images. A
 /// malformed body identity disables preselection rather than guessing a
 /// stream owner.
-pub(super) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
-    selected
-        .iter()
-        .map(|body| {
-            body.as_str()
-                .strip_prefix("nx:s")?
-                .split_once(':')?
-                .0
-                .parse()
-                .ok()
-        })
-        .collect()
+pub(super) fn rmfastload_stream_indices(
+    ctx: &DecodeContext<'_>,
+    selected: &BTreeSet<BodyId>,
+) -> Result<Option<BTreeSet<usize>>, CodecError> {
+    let mut streams = BTreeSet::new();
+    for body in selected {
+        let Some(index) = body
+            .as_str()
+            .strip_prefix("nx:s")
+            .and_then(|text| text.split_once(':'))
+            .and_then(|(text, _)| text.parse().ok())
+        else {
+            return Ok(None);
+        };
+        ctx.charge_collection_items(1, "nx rmfastload stream indices")?;
+        streams.insert(index);
+    }
+    Ok(Some(streams))
 }
 
 fn apply_preselected_active_body_selection(
@@ -1726,28 +1777,29 @@ fn apply_preselected_active_body_selection(
 }
 
 pub(super) fn select_active_body(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
-) -> bool {
+) -> Result<bool, CodecError> {
     if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
-        return false;
+        return Ok(false);
     }
-    let selected = rmfastload_selected_bodies(body_node_ids, rmfastload_ids);
+    let selected = rmfastload_selected_bodies(ctx, body_node_ids, rmfastload_ids)?;
     if selected.is_empty() {
-        return false;
+        return Ok(false);
     }
     let selected_hits = selected
         .iter()
         .filter_map(|body| body_node_ids.get(body))
         .map(BTreeSet::len)
         .sum::<usize>();
-    apply_preselected_active_body_selection(
+    Ok(apply_preselected_active_body_selection(
         ir,
         &selected,
         "rmfastload_object_id_membership",
         Some(selected_hits),
-    )
+    ))
 }
 
 fn select_terminal_feature_bodies(
@@ -1969,142 +2021,240 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
         .retain(|pcurve| pcurves.contains(&pcurve.id));
 }
 
-fn finalize_point_topology(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let referenced_points: BTreeSet<_> = ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.clone())
-        .collect();
+fn finalize_point_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    let mut referenced_points: BTreeSet<PointId> = BTreeSet::new();
+    for vertex in &ir.model.vertices {
+        ctx.charge_collection_items(1, "nx referenced points")?;
+        referenced_points.insert(copy_typed_id(
+            ctx,
+            vertex.point.as_str(),
+            "nx referenced point identity",
+        )?);
+    }
     if !ir.model.bodies.is_empty() {
         ir.model
             .points
             .retain(|point| referenced_points.contains(&point.id));
-        return;
+        return Ok(());
     }
 
     if ir.model.points.is_empty() {
-        return;
+        return Ok(());
     }
 
     let derived = IdScope::derived();
-    let body_id: BodyId = derived.id(&cadmpeg_ir::identity_component!("point-body"), 0);
-    let region_id: RegionId = derived.id(&cadmpeg_ir::identity_component!("point-region"), 0);
-    let shell_id: ShellId = derived.id(&cadmpeg_ir::identity_component!("point-shell"), 0);
+    let body_id: BodyId =
+        derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-body"), 0)?;
+    let region_id: RegionId =
+        derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-region"), 0)?;
+    let shell_id: ShellId =
+        derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-shell"), 0)?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+        ctx.charge_collection_items(2, "nx point topology annotations")?;
+        let text_bytes = cadmpeg_core::decode::u64_from_index(id.len());
+        let both_text_bytes = text_bytes.checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx point topology annotation identity", 0, text_bytes)
+        })?;
+        ctx.charge_retained(both_text_bytes, "nx point topology annotation identity")?;
         annotations
             .note(id, &stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(id, Exactness::Inferred);
     }
 
-    let mut free_vertices = Vec::with_capacity(ir.model.points.len());
+    let point_count = ir.model.points.len();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(point_count),
+        "nx point topology free vertices",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(point_count),
+        "nx point topology vertices",
+    )?;
+    let mut free_vertices = Vec::new();
+    free_vertices.try_reserve_exact(point_count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx point topology free vertices",
+            0,
+            cadmpeg_core::decode::u64_from_index(point_count),
+        )
+    })?;
+    ir.model.vertices.try_reserve(point_count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx point topology vertices",
+            0,
+            cadmpeg_core::decode::u64_from_index(point_count),
+        )
+    })?;
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id: VertexId =
-            derived.id(&cadmpeg_ir::identity_component!("point-vertex"), index);
+            derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;
+        ctx.charge_collection_items(2, "nx point topology annotations")?;
+        let text_bytes = cadmpeg_core::decode::u64_from_index(vertex_id.as_str().len());
+        let both_text_bytes = text_bytes.checked_mul(2).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx point topology annotation identity", 0, text_bytes)
+        })?;
+        ctx.charge_retained(both_text_bytes, "nx point topology annotation identity")?;
         annotations
             .note(&vertex_id, &stream, 0)
             .tag("derived_point_topology");
         annotations.exactness(&vertex_id, Exactness::Inferred);
         ir.model.vertices.push(Vertex {
-            id: vertex_id.clone(),
-            point: point.id.clone(),
+            id: copy_typed_id(ctx, vertex_id.as_str(), "nx point vertex identity copy")?,
+            point: copy_typed_id(ctx, point.id.as_str(), "nx point reference identity")?,
             tolerance: None,
         });
         free_vertices.push(vertex_id);
     }
+    ctx.charge_collection_items(1, "nx point topology shells")?;
+    ir.model.shells.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx point topology shells", 0, 1)
+    })?;
     ir.model.shells.push(
         match Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
+            copy_typed_id(ctx, shell_id.as_str(), "nx point shell identity copy")?,
+            copy_typed_id(ctx, region_id.as_str(), "nx point shell region identity")?,
             Vec::new(),
             Vec::new(),
             free_vertices,
         ) {
             Ok(shell) => shell,
             Err(_) => {
-                return;
+                return Ok(());
             }
         },
     );
+    ctx.charge_collection_items(1, "nx point topology regions")?;
+    ir.model.regions.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx point topology regions", 0, 1)
+    })?;
+    let mut region_shells = Vec::new();
+    ctx.charge_collection_items(1, "nx point region shells")?;
+    region_shells.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx point region shells", 0, 1)
+    })?;
+    region_shells.push(shell_id);
     ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
-        shells: vec![shell_id],
+        id: copy_typed_id(ctx, region_id.as_str(), "nx point region identity copy")?,
+        body: copy_typed_id(ctx, body_id.as_str(), "nx point region body identity")?,
+        shells: region_shells,
     });
+    ctx.charge_collection_items(1, "nx point topology bodies")?;
+    ir.model.bodies.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx point topology bodies", 0, 1)
+    })?;
+    let mut body_regions = Vec::new();
+    ctx.charge_collection_items(1, "nx point body regions")?;
+    body_regions.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx point body regions", 0, 1)
+    })?;
+    body_regions.push(region_id);
     ir.model.bodies.push(Body {
         id: body_id,
         kind: BodyKind::General,
-        regions: vec![region_id],
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
+    Ok(())
 }
 
-fn classify_body_kinds(ir: &mut CadIr) {
-    let region_bodies: BTreeMap<_, _> = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| (region.id.clone(), region.body.clone()))
-        .collect();
-    let shell_bodies: BTreeMap<_, _> = ir
-        .model
-        .shells
-        .iter()
-        .filter_map(|shell| {
-            region_bodies
-                .get(&shell.region)
-                .cloned()
-                .map(|body| (shell.id.clone(), body))
-        })
-        .collect();
-    let face_bodies: BTreeMap<_, _> = ir
-        .model
-        .faces
-        .iter()
-        .filter_map(|face| {
-            shell_bodies
-                .get(&face.shell)
-                .cloned()
-                .map(|body| (face.id.clone(), body))
-        })
-        .collect();
-    let loop_bodies: BTreeMap<_, _> = ir
-        .model
-        .loops
-        .iter()
-        .filter_map(|loop_| {
-            face_bodies
-                .get(&loop_.face)
-                .cloned()
-                .map(|body| (loop_.id.clone(), body))
-        })
-        .collect();
-    let coedge_bodies: BTreeMap<_, _> = ir
-        .model
-        .coedges
-        .iter()
-        .filter_map(|coedge| {
-            loop_bodies
-                .get(&coedge.owner_loop)
-                .cloned()
-                .map(|body| (coedge.id.clone(), body))
-        })
-        .collect();
+fn copy_typed_id<T>(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    operation: &'static str,
+) -> Result<T, CodecError>
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Display,
+{
+    let bytes = ctx.copy_retained(id.as_bytes(), operation)?;
+    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    T::try_from(text).map_err(CodecError::malformed)
+}
+
+fn insert_body_relation<K>(
+    ctx: &DecodeContext<'_>,
+    map: &mut BTreeMap<K, BodyId>,
+    key: &str,
+    body: &BodyId,
+) -> Result<(), CodecError>
+where
+    K: Ord + TryFrom<String>,
+    K::Error: std::fmt::Display,
+{
+    ctx.charge_collection_items(1, "nx body classification relations")?;
+    map.insert(
+        copy_typed_id(ctx, key, "nx body classification relation identity")?,
+        copy_typed_id(ctx, body.as_str(), "nx body classification owner identity")?,
+    );
+    Ok(())
+}
+
+fn classify_body_kinds(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let mut region_bodies: BTreeMap<RegionId, BodyId> = BTreeMap::new();
+    for region in &ir.model.regions {
+        insert_body_relation(ctx, &mut region_bodies, region.id.as_str(), &region.body)?;
+    }
+    let mut shell_bodies: BTreeMap<ShellId, BodyId> = BTreeMap::new();
+    for shell in &ir.model.shells {
+        if let Some(body) = region_bodies.get(&shell.region) {
+            insert_body_relation(ctx, &mut shell_bodies, shell.id.as_str(), body)?;
+        }
+    }
+    let mut face_bodies: BTreeMap<FaceId, BodyId> = BTreeMap::new();
+    for face in &ir.model.faces {
+        if let Some(body) = shell_bodies.get(&face.shell) {
+            insert_body_relation(ctx, &mut face_bodies, face.id.as_str(), body)?;
+        }
+    }
+    let mut loop_bodies: BTreeMap<LoopId, BodyId> = BTreeMap::new();
+    for loop_ in &ir.model.loops {
+        if let Some(body) = face_bodies.get(&loop_.face) {
+            insert_body_relation(ctx, &mut loop_bodies, loop_.id.as_str(), body)?;
+        }
+    }
+    let mut coedge_bodies: BTreeMap<CoedgeId, BodyId> = BTreeMap::new();
+    for coedge in &ir.model.coedges {
+        if let Some(body) = loop_bodies.get(&coedge.owner_loop) {
+            insert_body_relation(ctx, &mut coedge_bodies, coedge.id.as_str(), body)?;
+        }
+    }
     let mut edge_uses = BTreeMap::<BodyId, BTreeMap<EdgeId, usize>>::new();
     for coedge in &ir.model.coedges {
         let Some(body) = coedge_bodies.get(&coedge.id) else {
             continue;
         };
-        *edge_uses
-            .entry(body.clone())
-            .or_default()
-            .entry(coedge.edge.clone())
-            .or_default() += 1;
+        if !edge_uses.contains_key(body) {
+            ctx.charge_collection_items(1, "nx body classification edge owners")?;
+            edge_uses.insert(
+                copy_typed_id(ctx, body.as_str(), "nx body classification edge owner identity")?,
+                BTreeMap::new(),
+            );
+        }
+        let Some(edges) = edge_uses.get_mut(body) else {
+            return Err(CodecError::malformed("NX body classification owner missing"));
+        };
+        if !edges.contains_key(&coedge.edge) {
+            ctx.charge_collection_items(1, "nx body classification edge uses")?;
+            edges.insert(
+                copy_typed_id(ctx, coedge.edge.as_str(), "nx body classification edge identity")?,
+                0,
+            );
+        }
+        let Some(count) = edges.get_mut(&coedge.edge) else {
+            return Err(CodecError::malformed("NX body classification edge missing"));
+        };
+        *count = count.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx body classification edge uses", 0, 1)
+        })?;
     }
     for body in &mut ir.model.bodies {
         body.kind = if edge_uses
@@ -2116,6 +2266,7 @@ fn classify_body_kinds(ir: &mut CadIr) {
             BodyKind::Sheet
         };
     }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -5,6 +5,18 @@ use cadmpeg_ir::ids::{
     Identity, IdentityComponent, IdentityKey, IdentityKeyTail, IdentityNamespace,
 };
 use cadmpeg_ir::{identity_component, identity_key};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+use std::fmt::{self, Display, Write};
+
+struct CountBytes(usize);
+
+impl Write for CountBytes {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
 
 /// The format component every NX identity carries.
 fn nx() -> IdentityComponent {
@@ -24,6 +36,27 @@ impl IdScope {
     /// The scope of one Parasolid stream of the container.
     pub(crate) fn stream(stream_index: impl Into<IdentityComponent>) -> Self {
         Self::native(identity_component!("s").then(stream_index))
+    }
+
+    /// Build the scope of a Parasolid stream after charging its text.
+    pub(crate) fn stream_charged(
+        ctx: &DecodeContext<'_>,
+        stream_index: usize,
+    ) -> Result<Self, CodecError> {
+        let mut count = CountBytes(0);
+        write!(&mut count, "s{stream_index}")
+            .map_err(|_| ctx.refuse_codec_limit("nx stream scope text", 0, u64::MAX))?;
+        ctx.charge_retained(u64_from_index(count.0), "nx stream scope text")?;
+        let mut text = String::new();
+        text.try_reserve_exact(count.0).map_err(|_| {
+            ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
+        })?;
+        write!(&mut text, "s{stream_index}").map_err(|_| {
+            ctx.refuse_codec_limit("nx stream scope text", 0, u64_from_index(count.0))
+        })?;
+        IdentityComponent::try_new(text)
+            .map(Self::native)
+            .map_err(CodecError::malformed)
     }
 
     /// The scope of whole-stream container evidence.
@@ -64,6 +97,27 @@ impl IdScope {
             key,
         )
         .into()
+    }
+
+    /// Mint an NX identity after charging its retained text.
+    pub(crate) fn id_charged<T: From<Identity>>(
+        &self,
+        ctx: &DecodeContext<'_>,
+        kind: &IdentityComponent,
+        key: impl Display,
+    ) -> Result<T, CodecError> {
+        let mut count = CountBytes(0);
+        write!(&mut count, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
+            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64::MAX))?;
+        ctx.charge_retained(u64_from_index(count.0), "nx identity text")?;
+        let mut text = String::new();
+        text.try_reserve_exact(count.0)
+            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
+        write!(&mut text, "nx:{}:{}#{key}", self.0.as_str(), kind.as_str())
+            .map_err(|_| ctx.refuse_codec_limit("nx identity text", 0, u64_from_index(count.0)))?;
+        Identity::new(text)
+            .map(Into::into)
+            .map_err(CodecError::malformed)
     }
 
     /// Mint `<scope>:<kind>#<key>`, declining a key that leaves the grammar.
