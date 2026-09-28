@@ -346,6 +346,41 @@ impl SourceFidelity {
 
     /// Append source metadata after checking both tables for identity collisions.
     /// Failure leaves this source metadata unchanged.
+    pub fn append_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const DUPLICATE_PREFIX: &str = "duplicate retained or native unknown record ";
+        for id in other.retained_records.keys() {
+            if self.retained_records.contains_key(id) {
+                let operation = "report duplicate source record";
+                let length = DUPLICATE_PREFIX
+                    .len()
+                    .checked_add(id.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+                let bytes = u64::try_from(length)
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+                ctx.charge_retained(bytes, operation)?;
+                let mut message = String::new();
+                message
+                    .try_reserve(length)
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+                message.push_str(DUPLICATE_PREFIX);
+                message.push_str(id.as_str());
+                return Err(cadmpeg_core::CodecError::Malformed(message));
+            }
+        }
+        let record_count = u64::try_from(other.retained_records.len())
+            .map_err(|_| ctx.refuse_codec_limit("append source records", 0, u64::MAX))?;
+        ctx.charge_collection_items(record_count, "append source records")?;
+        self.annotations.append_charged(ctx, other.annotations)?;
+        self.retained_records.append(&mut other.retained_records);
+        Ok(())
+    }
+
+    /// Append source metadata without a decode context.
+    /// Failure leaves this source metadata unchanged.
     pub fn append(&mut self, other: Self) -> Result<(), NativeConvertError> {
         for id in other.retained_records.keys() {
             if self.retained_records.contains_key(id) {

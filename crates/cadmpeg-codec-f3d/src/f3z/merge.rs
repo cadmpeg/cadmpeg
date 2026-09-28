@@ -255,7 +255,10 @@ impl MergeSession<'_, '_> {
                 ),
             )?;
             extend_native(self.ctx, &mut parent_ir.native, component_ir.native, &occurrence)?;
-            parent_fidelity.append(rescope_fidelity(self.ctx, component_fidelity, &occurrence)?)?;
+            parent_fidelity.append_charged(
+                self.ctx,
+                rescope_fidelity(self.ctx, component_fidelity, &occurrence)?,
+            )?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
