@@ -869,11 +869,6 @@ native_record_id!(
     "design-construction-operand-group"
 );
 native_record_id!(
-    /// The native design-body-recipe-operand record key.
-    native_design_body_recipe_operand_id,
-    "design-body-recipe-operand"
-);
-native_record_id!(
     /// The native design-edge-operand record key.
     native_design_edge_operand_id,
     "design-edge-operand"
