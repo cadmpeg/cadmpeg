@@ -12,6 +12,30 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn neutral_constraint_copies_refuse_at_matching_limits() {
+    let entity = cadmpeg_ir::sketches::SketchEntityId::mint("test:test:entity#one")
+        .expect("valid entity identity");
+    let loci = [cadmpeg_ir::sketches::SketchLocus::Entity(entity)];
+    let parameter = cadmpeg_ir::features::ParameterId::mint("test:test:parameter#one")
+        .expect("valid parameter identity");
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd constraint locus copies", |ctx| {
+            super::neutral_constraint(ctx, 1, &loci, None, true)
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd constraint entity identity", |ctx| {
+            super::neutral_constraint(ctx, 2, &loci, None, true)
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd constraint parameter identity copy", |ctx| {
+            super::neutral_constraint(ctx, 6, &loci, Some(&parameter), true)
+        },
+    );
+}
+
+#[test]
 fn resolved_constraint_loci_refuse_at_retained_limits() {
     use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
     let entity = |id, geometry| SketchEntity::new(
