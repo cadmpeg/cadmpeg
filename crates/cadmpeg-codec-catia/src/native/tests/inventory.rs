@@ -705,6 +705,50 @@ fn alias_surface_resolution_refuses_collection_limit() {
 }
 
 #[test]
+fn native_alias_row_id_refuses_retained_limit() {
+    let bytes = surface_alias_stream();
+    let rows = crate::test_support::with_service_context(|ctx| {
+        crate::object_graph::surface_aliases(ctx, &bytes)
+    }).expect("service resource budget");
+    let row = rows.first().expect("alias row").clone();
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaAliasRow::from_source(ctx, row.clone())
+    }).is_ok());
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, |ctx| {
+            super::super::CatiaAliasRow::from_source(ctx, row.clone())
+        }),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn native_catalog_projection_refuses_id_and_entry_limits() {
+    let catalog = crate::catalog::Catalog {
+        pos: 16,
+        total_len: 24,
+        entries: vec![crate::catalog::CatalogEntry {
+            ordinal: 0,
+            pos: 20,
+            value: "Part".to_string(),
+        }],
+    };
+    let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::CatiaCatalog::from_source(ctx, catalog.clone())
+    };
+    assert_eq!(crate::test_support::with_service_context(run)
+        .expect("service resource budget").entries.len(), 1);
+    assert!(matches!(
+        crate::test_support::with_retained_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(matches!(
+        crate::test_support::with_collection_limit(0, run),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
     fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();

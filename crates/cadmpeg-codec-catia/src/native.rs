@@ -9297,18 +9297,18 @@ impl CatiaNative {
         }
         let mut parsed_catalogs = catalog::parse(ctx, bytes)?;
         let entity_runs = entity_table::parse_runs(ctx, bytes)?;
-        let paired_object_graph_roots = entity_runs
+        let paired_object_graph_roots = crate::resource::collect_map(ctx, entity_runs
             .iter()
             .filter_map(|run| {
                 let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
             })
-            .collect::<HashMap<_, _>>();
-        let mut alias_rows = crate::resource::collect_vec(ctx,
-            object_graph::surface_aliases(ctx, bytes)?
-            .into_iter()
-            .map(CatiaAliasRow::from)
-            , "catia_native_alias_rows")?;
+            , "catia_native_paired_graph_roots")?;
+        let mut alias_rows = Vec::new();
+        for row in object_graph::surface_aliases(ctx, bytes)? {
+            let row = CatiaAliasRow::from_source(ctx, row)?;
+            crate::resource::push(ctx, &mut alias_rows, row, "catia_native_alias_rows")?;
+        }
         let mut parsed_object_graphs =
             object_graph::parse_all_with_paired_roots(ctx, bytes, &paired_object_graph_roots)?;
         let mut parsed_value_blocks = value_block::parse(ctx, bytes)?;
@@ -9329,17 +9329,18 @@ impl CatiaNative {
                 extent_contains(block.pos, block.total_len(), catalog.pos, catalog.total_len)
             })
         });
-        let catalogs: Vec<CatiaCatalog> = parsed_catalogs
-            .into_iter()
-            .map(CatiaCatalog::from)
-            .collect();
-        let mut entity_runs = entity_runs
+        let mut catalogs = Vec::new();
+        for catalog in parsed_catalogs {
+            let catalog = CatiaCatalog::from_source(ctx, catalog)?;
+            crate::resource::push(ctx, &mut catalogs, catalog, "catia_native_catalogs")?;
+        }
+        let mut entity_runs = crate::resource::collect_map(ctx, entity_runs
             .into_iter()
             .filter_map(|run| {
                 let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
             })
-            .collect::<HashMap<_, _>>();
+            , "catia_native_entity_runs")?;
         let mut entity_records = Vec::new();
         let mut object_graphs = parsed_object_graphs
             .into_iter()
@@ -9797,11 +9798,17 @@ impl CatiaValueBlock {
     }
 }
 
-impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
-    fn from(row: object_graph::SurfaceAlias) -> Self {
-        Self {
-            id: format!("catia:outer:alias-row#{:010}", row.pos),
-            byte_offset: row.pos as u64,
+impl CatiaAliasRow {
+    fn from_source(
+        ctx: &DecodeContext<'_>,
+        row: object_graph::SurfaceAlias,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:outer:alias-row#{:010}", row.pos),
+                "catia_native_alias_row_id")?,
+            byte_offset: u64::try_from(row.pos)
+                .map_err(|_| ctx.refuse_codec_limit("catia_native_alias_row_offset", u64::MAX, u64::MAX))?,
             lead_raw: row.lead_raw,
             tag_raw: row.tag_raw,
             flag: row.flag,
@@ -9813,30 +9820,39 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             f3: row.f3,
             group: row.group,
             canonical_surface_tag: None,
-        }
+        })
     }
 }
 
-impl From<catalog::Catalog> for CatiaCatalog {
-    fn from(catalog: catalog::Catalog) -> Self {
-        let id = format!("catia:outer:catalog#{:010}", catalog.pos);
-        let entries = catalog
-            .entries
-            .into_iter()
-            .map(|entry| CatiaCatalogEntry {
-                id: format!("catia:outer:catalog-entry#{:010}", entry.pos),
-                parent: id.clone(),
+impl CatiaCatalog {
+    fn from_source(ctx: &DecodeContext<'_>, catalog: catalog::Catalog) -> Result<Self, CodecError> {
+        let id = crate::resource::format_retained(ctx,
+            format_args!("catia:outer:catalog#{:010}", catalog.pos),
+            "catia_native_catalog_id")?;
+        let mut entries = Vec::new();
+        for entry in catalog.entries {
+            let native_entry = CatiaCatalogEntry {
+                id: crate::resource::format_retained(ctx,
+                    format_args!("catia:outer:catalog-entry#{:010}", entry.pos),
+                    "catia_native_catalog_entry_id")?,
+                parent: crate::resource::copy_retained_str(ctx, &id,
+                    "catia_native_catalog_entry_parent")?,
                 ordinal: entry.ordinal,
-                byte_offset: entry.pos as u64,
+                byte_offset: u64::try_from(entry.pos)
+                    .map_err(|_| ctx.refuse_codec_limit("catia_native_catalog_entry_offset", u64::MAX, u64::MAX))?,
                 value: entry.value,
-            })
-            .collect();
-        Self {
-            id,
-            byte_offset: catalog.pos as u64,
-            byte_len: catalog.total_len as u64,
-            entries,
+            };
+            crate::resource::push(ctx, &mut entries, native_entry,
+                "catia_native_catalog_entries")?;
         }
+        Ok(Self {
+            id,
+            byte_offset: u64::try_from(catalog.pos)
+                .map_err(|_| ctx.refuse_codec_limit("catia_native_catalog_offset", u64::MAX, u64::MAX))?,
+            byte_len: u64::try_from(catalog.total_len)
+                .map_err(|_| ctx.refuse_codec_limit("catia_native_catalog_length", u64::MAX, u64::MAX))?,
+            entries,
+        })
     }
 }
 
