@@ -171,7 +171,9 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let support_apex_cone_branch_count =
-        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations, source_carriers)?;
+        reconcile_support_apex_cone_parameter_branches(
+            ctx, scan, ir, annotations, source_carriers,
+        )?;
     let analytic_pcurve_carriers =
         transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
