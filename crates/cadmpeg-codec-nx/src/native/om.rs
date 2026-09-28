@@ -5070,37 +5070,69 @@ pub(super) fn part_color_tables(
         };
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let source_base = entry_offset + storage_offset as u64;
-        let table_id = format!("nx:part-color-tables:table#{section_ordinal}");
-        let parsed_definitions = PaletteIndex::all().map(|color_index| {
+        let source_base = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(storage_offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX part color source base", 0, 1))?;
+        let table_id = retained_om_number_id(ctx, "nx:part-color-tables:table#", cadmpeg_core::decode::u64_from_index(section_ordinal), "NX part color table id")?;
+        let definition_count = cadmpeg_core::decode::u64_from_index(PALETTE_SIZE);
+        ctx.charge_collection_items(definition_count, "NX part color definitions")?;
+        let definition_bytes = PALETTE_SIZE.checked_mul(std::mem::size_of::<PartColorDefinition>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX part color definitions", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(definition_bytes), "retain NX part color definitions")?;
+        let _definitions_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(definition_bytes), "build NX part color definitions")?;
+        let mut parsed_definitions = Vec::new();
+        parsed_definitions.try_reserve_exact(PALETTE_SIZE)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX part color definitions", 0, definition_count))?;
+        let id_slots = PALETTE_SIZE.checked_mul(std::mem::size_of::<String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX part color definition ids", 0, 1))?;
+        let _ids_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(id_slots), "build NX part color definition ids")?;
+        let mut definition_ids = Vec::new();
+        definition_ids.try_reserve_exact(PALETTE_SIZE)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX part color definition ids", 0, definition_count))?;
+        for color_index in PaletteIndex::all() {
             let definition = &table.definitions[usize::from(color_index.value()) - 1];
-            PartColorDefinition {
-                id: format!(
-                    "nx:part-color-definitions-{section_ordinal}:color#{}",
-                    color_index.value()
-                ),
-                color_table: table_id.clone(),
+            let id = retained_om_index_id(ctx, "nx:part-color-definitions-", section_ordinal, ":color#", u64::from(color_index.value()), "NX part color definition id")?;
+            definition_ids.push(copy_om_retained_text(ctx, &id, "NX part color table definition link")?);
+            let [a, b, c] = definition.components.map(|(component, offset)| {
+                source_base.checked_add(cadmpeg_core::decode::u64_from_index(offset))
+                    .map(|offset| (component, offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX part color component offset", 0, 1))
+            });
+            let components = [a?, b?, c?];
+            let source_offset = source_base.checked_add(cadmpeg_core::decode::u64_from_index(definition.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX part color definition offset", 0, 1))?;
+            parsed_definitions.push(PartColorDefinition {
+                id,
+                color_table: copy_om_retained_text(ctx, &table_id, "NX part color definition table link")?,
                 color_index,
-                name: definition.name.to_string(),
-                components: definition
-                    .components
-                    .map(|(component, offset)| (component, source_base + offset as u64)),
-                source_offset: source_base + definition.offset as u64,
-            }
+                name: copy_om_retained_text(ctx, definition.name, "NX part color name")?,
+                components,
+                source_offset,
+            });
+        }
+        let definition_ids: [String; PALETTE_SIZE] = definition_ids.try_into()
+            .map_err(|_| ctx.refuse_codec_limit("NX part color definition count", 0, 1))?;
+        let [a, b, c] = table.background.map(|(component, offset)| {
+            source_base.checked_add(cadmpeg_core::decode::u64_from_index(offset))
+                .map(|offset| (component, offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX part color background offset", 0, 1))
         });
-        let definition_ids = parsed_definitions
-            .each_ref()
-            .map(|definition| definition.id.clone());
-        definitions.extend(parsed_definitions);
+        let background = [a?, b?, c?];
+        let source_offset = source_base.checked_add(cadmpeg_core::decode::u64_from_index(table.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX part color table offset", 0, 1))?;
+        ctx.charge_collection_items(1, "NX part color tables")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<PartColorTable>()), "retain NX part color table")?;
+        tables.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX part color tables", 0, 1))?;
+        definitions.try_reserve(PALETTE_SIZE)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX part color definitions", 0, definition_count))?;
+        definitions.append(&mut parsed_definitions);
         tables.push(PartColorTable {
             id: table_id,
-            class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
-            background: table
-                .background
-                .map(|(component, offset)| (component, source_base + offset as u64)),
+            class_definition: retained_om_index_id(ctx, "nx:om-entry-", entry_index, ":class#", cadmpeg_core::decode::u64_from_index(class.offset), "NX part color class id")?,
+            background,
             definitions: definition_ids,
-            source_entry: entry.name.clone(),
-            source_offset: source_base + table.offset as u64,
+            source_entry: copy_om_retained_text(ctx, &entry.name, "NX part color source entry")?,
+            source_offset,
         });
     }
 
@@ -6929,6 +6961,99 @@ mod tests {
             .expect("empty test root");
         super::data_block_references(&ctx, &container, &records, &[])
             .expect_err("data block reference resource refusal")
+    }
+
+    fn part_color_container() -> crate::container::Container<'static> {
+        let mut table = vec![0x02, 0x80, 0xd9, 0x01];
+        for ordinal in 0..=216 {
+            let name = if ordinal == 0 {
+                "Background".to_owned()
+            } else {
+                format!("Color {ordinal}")
+            };
+            table.push(u8::try_from(name.len() + 2).expect("test color name length"));
+            table.extend_from_slice(name.as_bytes());
+            table.push(0);
+        }
+        table.extend_from_slice(&[
+            0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
+            0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8, 0x01, 0x01, 0x01,
+        ]);
+        for color_index in 1u16..=216 {
+            table.push(0x05);
+            if color_index < 128 {
+                table.push(u8::try_from(color_index).expect("test color index"));
+            } else {
+                table.extend_from_slice(&[0x80, u8::try_from(color_index - 1).expect("test color index")]);
+            }
+            table.extend_from_slice(&[0x01, 0x80, 0xc8]);
+            if color_index == 2 {
+                table.extend_from_slice(&crate::test_support::test_bytes::shifted_f64_bytes(2.0));
+                let mut binary32 = 1.0_f32.to_be_bytes();
+                binary32[0] += 0x10;
+                table.extend_from_slice(&binary32);
+                table.push(0);
+            } else {
+                table.extend_from_slice(&[0x01, 0x01, 0x01]);
+            }
+        }
+        let mut section = offset_only_indexed_om_section();
+        let class = b"UGS::COLOR_table";
+        assert_eq!(class.len(), b"UGS::ModlFeature".len());
+        section[9..9 + class.len()].copy_from_slice(class);
+        section.extend_from_slice(&table);
+        let index_start = 8 + 1 + class.len() + 1;
+        let end_at = index_start + 3 * 4;
+        let end = u32::try_from(section.len()).expect("test color section length");
+        section[end_at..end_at + 4].copy_from_slice(&end.to_le_bytes());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
+        crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+            .expect("part color container")
+    }
+
+    fn part_color_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let container = part_color_container();
+        let (tables, definitions) = crate::test_support::with_decode_context(|ctx| {
+            super::part_color_tables(ctx, &container)
+        }).expect("part color projection");
+        assert_eq!(tables.len(), 1);
+        assert_eq!(definitions.len(), 216);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::part_color_tables(&ctx, &container).expect_err("part color resource refusal")
+    }
+
+    #[test]
+    fn part_color_route_refuses_collection_limit() {
+        let error = part_color_route_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems), "{error:?}");
+    }
+
+    #[test]
+    fn part_color_route_refuses_retained_limit() {
+        let error = part_color_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn part_color_route_refuses_scoped_limit() {
+        let error = part_color_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn part_color_route_refuses_work_limit() {
+        let error = part_color_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits), "{error:?}");
     }
 
     #[test]
