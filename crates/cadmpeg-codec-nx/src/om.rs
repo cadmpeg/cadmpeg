@@ -2250,15 +2250,16 @@ pub(crate) fn operation_body_members(
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
 pub(crate) fn operation_body_11_continuations(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Vec<OperationBody11Continuation> {
+) -> Result<Vec<OperationBody11Continuation>, CodecError> {
     if record.name() != "TRIM BODY" {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    operation_body_reference_candidates(record)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(body_ordinal, reference)| {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.bytes().len()), "scan NX operation body continuations")?;
+    let mut continuations = Vec::new();
+    for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
+        let continuation = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
@@ -2318,8 +2319,13 @@ pub(crate) fn operation_body_11_continuations(
                     offset: record.offset() + terminal_at,
                 },
             })
-        })
-        .collect()
+        })();
+        if let Some(continuation) = continuation {
+            reserve_om_retained_item(ctx, &mut continuations, "NX operation body continuations")?;
+            continuations.push(continuation);
+        }
+    }
+    Ok(continuations)
 }
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
