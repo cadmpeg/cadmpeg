@@ -492,6 +492,35 @@ pub(super) struct CatiaEntityRecordWire {
 
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
     fn from(value: CatiaEntityRecord) -> Self {
+        let payload = match &value.body {
+            CatiaEntityRecordBody::Inline(_) => &[][..],
+            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+        };
+        let value_fields = value_block::tokenize(payload);
+        let value_packets = entity_table::value_packets(payload, &value_fields);
+        Self::from_with_views(value, value_fields, value_packets)
+    }
+}
+
+impl CatiaEntityRecordWire {
+    pub(super) fn from_charged(
+        ctx: &DecodeContext<'_>,
+        value: CatiaEntityRecord,
+    ) -> Result<Self, CodecError> {
+        let payload = match &value.body {
+            CatiaEntityRecordBody::Inline(_) => &[][..],
+            CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload.as_slice(),
+        };
+        let value_fields = value_block::tokenize_charged(ctx, payload)?;
+        let value_packets = entity_table::value_packets_charged(ctx, payload, &value_fields)?;
+        Ok(Self::from_with_views(value, value_fields, value_packets))
+    }
+
+    fn from_with_views(
+        value: CatiaEntityRecord,
+        value_fields: Vec<value_block::ValueField>,
+        value_packets: Vec<entity_table::EntityValuePacket>,
+    ) -> Self {
         let byte_len = value.byte_len();
         let (
             inline_body,
@@ -526,8 +555,6 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
                 record_suffix,
             ),
         };
-        let value_fields = value_block::tokenize(&value_payload);
-        let value_packets = entity_table::value_packets(&value_payload, &value_fields);
         let numeric_pair = entity_table::parse_numeric_pair(&value_payload);
         let (suffix_value, suffix_framing) = match value.suffix {
             Some(CatiaEntityRecordSuffix::Value(suffix)) => (Some(suffix), None),

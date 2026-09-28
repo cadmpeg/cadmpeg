@@ -29,7 +29,7 @@ use edge_node::{
 pub(crate) mod entity_record;
 use entity_record::{
     CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody,
-    CatiaEntityValueProduction,
+    CatiaEntityRecordWire, CatiaEntityValueProduction,
 };
 
 pub(crate) mod schema_configuration_chain;
@@ -7100,10 +7100,20 @@ macro_rules! define_catia_arenas {
     (@native_value consolidated_edge_nodes, $kind:ident, $owner:ident, $nodes:ident) => { $nodes };
     (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
     (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
+    (@type entity_records, $kind:ident, $record:ty) => { Vec<CatiaEntityRecordWire> };
     (@prepare $ctx:ident, consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
         let $binding = edge_node_wires_charged($ctx, std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities)?;
     };
+    (@prepare $ctx:ident, entity_records, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = crate::resource::try_collect_vec(
+            $ctx,
+            std::mem::take(&mut $native.entity_records).into_iter()
+                .map(|record| CatiaEntityRecordWire::from_charged($ctx, record)),
+            "catia_native_entity_wires",
+        )?;
+    };
     (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
+    (@stored_value stored, $native:ident, entity_records, $binding:ident) => { $binding };
     (@type catalogs, $kind:ident, $record:ty) => {
         Vec<CatiaCatalogWire>
     };
