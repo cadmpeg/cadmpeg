@@ -231,11 +231,11 @@ fn exact_two_point_work_axis_construction(
 ) -> Option<DesignWorkAxisConstruction> {
     let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
         scope.reference_members().values_array()?;
-    let axis_frames = records.frames(*axis_record_index).collect::<Vec<_>>();
-    let [(axis_start, axis_paired)] = axis_frames.as_slice() else {
+    let mut axis_frames = records.frames(*axis_record_index);
+    let (Some((axis_start, axis_paired)), None) = (axis_frames.next(), axis_frames.next()) else {
         return None;
     };
-    if axis_paired.checked_sub(*axis_start)? != 232
+    if axis_paired.checked_sub(axis_start)? != 232
         || bytes.get(axis_start + 11..axis_start + 21) != Some(&[0; 10])
         || View::u32_le_at(bytes, axis_start + 21)? != 8
         || View::u32_le_at(bytes, axis_start + 118)? != 2
@@ -268,11 +268,11 @@ fn exact_two_point_work_axis_construction(
     let mut points = [[0.0; 3]; 2];
     let mut point_offsets = [0; 2];
     for (ordinal, record_index) in point_record_indices.iter().enumerate() {
-        let point_frames = records.frames(*record_index).collect::<Vec<_>>();
-        let [(start, paired)] = point_frames.as_slice() else {
+        let mut point_frames = records.frames(*record_index);
+        let (Some((start, paired)), None) = (point_frames.next(), point_frames.next()) else {
             return None;
         };
-        if paired.checked_sub(*start)? != 197 || bytes.get(start + 11..start + 42) != Some(&[0; 31])
+        if paired.checked_sub(start)? != 197 || bytes.get(start + 11..start + 42) != Some(&[0; 31])
         {
             return None;
         }
@@ -344,43 +344,45 @@ fn exact_direct_work_axis_construction(
         ),
         _ => return None,
     };
-    let carrier_frames = records.frames(*carrier_record_index).collect::<Vec<_>>();
-    let [(carrier_start, carrier_paired)] = carrier_frames.as_slice() else {
+    let mut carrier_frames = records.frames(*carrier_record_index);
+    let (Some((carrier_start, carrier_paired)), None) =
+        (carrier_frames.next(), carrier_frames.next())
+    else {
         return None;
     };
-    let carrier_primary_class =
-        exact_indexed_header_at(bytes, *carrier_start, *carrier_record_index)?;
+    let carrier_primary_class = exact_indexed_header_at(bytes, carrier_start, *carrier_record_index)?;
     let carrier_paired_class_tag =
-        exact_indexed_header_at(bytes, *carrier_paired, *carrier_record_index)?;
-    if carrier_paired.checked_sub(*carrier_start)? != carrier_length
+        exact_indexed_header_at(bytes, carrier_paired, *carrier_record_index)?;
+    if carrier_paired.checked_sub(carrier_start)? != carrier_length
         || carrier_primary_class != carrier_class
         || carrier_paired_class_tag != carrier_paired_class
     {
         return None;
     }
-    let support_frames = records.frames(*support_record_index).collect::<Vec<_>>();
-    let [(support_start, support_paired)] = support_frames.as_slice() else {
+    let mut support_frames = records.frames(*support_record_index);
+    let (Some((support_start, support_paired)), None) =
+        (support_frames.next(), support_frames.next())
+    else {
         return None;
     };
-    let support_primary_class =
-        exact_indexed_header_at(bytes, *support_start, *support_record_index)?;
+    let support_primary_class = exact_indexed_header_at(bytes, support_start, *support_record_index)?;
     let support_paired_class_tag =
-        exact_indexed_header_at(bytes, *support_paired, *support_record_index)?;
-    if support_paired.checked_sub(*support_start)? != 293
+        exact_indexed_header_at(bytes, support_paired, *support_record_index)?;
+    if support_paired.checked_sub(support_start)? != 293
         || support_primary_class != support_class
         || support_paired_class_tag != support_paired_class
     {
         return None;
     }
-    if bytes.get(*carrier_start + 11..*carrier_start + 21) != Some(&[0; 10])
-        || View::u32_le_at(bytes, *carrier_start + value_count_offset)? != 8
-        || View::u32_le_at(bytes, *carrier_start + reference_count_offset)? != 6
-        || View::u32_le_at(bytes, *carrier_start + reference_preamble_offset)? != 1
+    if bytes.get(carrier_start + 11..carrier_start + 21) != Some(&[0; 10])
+        || View::u32_le_at(bytes, carrier_start + value_count_offset)? != 8
+        || View::u32_le_at(bytes, carrier_start + reference_count_offset)? != 6
+        || View::u32_le_at(bytes, carrier_start + reference_preamble_offset)? != 1
     {
         return None;
     }
     let values: [FiniteReal; 8] =
-        finite_reals_at(bytes, (*carrier_start).checked_add(axis_values_offset)?)?;
+        finite_reals_at(bytes, carrier_start.checked_add(axis_values_offset)?)?;
     if values[6].get() != 0.0 || values[7].get() != 0.0 {
         return None;
     }
@@ -396,9 +398,9 @@ fn exact_direct_work_axis_construction(
     Some(DesignWorkAxisConstruction {
         origin,
         displacement,
-        origin_offset: u64::try_from((*carrier_start).checked_add(axis_values_offset)?).ok()?,
+        origin_offset: u64::try_from(carrier_start.checked_add(axis_values_offset)?).ok()?,
         displacement_offset: u64::try_from(
-            (*carrier_start).checked_add(axis_values_offset + 3 * 8)?,
+            carrier_start.checked_add(axis_values_offset + 3 * 8)?,
         )
         .ok()?,
         source: Some(DesignWorkAxisSource::DirectCarrier {
