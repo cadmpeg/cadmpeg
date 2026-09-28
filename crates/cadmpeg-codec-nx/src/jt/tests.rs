@@ -48,6 +48,43 @@ fn jt_int32_cdp2_refuses_counted_vector_at_caller_limit() {
 }
 
 #[test]
+fn jt_int32_cdp2_refuses_retained_vector_at_caller_limit() {
+    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(2 * std::mem::size_of::<i32>()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_int32_cdp2(&ctx, &packet, 0)
+        .expect_err("two decoded integers exceed retained storage");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "nx JT decoded vector"
+    ));
+}
+
+#[test]
+fn jt_int32_cdp2_refuses_nesting_at_caller_limit() {
+    let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&packet, &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_int32_cdp2(&ctx, &packet, 0)
+        .expect_err("packet nesting exceeds zero levels");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                && limit.operation == "decode JT integer packet"
+    ));
+}
+
+#[test]
 fn jt_int32_cdp2_refuses_symbol_work_at_caller_limit() {
     let packet = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -472,6 +509,57 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     assert_eq!(consumed, array.len());
     assert_eq!(points[0].map(FiniteBinary32::get), [8.333_333; 3]);
     assert_eq!(points[3].map(FiniteBinary32::get), [18.333_334; 3]);
+}
+
+#[test]
+fn jt_coordinate_array_refuses_scoped_component_storage() {
+    let mut code = Vec::new();
+    let mut push = |value: u32, width: u8| {
+        code.extend((0..width).rev().map(|shift| ((value >> shift) & 1) as u8));
+    };
+    push(0, 1);
+    push(0, 6);
+    push(3, 6);
+    push(3, 3);
+    for value in 0..4 {
+        push(value, 2);
+    }
+    let mut word = 0u32;
+    for bit in &code {
+        word = (word << 1) | u32::from(*bit);
+    }
+    word <<= 32 - code.len();
+    let mut packet = 4_u32.to_le_bytes().to_vec();
+    packet.push(1);
+    packet.extend_from_slice(&(code.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&word.to_le_bytes());
+    let mut array = Vec::new();
+    for _ in 0..3 {
+        array.extend_from_slice(&packet);
+    }
+    array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes =
+        cadmpeg_core::decode::u64_from_index(3 * std::mem::size_of::<Vec<FiniteBinary32>>()) - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&array, &arena, &policy)
+        .expect("test decode context");
+    let error = super::decode_vertex_coordinates(
+        &ctx,
+        &array,
+        4,
+        [range(10.0, 20.0); 3],
+        [2; 3],
+    )
+    .err()
+    .expect("the component vector exceeds scoped storage");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "nx JT decoded vector"
+    ));
 }
 
 #[test]
