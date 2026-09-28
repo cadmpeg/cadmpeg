@@ -1003,20 +1003,22 @@ fn unique_monotone_run(
         collection_count(ctx, first.len())?,
         "collect CATIA 7C05 path states",
     )?;
-    let mut previous = first
-        .iter()
-        .copied()
-        .map(|identity| MonotonePathState {
+    let mut previous = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut previous, first.len(),
+        "collect CATIA 7C05 path states")?;
+    previous.extend(first.iter().copied().map(|identity| MonotonePathState {
             identity,
             path_count: PathCount::One,
             predecessor: None,
-        })
-        .collect::<Vec<_>>();
+        }));
     let mut layers = Vec::new();
     for record in &records[1..] {
         let previous_count = collection_count(ctx, previous.len())?;
         ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
-        let mut ordered_predecessors = previous.iter().enumerate().collect::<Vec<_>>();
+        let mut ordered_predecessors = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut ordered_predecessors, previous.len(),
+            "collect CATIA 7C05 ordered predecessors")?;
+        ordered_predecessors.extend(previous.iter().enumerate());
         let sort_units = previous_count
             .checked_mul(u64::from(previous_count.ilog2()) + 1)
             .ok_or_else(|| {
@@ -1028,7 +1030,9 @@ fn unique_monotone_run(
             collection_count(ctx, ordered_predecessors.len())?,
             "collect CATIA 7C05 cumulative paths",
         )?;
-        let mut cumulative = Vec::with_capacity(ordered_predecessors.len());
+        let mut cumulative = Vec::new();
+        crate::resource::reserve_admitted_vec(&mut cumulative, ordered_predecessors.len(),
+            "collect CATIA 7C05 cumulative paths")?;
         let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
             cumulative_count = cumulative_count.join(state.path_count);
@@ -1052,6 +1056,8 @@ fn unique_monotone_run(
                 .map_or((PathCount::None, None), |index| cumulative[index]);
             if path_count != PathCount::None {
                 ctx.charge_collection_items(1, "collect CATIA 7C05 path states")?;
+                crate::resource::reserve_admitted_vec(&mut layer, 1,
+                    "collect CATIA 7C05 path states")?;
                 layer.push(MonotonePathState {
                     identity: *identity,
                     path_count,
@@ -1063,6 +1069,8 @@ fn unique_monotone_run(
             return Ok(None);
         }
         ctx.charge_collection_items(1, "collect CATIA 7C05 path layers")?;
+        crate::resource::reserve_admitted_vec(&mut layers, 1,
+            "collect CATIA 7C05 path layers")?;
         layers.push(std::mem::replace(&mut previous, layer));
     }
     let final_layer = &previous;
@@ -1083,7 +1091,9 @@ fn unique_monotone_run(
         collection_count(ctx, records.len())?,
         "collect CATIA 7C05 resolved identities",
     )?;
-    let mut result = Vec::with_capacity(records.len());
+    let mut result = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut result, records.len(),
+        "collect CATIA 7C05 resolved identities")?;
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
         result.push(state.identity);
@@ -1566,6 +1576,32 @@ mod tests {
         .expect("small synthetic root fits the service profile");
         super::unique_monotone_run(&ctx, records)
             .expect("synthetic path states fit the service limits")
+    }
+
+    #[test]
+    fn entity_table_cumulative_path_storage_refuses_below_input_need() {
+        let candidate = |entity_id| EntityRecordCandidates {
+            pos: 0,
+            total_len: 12,
+            lead: 0x01,
+            layout: EntityRecordLayout::Inline,
+            identities: vec![EntityIdentityCandidate {
+                delimiter: 0,
+                entity_id,
+            }],
+        };
+        let records = [candidate(1), candidate(2)];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[0], &arena, &policy,
+        ).expect("synthetic fixture fits the input limit");
+        let error = super::unique_monotone_run(&ctx, &records)
+            .expect_err("the third path collection item exceeds the limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "collect CATIA 7C05 cumulative paths"));
+        assert!(unique_monotone_run(&records).is_some());
     }
 
     #[test]
