@@ -573,7 +573,7 @@ pub(crate) fn bind_extrude_profile_selections(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             *profile =
-                merge_resolved_profile_selections(sketch_id, &selections).unwrap_or_else(|| {
+                merge_resolved_profile_selections(sketch_id, &selections, resolution.ctx)?.unwrap_or_else(|| {
                     ProfileRef::Planar(
                         PlanarProfileRef::sketch_selection(
                             sketch_id.clone(),
@@ -898,30 +898,119 @@ enum ResolvedProfileSelection {
 fn merge_resolved_profile_selections(
     sketch: &cadmpeg_ir::sketches::SketchId,
     selections: &[cadmpeg_ir::features::ProfileRef],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
-    match ordered_unique_profile_selections(selections.iter().map(|selection| match selection {
-        ProfileRef::Planar(PlanarProfileRef::SketchProfiles {
-            sketch: selected,
-            profiles,
-        }) if selected == sketch => Some(ResolvedProfileSelection::Loops(
-            profiles.as_slice().to_vec(),
-        )),
-        ProfileRef::Planar(PlanarProfileRef::SketchRegions {
-            sketch: selected,
-            regions,
-        }) if selected == sketch => Some(ResolvedProfileSelection::Regions(
-            regions.as_slice().to_vec(),
-        )),
-        _ => None,
-    }))? {
-        ResolvedProfileSelection::Loops(profiles) => Some(ProfileRef::Planar(
-            PlanarProfileRef::sketch_profiles(sketch.clone(), profiles).ok()?,
-        )),
-        ResolvedProfileSelection::Regions(regions) => Some(ProfileRef::Planar(
-            PlanarProfileRef::sketch_regions(sketch.clone(), regions).ok()?,
-        )),
+    let mut profiles = Vec::new();
+    let mut regions = Vec::new();
+    for selection in selections {
+        match selection {
+            ProfileRef::Planar(PlanarProfileRef::SketchProfiles {
+                sketch: selected,
+                profiles: selected_profiles,
+            }) if selected == sketch && regions.is_empty() => {
+                for profile in selected_profiles.as_slice().iter().copied() {
+                    if !profiles.contains(&profile) {
+                        push_profile_item(ctx, &mut profiles, profile,
+                            "f3d merged selected profile")?;
+                    }
+                }
+            }
+            ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+                sketch: selected,
+                regions: selected_regions,
+            }) if selected == sketch && profiles.is_empty() => {
+                for region in selected_regions.as_slice() {
+                    if !regions.contains(region) {
+                        let copied = copy_profile_region(region, ctx)?;
+                        push_profile_item(ctx, &mut regions, copied,
+                            "f3d merged selected region")?;
+                    }
+                }
+            }
+            _ => return Ok(None),
+        }
+    }
+    let selected = if !profiles.is_empty() {
+        PlanarProfileRef::sketch_profiles(copy_profile_sketch_id(sketch, ctx)?, profiles).ok()
+    } else if !regions.is_empty() {
+        PlanarProfileRef::sketch_regions(copy_profile_sketch_id(sketch, ctx)?, regions).ok()
+    } else {
+        return Ok(None);
+    };
+    Ok(selected.map(ProfileRef::Planar))
+}
+
+fn copy_profile_sketch_id(
+    id: &cadmpeg_ir::sketches::SketchId,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let text = String::from_utf8(ctx.copy_retained(id.as_str().as_bytes(),
+        "f3d profile sketch id")?)
+        .map_err(|_| CodecError::malformed("validated sketch ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SketchId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_profile_boundary_use(
+    boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<cadmpeg_ir::features::SketchProfileBoundaryUse, CodecError> {
+    let entity = if let Some(ctx) = ctx {
+        let text = String::from_utf8(ctx.copy_retained(boundary.entity.as_str().as_bytes(),
+            "f3d merged region boundary entity id")?)
+            .map_err(|_| CodecError::malformed("validated sketch entity ID is not UTF-8"))?;
+        cadmpeg_ir::sketches::SketchEntityId::try_from(text).map_err(CodecError::malformed)?
+    } else {
+        boundary.entity.clone()
+    };
+    Ok(cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity,
+        parameter_range: boundary.parameter_range,
+        reversed: boundary.reversed,
+    })
+}
+
+fn copy_profile_region(
+    region: &cadmpeg_ir::features::SketchProfileRegion,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<cadmpeg_ir::features::SketchProfileRegion, CodecError> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    match region {
+        SketchProfileRegion::Loops { loops } => {
+            let mut holes = Vec::new();
+            for hole in loops.holes().iter().copied() {
+                push_profile_item(ctx, &mut holes, hole,
+                    "f3d merged region hole")?;
+            }
+            SketchProfileRegion::loops(loops.outer(), holes).map_err(CodecError::malformed)
+        }
+        SketchProfileRegion::Trimmed { outer_boundary, hole_boundaries } => {
+            let mut outer = Vec::new();
+            for boundary in outer_boundary.as_slice() {
+                let copied = copy_profile_boundary_use(boundary, ctx)?;
+                push_profile_item(ctx, &mut outer, copied,
+                    "f3d merged region outer boundary")?;
+            }
+            let mut holes = Vec::new();
+            for ring in hole_boundaries {
+                let mut copied_ring = Vec::new();
+                for boundary in ring.as_slice() {
+                    let copied = copy_profile_boundary_use(boundary, ctx)?;
+                    push_profile_item(ctx, &mut copied_ring, copied,
+                        "f3d merged region hole boundary")?;
+                }
+                let copied_ring = copied_ring.try_into().map_err(CodecError::malformed)?;
+                push_profile_item(ctx, &mut holes, copied_ring,
+                    "f3d merged region hole ring")?;
+            }
+            Ok(SketchProfileRegion::Trimmed {
+                outer_boundary: outer.try_into().map_err(CodecError::malformed)?,
+                hole_boundaries: holes,
+            })
+        }
     }
 }
 
@@ -1130,7 +1219,7 @@ fn transition_profile_selection(
         push_profile_item(resolution.ctx, &mut selections, selection,
             "f3d transition deleted selection")?;
     }
-    Ok(ordered_unique_profile_selections(selections))
+    ordered_unique_profile_selections(selections, resolution.ctx)
 }
 
 fn inserted_cylindrical_profile_selection(
@@ -1646,20 +1735,30 @@ fn historical_selection_regions(
     let tolerance = linear_tolerance;
     let mut states = HashMap::new();
     for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
+        if let Some(previous) = states.get_mut(&state.state_id) {
+            *previous = None;
+        } else {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d historical selection state index")?;
+                states.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d historical selection state index allocation", 0, 1)
+                })?;
+            }
+            states.insert(state.state_id, Some(state));
+        }
     }
     let Some(first_member) = members.first() else {
         return Ok(None);
     };
-    let mut state_ids = first_member
-        .historical
-        .as_ref()
-        .into_iter()
-        .flat_map(|binding| binding.state_ids.iter().copied())
-        .collect::<HashSet<_>>();
+    let mut state_ids = Vec::new();
+    if let Some(binding) = first_member.historical.as_ref() {
+        for state_id in binding.state_ids.iter().copied() {
+            if !state_ids.contains(&state_id) {
+                push_profile_item(ctx, &mut state_ids, state_id,
+                    "f3d historical selection state id")?;
+            }
+        }
+    }
     for member in &members[1..] {
         state_ids.retain(|state_id| {
             member
@@ -1668,11 +1767,10 @@ fn historical_selection_regions(
                 .is_some_and(|binding| binding.state_ids.contains(state_id))
         });
     }
-    let mut state_ids = state_ids.into_iter().collect::<Vec<_>>();
     state_ids.sort_unstable();
-    let mut previous_member_points = None;
-    let mut previous_selection = None;
-    let mut state_selections = Vec::new();
+    let mut previous_member_points: Option<Vec<Vec<Point3>>> = None;
+    let mut state_selection = None;
+    let mut conflicting_state_selections = false;
     for state_id in state_ids {
         let Some(topology) = states
             .get(&state_id)
@@ -1684,26 +1782,25 @@ fn historical_selection_regions(
         let mut member_points = Vec::new();
         let mut complete = true;
         for member in members {
-            let points = historical_member_points_in_state(member, topology, ctx)?
-                .or_else(|| resolved_selection_member_points(member, sketch, entities));
+            let points = match historical_member_points_in_state(member, topology, ctx)? {
+                Some(points) => Some(points),
+                None => {
+                    if let Some(point) = resolved_selection_member_point(member, sketch, entities) {
+                        let mut points = Vec::new();
+                        push_profile_item(ctx, &mut points, point,
+                            "f3d historical fallback member point")?;
+                        Some(points)
+                    } else { None }
+                }
+            };
             let Some(points) = points else { complete = false; break; };
             push_profile_item(ctx, &mut member_points, points,
                 "f3d historical selection member points")?;
         }
         if !complete { continue; }
-        let key = member_points
-            .iter()
-            .map(|points| {
-                points
-                    .iter()
-                    .map(|point| (point.x.to_bits(), point.y.to_bits(), point.z.to_bits()))
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        if previous_member_points.as_ref() == Some(&key) {
-            if let Some(selection) = previous_selection.clone() {
-                state_selections.push(selection);
-            }
+        if previous_member_points.as_ref().is_some_and(|previous| {
+            same_member_point_bits(previous, &member_points)
+        }) {
             continue;
         }
         let selection = selection_for_member_points(
@@ -1715,22 +1812,32 @@ fn historical_selection_regions(
             arrangement_budget,
             ctx,
         )?;
-        previous_member_points = Some(key);
-        previous_selection.clone_from(&selection);
+        previous_member_points = Some(member_points);
         if let Some(selection) = selection {
-            state_selections.push(selection);
+            if let Some(previous) = state_selection.as_ref() {
+                conflicting_state_selections |= previous != &selection;
+            } else {
+                state_selection = Some(selection);
+            }
         }
     }
-    if !state_selections.is_empty() {
-        return Ok(unique_resolved_selection(
-            state_selections.into_iter().map(Some),
-        ));
+    if state_selection.is_some() {
+        return Ok(if conflicting_state_selections { None } else { state_selection });
     }
-    if let Some(member_points) = members
-        .iter()
-        .map(|member| resolved_selection_member_points(member, sketch, entities))
-        .collect::<Option<Vec<_>>>()
-    {
+    let mut member_points = Vec::new();
+    let mut complete = true;
+    for member in members {
+        let Some(point) = resolved_selection_member_point(member, sketch, entities) else {
+            complete = false;
+            break;
+        };
+        let mut points = Vec::new();
+        push_profile_item(ctx, &mut points, point,
+            "f3d resolved fallback member point")?;
+        push_profile_item(ctx, &mut member_points, points,
+            "f3d resolved fallback member points")?;
+    }
+    if complete {
         if let Some(selection) = selection_for_member_points(
             members,
             sketch,
@@ -1745,26 +1852,39 @@ fn historical_selection_regions(
     }
     let mut selections = Vec::new();
     for member in members {
-        selections.push(
-            if let Some(points) = resolved_selection_member_points(member, sketch, entities) {
+        let selection =
+            if let Some(point) = resolved_selection_member_point(member, sketch, entities) {
                 selection_containing_points(
                     sketch,
                     entities,
-                    &points,
+                    std::slice::from_ref(&point),
                     tolerance,
                     arrangement_budget,
                     ctx,
                 )?
             } else {
-                resolved_selection_member_profiles(member, sketch)
+                resolved_selection_member_profiles(member, sketch, ctx)?
                     .map(ResolvedProfileSelection::Loops)
-            },
-        );
+            };
+        push_profile_item(ctx, &mut selections, selection,
+            "f3d historical fallback selection")?;
     }
-    Ok(
-        ordered_unique_profile_selections(selections.iter().cloned())
-            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections)),
-    )
+    if ordered_selection_has_value(&selections) {
+        return ordered_unique_profile_selections(selections, ctx);
+    }
+    region_with_boundary_selection_members(members, sketch, &selections, ctx)
+}
+
+fn same_member_point_bits(left: &[Vec<Point3>], right: &[Vec<Point3>]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.len() == right.len()
+                && left.iter().zip(right).all(|(left, right)| {
+                    left.x.to_bits() == right.x.to_bits()
+                        && left.y.to_bits() == right.y.to_bits()
+                        && left.z.to_bits() == right.z.to_bits()
+                })
+        })
 }
 
 fn selection_for_member_points(
@@ -1776,7 +1896,11 @@ fn selection_for_member_points(
     arrangement_budget: &WorkBudget<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
+    let mut all_points = Vec::new();
+    for point in member_points.iter().flatten().copied() {
+        push_profile_item(ctx, &mut all_points, point,
+            "f3d historical combined member point")?;
+    }
     if let Some(selection) = selection_containing_points(
         sketch,
         entities,
@@ -1789,98 +1913,108 @@ fn selection_for_member_points(
     }
     let mut selections = Vec::new();
     for points in member_points {
-        selections.push(selection_containing_points(
+        let selection = selection_containing_points(
             sketch,
             entities,
             points,
             tolerance,
             arrangement_budget,
             ctx,
-        )?);
+        )?;
+        push_profile_item(ctx, &mut selections, selection,
+            "f3d historical member selection")?;
     }
-    Ok(
-        ordered_unique_profile_selections(selections.iter().cloned())
-            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections)),
-    )
+    if ordered_selection_has_value(&selections) {
+        return ordered_unique_profile_selections(selections, ctx);
+    }
+    region_with_boundary_selection_members(members, sketch, &selections, ctx)
 }
 
 fn region_with_boundary_selection_members(
     members: &[&DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
     selections: &[Option<ResolvedProfileSelection>],
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let regions = selections
-        .iter()
-        .filter_map(|selection| match selection {
+    let mut regions = selections.iter().filter_map(|selection| match selection {
             Some(ResolvedProfileSelection::Regions(regions)) => Some(regions.as_slice()),
             _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [region] = regions.first()? else {
-        return None;
+        });
+    let Some([region]) = regions.next() else {
+        return Ok(None);
     };
     let SketchProfileRegion::Loops { loops } = region else {
-        return None;
+        return Ok(None);
     };
-    if regions
-        .iter()
-        .any(|candidate| *candidate != std::slice::from_ref(region))
-    {
-        return None;
+    if regions.any(|candidate| candidate != std::slice::from_ref(region)) {
+        return Ok(None);
     }
-    let boundary = std::iter::once(loops.outer())
-        .chain(loops.holes().iter().copied())
-        .collect::<HashSet<_>>();
-    let member_matches = |member: &DesignExtrudeSelectionMember,
-                          selection: &Option<ResolvedProfileSelection>| {
-        match selection {
+    for (member, selection) in members.iter().zip(selections) {
+        let matches = match selection {
             Some(ResolvedProfileSelection::Regions(candidate)) => {
                 candidate == std::slice::from_ref(region)
             }
-            Some(ResolvedProfileSelection::Loops(loops)) => {
-                !loops.is_empty() && loops.iter().all(|profile| boundary.contains(profile))
+            Some(ResolvedProfileSelection::Loops(selected)) => {
+                !selected.is_empty() && selected.iter().all(|profile| {
+                    *profile == loops.outer() || loops.holes().contains(profile)
+                })
             }
-            None => resolved_selection_member_profiles(member, sketch).is_some_and(|profiles| {
-                !profiles.is_empty() && profiles.iter().all(|profile| boundary.contains(profile))
-            }),
-        }
+            None => resolved_selection_member_profiles(member, sketch, ctx)?
+                .is_some_and(|profiles| {
+                    !profiles.is_empty() && profiles.iter().all(|profile| {
+                        *profile == loops.outer() || loops.holes().contains(profile)
+                    })
+                }),
+        };
+        if !matches { return Ok(None); }
+    }
+    let mut owned_holes = Vec::new();
+    for hole in loops.holes().iter().copied() {
+        push_profile_item(ctx, &mut owned_holes, hole,
+            "f3d historical boundary region hole")?;
+    }
+    let Some(region) = SketchProfileRegion::loops(loops.outer(), owned_holes).ok() else {
+        return Ok(None);
     };
-    members
-        .iter()
-        .zip(selections)
-        .all(|(member, selection)| member_matches(member, selection))
-        .then(|| ResolvedProfileSelection::Regions(vec![region.clone()]))
+    let mut selected = Vec::new();
+    push_profile_item(ctx, &mut selected, region,
+        "f3d historical boundary region")?;
+    Ok(Some(ResolvedProfileSelection::Regions(selected)))
 }
 
 fn resolved_selection_member_profiles(
     member: &DesignExtrudeSelectionMember,
     sketch: &cadmpeg_ir::sketches::Sketch,
-) -> Option<Vec<u32>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let Some(geometry) = member.resolved_geometry.as_ref() else { return Ok(None); };
     let SketchRelationOperand::Curve {
         primary_id,
         secondary_id,
         ..
-    } = member.resolved_geometry.as_ref()?
+    } = geometry
     else {
-        return None;
+        return Ok(None);
     };
     let entity = neutral_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
-    sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
-        .map(|(index, _)| u32::try_from(index).ok())
-        .collect::<Option<Vec<_>>>()
+    let mut profiles = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        if profile.iter().any(|use_| use_.entity == entity) {
+            let Ok(index) = u32::try_from(index) else { return Ok(None); };
+            push_profile_item(ctx, &mut profiles, index,
+                "f3d resolved member profile")?;
+        }
+    }
+    Ok(Some(profiles))
 }
 
-fn resolved_selection_member_points(
+fn resolved_selection_member_point(
     member: &DesignExtrudeSelectionMember,
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
-) -> Option<Vec<Point3>> {
+) -> Option<Point3> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let SketchRelationOperand::Point {
@@ -1904,41 +2038,62 @@ fn resolved_selection_member_points(
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = normal.cross(u_axis.get());
-    Some(vec![origin
+    Some(origin
         .translated(u_axis.get(), position.u)
-        .translated(v_axis, position.v)])
+        .translated(v_axis, position.v))
+}
+
+fn ordered_selection_has_value(selections: &[Option<ResolvedProfileSelection>]) -> bool {
+    let mut has_loops = false;
+    let mut has_regions = false;
+    for selection in selections {
+        match selection {
+            Some(ResolvedProfileSelection::Loops(selected)) if !has_regions => {
+                has_loops |= !selected.is_empty();
+            }
+            Some(ResolvedProfileSelection::Regions(selected)) if !has_loops => {
+                has_regions |= !selected.is_empty();
+            }
+            _ => return false,
+        }
+    }
+    has_loops || has_regions
 }
 
 fn ordered_unique_profile_selections(
     matches: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     let mut loops = Vec::new();
     let mut regions = Vec::new();
     for selection in matches {
-        match selection? {
+        let Some(selection) = selection else { return Ok(None); };
+        match selection {
             ResolvedProfileSelection::Loops(selected) if regions.is_empty() => {
                 for loop_index in selected {
                     if !loops.contains(&loop_index) {
-                        loops.push(loop_index);
+                        push_profile_item(ctx, &mut loops, loop_index,
+                            "f3d ordered selected profile")?;
                     }
                 }
             }
             ResolvedProfileSelection::Regions(selected) if loops.is_empty() => {
                 for region in selected {
                     if !regions.contains(&region) {
-                        regions.push(region);
+                        push_profile_item(ctx, &mut regions, region,
+                            "f3d ordered selected region")?;
                     }
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
     if !loops.is_empty() {
-        Some(ResolvedProfileSelection::Loops(loops))
+        Ok(Some(ResolvedProfileSelection::Loops(loops)))
     } else if !regions.is_empty() {
-        Some(ResolvedProfileSelection::Regions(regions))
+        Ok(Some(ResolvedProfileSelection::Regions(regions)))
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -1950,13 +2105,12 @@ fn selection_containing_points(
     arrangement_budget: &WorkBudget<'_>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
-    let Some(projected) = points
-        .iter()
-        .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+    let mut projected = Vec::new();
+    for point in points {
+        let Some(point) = project_to_sketch(sketch, *point) else { return Ok(None); };
+        push_profile_item(ctx, &mut projected, point,
+            "f3d historical projected selection point")?;
+    }
     let mut boundaries = Vec::new();
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let mut matches = true;
@@ -1981,11 +2135,15 @@ fn selection_containing_points(
             let Some(index) = u32::try_from(index).ok() else {
                 return Ok(None);
             };
-            boundaries.push(index);
+            push_profile_item(ctx, &mut boundaries, index,
+                "f3d historical boundary profile")?;
         }
     }
     if let [profile] = boundaries.as_slice() {
-        return Ok(Some(ResolvedProfileSelection::Loops(vec![*profile])));
+        let mut loops = Vec::new();
+        push_profile_item(ctx, &mut loops, *profile,
+            "f3d historical selected profile")?;
+        return Ok(Some(ResolvedProfileSelection::Loops(loops)));
     }
     if let Some(region) = arrangement_region_containing_points(
         sketch,
@@ -1995,15 +2153,21 @@ fn selection_containing_points(
         arrangement_budget,
         ctx,
     )? {
-        return Ok(Some(ResolvedProfileSelection::Regions(vec![region])));
+        let mut regions = Vec::new();
+        push_profile_item(ctx, &mut regions, region,
+            "f3d historical selected arrangement region")?;
+        return Ok(Some(ResolvedProfileSelection::Regions(regions)));
     }
     if !boundaries.is_empty() {
         return Ok(None);
     }
-    Ok(
-        region_containing_points(sketch, entities, points, tolerance, ctx)?
-            .map(|region| ResolvedProfileSelection::Regions(vec![region])),
-    )
+    let Some(region) = region_containing_points(sketch, entities, points, tolerance, ctx)? else {
+        return Ok(None);
+    };
+    let mut regions = Vec::new();
+    push_profile_item(ctx, &mut regions, region,
+        "f3d historical selected geometric region")?;
+    Ok(Some(ResolvedProfileSelection::Regions(regions)))
 }
 
 /// Solved sketch records used to bind Loft and Revolve profile operands and
