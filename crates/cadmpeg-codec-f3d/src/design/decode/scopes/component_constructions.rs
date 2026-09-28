@@ -27,7 +27,8 @@ use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_derived_instance_construction(
     bytes: &[u8],
@@ -972,53 +973,63 @@ pub(super) fn exact_copy_paste_component_operation(
 }
 
 pub(super) fn bind_component_pattern_occurrences(
+    ctx: &DecodeContext<'_>,
     scope: &mut DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
-) {
-    let Some(stream) = native_stream(&scope.id).map(str::to_owned) else {
-        return;
+) -> Result<(), CodecError> {
+    let Some(stream) = native_stream(&scope.id) else {
+        return Ok(());
     };
     let byte_offset = scope.byte_offset();
     let Some(instances) = scope
-        .rectangular_pattern_construction_mut()
-        .and_then(|construction| construction.instances.as_mut())
+        .rectangular_pattern_construction()
+        .and_then(|construction| construction.instances.as_ref())
     else {
-        return;
+        return Ok(());
     };
     let mut generated = Vec::new();
+    let mut component_guid = None;
     for (ordinal, frame) in instances.frames().enumerate().skip(1) {
-        let candidates = occurrences
+        let Some(expected_ordinal) = u32::try_from(ordinal).ok().and_then(|value| value.checked_add(1)) else {
+            return Ok(());
+        };
+        let mut candidates = occurrences
             .iter()
             .filter(|occurrence| {
-                native_stream(&occurrence.id) == Some(stream.as_str())
+                native_stream(&occurrence.id) == Some(stream)
                     && occurrence.transform().map(|frame| frame.offset)
                         == Some(frame.transform.offset)
-                    && occurrence.occurrence_ordinal() == ordinal as u32 + 1
-            })
-            .collect::<Vec<_>>();
-        let [candidate] = candidates.as_slice() else {
-            return;
+                    && occurrence.occurrence_ordinal() == expected_ordinal
+            });
+        let Some(candidate) = candidates.next() else {
+            return Ok(());
         };
-        generated.push((*candidate, *frame));
+        if candidates.next().is_some() {
+            return Ok(());
+        }
+        if let Some(first_guid) = component_guid {
+            if !candidate.component_guid.as_str().eq_ignore_ascii_case(first_guid) {
+                return Ok(());
+            }
+        } else {
+            component_guid = Some(candidate.component_guid.as_str());
+        }
+        ctx.charge_collection_items(1, "f3d component pattern generated instances")?;
+        generated.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d component pattern generated instances allocation", 0, 1)
+        })?;
+        generated.push(patterns::DesignPatternComponentInstance {
+            instance: *frame,
+            occurrence_guid: candidate.occurrence_guid.clone(),
+        });
     }
-    let Some(component_guid) = generated
-        .first()
-        .map(|(occurrence, _)| occurrence.component_guid.as_str())
-    else {
-        return;
+    let Some(component_guid) = component_guid else {
+        return Ok(());
     };
-    if generated.iter().any(|(occurrence, _)| {
-        !occurrence
-            .component_guid
-            .as_str()
-            .eq_ignore_ascii_case(component_guid)
-    }) {
-        return;
-    }
-    let seed_candidates = occurrences
+    let mut seed_candidates = occurrences
         .iter()
         .filter(|occurrence| {
-            native_stream(&occurrence.id) == Some(stream.as_str())
+            native_stream(&occurrence.id) == Some(stream)
                 && occurrence.byte_offset() < byte_offset
                 && occurrence
                     .component_guid
@@ -1028,30 +1039,31 @@ pub(super) fn bind_component_pattern_occurrences(
                     occurrence.placement(),
                     assembly_features::DesignComponentOccurrencePlacement::Base
                 )
-        })
-        .collect::<Vec<_>>();
-    let [seed] = seed_candidates.as_slice() else {
-        return;
+        });
+    let Some(seed) = seed_candidates.next() else {
+        return Ok(());
     };
+    if seed_candidates.next().is_some() {
+        return Ok(());
+    }
     let Some(seed_frame) = instances.frames().next().copied() else {
-        return;
+        return Ok(());
     };
-    *instances = DesignRectangularPatternInstances::Components {
+    let bound = DesignRectangularPatternInstances::Components {
         component_guid: seed.component_guid.clone(),
         seed: patterns::DesignPatternComponentInstance {
             instance: seed_frame,
             occurrence_guid: seed.occurrence_guid.clone(),
         },
-        generated: generated
-            .into_iter()
-            .map(
-                |(occurrence, instance)| patterns::DesignPatternComponentInstance {
-                    instance,
-                    occurrence_guid: occurrence.occurrence_guid.clone(),
-                },
-            )
-            .collect(),
+        generated,
     };
+    if let Some(instances) = scope
+        .rectangular_pattern_construction_mut()
+        .and_then(|construction| construction.instances.as_mut())
+    {
+        *instances = bound;
+    }
+    Ok(())
 }
 
 fn unique_indexed_record_before(
