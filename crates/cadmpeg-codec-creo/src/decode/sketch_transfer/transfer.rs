@@ -894,7 +894,7 @@ pub(in super::super) fn transfer_sketches(
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
-        source_carriers.admit_sketch_entities(ir, entities)?;
+        source_carriers.admit_sketch_entities(ctx, ir, entities)?;
         source_carriers.admit_sketch_constraints(ctx, ir, constraints)?;
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
