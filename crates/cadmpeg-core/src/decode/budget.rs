@@ -213,7 +213,8 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.retained_allocation_failed_limit(charged, operation).into()
+        self.retained_allocation_failed_limit(charged, operation)
+            .into()
     }
 
     pub(super) fn retained_allocation_failed_limit(

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The one door that mints the identities the NX decoder creates.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{
     Identity, IdentityComponent, IdentityKey, IdentityKeyTail, IdentityNamespace,
 };
 use cadmpeg_ir::{identity_component, identity_key};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 use std::fmt::{self, Display, Write};
 
 struct CountBytes(usize);
@@ -44,10 +44,7 @@ pub(crate) struct IdScope(IdentityComponent);
 
 impl IdScope {
     /// Copy one decoded scope under the caller's retained-text limit.
-    pub(crate) fn try_clone_for_decode(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Self, CodecError> {
+    pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let bytes = ctx.copy_retained(self.0.as_str().as_bytes(), "nx completion scope copy")?;
         let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
         IdentityComponent::try_new(text)

@@ -249,8 +249,10 @@ impl<'a> DecodeContext<'a> {
         let bytes = super::u64_from_index(text.len());
         self.budget.charge_retained_limit(bytes, operation)?;
         let mut copy = String::new();
-        copy.try_reserve_exact(text.len())
-            .map_err(|_| self.budget.retained_allocation_failed_limit(bytes, operation))?;
+        copy.try_reserve_exact(text.len()).map_err(|_| {
+            self.budget
+                .retained_allocation_failed_limit(bytes, operation)
+        })?;
         copy.push_str(text);
         Ok(copy)
     }

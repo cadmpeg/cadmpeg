@@ -21,11 +21,11 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv, surface_point_with_budget, EvaluationFailure,
 };
 use cadmpeg_ir::features::FiniteVector3;
+#[cfg(test)]
+use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans_with_charge, positive_controls, HomogeneousBezierSpan,
 };
-#[cfg(test)]
-use cadmpeg_ir::geometry::nurbs::bezier::homogeneous_spans;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -162,14 +162,22 @@ mod tests {
         for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
                 .expect("identity grammar");
-            cache.remember(&surface, index as f64, false, frame, &GeometryWorkBudget::new(100))
+            cache
+                .remember(
+                    &surface,
+                    index as f64,
+                    false,
+                    frame,
+                    &GeometryWorkBudget::new(100),
+                )
                 .expect("cache allocation succeeds");
         }
         let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
         assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
         let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
-        cache.remember(&newest, 0.0, false, frame, &GeometryWorkBudget::new(100))
+        cache
+            .remember(&newest, 0.0, false, frame, &GeometryWorkBudget::new(100))
             .expect("cache allocation succeeds");
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
@@ -183,7 +191,14 @@ mod tests {
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             let surface = SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
                 .expect("identity grammar");
-            cache.remember_boundary_point(&surface, index as f64, index % 2, point, &GeometryWorkBudget::new(100))
+            cache
+                .remember_boundary_point(
+                    &surface,
+                    index as f64,
+                    index % 2,
+                    point,
+                    &GeometryWorkBudget::new(100),
+                )
                 .expect("cache allocation succeeds");
         }
 
@@ -193,7 +208,8 @@ mod tests {
 
         let newest =
             SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
-        cache.remember_boundary_point(&newest, 0.0, 1, point, &GeometryWorkBudget::new(100))
+        cache
+            .remember_boundary_point(&newest, 0.0, 1, point, &GeometryWorkBudget::new(100))
             .expect("cache allocation succeeds");
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
@@ -290,13 +306,18 @@ mod tests {
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
             let parameter = parameter as f64;
-            cache.remember(BlendContactSeed {
-                support: support.as_str().to_owned(),
-                spine: spine.as_str().to_owned(),
-                parameter,
-                offset_surface: offset_surface.as_str().to_owned(),
-                parameters: Point2::new(parameter, -parameter),
-            }, &GeometryWorkBudget::new(100)).expect("cache allocation succeeds");
+            cache
+                .remember(
+                    BlendContactSeed {
+                        support: support.as_str().to_owned(),
+                        spine: spine.as_str().to_owned(),
+                        parameter,
+                        offset_surface: offset_surface.as_str().to_owned(),
+                        parameters: Point2::new(parameter, -parameter),
+                    },
+                    &GeometryWorkBudget::new(100),
+                )
+                .expect("cache allocation succeeds");
         }
 
         assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
@@ -744,7 +765,7 @@ fn blend_surface_parameters_inner(
     }
     let angular_spine = closest_spine_parameter_with_index_and_budget(
         index,
-        &spine,
+        spine,
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
@@ -1453,7 +1474,8 @@ impl BlendSurfaceFrameCache {
             entry.frame = frame;
             return Ok(());
         }
-        let surface = geometry_budget.copy_retained_text(surface.as_str(), "nx blend frame cache identity")?;
+        let surface = geometry_budget
+            .copy_retained_text(surface.as_str(), "nx blend frame cache identity")?;
         geometry_budget.charge_collection_items(1, "nx blend frame cache entries")?;
         if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             self.entries.pop_front();
@@ -1499,7 +1521,8 @@ impl BlendSurfaceFrameCache {
             entry.point = point;
             return Ok(());
         }
-        let surface = geometry_budget.copy_retained_text(surface.as_str(), "nx blend boundary cache identity")?;
+        let surface = geometry_budget
+            .copy_retained_text(surface.as_str(), "nx blend boundary cache identity")?;
         geometry_budget.charge_collection_items(1, "nx blend boundary cache entries")?;
         if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             self.boundary_points.pop_front();
@@ -1688,7 +1711,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
     );
     let contact_context = BlendContactDerivativeContext {
         index,
-        spine: &spine,
+        spine,
         parameter: u,
         center: center.get(),
         center_derivative: velocity.get(),
@@ -1696,12 +1719,12 @@ fn blend_surface_u_derivative_with_index_and_budget(
         depth: depth + 1,
     };
     let Some((first, first_derivative)) =
-        contact_context.direction_derivative(&supports[0], geometry_budget)?
+        contact_context.direction_derivative(supports[0], geometry_budget)?
     else {
         return Ok(None);
     };
     let Some((second, second_derivative)) =
-        contact_context.direction_derivative(&supports[1], geometry_budget)?
+        contact_context.direction_derivative(supports[1], geometry_budget)?
     else {
         return Ok(None);
     };
@@ -1909,19 +1932,19 @@ fn blend_surface_frame_with_index_and_budget_and_options(
             return Ok(None);
         };
         let Some(center) =
-            model_curve_point_with_index_and_budget(index, &spine, u, geometry_budget)?
+            model_curve_point_with_index_and_budget(index, spine, u, geometry_budget)?
         else {
             return Ok(None);
         };
         let Some(tangent) =
-            model_curve_tangent_with_index_and_budget(index, &spine, u, geometry_budget)?
+            model_curve_tangent_with_index_and_budget(index, spine, u, geometry_budget)?
         else {
             return Ok(None);
         };
         let first = spine_contact_direction_with_index_and_budget_and_options(
             index,
-            &supports[0],
-            &spine,
+            supports[0],
+            spine,
             u,
             center,
             radius,
@@ -1935,7 +1958,7 @@ fn blend_surface_frame_with_index_and_budget_and_options(
         } else {
             surface_contact_direction_with_index_and_budget(
                 index,
-                &supports[0],
+                supports[0],
                 center,
                 radius,
                 depth + 1,
@@ -1947,8 +1970,8 @@ fn blend_surface_frame_with_index_and_budget_and_options(
         };
         let second = spine_contact_direction_with_index_and_budget_and_options(
             index,
-            &supports[1],
-            &spine,
+            supports[1],
+            spine,
             u,
             center,
             radius,
@@ -1962,7 +1985,7 @@ fn blend_surface_frame_with_index_and_budget_and_options(
         } else {
             surface_contact_direction_with_index_and_budget(
                 index,
-                &supports[1],
+                supports[1],
                 center,
                 radius,
                 depth + 1,
@@ -2053,7 +2076,7 @@ fn blend_boundary_point_with_index_and_budget(
     let point = spine_contact_point_with_index_and_budget(
         index,
         support,
-        &spine,
+        spine,
         parameter,
         radius,
         depth + 1,
@@ -2090,7 +2113,7 @@ fn blend_boundary_parameter_with_index_and_budget(
     // A circular blend's u parameter is its spine parameter. Invert that
     // defining carrier directly, then certify the requested boundary point.
     let Some(parameter) =
-        closest_spine_parameter_with_index_and_budget(index, &spine, point, seed, geometry_budget)?
+        closest_spine_parameter_with_index_and_budget(index, spine, point, seed, geometry_budget)?
     else {
         return Ok(None);
     };
@@ -2165,7 +2188,7 @@ fn blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
     let [boundary] = matches.as_slice() else {
         return Ok(None);
     };
-    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)
+    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, 0)
     else {
         return Ok(None);
     };
@@ -2269,7 +2292,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
         return Ok(None);
     };
-    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)
+    let Some(contact_pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, 0)
     else {
         return Ok(None);
     };
@@ -2325,7 +2348,7 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
     };
     let Some(parameter) = closest_spine_parameter_with_index_and_budget(
         index,
-        &spine,
+        spine,
         point,
         seed.map(|seed| seed.u),
         geometry_budget,
@@ -2726,53 +2749,50 @@ pub(super) fn closest_pcurve_parameters(
     };
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     let candidates = if degree != 1 || nurbs.weights().is_some() {
-        let Some(candidates) = stationary_rational_distance_candidates(
-            &homogeneous,
-            search_seed,
-            &geometry_budget,
-        )? else {
+        let Some(candidates) =
+            stationary_rational_distance_candidates(&homogeneous, search_seed, &geometry_budget)?
+        else {
             return Ok(None);
         };
         closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
     } else {
-            let candidates = nurbs
-                .control_points()
-                .windows(2)
-                .enumerate()
-                .filter_map(|(index, segment)| {
-                    let start = segment[0];
-                    let end = segment[1];
-                    let direction = Point2::new(end.u - start.u, end.v - start.v);
-                    let squared_length = direction.u * direction.u + direction.v * direction.v;
-                    if !squared_length.is_finite() || squared_length == 0.0 {
-                        return None;
-                    }
-                    let fraction = (((point.u - start.u) * direction.u
-                        + (point.v - start.v) * direction.v)
-                        / squared_length)
-                        .clamp(0.0, 1.0);
-                    let span_start = *nurbs.knots().get(index + 1)?;
-                    let span_end = *nurbs.knots().get(index + 2)?;
-                    if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
-                        return None;
-                    }
-                    let projected = Point2::new(
-                        start.u + fraction * direction.u,
-                        start.v + fraction * direction.v,
-                    );
-                    let squared_distance =
-                        (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
-                    Some((
-                        span_start + fraction * (span_end - span_start),
-                        squared_distance,
-                    ))
-                })
-                .collect::<Vec<_>>();
+        let candidates = nurbs
+            .control_points()
+            .windows(2)
+            .enumerate()
+            .filter_map(|(index, segment)| {
+                let start = segment[0];
+                let end = segment[1];
+                let direction = Point2::new(end.u - start.u, end.v - start.v);
+                let squared_length = direction.u * direction.u + direction.v * direction.v;
+                if !squared_length.is_finite() || squared_length == 0.0 {
+                    return None;
+                }
+                let fraction = (((point.u - start.u) * direction.u
+                    + (point.v - start.v) * direction.v)
+                    / squared_length)
+                    .clamp(0.0, 1.0);
+                let span_start = *nurbs.knots().get(index + 1)?;
+                let span_end = *nurbs.knots().get(index + 2)?;
+                if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
+                    return None;
+                }
+                let projected = Point2::new(
+                    start.u + fraction * direction.u,
+                    start.v + fraction * direction.v,
+                );
+                let squared_distance =
+                    (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
+                Some((
+                    span_start + fraction * (span_end - span_start),
+                    squared_distance,
+                ))
+            })
+            .collect::<Vec<_>>();
         closest_parameter_candidates(candidates, search_seed, &geometry_budget)?
     };
-    Ok(candidates.map(|candidates| {
-        lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)
-    }))
+    Ok(candidates
+        .map(|candidates| lift_periodic_parameters(candidates, domain, nurbs.periodic(), seed)))
 }
 
 struct HomogeneousCurveSpans<const DIMENSION: usize> {
@@ -2846,7 +2866,9 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
 ) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::decode::ResourceLimit> {
     let mut candidates = Vec::new();
     for span in &homogeneous.spans {
-        let Some(derivative) = rational_squared_distance_derivative(&span.controls, geometry_budget)? else {
+        let Some(derivative) =
+            rational_squared_distance_derivative(&span.controls, geometry_budget)?
+        else {
             return Ok(None);
         };
         let Some(roots) = scalar_bezier_roots_with_budget(
@@ -2855,32 +2877,44 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
                 controls: derivative,
             },
             geometry_budget,
-        )? else {
+        )?
+        else {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         };
         let root_count = match &roots {
             ScalarBezierRoots::Constant => usize::from(seed.is_some()),
             ScalarBezierRoots::Isolated(roots) => roots.len(),
         };
-        let parameter_count = root_count.checked_add(2).ok_or_else(|| {
-            cadmpeg_core::decode::ResourceLimit {
-                dimension: cadmpeg_core::decode::ResourceDimension::Codec("nx stationary parameters"),
-                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
-                limit: 0,
-                used: 0,
-                additional: cadmpeg_core::decode::u64_from_index(root_count),
-                operation: "nx stationary parameters",
-            }
-        })?;
+        let parameter_count =
+            root_count
+                .checked_add(2)
+                .ok_or_else(|| cadmpeg_core::decode::ResourceLimit {
+                    dimension: cadmpeg_core::decode::ResourceDimension::Codec(
+                        "nx stationary parameters",
+                    ),
+                    reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                    limit: 0,
+                    used: 0,
+                    additional: cadmpeg_core::decode::u64_from_index(root_count),
+                    operation: "nx stationary parameters",
+                })?;
         let mut parameters = Vec::new();
-        let _reservation = geometry_budget.reserve_vec(&mut parameters, parameter_count, "nx stationary parameters")?;
+        let _reservation = geometry_budget.reserve_vec(
+            &mut parameters,
+            parameter_count,
+            "nx stationary parameters",
+        )?;
         parameters.extend([span.domain[0], span.domain[1]]);
         match roots {
             ScalarBezierRoots::Constant => parameters
                 .extend(seed.filter(|seed| (span.domain[0]..=span.domain[1]).contains(seed))),
             ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
         }
-        let _candidate_reservation = geometry_budget.reserve_vec(&mut candidates, parameter_count, "nx stationary candidates")?;
+        let _candidate_reservation = geometry_budget.reserve_vec(
+            &mut candidates,
+            parameter_count,
+            "nx stationary candidates",
+        )?;
         for parameter in parameters {
             let distance = homogeneous_residual_distance(
                 &span.controls,
@@ -2909,14 +2943,11 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     // ((R·R')W - (R·R)W'). Positive weights make its roots exactly the finite
     // stationary parameters of the rational span.
     // A common homogeneous factor cannot change stationary parameters.
-    let Some(scale) = controls
-        .iter()
-        .flatten()
-        .try_fold(0.0_f64, |scale, value| {
-            value.is_finite().then_some(scale.max(value.abs()))
-        }) else {
-            return Ok(None);
-        };
+    let Some(scale) = controls.iter().flatten().try_fold(0.0_f64, |scale, value| {
+        value.is_finite().then_some(scale.max(value.abs()))
+    }) else {
+        return Ok(None);
+    };
     let Some(exponent) = cadmpeg_ir::math::power_of_two_bound(scale) else {
         return Ok(None);
     };
@@ -2927,17 +2958,21 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         "nx rational derivative normalized controls",
     )?;
     for control in controls {
-            let mut normalized = *control;
-            for value in &mut normalized {
-                let Some(scaled) = cadmpeg_ir::math::scale_power_of_two(*value, -exponent) else {
-                    return Ok(None);
-                };
-                *value = scaled.get();
-            }
-            normalized_controls.push(normalized);
+        let mut normalized = *control;
+        for value in &mut normalized {
+            let Some(scaled) = cadmpeg_ir::math::scale_power_of_two(*value, -exponent) else {
+                return Ok(None);
+            };
+            *value = scaled.get();
+        }
+        normalized_controls.push(normalized);
     }
     let mut weight = Vec::new();
-    let _weight_reservation = geometry_budget.reserve_vec(&mut weight, controls.len(), "nx rational derivative weights")?;
+    let _weight_reservation = geometry_budget.reserve_vec(
+        &mut weight,
+        controls.len(),
+        "nx rational derivative weights",
+    )?;
     for control in &normalized_controls {
         weight.push(control[DIMENSION - 1]);
     }
@@ -2946,7 +2981,11 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
     let mut residual_derivative = None;
     for axis in 0..DIMENSION - 1 {
         let mut residual = Vec::new();
-        let _residual_reservation = geometry_budget.reserve_vec(&mut residual, controls.len(), "nx rational derivative residuals")?;
+        let _residual_reservation = geometry_budget.reserve_vec(
+            &mut residual,
+            controls.len(),
+            "nx rational derivative residuals",
+        )?;
         for control in &normalized_controls {
             residual.push(control[axis]);
         }
@@ -2954,7 +2993,8 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         let Some(squared) = bernstein_product(&residual, &residual, geometry_budget)? else {
             return Ok(None);
         };
-        let Some(differentiated) = bernstein_product(&residual, &derivative, geometry_budget)? else {
+        let Some(differentiated) = bernstein_product(&residual, &derivative, geometry_budget)?
+        else {
             return Ok(None);
         };
         residual_squared = match residual_squared {
@@ -2969,13 +3009,16 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
             return Ok(None);
         }
     }
-    let (Some(residual_squared), Some(residual_derivative)) = (residual_squared, residual_derivative) else {
+    let (Some(residual_squared), Some(residual_derivative)) =
+        (residual_squared, residual_derivative)
+    else {
         return Ok(None);
     };
     let Some(first) = bernstein_product(&residual_derivative, &weight, geometry_budget)? else {
         return Ok(None);
     };
-    let Some(second) = bernstein_product(&residual_squared, &weight_derivative, geometry_budget)? else {
+    let Some(second) = bernstein_product(&residual_squared, &weight_derivative, geometry_budget)?
+    else {
         return Ok(None);
     };
     Ok(subtract_bernstein_polynomials(first, second))
@@ -2986,8 +3029,16 @@ fn difference_controls(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
     let mut differences = Vec::new();
-    let count = if values.is_empty() { 0 } else { values.len() - 1 };
-    let _reservation = geometry_budget.reserve_vec(&mut differences, count, "nx rational derivative differences")?;
+    let count = if values.is_empty() {
+        0
+    } else {
+        values.len() - 1
+    };
+    let _reservation = geometry_budget.reserve_vec(
+        &mut differences,
+        count,
+        "nx rational derivative differences",
+    )?;
     for pair in values.windows(2) {
         differences.push(pair[1] - pair[0]);
     }
@@ -3000,9 +3051,10 @@ fn bernstein_product(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let (Some(first_degree), Some(second_degree)) =
-        (first.len().checked_sub(1), second.len().checked_sub(1)) else {
-            return Ok(None);
-        };
+        (first.len().checked_sub(1), second.len().checked_sub(1))
+    else {
+        return Ok(None);
+    };
     let Some(degree) = first_degree.checked_add(second_degree) else {
         return Ok(None);
     };
@@ -3014,7 +3066,7 @@ fn bernstein_product(
     for index in 0..=degree {
         let value = (|| {
             let denominator = binomial_coefficient(degree, index)?;
-            let lower = if index >= second_degree { index - second_degree } else { 0 };
+            let lower = index - index.min(second_degree);
             let upper = index.min(first_degree);
             (lower..=upper)
                 .map(|first_index| {
@@ -3100,7 +3152,8 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .first()
         .is_some_and(|value| value.abs() <= tolerance)
     {
-        let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+        let _reservation =
+            geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[0]);
     }
     if span
@@ -3108,12 +3161,14 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .last()
         .is_some_and(|value| value.abs() <= tolerance)
     {
-        let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+        let _reservation =
+            geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[1]);
     }
     let domain = span.domain;
     let mut intervals = Vec::new();
-    let _interval_reservation = geometry_budget.reserve_vec(&mut intervals, 1, "nx Bezier root intervals")?;
+    let _interval_reservation =
+        geometry_budget.reserve_vec(&mut intervals, 1, "nx Bezier root intervals")?;
     intervals.push(span);
     while let Some(span) = intervals.pop() {
         if !geometry_budget.charge() {
@@ -3122,30 +3177,38 @@ pub(super) fn scalar_bezier_roots_with_budget(
         if scalar_bernstein_sign_variations(&span.controls) == 0 {
             continue;
         }
-        let Some(middle) = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5) else {
+        let Some(middle) = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)
+        else {
             return Ok(None);
         };
         let middle = middle.get();
         if middle == span.domain[0] || middle == span.domain[1] {
-            let first_value = scalar_bezier_value(&span.controls, span.domain[0], span.domain, geometry_budget)?.abs();
-            let second_value = scalar_bezier_value(&span.controls, span.domain[1], span.domain, geometry_budget)?.abs();
+            let first_value =
+                scalar_bezier_value(&span.controls, span.domain[0], span.domain, geometry_budget)?
+                    .abs();
+            let second_value =
+                scalar_bezier_value(&span.controls, span.domain[1], span.domain, geometry_budget)?
+                    .abs();
             let (parameter, value) = if first_value.total_cmp(&second_value).is_le() {
                 (span.domain[0], first_value)
             } else {
                 (span.domain[1], second_value)
             };
             if value <= tolerance {
-                let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+                let _reservation =
+                    geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
                 parameters.push(parameter);
             }
             continue;
         }
         let (first, second) = subdivide_scalar_bezier_span(span, middle, geometry_budget)?;
         if first.controls.last().is_some_and(|value| *value == 0.0) {
-            let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
+            let _reservation =
+                geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
             parameters.push(middle);
         }
-        let _reservation = geometry_budget.reserve_vec(&mut intervals, 2, "nx Bezier root intervals")?;
+        let _reservation =
+            geometry_budget.reserve_vec(&mut intervals, 2, "nx Bezier root intervals")?;
         intervals.push(second);
         intervals.push(first);
     }
@@ -3185,9 +3248,11 @@ fn subdivide_scalar_bezier_span(
     let count = span.controls.len();
     let mut levels = span.controls;
     let mut first = Vec::new();
-    let _first_reservation = geometry_budget.reserve_vec(&mut first, count, "nx first Bezier subdivision")?;
+    let _first_reservation =
+        geometry_budget.reserve_vec(&mut first, count, "nx first Bezier subdivision")?;
     let mut second = Vec::new();
-    let _second_reservation = geometry_budget.reserve_vec(&mut second, count, "nx second Bezier subdivision")?;
+    let _second_reservation =
+        geometry_budget.reserve_vec(&mut second, count, "nx second Bezier subdivision")?;
     for level in 0..count {
         first.push(levels[0]);
         second.push(levels[count - level - 1]);
@@ -3217,7 +3282,8 @@ fn scalar_bezier_value(
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(&mut values, controls.len(), "nx scalar Bezier evaluation")?;
+    let _reservation =
+        geometry_budget.reserve_vec(&mut values, controls.len(), "nx scalar Bezier evaluation")?;
     values.extend_from_slice(controls);
     for level in 1..values.len() {
         for index in 0..values.len() - level {
@@ -3236,7 +3302,11 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = Vec::new();
-    let _reservation = geometry_budget.reserve_vec(&mut values, controls.len(), "nx rational Bezier evaluation")?;
+    let _reservation = geometry_budget.reserve_vec(
+        &mut values,
+        controls.len(),
+        "nx rational Bezier evaluation",
+    )?;
     values.extend_from_slice(controls);
     for level in 1..values.len() {
         for index in 0..values.len() - level {
@@ -3268,9 +3338,10 @@ fn closest_parameter_candidates(
     let Some(minimum_distance) = candidates_copy
         .iter()
         .map(|candidate| candidate.1)
-        .min_by(f64::total_cmp) else {
-            return Ok(None);
-        };
+        .min_by(f64::total_cmp)
+    else {
+        return Ok(None);
+    };
     let mut nearest = Vec::new();
     for candidate in candidates_copy {
         let scale = candidate
@@ -3279,11 +3350,8 @@ fn closest_parameter_candidates(
             .max(minimum_distance.abs())
             .max(f64::MIN_POSITIVE);
         if (candidate.1 - minimum_distance).abs() <= 128.0 * f64::EPSILON * scale {
-            let _reservation = geometry_budget.reserve_vec(
-                &mut nearest,
-                1,
-                "nx closest parameter minima",
-            )?;
+            let _reservation =
+                geometry_budget.reserve_vec(&mut nearest, 1, "nx closest parameter minima")?;
             nearest.push(candidate.0);
         }
     }
@@ -3631,16 +3699,22 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             return None;
         };
         let contact_seed = BlendContactSeed {
-            support: match geometry_budget.copy_retained_text(support.as_str(), "nx blend contact support identity") {
+            support: match geometry_budget
+                .copy_retained_text(support.as_str(), "nx blend contact support identity")
+            {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
-            spine: match geometry_budget.copy_retained_text(spine.as_str(), "nx blend contact spine identity") {
+            spine: match geometry_budget
+                .copy_retained_text(spine.as_str(), "nx blend contact spine identity")
+            {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
             parameter,
-            offset_surface: match geometry_budget.copy_retained_text(offset_surface.as_str(), "nx blend contact offset identity") {
+            offset_surface: match geometry_budget
+                .copy_retained_text(offset_surface.as_str(), "nx blend contact offset identity")
+            {
                 Ok(value) => value,
                 Err(limit) => return Some(Err(limit)),
             },
@@ -3714,9 +3788,8 @@ fn constant_surface_offset_between_with_index(
     }
     let support_geometry = &index.surfaces(support_base.as_str())?.geometry;
     let offset_geometry = &index.surfaces(offset_base.as_str())?.geometry;
-    let base_offset = analytic_surface_offset(support_geometry, offset_geometry).or_else(|| {
-        blend_surface_offset_with_index(index, &support_base, &offset_base, depth + 1)
-    })?;
+    let base_offset = analytic_surface_offset(support_geometry, offset_geometry)
+        .or_else(|| blend_surface_offset_with_index(index, support_base, offset_base, depth + 1))?;
     Some(base_offset + offset_distance - support_offset)
 }
 
@@ -3745,8 +3818,8 @@ fn blend_surface_offset_with_index(
                     support_reversed[support_index] == offset_reversed[offset_index]
                         && constant_surface_offset_between_with_index(
                             index,
-                            &support_carriers[support_index],
-                            &offset_carriers[offset_index],
+                            support_carriers[support_index],
+                            offset_carriers[offset_index],
                             depth + 1,
                         )
                         .is_some_and(|carrier_distance| {
@@ -4016,14 +4089,12 @@ fn blend_surface_definition_from_procedural(
     };
 
     let radius = signed_radius.get().abs();
-    (radius > 0.0).then(|| {
-        (
-            [&first.surface, &second.surface],
-            spine,
-            radius,
-            [first.reversed, second.reversed],
-        )
-    })
+    (radius > 0.0).then_some((
+        [&first.surface, &second.surface],
+        spine,
+        radius,
+        [first.reversed, second.reversed],
+    ))
 }
 
 #[cfg(test)]
@@ -4172,7 +4243,7 @@ fn blend_surface_contact_direction_with_budget(
         return Ok(None);
     };
     let Some(u) =
-        closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?
+        closest_spine_parameter_with_index_and_budget(index, spine, point, None, geometry_budget)?
     else {
         return Ok(None);
     };
@@ -4384,18 +4455,17 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
         if !geometry_budget.charge() {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
-        let _reservation = geometry_budget.reserve_vec(
-            &mut candidates,
-            1,
-            "nx analytic inverse candidates",
-        )?;
+        let _reservation =
+            geometry_budget.reserve_vec(&mut candidates, 1, "nx analytic inverse candidates")?;
         candidates.push((
             parameter,
             (major_radius * parameter.cos() - x).hypot(minor_radius * parameter.sin() - y),
         ));
     }
-    Ok(closest_parameter_candidates(candidates, Some(anchor), geometry_budget)?
-        .and_then(|parameters| parameters.into_iter().next()))
+    Ok(
+        closest_parameter_candidates(candidates, Some(anchor), geometry_budget)?
+            .and_then(|parameters| parameters.into_iter().next()),
+    )
 }
 
 pub(super) fn real_polynomial_roots(coefficients: &[f64]) -> Option<Vec<f64>> {
@@ -4594,9 +4664,11 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return Ok(None);
     };
-    let Some(spans) = homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-        geometry_budget.charge_collection_items(count, operation)
-    })? else {
+    let Some(spans) =
+        homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+            geometry_budget.charge_collection_items(count, operation)
+        })?
+    else {
         return Ok(None);
     };
     let homogeneous = HomogeneousCurveSpans {
@@ -4608,7 +4680,8 @@ pub(super) fn closest_nurbs_curve_parameter_with_budget(
     else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
-    let Some(parameters) = closest_parameter_candidates(candidates, search_seed, geometry_budget)? else {
+    let Some(parameters) = closest_parameter_candidates(candidates, search_seed, geometry_budget)?
+    else {
         return geometry_budget.resource_refusal().map_or(Ok(None), Err);
     };
     Ok(

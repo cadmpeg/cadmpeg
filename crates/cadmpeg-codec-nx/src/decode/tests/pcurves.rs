@@ -928,9 +928,11 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
         controls: vec![-1.0, 1.0],
     };
 
-    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
-        .expect("test work slice has no decode resource refusal")
-        .is_none());
+    assert!(
+        crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+            .expect("test work slice has no decode resource refusal")
+            .is_none()
+    );
     assert!(budget.exhausted());
 }
 
@@ -1274,8 +1276,11 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let mut rectangles = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("test context");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&ctx, 100);
 
     assert!(subdivide_offset_rectangle(
@@ -1284,7 +1289,8 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
         [u, 0.5],
         true,
         &geometry_budget,
-    ).expect("subdivision allocation"));
+    )
+    .expect("subdivision allocation"));
     assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
 }
 
