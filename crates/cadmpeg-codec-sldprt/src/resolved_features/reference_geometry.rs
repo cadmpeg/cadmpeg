@@ -15,6 +15,7 @@ use crate::classification::{
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1566,31 +1567,48 @@ fn sketch_block_compact_local_id(
     (sketch_block_record_local_id(payload, name_start, record_end)? == header).then_some(header)
 }
 
+fn insert_reference_axis_property(
+    ctx: &DecodeContext<'_>,
+    feature: &mut crate::records::Feature,
+    key: NonBlankString,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    let value = ctx.format_retained(value, "format SLDPRT reference axis property")?;
+    if !feature.properties.contains_key(&key) {
+        ctx.charge_collection_items(1, "insert SLDPRT reference axis property")?;
+    }
+    feature.properties.insert(key, value);
+    Ok(())
+}
+
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
     ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let known_sources = histories
-        .iter()
-        .flat_map(|history| &history.features)
+    let mut known_sources = HashSet::new();
+    for source in histories.iter().flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
-        .collect::<HashSet<_>>();
+    {
+        if !known_sources.contains(&source) {
+            ctx.charge_collection_items(1, "index SLDPRT reference axis sources")?;
+            known_sources.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT reference axis sources", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        known_sources.insert(source);
+    }
     for lane in lanes {
-        let mut starts =
-            histories
-                .iter()
-                .enumerate()
-                .flat_map(|(history_index, history)| {
-                    history.features.iter().enumerate().filter_map(
-                        move |(feature_index, feature)| {
-                            feature_object_name(feature, lane)
-                                .map(|name| (name.offset, history_index, feature_index))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT reference axis starts")?;
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
@@ -1609,25 +1627,30 @@ pub(crate) fn enrich_history_reference_axes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            let axis_data_classes = lane
-                .classes
-                .iter()
-                .filter(|class| {
+            let mut axis_data_classes = Vec::new();
+            for class in &lane.classes {
+                if
                     matches!(
                         class.name.as_str(),
                         "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
                     ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                })
-                .collect::<Vec<_>>();
-            let mut anchored_frames = axis_data_classes
-                .iter()
-                .filter_map(|class| {
+                {
+                    ctx.reserve_collection_vec(&mut axis_data_classes, 1, "collect SLDPRT reference axis data classes")?;
+                    axis_data_classes.push(class);
+                }
+            }
+            let mut anchored_frames = Vec::new();
+            for class in &axis_data_classes {
+                if let Some(frame) = (|| {
                     let body = usize::try_from(class.offset)
                         .ok()?
                         .checked_add(6 + class.name.len())?;
                     explicit_reference_axis_frame(lane.native_payload.get(body..body + 88)?)
-                })
-                .collect::<Vec<_>>();
+                })() {
+                    ctx.reserve_collection_vec(&mut anchored_frames, 1, "collect SLDPRT anchored reference axis frames")?;
+                    anchored_frames.push(frame);
+                }
+            }
             anchored_frames.sort_by_key(reference_axis_frame_key);
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
             let explicit_frame = if axis_data_classes.is_empty() {
@@ -1640,26 +1663,24 @@ pub(crate) fn enrich_history_reference_axes(
             };
             if let Some((origin, direction)) = explicit_frame {
                 let feature = &mut histories[history_index].features[feature_index];
-                feature.properties.insert(
+                insert_reference_axis_property(ctx, feature,
                     cadmpeg_core::nonblank_literal!("Origin"),
-                    format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
-                );
-                feature.properties.insert(
+                    format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+                )?;
+                insert_reference_axis_property(ctx, feature,
                     cadmpeg_core::nonblank_literal!("Direction"),
-                    format!("{},{},{}", direction.x, direction.y, direction.z),
-                );
+                    format_args!("{},{},{}", direction.x, direction.y, direction.z),
+                )?;
                 continue;
             }
             let Some([first, second]) = plane_intersection_axis_sources(bytes, &known_sources)
             else {
                 continue;
             };
-            histories[history_index].features[feature_index]
-                .properties
-                .insert(
-                    cadmpeg_core::nonblank_literal!("Planes"),
-                    format!("{first},{second}"),
-                );
+            insert_reference_axis_property(ctx, &mut histories[history_index].features[feature_index],
+                cadmpeg_core::nonblank_literal!("Planes"),
+                format_args!("{first},{second}"),
+            )?;
         }
     }
 
@@ -1667,9 +1688,12 @@ pub(crate) fn enrich_history_reference_axes(
         for (axes, pairs) in legacy_reference_axis_triads(&history.features) {
             for (axis_index, planes) in axes.into_iter().zip(pairs) {
                 let axis = &mut history.features[axis_index];
-                axis.properties
-                    .entry(cadmpeg_core::nonblank_literal!("Planes"))
-                    .or_insert_with(|| format!("{},{}", planes[0], planes[1]));
+                if !axis.properties.contains_key("Planes") {
+                    insert_reference_axis_property(ctx, axis,
+                        cadmpeg_core::nonblank_literal!("Planes"),
+                        format_args!("{},{}", planes[0], planes[1]),
+                    )?;
+                }
             }
         }
     }
@@ -1707,20 +1731,20 @@ pub(crate) fn enrich_history_reference_axes(
         else {
             continue;
         };
-        feature.properties.insert(
+        insert_reference_axis_property(ctx, feature,
             cadmpeg_core::nonblank_literal!("Origin"),
-            format!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
-        );
-        feature.properties.insert(
+            format_args!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
+        )?;
+        insert_reference_axis_property(ctx, feature,
             cadmpeg_core::nonblank_literal!("Direction"),
-            format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
-        );
+            format_args!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
+        )?;
     }
 
     for history in histories {
-        let completions = legacy_reference_axis_triads(&history.features)
-            .into_iter()
-            .filter_map(|(indices, _)| {
+        let mut completions = Vec::new();
+        for (indices, _) in legacy_reference_axis_triads(&history.features) {
+            let Some(completion) = (|| {
                 let frames = indices.map(|index| {
                     let feature = &history.features[index];
                     Some((
@@ -1735,18 +1759,22 @@ pub(crate) fn enrich_history_reference_axes(
                 });
                 let (missing, frame) = complete_reference_axis_triad(frames)?;
                 Some((indices[missing], frame))
-            })
-            .collect::<Vec<_>>();
+            })() else {
+                continue;
+            };
+            ctx.reserve_collection_vec(&mut completions, 1, "collect SLDPRT reference axis completions")?;
+            completions.push(completion);
+        }
         for (index, (origin, direction)) in completions {
             let feature = &mut history.features[index];
-            feature.properties.insert(
+            insert_reference_axis_property(ctx, feature,
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
-            );
-            feature.properties.insert(
+                format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            )?;
+            insert_reference_axis_property(ctx, feature,
                 cadmpeg_core::nonblank_literal!("Direction"),
-                format!("{},{},{}", direction.x, direction.y, direction.z),
-            );
+                format_args!("{},{},{}", direction.x, direction.y, direction.z),
+            )?;
         }
     }
     Ok(())
