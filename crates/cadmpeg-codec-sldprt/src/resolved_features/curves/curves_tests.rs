@@ -245,10 +245,73 @@ fn shared_endpoint_block_cycles_remain_profile_chains() {
         line("synthetic:test:id#diagonal", "p0", "p2"),
     ];
 
-    assert!(super::closed_marker_profiles(&entities).is_empty());
-    let profiles = closed_marker_profiles_allowing_shared_endpoints(&entities);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(super::closed_marker_profiles(&ctx, &entities).unwrap().is_empty());
+    let profiles = closed_marker_profiles_allowing_shared_endpoints(&ctx, &entities).unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
+}
+
+fn closed_profile_limit_entities() -> Vec<SketchEntity> {
+    let sketch = SketchId::mint("synthetic:test:id#closed-limit-sketch").unwrap();
+    [
+        ("synthetic:test:id#closed-limit-first", "p0", "p1"),
+        ("synthetic:test:id#closed-limit-second", "p1", "p0"),
+    ]
+    .into_iter()
+    .map(|(id, start_ref, end_ref)| {
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            })
+            .unwrap(),
+        )
+        .with_endpoint_refs(vec![start_ref.into(), end_ref.into()])
+    })
+    .collect()
+}
+
+#[test]
+fn closed_profile_refuses_collection_limit() {
+    let entities = closed_profile_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT closed curves"));
+}
+
+#[test]
+fn closed_profile_refuses_retained_limit() {
+    let entities = closed_profile_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT closed curve identity"));
+}
+
+#[test]
+fn closed_profile_refuses_work_limit() {
+    let entities = closed_profile_limit_entities();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::closed_marker_profiles(&ctx, &entities).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT closed curve incidence"));
 }
 
 #[test]

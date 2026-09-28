@@ -27,6 +27,7 @@ use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::{Angle, Length},
 };
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;
@@ -1204,66 +1205,98 @@ pub(super) fn resolve_connected_marker_arcs(
     Ok(())
 }
 
-pub(super) fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
-    closed_marker_profiles_with_policy(entities, true)
+pub(super) fn closed_marker_profiles<E: Borrow<SketchEntity>>(
+    ctx: &DecodeContext<'_>,
+    entities: &[E],
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    closed_marker_profiles_with_policy(ctx, entities, true)
 }
 
 /// Recover closed curve cycles when endpoint markers are shared by construction geometry.
-pub(super) fn closed_marker_profiles_allowing_shared_endpoints(
-    entities: &[SketchEntity],
-) -> Vec<Vec<SketchEntityUse>> {
-    closed_marker_profiles_with_policy(entities, false)
+pub(super) fn closed_marker_profiles_allowing_shared_endpoints<E: Borrow<SketchEntity>>(
+    ctx: &DecodeContext<'_>,
+    entities: &[E],
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    closed_marker_profiles_with_policy(ctx, entities, false)
 }
 
-fn closed_marker_profiles_with_policy(
-    entities: &[SketchEntity],
+fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
+    ctx: &DecodeContext<'_>,
+    entities: &[E],
     reject_branching_components: bool,
-) -> Vec<Vec<SketchEntityUse>> {
-    let mut profiles = entities
-        .iter()
-        .filter(|entity| {
-            !entity.construction
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                )
-        })
-        .map(|entity| {
-            vec![SketchEntityUse {
-                entity: entity.id().clone(),
-                reversed: false,
-            }]
-        })
-        .collect::<Vec<_>>();
-    let curves = entities
-        .iter()
-        .enumerate()
-        .filter(|(_, entity)| {
-            !entity.construction
-                && entity.endpoint_refs.len() == 2
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
-                )
-        })
-        .collect::<Vec<_>>();
-    let mut incidence = HashMap::<&str, Vec<usize>>::new();
-    for (index, entity) in &curves {
-        for endpoint in &entity.endpoint_refs {
-            incidence.entry(endpoint).or_default().push(*index);
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
+    let mut profiles = Vec::new();
+    let mut curves = Vec::new();
+    for (index, item) in entities.iter().enumerate() {
+        let entity = item.borrow();
+        if !entity.construction
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Circle { .. })
+        {
+            let id_text = ctx.format_retained(
+                format_args!("{}", entity.id().as_str()),
+                "copy SLDPRT closed circle identity",
+            )?;
+            if let Ok(id) = SketchEntityId::mint(id_text) {
+                let mut profile = Vec::new();
+                ctx.reserve_collection_vec(&mut profile, 1, "collect SLDPRT closed circle profile")?;
+                profile.push(SketchEntityUse { entity: id, reversed: false });
+                ctx.reserve_collection_vec(&mut profiles, 1, "collect SLDPRT closed profiles")?;
+                profiles.push(profile);
+            }
+        }
+        if !entity.construction
+            && entity.endpoint_refs.len() == 2
+            && matches!(*entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. })
+        {
+            ctx.reserve_collection_vec(&mut curves, 1, "collect SLDPRT closed curves")?;
+            curves.push(index);
         }
     }
-    let mut unused = curves
-        .iter()
-        .map(|(index, _)| *index)
-        .collect::<HashSet<_>>();
+    let mut incidence = HashMap::<&str, Vec<usize>>::new();
+    for index in &curves {
+        let entity = entities[*index].borrow();
+        for endpoint in &entity.endpoint_refs {
+            if !incidence.contains_key(endpoint.as_str()) {
+                ctx.charge_collection_items(1, "index SLDPRT closed curve endpoints")?;
+                incidence.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT closed curve endpoints", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            let adjacent = incidence.entry(endpoint.as_str()).or_default();
+            ctx.reserve_collection_vec(adjacent, 1, "collect SLDPRT endpoint incidence")?;
+            adjacent.push(*index);
+        }
+    }
+    let mut unused = HashSet::new();
+    for index in &curves {
+        ctx.charge_collection_items(1, "index SLDPRT unused closed curves")?;
+        unused.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT unused closed curves", u64::MAX - 1, u64::MAX)
+        })?;
+        unused.insert(*index);
+    }
     while let Some(&first) = unused.iter().min() {
-        let mut component = HashSet::from([first]);
-        let mut frontier = vec![first];
+        let mut component = HashSet::new();
+        ctx.charge_collection_items(1, "index SLDPRT closed curve component")?;
+        component.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT closed curve component", u64::MAX - 1, u64::MAX)
+        })?;
+        component.insert(first);
+        let mut frontier = Vec::new();
+        ctx.reserve_collection_vec(&mut frontier, 1, "collect SLDPRT closed curve frontier")?;
+        frontier.push(first);
         while let Some(curve) = frontier.pop() {
-            for endpoint in &entities[curve].endpoint_refs {
+            for endpoint in &entities[curve].borrow().endpoint_refs {
                 for adjacent in incidence.get(endpoint.as_str()).into_iter().flatten() {
-                    if component.insert(*adjacent) {
+                    ctx.charge_work(1, "scan SLDPRT closed curve incidence")?;
+                    if !component.contains(adjacent) {
+                        ctx.charge_collection_items(1, "index SLDPRT closed curve component")?;
+                        component.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("index SLDPRT closed curve component", u64::MAX - 1, u64::MAX)
+                        })?;
+                        component.insert(*adjacent);
+                        ctx.reserve_collection_vec(&mut frontier, 1, "collect SLDPRT closed curve frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -1271,7 +1304,7 @@ fn closed_marker_profiles_with_policy(
         }
         if reject_branching_components
             && component.iter().any(|curve| {
-                entities[*curve].endpoint_refs.iter().any(|endpoint| {
+                entities[*curve].borrow().endpoint_refs.iter().any(|endpoint| {
                     incidence
                         .get(endpoint.as_str())
                         .is_none_or(|curves| curves.len() != 2)
@@ -1281,7 +1314,7 @@ fn closed_marker_profiles_with_policy(
             unused.retain(|curve| !component.contains(curve));
             continue;
         }
-        let start = entities[first].endpoint_refs[0].as_str();
+        let start = entities[first].borrow().endpoint_refs[0].as_str();
         let mut current = start;
         let mut curve = first;
         let mut profile = Vec::new();
@@ -1290,7 +1323,7 @@ fn closed_marker_profiles_with_policy(
                 profile.clear();
                 break;
             }
-            let [curve_start, curve_end] = entities[curve].endpoint_refs.as_slice() else {
+            let [curve_start, curve_end] = entities[curve].borrow().endpoint_refs.as_slice() else {
                 profile.clear();
                 break;
             };
@@ -1302,10 +1335,16 @@ fn closed_marker_profiles_with_policy(
                 profile.clear();
                 break;
             };
-            profile.push(SketchEntityUse {
-                entity: entities[curve].id().clone(),
-                reversed,
-            });
+            let id_text = ctx.format_retained(
+                format_args!("{}", entities[curve].borrow().id().as_str()),
+                "copy SLDPRT closed curve identity",
+            )?;
+            let Ok(id) = SketchEntityId::mint(id_text) else {
+                profile.clear();
+                break;
+            };
+            ctx.reserve_collection_vec(&mut profile, 1, "collect SLDPRT closed curve profile")?;
+            profile.push(SketchEntityUse { entity: id, reversed });
             current = next;
             if current == start {
                 break;
@@ -1329,10 +1368,11 @@ fn closed_marker_profiles_with_policy(
             curve = next_curve;
         }
         if profile.len() >= 2 {
+            ctx.reserve_collection_vec(&mut profiles, 1, "collect SLDPRT closed profiles")?;
             profiles.push(profile);
         }
     }
-    profiles
+    Ok(profiles)
 }
 
 pub(super) fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<(Point2, f64)> {

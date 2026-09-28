@@ -868,12 +868,12 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("line".into()))
         .with_endpoint_refs(vec!["p2".into(), "p0".into()]),
     );
-    assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
+    assert_eq!(closed_marker_profiles(&ctx, &entities).unwrap()[0].len(), 3);
     entities
         .last_mut()
         .expect("required invariant")
         .construction = true;
-    assert!(closed_marker_profiles(&entities).is_empty());
+    assert!(closed_marker_profiles(&ctx, &entities).unwrap().is_empty());
     entities.push(
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
@@ -887,7 +887,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
         .with_native_ref(Some("circle".into())),
     );
     assert_eq!(
-        closed_marker_profiles(&entities),
+        closed_marker_profiles(&ctx, &entities).unwrap(),
         vec![vec![SketchEntityUse {
             entity: SketchEntityId::mint("synthetic:test:id#entity-circle").unwrap(),
             reversed: false,
