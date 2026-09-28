@@ -11,6 +11,7 @@ mod edge_index;
 mod face_sources;
 mod header_index;
 mod recipes;
+mod recipe_id_limits;
 mod selection;
 mod work_point;
 

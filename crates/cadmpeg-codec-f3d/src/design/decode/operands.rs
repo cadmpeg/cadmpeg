@@ -25,7 +25,7 @@ use crate::design::decode::sketch::{
     IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
-use crate::ids::{self, native_stream};
+use crate::ids::native_stream;
 use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
@@ -210,6 +210,7 @@ pub(crate) fn decode_edge_operands(
                     .unwrap_or(stream_end)
             });
             let Some(operand) = parse_edge_operand(
+                ctx,
                 bytes,
                 records,
                 scope,
@@ -220,6 +221,7 @@ pub(crate) fn decode_edge_operands(
             ) else {
                 continue;
             };
+            let operand = operand?;
             ctx.charge_collection_items(1, "f3d edge operand output")?;
             out.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("f3d edge operand output allocation", 0, 1)
@@ -310,9 +312,10 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
+            let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, stream, header, recipes) else {
                 continue;
             };
+            let recipe = recipe?;
             let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (
                 u32::try_from(scope_reference_ordinal),
                 u32::try_from(group_member_ordinal),
@@ -443,10 +446,10 @@ pub(crate) fn bind_work_point_input_carriers(
             let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
-            if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
+            if let Some(recipe) = parse_vertex_recipe(ctx, bytes, records, &stream, header, recipes) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                        recipe,
+                        recipe: recipe?,
                     })))
                     .map_err(crate::error::malformed)?;
                 continue;
@@ -629,6 +632,7 @@ pub(crate) fn bind_work_plane_constructions(
         let [Some(first_input), Some(second_input), Some(third_input)] =
             [first, second, third].map(|record_index| {
                 parse_vertex_recipe(
+                    ctx,
                     bytes,
                     records,
                     &stream,
@@ -638,7 +642,7 @@ pub(crate) fn bind_work_plane_constructions(
             }) else {
             continue;
         };
-        let inputs = [first_input, second_input, third_input];
+        let inputs = [first_input?, second_input?, third_input?];
         let placement_record_index = *placement_record_index;
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = Some(
@@ -992,6 +996,7 @@ pub(crate) fn decode_face_operands(
                         .map(|header| header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
+                ctx,
                 bytes,
                 records,
                 scope,
@@ -1005,7 +1010,7 @@ pub(crate) fn decode_face_operands(
                 out.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("f3d face operand output allocation", 0, 1)
                 })?;
-                out.push(operand);
+                out.push(operand?);
             }
         }
     }
@@ -1082,6 +1087,7 @@ pub(crate) fn decode_face_operands(
                 None
             };
             if let Some(operand) = parse_face_operand(
+                ctx,
                 bytes,
                 records,
                 scope,
@@ -1095,7 +1101,7 @@ pub(crate) fn decode_face_operands(
                 out.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("f3d face operand output allocation", 0, 1)
                 })?;
-                out.push(operand);
+                out.push(operand?);
             }
         }
     }
@@ -5189,13 +5195,15 @@ enum RecipeOperandTerminator {
 
 /// Parse one exact persistent vertex-recipe envelope.
 fn parse_vertex_recipe(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignVertexRecipe> {
+) -> Option<Result<DesignVertexRecipe, CodecError>> {
     let parsed = parse_recipe_operand(
+        ctx,
         bytes,
         records,
         stream,
@@ -5204,6 +5212,10 @@ fn parse_vertex_recipe(
         ConstructionRecipeKind::Vertex,
         RecipeOperandTerminator::RecordDelta(5),
     )?;
+    let parsed = match parsed {
+        Ok(parsed) => parsed,
+        Err(error) => return Some(Err(error)),
+    };
     DesignVertexRecipe::try_new(
         crate::records::feature::work_geometry::DesignVertexRecipeDraft {
             record_index: header.record_index,
@@ -5225,10 +5237,12 @@ fn parse_vertex_recipe(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 /// Parse the indexed-record envelope shared by topology recipe operands.
 fn parse_recipe_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     stream: &str,
@@ -5236,7 +5250,7 @@ fn parse_recipe_operand(
     recipes: &[ConstructionRecipe],
     recipe_kind: ConstructionRecipeKind,
     terminator: RecipeOperandTerminator,
-) -> Option<ParsedRecipeOperand> {
+) -> Option<Result<ParsedRecipeOperand, CodecError>> {
     let family_name = crate::design::RECIPES
         .iter()
         .find_map(|(name, kind)| (*kind == recipe_kind).then_some(*name))?;
@@ -5328,12 +5342,16 @@ fn parse_recipe_operand(
         return None;
     }
     let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
-    Some(ParsedRecipeOperand {
+    let recipe_id = match copy_ascii_retained(ctx, &recipe.id, "f3d recipe operand recipe ID") {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(ParsedRecipeOperand {
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
         recipe_record_index,
         recipe_record_byte_offset,
-        recipe_id: recipe.id.clone(),
+        recipe_id,
         recipe_prefix_offset,
         recipe_prefix_bytes,
         recipe_references,
@@ -5341,10 +5359,11 @@ fn parse_recipe_operand(
         recipe_program,
         next_record_index,
         next_byte_offset,
-    })
+    }))
 }
 
 fn parse_edge_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -5352,10 +5371,11 @@ fn parse_edge_operand(
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
     terminal_group_limit: Option<u64>,
-) -> Option<DesignEdgeOperand> {
+) -> Option<Result<DesignEdgeOperand, CodecError>> {
     let next_record_delta = edge_recipe_terminal_delta(&scope.kind());
     let stream = native_stream(&scope.id)?;
     let parsed = parse_recipe_operand(
+        ctx,
         bytes,
         records,
         stream,
@@ -5367,6 +5387,7 @@ fn parse_edge_operand(
     .or_else(|| {
         let limit = terminal_group_limit?;
         parse_recipe_operand(
+            ctx,
             bytes,
             records,
             stream,
@@ -5376,6 +5397,10 @@ fn parse_edge_operand(
             RecipeOperandTerminator::NextIndexedAfterRecipe { limit },
         )
     })?;
+    let parsed = match parsed {
+        Ok(parsed) => parsed,
+        Err(error) => return Some(Err(error)),
+    };
     let recipe_structure = edge_recipe_structure(&parsed.recipe_program);
     let surface_patch_recipe_structure = (scope.kind()
         == crate::records::feature::scope::DesignFeatureKind::SurfacePatch)
@@ -5386,12 +5411,17 @@ fn parse_edge_operand(
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
         edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
     });
+    let id = match design_record_id_charged(
+        ctx, stream.strip_prefix(crate::ids::SCHEME_PREFIX).unwrap_or(stream),
+        ":design-edge-operand#", header.byte_offset,
+        "f3d edge operand ID", "f3d edge operand ID allocation",
+    ) {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
     DesignEdgeOperand::try_new(
         crate::records::topology::edge_identity::DesignEdgeOperandDraft {
-            id: ids::native_design_edge_operand_id(
-                stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
-                header.byte_offset,
-            ),
+            id,
             scope_record_index: scope.record_index,
             scope_reference_ordinal,
             record_index: header.record_index,
@@ -5435,6 +5465,7 @@ fn parse_edge_operand(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 pub(crate) fn edge_recipe_structure(
@@ -5857,6 +5888,7 @@ fn face_recipe_next_boundary(
 // structural gain.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_face_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
@@ -5865,7 +5897,7 @@ pub(super) fn parse_face_operand(
     next_byte_offset: Option<u64>,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
-) -> Option<DesignFaceOperand> {
+) -> Option<Result<DesignFaceOperand, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
@@ -5969,11 +6001,20 @@ pub(super) fn parse_face_operand(
             })
         })
         .collect::<Option<Vec<_>>>()?;
+    let recipe_id = match copy_ascii_retained(ctx, &recipe.id, "f3d face operand recipe ID") {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
+    let id = match design_record_id_charged(
+        ctx, stream.strip_prefix(crate::ids::SCHEME_PREFIX).unwrap_or(stream),
+        ":design-face-operand#", header.byte_offset,
+        "f3d face operand ID", "f3d face operand ID allocation",
+    ) {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
     DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
-        id: ids::native_design_face_operand_id(
-            stream.strip_prefix(ids::SCHEME_PREFIX).unwrap_or(stream),
-            header.byte_offset,
-        ),
+        id,
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
         group: group_ownership.map(|(group_record_index, group_member_ordinal)| {
@@ -5989,7 +6030,7 @@ pub(super) fn parse_face_operand(
         paired_class_tag: crate::design::decode::text::class_tag_from_view(indexed[0].0).ok()?,
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
-        recipe_id: recipe.id.clone(),
+        recipe_id,
         recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
         recipe_prefix_bytes,
         recipe_references,
@@ -6009,6 +6050,7 @@ pub(super) fn parse_face_operand(
         next_byte_offset,
     })
     .ok()
+    .map(Ok)
 }
 
 pub(in crate::design) fn has_typed_edge_treatment_group(

@@ -459,6 +459,7 @@ fn exact_coil_face_selection(
         record_index: selection_record_index,
     };
     let face = parse_face_operand(
+        ctx,
         bytes,
         records,
         scope,
@@ -468,6 +469,10 @@ fn exact_coil_face_selection(
         &header,
         recipes,
     )?;
+    let face = match face {
+        Ok(face) => face,
+        Err(error) => return Some(Err(error)),
+    };
     if face.next_byte_offset() != u64::try_from(transform_start).ok()? {
         return None;
     }

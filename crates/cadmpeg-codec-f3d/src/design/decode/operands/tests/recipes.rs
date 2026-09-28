@@ -2,9 +2,6 @@
 use crate::design::decode::operands::bind_edge_operand_candidates;
 use crate::design::decode::operands::bind_face_operand_candidates;
 use crate::design::decode::operands::face_recipe_program_kind;
-use crate::design::decode::operands::parse_edge_operand;
-use crate::design::decode::operands::parse_face_operand;
-use crate::design::decode::operands::parse_vertex_recipe;
 use crate::design::decode::operands::FaceRecipeProgramKind;
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::face_resolve::resolved_face_group;
@@ -28,6 +25,59 @@ use crate::test_support::indexed_header;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::ids::FaceId;
+
+fn parse_edge_operand(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    ordinal: u32,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+    terminal_group_limit: Option<u64>,
+) -> Option<crate::records::topology::edge_identity::DesignEdgeOperand> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_edge_operand(
+        &ctx, bytes, records, scope, ordinal, header, recipes, terminal_group_limit,
+    ).map(|result| result.expect("recipe allocation admitted"))
+}
+
+fn parse_face_operand(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    ordinal: u32,
+    group_ownership: Option<(u32, u32)>,
+    next_byte_offset: Option<u64>,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<crate::records::topology::face::DesignFaceOperand> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_face_operand(
+        &ctx, bytes, records, scope, ordinal, group_ownership, next_byte_offset, header, recipes,
+    ).map(|result| result.expect("recipe allocation admitted"))
+}
+
+fn parse_vertex_recipe(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    stream: &str,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<crate::records::feature::work_geometry::DesignVertexRecipe> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    crate::design::decode::operands::parse_vertex_recipe(
+        &ctx, bytes, records, stream, header, recipes,
+    ).map(|result| result.expect("recipe allocation admitted"))
+}
 
 #[test]
 fn operand_recipe_index_refuses_collection_limit() {
