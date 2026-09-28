@@ -476,13 +476,14 @@ pub(crate) fn bind_extrude_profile_selections(
             let scoped_resolution = resolution.scoped(scoped_histories);
             let effective_previous_history_state_id =
                 crate::history::effective_scope_previous_history_state_id(scope, scoped_histories);
-            let mut matching_groups = groups
-                .iter()
-                .filter(|group| {
+            let mut matching_groups = Vec::new();
+            for group in groups.iter().filter(|group| {
                     native_stream(&group.id) == native_stream(&scope.id)
                         && group.scope_record_index == scope.record_index
-                })
-                .collect::<Vec<_>>();
+                }) {
+                push_profile_item(resolution.ctx, &mut matching_groups, group,
+                    "f3d extrude matching selection group")?;
+            }
             matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
             let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) =
                 definition
@@ -523,15 +524,17 @@ pub(crate) fn bind_extrude_profile_selections(
                 if matching_groups.is_empty() {
                     break 'feature_edit;
                 }
-                let spatial_id = sketch_id.as_str().replacen(
-                    "f3d:model:sketch#",
-                    "f3d:model:spatial-sketch#",
-                    1,
-                );
+                let spatial_id_parts = sketch_id.as_str().split_once("f3d:model:sketch#");
                 if let Some(spatial_sketch) = resolution
                     .spatial_sketches
                     .iter()
-                    .find(|candidate| candidate.id.as_str() == spatial_id)
+                    .find(|candidate| match spatial_id_parts {
+                        Some((before, after)) => candidate.id.as_str()
+                            .strip_prefix(before)
+                            .and_then(|rest| rest.strip_prefix("f3d:model:spatial-sketch#"))
+                            == Some(after),
+                        None => candidate.id.as_str() == sketch_id.as_str(),
+                    })
                 {
                     let mut selections = Vec::new();
                     for group in &matching_groups {
@@ -548,41 +551,49 @@ pub(crate) fn bind_extrude_profile_selections(
                             "f3d spatial profile selection")?;
                     }
                     let mut indices = Vec::new();
-                    if selections.iter().all(|selection| {
-                        if let Some(index) = selection {
-                            if !indices.contains(index) {
-                                indices.push(*index);
-                            }
-                            true
-                        } else {
-                            false
+                    let mut all_resolved = true;
+                    for selection in &selections {
+                        let Some(index) = selection else { all_resolved = false; break; };
+                        if !indices.contains(index) {
+                            push_profile_item(resolution.ctx, &mut indices, *index,
+                                "f3d spatial extrude profile index")?;
                         }
-                    }) {
-                        *profile =
-                            ProfileRef::spatial_sketch_profiles(spatial_sketch.id.clone(), indices)
-                                .unwrap_or_else(|_| {
-                                    ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
-                                });
+                    }
+                    if all_resolved {
+                        let sketch_id = copy_profile_spatial_sketch_id(&spatial_sketch.id,
+                            resolution.ctx)?;
+                        *profile = match ProfileRef::spatial_sketch_profiles(sketch_id, indices) {
+                            Ok(profile) => profile,
+                            Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                                copy_profile_text(resolution.ctx, &scope.id,
+                                    "f3d spatial extrude fallback scope id")?)),
+                        };
                     } else {
-                        *profile = ProfileRef::spatial_sketch_selection(
-                            spatial_sketch.id.clone(),
-                            matching_groups
-                                .iter()
-                                .map(|group| group.id.clone())
-                                .collect(),
-                        )
-                        .unwrap_or_else(|_| {
-                            ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
-                        });
+                        let mut group_ids = Vec::new();
+                        for group in &matching_groups {
+                            let id = copy_profile_text(resolution.ctx, &group.id,
+                                "f3d spatial extrude selection group id")?;
+                            push_profile_item(resolution.ctx, &mut group_ids, id,
+                                "f3d spatial extrude selection group")?;
+                        }
+                        let sketch_id = copy_profile_spatial_sketch_id(&spatial_sketch.id,
+                            resolution.ctx)?;
+                        *profile = match ProfileRef::spatial_sketch_selection(sketch_id, group_ids) {
+                            Ok(profile) => profile,
+                            Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                                copy_profile_text(resolution.ctx, &scope.id,
+                                    "f3d spatial extrude fallback scope id")?)),
+                        };
                     }
                     break 'feature_edit;
                 }
+                let id = match matching_groups.as_slice() {
+                    [group] => &group.id,
+                    _ => &scope.id,
+                };
                 *profile = ProfileRef::Planar(PlanarProfileRef::Native(
-                    match matching_groups.as_slice() {
-                        [group] => group.id.clone(),
-                        _ => scope.id.clone(),
-                    },
-                ));
+                    copy_profile_text(resolution.ctx, id,
+                        "f3d extrude unresolved selection id")?));
                 break 'feature_edit;
             };
             if let (Some(profile_operand), Some(stream)) =
@@ -596,20 +607,21 @@ pub(crate) fn bind_extrude_profile_selections(
                     curve_resolution.sketch_entities,
                     resolution.ctx,
                 )? {
-                    *profile = ProfileRef::Planar(
-                        PlanarProfileRef::sketch_profiles(sketch_id.clone(), profiles)
-                            .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
-                    );
+                    let sketch_id = copy_profile_sketch_id(sketch_id, resolution.ctx)?;
+                    *profile = ProfileRef::Planar(match PlanarProfileRef::sketch_profiles(sketch_id, profiles) {
+                        Ok(profile) => profile,
+                        Err(_) => PlanarProfileRef::Native(copy_profile_text(resolution.ctx,
+                            &scope.id, "f3d extrude profile fallback scope id")?),
+                    });
                     break 'feature_edit;
                 }
             }
             if matching_groups.is_empty() {
                 break 'feature_edit;
             }
-            let selections = matching_groups
-                .iter()
-                .map(|group| {
-                    resolved_extrude_profile_selection(
+            let mut selections = Vec::new();
+            for group in &matching_groups {
+                let selection = resolved_extrude_profile_selection(
                         sketch_id,
                         group,
                         members,
@@ -617,22 +629,29 @@ pub(crate) fn bind_extrude_profile_selections(
                         scoped_resolution,
                         scope.history_state_id(),
                         effective_previous_history_state_id,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            *profile =
-                merge_resolved_profile_selections(sketch_id, &selections, resolution.ctx)?.unwrap_or_else(|| {
-                    ProfileRef::Planar(
-                        PlanarProfileRef::sketch_selection(
-                            sketch_id.clone(),
-                            matching_groups
-                                .iter()
-                                .map(|group| group.id.clone())
-                                .collect(),
-                        )
-                        .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
-                    )
-                });
+                    )?;
+                push_profile_item(resolution.ctx, &mut selections, selection,
+                    "f3d extrude resolved selection")?;
+            }
+            *profile = if let Some(merged) =
+                merge_resolved_profile_selections(sketch_id, &selections, resolution.ctx)? {
+                merged
+            } else {
+                let mut group_ids = Vec::new();
+                for group in &matching_groups {
+                    let id = copy_profile_text(resolution.ctx, &group.id,
+                        "f3d extrude fallback group id")?;
+                    push_profile_item(resolution.ctx, &mut group_ids, id,
+                        "f3d extrude fallback group")?;
+                }
+                let sketch_id = copy_profile_sketch_id(sketch_id, resolution.ctx)?;
+                let fallback = match PlanarProfileRef::sketch_selection(sketch_id, group_ids) {
+                    Ok(profile) => profile,
+                    Err(_) => PlanarProfileRef::Native(copy_profile_text(resolution.ctx,
+                        &scope.id, "f3d extrude fallback scope id")?),
+                };
+                ProfileRef::Planar(fallback)
+            };
         }
         Ok(())
         })();
