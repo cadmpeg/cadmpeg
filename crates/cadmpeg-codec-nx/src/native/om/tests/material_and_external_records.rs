@@ -280,6 +280,76 @@ fn native_external_record_route_refuses_retained_limit() {
         if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
 }
 
+fn native_external_indexed_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceIndexedRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let decoded = crate::test_support::with_decode_context(|ctx| {
+        super::super::external_reference_records(ctx, &container)
+    })
+    .expect("handle-set record");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_indexed_records(&ctx, &container, &decoded)
+}
+
+#[test]
+fn native_external_indexed_route_preserves_record_links() {
+    let records = native_external_indexed_result(|_| {}).expect("native indexed records");
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].record_id, 7);
+    assert_eq!(records[1].record_id, 6);
+    assert!(records[0].handle_set_record.is_none());
+    assert_eq!(
+        records[1].handle_set_record.as_deref(),
+        Some("nx:external-reference-record:/Root/ExternalReferences#6")
+    );
+}
+
+#[test]
+fn native_external_indexed_route_refuses_collection_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_collection_items = 9)
+        .expect_err("native indexed record exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference indexed records"), "{error:?}");
+}
+
+#[test]
+fn native_external_indexed_route_refuses_retained_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("indexed record exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+}
+
+#[test]
+fn native_external_indexed_route_refuses_scoped_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("decoded index exceeds scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference decoded index"), "{error:?}");
+}
+
+#[test]
+fn native_external_indexed_route_refuses_work_limit() {
+    let error = native_external_indexed_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("indexed scan exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
