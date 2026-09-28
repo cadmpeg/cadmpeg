@@ -3997,7 +3997,7 @@ fn retained_om_index_id(
     prefix: &'static str,
     section_ordinal: usize,
     marker: &'static str,
-    ordinal: u32,
+    ordinal: u64,
     operation: &'static str,
 ) -> Result<String, CodecError> {
     use std::fmt::Write;
@@ -4064,7 +4064,7 @@ pub(super) fn data_block_control_values(
                 .and_then(|offset| offset.checked_add(u64::from(ordinal).checked_mul(4)?))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX data block control value source offset", 0, 1))?;
             let id = retained_om_index_id(
-                ctx, "nx:om-data-block-control-values-", section_ordinal, ":value#", ordinal,
+                ctx, "nx:om-data-block-control-values-", section_ordinal, ":value#", u64::from(ordinal),
                 "retain NX control value id",
             )?;
             let block_reference = copy_om_retained_text(
@@ -4210,7 +4210,7 @@ pub(super) fn data_block_control_index_values(
                 .and_then(|offset| offset.checked_add(u64::from(ordinal).checked_mul(4)?))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX control index value source offset", 0, 1))?;
             let id = retained_om_index_id(
-                ctx, "nx:om-data-block-control-index-values-", section_ordinal, ":value#", ordinal,
+                ctx, "nx:om-data-block-control-index-values-", section_ordinal, ":value#", u64::from(ordinal),
                 "retain NX control index value id",
             )?;
             let block_reference = copy_om_retained_text(
@@ -4218,7 +4218,7 @@ pub(super) fn data_block_control_index_values(
             )?;
             let target_data_block = if usize::try_from(value).ok().is_some_and(|target| target < block_count) {
                 Some(retained_om_index_id(
-                    ctx, "nx:om-data-blocks-", section_ordinal, ":block#", value,
+                    ctx, "nx:om-data-blocks-", section_ordinal, ":block#", u64::from(value),
                     "retain NX control index value target block",
                 )?)
             } else {
@@ -4290,20 +4290,42 @@ pub(super) fn data_block_control_references(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+        let data_block = scoped_om_index_id(
+            ctx, "nx:om-data-blocks-", section_ordinal, ":block#", 0,
+            "NX control reference block id",
+        )?;
         for (ordinal, reference) in crate::om::references(ctx, control.bytes, control.offset)?
             .into_iter()
             .enumerate()
         {
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX control reference ordinal", 0, 1))?;
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX control reference source offset", 0, 1))?;
+            let id = retained_om_index_id(
+                ctx, "nx:om-data-block-control-references-", section_ordinal, ":reference#",
+                cadmpeg_core::decode::u64_from_index(reference.offset),
+                "retain NX control reference id",
+            )?;
+            let block_reference = copy_om_retained_text(
+                ctx, &data_block.id, "retain NX control reference block reference",
+            )?;
+            ctx.charge_entities(1, "NX data block control reference")?;
+            ctx.charge_collection_items(1, "NX data block control references")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlReference>()),
+                "retain NX data block control reference",
+            )?;
+            output.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX data block control references", 0, 1)
+            })?;
             output.push(DataBlockControlReference {
-                id: format!(
-                    "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
-                    reference.offset
-                ),
-                data_block: data_block.clone(),
-                ordinal: ordinal as u32,
+                id,
+                data_block: block_reference,
+                ordinal,
                 reference: reference.value,
-                source_offset: entry_offset + reference.offset as u64,
+                source_offset,
             });
         }
     }
@@ -6225,6 +6247,69 @@ mod tests {
             Some("nx:om-data-blocks-2:block#496")
         );
         assert!(super::control_index_data_block(2, 700, 700).is_none());
+    }
+
+    fn control_reference_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let control = [0xe0, 0, 0, 0, 1, 0xc0, 0, 0, 1];
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            offset_only_indexed_om_section_with_control(&control),
+        )]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, file.as_slice())
+        }).expect("control reference fixture");
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+            .expect("cached control reference section");
+        let references = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_references(ctx, &container)
+        }).expect("control reference projection");
+        assert_eq!(references.len(), 2);
+        assert!(references[0].id.starts_with("nx:om-data-block-control-references-0:reference#"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::data_block_control_references(&ctx, &container).unwrap_err()
+    }
+
+    #[test]
+    fn data_block_control_reference_route_refuses_collection_limit() {
+        let error = control_reference_route_refusal(|policy| policy.limits.max_collection_items = 3);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "NX data block control references"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_reference_route_refuses_retained_limit() {
+        let error = control_reference_route_refusal(|policy| {
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)>()
+                    + 2 * std::mem::size_of::<crate::om::reference_value::LocatedReference<crate::om::reference_value::DirectReference>>(),
+            );
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX control reference id"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_reference_route_refuses_scoped_limit() {
+        let error = control_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "NX control reference block id"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_reference_route_refuses_work_limit() {
+        let error = control_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "NX control reference block id"), "{error:?}");
     }
 
     fn control_value_route_refusal(
