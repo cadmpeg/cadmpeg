@@ -954,19 +954,9 @@ native_record_id!(
     "sketch-relation"
 );
 native_record_id!(
-    /// The native sketch-point record key.
-    native_sketch_point_id,
-    "sketch-point"
-);
-native_record_id!(
     /// The native sketch-text record key.
     native_sketch_text_id,
     "sketch-text"
-);
-native_record_id!(
-    /// The native sketch-curve-identity record key.
-    native_sketch_curve_identity_id,
-    "sketch-curve-identity"
 );
 native_record_id!(
     /// The native sketch-surface record key.
