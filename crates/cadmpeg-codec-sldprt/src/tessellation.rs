@@ -2022,10 +2022,10 @@ fn cylindrical_trim(
     if radius <= EPS_DISPLAY_QUANTIZATION {
         return None;
     }
-    let face_loops = face.loops.to_vec();
-    let [loop_id] = face_loops.as_slice() else {
+    if face.loops.len() != 1 {
         return None;
-    };
+    }
+    let loop_id = face.loops.iter().next()?;
     let loop_ = *loops.get(loop_id)?;
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
@@ -2057,8 +2057,8 @@ fn cylindrical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [edge.start.clone(), edge.end.clone()] {
-            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+        for vertex_id in [&edge.start, &edge.end] {
+            let point = *points.get(&vertices.get(vertex_id)?.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
@@ -2079,10 +2079,10 @@ fn cylindrical_trim(
         .map(|coedge_id| {
             let coedge = coedges.get(coedge_id)?;
             let edge = edges.get(&coedge.edge)?;
-            [edge.start.clone(), edge.end.clone()]
+            [&edge.start, &edge.end]
                 .into_iter()
                 .map(|vertex_id| {
-                    let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+                    let point = *points.get(&vertices.get(vertex_id)?.point)?;
                     cylinder_angle(point, origin, &frame)
                 })
                 .collect::<Option<Vec<_>>>()
@@ -2127,10 +2127,10 @@ fn conical_trim(
     if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
         return None;
     }
-    let face_loops = face.loops.to_vec();
-    let [loop_id] = face_loops.as_slice() else {
+    if face.loops.len() != 1 {
         return None;
-    };
+    }
+    let loop_id = face.loops.iter().next()?;
     let loop_ = *loops.get(loop_id)?;
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
         return None;
@@ -2218,8 +2218,8 @@ fn conical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [edge.start.clone(), edge.end.clone()] {
-            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+        for vertex_id in [&edge.start, &edge.end] {
+            let point = *points.get(&vertices.get(vertex_id)?.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
                 return None;
             }
