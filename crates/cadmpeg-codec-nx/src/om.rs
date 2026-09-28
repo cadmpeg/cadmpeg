@@ -2804,7 +2804,7 @@ fn operation_state_group_table_before_counter_map(
     reserve_group_vec(ctx, &mut groups, path.len(), "nx operation-state groups")?;
     for candidate in path {
         let Some(group) =
-            operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
+            operation_state_group_at(ctx, bytes, candidates[candidate].0, map_start, base_offset)?
         else {
             return Ok(None);
         };
@@ -2849,6 +2849,10 @@ fn operation_state_group_table(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroupTable> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("test group input is admitted");
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -2856,7 +2860,8 @@ fn operation_state_group_table(
     let mut at = start;
     let mut trailing_start = end;
     while at < end {
-        let Some(group) = operation_state_group_at(bytes, at, end, base_offset) else {
+        let Some(group) = operation_state_group_at(&ctx, bytes, at, end, base_offset)
+            .expect("test group allocation is admitted") else {
             if bytes.get(at..end) == Some(&[0x01, 0x01]) {
                 trailing_start = at;
                 at = end;
