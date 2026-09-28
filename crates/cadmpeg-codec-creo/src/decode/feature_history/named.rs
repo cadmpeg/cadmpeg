@@ -9,7 +9,7 @@ use super::draft::{
     thicken_feature_definition,
 };
 use super::knit::{filled_surface_feature_definition, knit_surface_feature_definition};
-use super::outputs::{feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid};
+use super::outputs::{decoded_feature_reference_name, feature_reference_name, insert_feature_source_property, sweep_output_kind, sweep_solid};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
@@ -202,11 +202,14 @@ pub(in super::super) fn named_or_referenced_feature_definition(
     {
         return Ok(None);
     }
-    let Some(reference_name) =
-        feature_reference_name(scan, feature_id).filter(|reference_name| *reference_name != kind)
+    let Some(reference_name) = feature_reference_name(scan, feature_id)
     else {
         return Ok(None);
     };
+    let reference_name = decoded_feature_reference_name(ctx, reference_name)?;
+    if reference_name == kind {
+        return Ok(None);
+    }
     named_feature_definition(ctx, scan, ir, source_carriers, feature_id, &reference_name)
 }
 

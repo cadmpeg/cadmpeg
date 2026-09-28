@@ -2038,7 +2038,9 @@ fn feature_row_has_model_identity(
                         })))
         })
         || reference_names.iter().any(|reference| {
-            let name = reference.name();
+            let Some(name) = std::str::from_utf8(&reference.name_bytes).ok() else {
+                return false;
+            };
             let numbered_family = |family: &str| {
                 [" id ", " ID "].into_iter().any(|separator| {
                     name.strip_prefix(family)
@@ -2047,7 +2049,7 @@ fn feature_row_has_model_identity(
                         == Some(reference.feature_id)
                 })
             };
-            let named_datum = matches!(name.as_ref(), "Datum Plane" | "Bezugsebene")
+            let named_datum = matches!(name, "Datum Plane" | "Bezugsebene")
                 || numbered_family("Datum Plane")
                 || numbered_family("Bezugsebene")
                 || name.strip_prefix("DTM").is_some_and(|ordinal| {
