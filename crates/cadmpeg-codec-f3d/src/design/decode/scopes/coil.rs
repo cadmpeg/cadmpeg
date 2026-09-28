@@ -86,11 +86,13 @@ pub(super) fn exact_coil_placement(
     }
     let selection_record_index = *scope.reference_members().values().next()?;
     let transform_record_index = *scope.reference_members().values().nth(1)?;
-    let selection_frames = records.frames(selection_record_index).collect::<Vec<_>>();
-    let [(selection_start, _)] = selection_frames.as_slice() else {
+    let mut selection_frames = records.frames(selection_record_index);
+    let Some((selection_start, _)) = selection_frames.next() else {
         return None;
     };
-    let selection_start = *selection_start;
+    if selection_frames.next().is_some() {
+        return None;
+    }
     let (selection_class_tag, selection_after_tag) =
         lp_ascii_filtered(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
     if selection_after_tag != selection_start.checked_add(7)?
@@ -98,12 +100,13 @@ pub(super) fn exact_coil_placement(
     {
         return None;
     }
-    let transform_frames = records.frames(transform_record_index).collect::<Vec<_>>();
-    let [(transform_start, transform_paired)] = transform_frames.as_slice() else {
+    let mut transform_frames = records.frames(transform_record_index);
+    let Some((transform_start, transform_paired)) = transform_frames.next() else {
         return None;
     };
-    let transform_start = *transform_start;
-    let transform_paired = *transform_paired;
+    if transform_frames.next().is_some() {
+        return None;
+    }
     let (transform_class_tag, transform_after_tag) =
         lp_ascii_filtered(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
     if transform_after_tag != transform_start.checked_add(7)?
@@ -687,7 +690,7 @@ pub(super) fn bind_coil_extent_from_parameters(
     let Some(stream) = native_stream(&scope.id) else {
         return;
     };
-    let mut owned_kinds = parameter_owners
+    let owned_kinds = parameter_owners
         .iter()
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
@@ -701,14 +704,22 @@ pub(super) fn bind_coil_extent_from_parameters(
                         && parameter.record_index == owner.parameter_record_index()
                 })
                 .map(|parameter| (owner.local_ordinal(), parameter.source_kind()))
-        })
-        .collect::<Vec<_>>();
-    owned_kinds.sort_unstable_by_key(|(ordinal, _)| *ordinal);
-    let owned_kinds = owned_kinds
-        .into_iter()
-        .map(|(_, source_kind)| source_kind)
-        .collect::<Vec<_>>();
-    let extent = match owned_kinds.as_slice() {
+        });
+    let mut sorted = [(0, ""); 5];
+    let mut count = 0usize;
+    for kind in owned_kinds {
+        if count == sorted.len() {
+            return;
+        }
+        sorted[count] = kind;
+        count += 1;
+    }
+    sorted[..count].sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    let mut kinds = [""; 5];
+    for (index, (_, source_kind)) in sorted[..count].iter().enumerate() {
+        kinds[index] = source_kind;
+    }
+    let extent = match &kinds[..count] {
         ["Diameter", "SectionSize", "TaperAngle", "Revolutions", "Height"]
         | ["Diameter", "SectionSize", "TaperAngle", "Height", "Revolutions"] => {
             Some(DesignCoilExtent::RevolutionsHeight)
