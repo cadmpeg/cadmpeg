@@ -4930,37 +4930,40 @@ fn nurbs_boundary_pcurve(
         return Ok(InverseResolution::NoMatch);
     }
     let tolerance = inverse_coordinate_tolerance(
-        surface
-            .poles()
-            .into_iter()
-            .chain(curve.control_points())
+        (0..surface.u_count())
+            .flat_map(|u| (0..surface.v_count()).filter_map(move |v| surface.pole(u, v)))
+            .chain((0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)))
             .map(FinitePoint3::get),
     );
     let same_curve = |candidate: &cadmpeg_ir::geometry::nurbs::NurbsCurve| {
         candidate.degree() == curve.degree()
             && candidate.knots() == curve.knots()
             && candidate.periodic() == curve.periodic()
-            && candidate.control_points().len() == curve.control_points().len()
-            && candidate
-                .control_points()
-                .iter()
-                .zip(curve.control_points())
-                .all(|(candidate, actual)| {
+            && candidate.pole_count() == curve.pole_count()
+            && (0..curve.pole_count()).all(|index| {
+                let (Some(candidate), Some(actual)) = (
+                    candidate.pole_rows().point_at(index),
+                    curve.pole_rows().point_at(index),
+                ) else {
+                    return false;
+                };
                     (candidate.x - actual.x).powi(2)
                         + (candidate.y - actual.y).powi(2)
                         + (candidate.z - actual.z).powi(2)
                         <= tolerance * tolerance
                 })
-            && match (candidate.weights(), curve.weights()) {
-                (None, None) => true,
-                (Some(candidate), Some(actual)) => {
-                    candidate.len() == actual.len()
-                        && candidate.iter().zip(actual).all(|(candidate, actual)| {
-                            (candidate.get() - actual.get()).abs() <= EPS_NURBS_WEIGHT
-                        })
+            && (0..curve.pole_count()).all(|index| {
+                match (
+                    candidate.pole_rows().weight_at(index),
+                    curve.pole_rows().weight_at(index),
+                ) {
+                    (None, None) => true,
+                    (Some(candidate), Some(actual)) => {
+                        (candidate - actual).abs() <= EPS_NURBS_WEIGHT
+                    }
+                    _ => false,
                 }
-                _ => false,
-            }
+            })
     };
     let mut fixed = None;
     for parameter in [fixed_min, fixed_max]
@@ -5041,7 +5044,7 @@ fn nurbs_strict_isocurve_pcurve(
         if curve.degree() != varying_degree
             || curve.knots() != varying_knots
             || curve.periodic() != varying_periodic
-            || curve.control_points().len() != varying_count
+            || curve.pole_count() != varying_count
         {
             return Ok(InverseResolution::NoMatch);
         }
@@ -5060,36 +5063,36 @@ fn nurbs_strict_isocurve_pcurve(
             SurfaceParameterAxis::U => (varying, vc + varying),
             SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
         };
-        let surface_weights = surface.pole_weights();
-        let expected_weights = surface_weights.as_ref().map(|weights| {
-            (0..varying_count)
-                .map(|varying| weights[pole_indices(varying).0])
-                .collect::<Vec<_>>()
-        });
-        if surface_weights.as_ref().is_some_and(|weights| {
-            (0..varying_count).any(|varying| {
-                let (a, b) = pole_indices(varying);
-                (weights[a].get() - weights[b].get()).abs() > EPS_NURBS_WEIGHT
-            })
-        }) || match (curve.weights(), expected_weights.as_deref()) {
-            (None, None) => false,
-            (Some(actual), Some(expected)) => {
-                actual.len() != expected.len()
-                    || actual.iter().zip(expected).any(|(actual, expected)| {
-                        (actual.get() - expected.get()).abs() > EPS_NURBS_WEIGHT
-                    })
+        let weight_mismatch = (0..varying_count).any(|varying| {
+            let (a, b) = pole_indices(varying);
+            match (
+                surface.weight(a / vc, a % vc),
+                surface.weight(b / vc, b % vc),
+                curve.pole_rows().weight_at(varying),
+            ) {
+                (None, None, None) => false,
+                (Some(a), Some(b), Some(actual)) => {
+                    (a.get() - b.get()).abs() > EPS_NURBS_WEIGHT
+                        || (a.get() - actual).abs() > EPS_NURBS_WEIGHT
+                }
+                _ => true,
             }
-            _ => true,
-        } {
+        });
+        if weight_mismatch {
             return Ok(InverseResolution::NoMatch);
         }
-        let surface_poles = surface.poles().into_iter().collect::<Vec<_>>();
+        let pole_at = |index: usize| surface.pole(index / vc, index % vc);
         let mut delta_squared = 0.0;
         let mut relative_dot_delta = 0.0;
-        for (varying, point) in curve.control_points().iter().enumerate() {
+        for varying in 0..varying_count {
             let (a_index, b_index) = pole_indices(varying);
-            let a = surface_poles[a_index];
-            let b = surface_poles[b_index];
+            let (Some(a), Some(b), Some(point)) = (
+                pole_at(a_index),
+                pole_at(b_index),
+                curve.pole_rows().point_at(varying),
+            ) else {
+                return Ok(InverseResolution::NoMatch);
+            };
             let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
             let relative = [point.x - a.x, point.y - a.y, point.z - a.z];
             delta_squared += delta.iter().map(|value| value * value).sum::<f64>();
@@ -5100,16 +5103,19 @@ fn nurbs_strict_isocurve_pcurve(
                 .sum::<f64>();
         }
         let tolerance = inverse_coordinate_tolerance(
-            surface
-                .poles()
-                .into_iter()
-                .chain(curve.control_points())
+            (0..surface.u_count())
+                .flat_map(|u| (0..surface.v_count()).filter_map(move |v| surface.pole(u, v)))
+                .chain((0..curve.pole_count()).filter_map(|index| curve.pole_rows().point_at(index)))
                 .map(FinitePoint3::get),
         );
         if delta_squared <= f64::EPSILON {
             let all_equal = (0..varying_count).all(|varying| {
-                let a = surface_poles[pole_indices(varying).0];
-                let point = curve.control_points()[varying];
+                let (Some(a), Some(point)) = (
+                    pole_at(pole_indices(varying).0),
+                    curve.pole_rows().point_at(varying),
+                ) else {
+                    return false;
+                };
                 (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
                     <= tolerance * tolerance
             });
@@ -5121,14 +5127,14 @@ fn nurbs_strict_isocurve_pcurve(
         }
         let factor = relative_dot_delta / delta_squared;
         let residual_squared = (0..varying_count)
-            .map(|varying| {
+            .filter_map(|varying| {
                 let (a_index, b_index) = pole_indices(varying);
-                let a = surface_poles[a_index];
-                let b = surface_poles[b_index];
-                let point = curve.control_points()[varying];
-                (point.x - (a.x + factor * (b.x - a.x))).powi(2)
+                let a = pole_at(a_index)?;
+                let b = pole_at(b_index)?;
+                let point = curve.pole_rows().point_at(varying)?;
+                Some((point.x - (a.x + factor * (b.x - a.x))).powi(2)
                     + (point.y - (a.y + factor * (b.y - a.y))).powi(2)
-                    + (point.z - (a.z + factor * (b.z - a.z))).powi(2)
+                    + (point.z - (a.z + factor * (b.z - a.z))).powi(2))
             })
             .fold(0.0_f64, f64::max);
         let parameter_tolerance = INVERSE_PARAMETER_TOLERANCE;
