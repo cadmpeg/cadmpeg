@@ -1646,7 +1646,9 @@ fn browser_body_appearance_scan_rejects_binary_utf16_length_candidates() {
         bytes.extend(std::iter::repeat_n(0, 256 * 2));
     }
 
-    assert!(super::lp_utf16_strings(&bytes).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        super::lp_utf16_strings(ctx, &bytes).unwrap()
+    }).is_empty());
 }
 
 #[test]

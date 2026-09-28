@@ -3,6 +3,42 @@
 
 use super::{appearance_connected_to, appearance_record, texture_record};
 
+fn material_context_with_limits<T>(
+    max_items: u64,
+    max_retained: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
+#[test]
+fn material_utf16_string_refuses_retained_limit() {
+    let mut bytes = Vec::new();
+    super::lp_utf16(&mut bytes, "Alpha");
+    let error = material_context_with_limits(u64::MAX, 4, |ctx| {
+        super::super::lp_utf16_strings(ctx, &bytes).unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D UTF-16 string"));
+}
+
+#[test]
+fn material_utf16_string_index_refuses_collection_limit() {
+    let mut bytes = Vec::new();
+    super::lp_utf16(&mut bytes, "Alpha");
+    let error = material_context_with_limits(0, u64::MAX, |ctx| {
+        super::super::lp_utf16_strings(ctx, &bytes).unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D UTF-16 strings"));
+}
+
 fn schema_appearance_error(
     records: &[cadmpeg_protein::DecodedRecord],
     max_items: u64,
