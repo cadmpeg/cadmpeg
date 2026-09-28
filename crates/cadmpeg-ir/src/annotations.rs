@@ -486,8 +486,13 @@ impl AnnotationBuilder {
     /// Remove all annotations for an entity that was removed from the model.
     pub fn remove_entity(&mut self, id: impl Display) {
         let id = id.to_string();
-        self.annotations.provenance.remove(&id);
-        self.annotations.exactness.remove(&id);
+        self.remove_entity_str(&id);
+    }
+
+    /// Remove an entity's annotations through its borrowed identity.
+    pub fn remove_entity_str(&mut self, id: &str) {
+        self.annotations.provenance.remove(id);
+        self.annotations.exactness.remove(id);
     }
 
     /// Finish building and return the annotation tables.

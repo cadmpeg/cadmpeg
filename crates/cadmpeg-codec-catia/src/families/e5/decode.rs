@@ -317,9 +317,15 @@ pub(in crate::families) fn try_decode_e5(
                 None,
             ));
         }
-        let mut topology_ir = ir.clone();
+        let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
         let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_e5_topology_annotations"));
+        let mut original_curves = Vec::new();
+        let mut unused_surfaces = Vec::new();
         let topology_transferred = if let Some(topology) = topology.as_ref() {
+            original_curves = std::mem::take(&mut topology_ir.model.curves);
+            for curve in &original_curves {
+                topology_annotations.remove_entity_str(curve.id.as_str());
+            }
             let transferred = match transfer_e5_topology(
                 ctx,
                 &mut topology_ir,
@@ -328,6 +334,7 @@ pub(in crate::families) fn try_decode_e5(
                 &surfaces,
                 refusal,
                 &mut admission,
+                &mut unused_surfaces,
             ) {
                 Ok(transferred) => transferred,
                 Err(error) => return Some(Err(error)),
@@ -339,9 +346,30 @@ pub(in crate::families) fn try_decode_e5(
         if topology_transferred {
             ir = topology_ir;
             annotations = topology_annotations;
-        } else if !ir.model.vertices.is_empty() {
-            if let Err(error) = attach_e5_free_vertices(ctx, &mut ir, &mut annotations, &mut admission) {
-                return Some(Err(error));
+        } else {
+            if topology.is_some() {
+                topology_ir.model.bodies.clear();
+                topology_ir.model.regions.clear();
+                topology_ir.model.shells.clear();
+                topology_ir.model.faces.clear();
+                topology_ir.model.loops.clear();
+                topology_ir.model.coedges.clear();
+                topology_ir.model.edges.clear();
+                topology_ir.model.pcurves.clear();
+                topology_ir.model.procedural_curves.clear();
+                topology_ir.model.curves = original_curves;
+                admitted!(crate::resource::reserve_vec(ctx, &mut topology_ir.model.surfaces,
+                    unused_surfaces.len(), "catia_e5_rollback_surfaces"));
+                topology_ir.model.surfaces.append(&mut unused_surfaces);
+                topology_ir.model.surfaces.sort_unstable_by_key(|surface| e5_source_ordinal(surface.id.as_str()));
+                topology_ir.model.points.sort_unstable_by_key(|point| e5_source_ordinal(point.id.as_str()));
+                topology_ir.model.vertices.sort_unstable_by_key(|vertex| e5_source_ordinal(vertex.id.as_str()));
+            }
+            ir = topology_ir;
+            if !ir.model.vertices.is_empty() {
+                if let Err(error) = attach_e5_free_vertices(ctx, &mut ir, &mut annotations, &mut admission) {
+                    return Some(Err(error));
+                }
             }
         }
         let mut losses = Vec::new();
@@ -385,6 +413,12 @@ pub(in crate::families) fn try_decode_e5(
         }))
     })()
     .transpose()
+}
+
+fn e5_source_ordinal(id: &str) -> usize {
+    id.rsplit_once('#')
+        .and_then(|(_, ordinal)| ordinal.parse().ok())
+        .unwrap_or(usize::MAX)
 }
 
 fn derive_e5_vertices(
@@ -1146,6 +1180,7 @@ fn transfer_e5_topology(
     decoded_surfaces: &[crate::families::e5::records::E5Surface],
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
+    unused_surfaces: &mut Vec<Surface>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     if topology.vertex_refs.len() != ir.model.vertices.len()
         || topology.vertex_refs.len() != ir.model.points.len()
@@ -1155,7 +1190,7 @@ fn transfer_e5_topology(
     }
 
     for curve in ir.model.curves.drain(..) {
-        annotations.remove_entity(&curve.id);
+        annotations.remove_entity_str(curve.id.as_str());
     }
 
     let mut surface_for_ref = HashMap::new();
@@ -1188,6 +1223,7 @@ fn transfer_e5_topology(
         &surface_for_ref,
         &boundary.intersection_plan,
         &boundary.surface_curve_plan,
+        unused_surfaces,
     )?;
 
     let Some(e5_ownership) = resolve_e5_ownership(ctx, topology)? else {
@@ -1619,36 +1655,35 @@ fn prune_e5_unused_surfaces(
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     intersection_plan: &BTreeMap<u32, IntcurveSupportContext>,
     surface_curve_plan: &BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
+    unused_surfaces: &mut Vec<Surface>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut used_surfaces = HashSet::new();
     for id in topology
         .faces
         .iter()
         .filter_map(|face| surface_for_ref.get(&face.surface))
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.as_str())
         .chain(intersection_plan.values().flat_map(|context| {
             context
                 .sides()
                 .iter()
-                .filter_map(|side| side.surface.clone())
+                .filter_map(|side| side.surface.as_ref().map(SurfaceId::as_str))
         }))
         .chain(
             surface_curve_plan
                 .values()
-                .map(|(surface, _, _)| surface.clone()),
+                .map(|(surface, _, _)| surface.as_str()),
         )
     {
         crate::resource::insert_set(ctx, &mut used_surfaces, id, "catia_e5_used_surfaces")?;
     }
-    let mut unused_surfaces = Vec::new();
-    for surface in ir.model.surfaces.iter().filter(|surface| !used_surfaces.contains(&surface.id)) {
-        crate::resource::push(ctx, &mut unused_surfaces, surface.id.clone(), "catia_e5_unused_surfaces")?;
-    }
-    ir.model
+    for surface in ir
+        .model
         .surfaces
-        .retain(|surface| used_surfaces.contains(&surface.id));
-    for surface in unused_surfaces {
-        annotations.remove_entity(surface);
+        .extract_if(.., |surface| !used_surfaces.contains(surface.id.as_str()))
+    {
+        annotations.remove_entity_str(surface.id.as_str());
+        crate::resource::push(ctx, unused_surfaces, surface, "catia_e5_unused_surfaces")?;
     }
     Ok(())
 }
@@ -3168,6 +3203,46 @@ mod route_tests {
     use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
 
+    #[test]
+    fn e5_unused_surface_stash_refuses_before_collection_growth() {
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(super::Surface {
+                id: SurfaceId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "surf"), 0usize),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    ).expect("valid test plane"),
+                )),
+                source_object: None,
+            });
+            let mut unused = Vec::new();
+            super::prune_e5_unused_surfaces(
+                ctx, &mut ir, &mut AnnotationBuilder::new(), &topology,
+                &HashMap::new(), &BTreeMap::new(), &BTreeMap::new(), &mut unused,
+            )?;
+            Ok::<_, cadmpeg_core::CodecError>((ir.model.surfaces, unused))
+        };
+        let refusal = crate::test_support::with_collection_limit(0, run);
+        assert!(matches!(refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_unused_surfaces"));
+        let (surfaces, unused) = crate::test_support::with_service_context(run)
+            .expect("service budget admits the unused surface stash");
+        assert!(surfaces.is_empty());
+        assert_eq!(unused.len(), 1);
+    }
+
     fn rational_pcurve_arc(
         center: [f64; 2], radius: f64, range: [f64; 2],
         refusal: &mut crate::nurbs::LaneRefusals, record: &str,
@@ -4047,6 +4122,7 @@ mod route_tests {
                 &[surface],
                 &mut crate::nurbs::LaneRefusals::new(),
                 &mut admission,
+                &mut Vec::new(),
             )
             .expect("service limits admit E5 topology"));
         });
