@@ -383,6 +383,7 @@ fn build_container_body(
         && !scan.has_parasolid();
 
     let loss = if assembly {
+        charge_loss_code(ctx, NxLossCode::AssemblyComponentsExternal)?;
         NxLossCode::AssemblyComponentsExternal.note(
             "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
                       lives in external child .prt files named in EXTREFSTREAM, and the assembled \
@@ -390,6 +391,7 @@ fn build_container_body(
                       file. This is an external-dependency boundary, not a decode gap.",
         )
     } else {
+        charge_loss_code(ctx, NxLossCode::GeometryNotTransferred)?;
         NxLossCode::GeometryNotTransferred.note(
             "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
                       in the embedded Parasolid streams (they may hold only B-spline/procedural \
