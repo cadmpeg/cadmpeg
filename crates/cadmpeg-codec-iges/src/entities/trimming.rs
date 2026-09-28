@@ -2487,6 +2487,7 @@ pub(super) fn project(
             if explicit_outer_sequence == Some(sequence) {
                 explicit_outer_loop = Some(loop_id.clone());
             }
+            reserve_vec_growth(ctx, &mut loop_ids, 1, "iges trimming face loop IDs")?;
             loop_ids.push(loop_id);
         }
         if !valid {
@@ -2570,44 +2571,50 @@ pub(super) fn project(
         } else {
             None
         };
+        let face_loops = match explicit_outer_loop {
+            Some(outer) => {
+                let inner_count = loop_ids.iter().filter(|id| **id != outer).count();
+                let mut inner = reserve_vec(ctx, inner_count, "iges trimming inner loop IDs")?;
+                inner.extend(loop_ids.into_iter().filter(|id| *id != outer));
+                cadmpeg_ir::topology::FaceLoops::classified(outer, inner)
+            }
+            None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
+        };
         candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
             surface: face_surface_id,
             sense: Sense::Forward,
-            loops: match explicit_outer_loop {
-                // A trimmed surface states its outer boundary in its own PTO
-                // field. Without that field the face states no classification.
-                Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(
-                    outer.clone(),
-                    loop_ids.into_iter().filter(|id| *id != outer).collect(),
-                ),
-                None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
-            },
+            loops: face_loops,
             name: None,
             color: None,
             tolerance: checked_face_tolerance,
         });
-        candidate.model_mut().shells.push(Shell::with_face(
-            shell_id.clone(),
-            region_id.clone(),
-            face_id,
-        ));
+        let mut shell_faces = reserve_vec(ctx, 1, "iges trimming shell face IDs")?;
+        shell_faces.push(face_id);
+        candidate.model_mut().shells.push(Shell::new(
+            shell_id.clone(), region_id.clone(), shell_faces, Vec::new(), Vec::new(),
+        ).map_err(|error| CodecError::Malformed(error.to_string()))?);
+        let mut region_shells = reserve_vec(ctx, 1, "iges trimming region shell IDs")?;
+        region_shells.push(shell_id);
         candidate.model_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
-            shells: vec![shell_id],
+            shells: region_shells,
         });
+        let mut body_regions = reserve_vec(ctx, 1, "iges trimming body region IDs")?;
+        body_regions.push(region_id);
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,
-            regions: vec![region_id],
+            regions: body_regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
         });
         candidate.model_mut().finalize();
+        reserve_vec_growth(ctx, &mut staged, 1, "iges trimming staged candidates")?;
         staged.push((entry, candidate, candidate_boundary_vertex_derivations));
     }
     drop(carrier_index);
@@ -2618,6 +2625,7 @@ pub(super) fn project(
             continue;
         }
         crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges trimming decoded sequences")?;
+        reserve_vec_growth(ctx, &mut boundary_vertex_derivations, derivations.len(), "iges trimming committed vertex derivations")?;
         boundary_vertex_derivations.extend(derivations);
     }
 
