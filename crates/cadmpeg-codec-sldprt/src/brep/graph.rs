@@ -3456,18 +3456,29 @@ fn derive_cylindrical_pcurves(
                 )
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                let radial_control_points = nurbs
-                    .control_points()
-                    .iter()
-                    .map(|point| {
-                        let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
-                        cadmpeg_ir::math::Point2::new(
-                            dot(relative, *u_reference),
-                            dot(relative, cross),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let curve_weights = nurbs.pole_rows().weights();
+                let project = |point: cadmpeg_ir::math::Point3| {
+                    let relative = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
+                    cadmpeg_ir::math::Point2::new(
+                        dot(relative, *u_reference),
+                        dot(relative, cross),
+                    )
+                };
+                ctx.charge_work(nurbs.pole_count() as u64, "project Parasolid cylinder poles")?;
+                let mut radial_control_points = Vec::new();
+                ctx.reserve_collection_vec(&mut radial_control_points, nurbs.pole_count(), "collect Parasolid cylinder radial poles")?;
+                let curve_weights = match nurbs.pole_rows() {
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
+                        radial_control_points.extend(points.iter().map(|point| project(point.get())));
+                        None
+                    }
+                    cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
+                        radial_control_points.extend(points.iter().map(|pole| project(pole.point.get())));
+                        let mut weights = Vec::new();
+                        ctx.reserve_collection_vec(&mut weights, points.len(), "collect Parasolid cylinder pole weights")?;
+                        weights.extend(points.iter().map(|pole| pole.weight.get()));
+                        Some(weights)
+                    }
+                };
                 if !quadratic_nurbs_has_constant_radius(
                     &radial_control_points,
                     curve_weights.as_deref(),
@@ -3845,27 +3856,31 @@ fn quadratic_nurbs_has_constant_radius(
         return false;
     }
     let radius = radius.get();
-    let mut runs = Vec::new();
+    let mut runs = 0usize;
+    let mut previous = 0.0;
+    let mut count = 0usize;
     for knot in knots {
         if !knot.is_finite() {
             return false;
         }
-        if let Some((value, count)) = runs.last_mut() {
-            if *value == *knot {
-                *count += 1;
-                continue;
-            }
-            if *knot <= *value {
+        if runs == 0 {
+            previous = *knot;
+            count = 1;
+            runs = 1;
+        } else if *knot == previous {
+            count += 1;
+        } else {
+            if *knot <= previous || count != if runs == 1 { 3 } else { 2 } {
                 return false;
             }
+            previous = *knot;
+            count = 1;
+            runs += 1;
         }
-        runs.push((*knot, 1usize));
     }
-    if runs.len() < 2
-        || runs.first().is_none_or(|(_, count)| *count != 3)
-        || runs.last().is_none_or(|(_, count)| *count != 3)
-        || runs[1..runs.len() - 1].iter().any(|(_, count)| *count != 2)
-        || runs.len() - 1 != (radial_control_points.len() - 1) / 2
+    if runs < 2
+        || count != 3
+        || runs - 1 != (radial_control_points.len() - 1) / 2
     {
         return false;
     }
@@ -3874,13 +3889,11 @@ fn quadratic_nurbs_has_constant_radius(
     let choose_4 = [1.0, 4.0, 6.0, 4.0, 1.0];
     let tolerance = EPS_RADIUS_ABSOLUTE.max(radius * radius * EPS_RADIUS_RELATIVE);
     for start in (0..radial_control_points.len() - 1).step_by(2) {
-        let homogeneous = (0..3)
-            .map(|offset| {
+        let homogeneous = [0, 1, 2].map(|offset| {
                 let weight = weight(start + offset);
                 let point = radial_control_points[start + offset];
                 (point.u * weight, point.v * weight, weight)
-            })
-            .collect::<Vec<_>>();
+            });
         for (degree, &denominator) in choose_4.iter().enumerate() {
             let mut identity = 0.0_f64;
             for i in 0usize..=2 {
