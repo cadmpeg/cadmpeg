@@ -1946,6 +1946,9 @@ fn certified_profile_loop(
         previous_end = entity_tubes.last().map(|tube| tube.end);
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(entity_tubes.len() as u64, "f3d certified profile tubes")?;
+            tubes.try_reserve(entity_tubes.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d certified profile tubes allocation", 0, 1)
+            })?;
         }
         tubes.extend(entity_tubes);
     }
