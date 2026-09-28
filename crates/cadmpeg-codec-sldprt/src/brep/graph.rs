@@ -1183,7 +1183,7 @@ pub(crate) fn decode_bodies(
         }
         if !initialized || !is_deltas {
             if initialized {
-                tables.merge_deltas(scanned_tables, selected_bridge_attrs);
+                tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
                 facts.face_colors.append(&mut scanned_facts.face_colors);
                 facts
                     .face_color_versions
@@ -1200,7 +1200,7 @@ pub(crate) fn decode_bodies(
                 initialized = true;
             }
         } else {
-            tables.merge_deltas(scanned_tables, selected_bridge_attrs);
+            tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
             facts.face_colors.append(&mut scanned_facts.face_colors);
             facts
                 .face_color_versions
@@ -6445,8 +6445,12 @@ mod tests {
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables.insert_loop(loop_record(20, [0, 40, 11, 0]));
-        tables.insert_coedge(coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
+        tables.insert_loop(&ctx, loop_record(20, [0, 40, 11, 0])).expect("loop");
+        tables.insert_coedge(&ctx, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0])).expect("coedge");
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -6457,8 +6461,12 @@ mod tests {
     fn face_walk_rejects_a_ring_owned_by_another_loop() {
         let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables.insert_loop(loop_record(20, [0, 40, 10, 0]));
-        tables.insert_coedge(coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
+        tables.insert_loop(&ctx, loop_record(20, [0, 40, 10, 0])).expect("loop");
+        tables.insert_coedge(&ctx, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0])).expect("coedge");
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -7162,14 +7170,18 @@ mod tests {
             }],
         };
         let mut tables = Tables::default();
-        tables.insert_bridge(Bridge {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
+        tables.insert_bridge(&ctx, Bridge {
             attr: 100,
             sequence: 0,
             refs: [1, 1, 49, 7, 8],
             sense: Sense::Forward,
             owner: None,
             offset: 11,
-        });
+        }).expect("bridge");
 
         let records = super::typed_body_records(&facts, &tables).expect("typed body records");
         assert_eq!(records.len(), 1);
@@ -7202,8 +7214,8 @@ mod tests {
             offset,
         };
         let mut tables = super::topology::Tables::default();
-        tables.insert_bridge(bridge(10, 100, 20));
-        tables.insert_bridge(bridge(11, 200, 10));
+        tables.insert_bridge(&ctx, bridge(10, 100, 20)).expect("bridge");
+        tables.insert_bridge(&ctx, bridge(11, 200, 10)).expect("bridge");
         let decoded = super::decode_graph(
             &ctx,
             &crate::brep::index::CarrierIndex::default(),
