@@ -662,3 +662,57 @@ fn shell_definition_recursion_refuses_depth_limit() {
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_shell_definition_recursion"));
 }
+
+fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',());#2=SHELL_BASED_SURFACE_MODEL('',(#1));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid shell model reference");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let root = exchange.records().get(&2).expect("shell model");
+    let shells = BTreeMap::from([(1, super::super::ShellDef {
+        base: 1,
+        forward: true,
+        typed: std::collections::HashSet::new(),
+    })]);
+    let key = super::super::root_key(root, &exchange, &shells, &ctx)
+        .and_then(|key| key.ok_or_else(|| CodecError::malformed("missing root key")));
+    if !include_distinct {
+        return key.err().expect("root key exceeds limit");
+    }
+    let mut distinct = std::collections::BTreeSet::new();
+    super::super::insert_topology_set(
+        &mut distinct,
+        key.expect("root key fits limit"),
+        &ctx,
+        "step_distinct_topology_roots",
+    )
+    .err()
+    .expect("distinct root set exceeds limit")
+}
+
+#[test]
+fn topology_root_shell_steps_refuse_collection_limit() {
+    assert!(matches!(topology_root_refusal(0, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_root_shell_steps"));
+}
+
+#[test]
+fn topology_root_shell_keys_refuse_collection_limit() {
+    assert!(matches!(topology_root_refusal(1, false),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_root_shell_keys"));
+}
+
+#[test]
+fn topology_distinct_roots_refuse_collection_limit() {
+    assert!(matches!(topology_root_refusal(2, true),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_distinct_topology_roots"));
+}
