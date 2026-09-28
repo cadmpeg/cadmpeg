@@ -2200,6 +2200,7 @@ fn stream_owns_id(id: &str, prefix: &str) -> bool {
 /// phase.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn attach_completed_intersection_pcurves_for_stream_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     graph: &Graph,
     scope: &crate::decode::ids::IdScope,
@@ -2211,13 +2212,14 @@ pub(super) fn attach_completed_intersection_pcurves_for_stream_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let source = IntersectionCompletionSource {
-        scope: scope.clone(),
+        scope: scope.try_clone_for_decode(ctx)?,
         graph,
         source_stream,
         coedge_start,
         procedural_start,
     };
     attach_completed_intersection_pcurves_for_sources_with_budget(
+        ctx,
         ir,
         std::slice::from_ref(&source),
         annotations,
@@ -2230,6 +2232,7 @@ pub(super) fn attach_completed_intersection_pcurves_for_stream_with_budget(
 /// Re-run chart attachment over the complete model after all stream-owned
 /// topology and intersection contexts exist.
 pub(super) fn attach_completed_intersection_pcurves_for_model_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &[IntersectionCompletionSource<'_>],
     annotations: &mut AnnotationBuilder,
@@ -2237,6 +2240,7 @@ pub(super) fn attach_completed_intersection_pcurves_for_model_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     attach_completed_intersection_pcurves_for_sources_with_budget(
+        ctx,
         ir,
         sources,
         annotations,
@@ -2247,70 +2251,87 @@ pub(super) fn attach_completed_intersection_pcurves_for_model_with_budget(
 }
 
 fn attach_completed_intersection_pcurves_for_sources_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &[IntersectionCompletionSource<'_>],
     annotations: &mut AnnotationBuilder,
     validated_endpoint_witnesses: &EndpointWitnesses,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (&loop_.id, &loop_.face))
-        .collect::<BTreeMap<_, _>>();
-    let face_surfaces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (&face.id, &face.surface))
-        .collect::<BTreeMap<_, _>>();
-    let edge_curves = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| Some((&edge.id, edge.curve()?)))
-        .collect::<BTreeMap<_, _>>();
-    let edge_tolerances = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| Some((&edge.id, edge.tolerance?.get())))
-        .collect::<BTreeMap<_, _>>();
-    let coedge_candidates = ir
-        .model
-        .coedges
-        .iter()
-        .enumerate()
-        .filter_map(|(index, coedge)| {
-            if !coedge.pcurves.is_empty() {
-                return None;
-            }
-            let source_index = sources.iter().position(|source| {
-                index >= source.coedge_start
-                    && stream_owns_id(coedge.id.as_str(), &source.scope.prefix())
-            })?;
-            let surface = loop_faces
-                .get(&coedge.owner_loop)
-                .and_then(|face| face_surfaces.get(*face))?;
-            let curve = edge_curves.get(&coedge.edge)?;
-            Some((
-                coedge.id.clone(),
-                coedge.edge.clone(),
-                (*curve).clone(),
-                (*surface).clone(),
-                edge_tolerances.get(&coedge.edge).copied(),
-                source_index,
-            ))
-        })
-        .collect::<Vec<_>>();
+    let source_count = cadmpeg_core::decode::u64_from_index(sources.len());
+    ctx.charge_collection_items(source_count, "nx completion source prefixes")?;
+    let mut source_prefixes = Vec::new();
+    source_prefixes.try_reserve_exact(sources.len()).map_err(|_| {
+        ctx.refuse_codec_limit("nx completion source prefixes", 0, source_count)
+    })?;
+    for source in sources {
+        source_prefixes.push(source.scope.prefix_charged(ctx)?);
+    }
+    let mut loop_faces = BTreeMap::new();
+    for loop_ in &ir.model.loops {
+        ctx.charge_collection_items(1, "nx completion loop-face index")?;
+        loop_faces.insert(&loop_.id, &loop_.face);
+    }
+    let mut face_surfaces = BTreeMap::new();
+    for face in &ir.model.faces {
+        ctx.charge_collection_items(1, "nx completion face-surface index")?;
+        face_surfaces.insert(&face.id, &face.surface);
+    }
+    let mut edge_curves = BTreeMap::new();
+    let mut edge_tolerances = BTreeMap::new();
+    for edge in &ir.model.edges {
+        if let Some(curve) = edge.curve() {
+            ctx.charge_collection_items(1, "nx completion edge-curve index")?;
+            edge_curves.insert(&edge.id, curve);
+        }
+        if let Some(tolerance) = edge.tolerance {
+            ctx.charge_collection_items(1, "nx completion edge-tolerance index")?;
+            edge_tolerances.insert(&edge.id, tolerance.get());
+        }
+    }
+    let mut coedge_candidates = Vec::new();
+    for (index, coedge) in ir.model.coedges.iter().enumerate() {
+        if !coedge.pcurves.is_empty() {
+            continue;
+        }
+        let Some(source_index) = sources.iter().zip(&source_prefixes).position(|(source, prefix)| {
+            index >= source.coedge_start && stream_owns_id(coedge.id.as_str(), prefix)
+        }) else {
+            continue;
+        };
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_surfaces.get(*face))
+        else {
+            continue;
+        };
+        let Some(curve) = edge_curves.get(&coedge.edge) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx completion coedge candidates")?;
+        coedge_candidates.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx completion coedge candidates", 0, 1)
+        })?;
+        coedge_candidates.push((
+            crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::CoedgeId>(ctx, coedge.id.as_str(), "nx completion coedge identity")?,
+            crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::EdgeId>(ctx, coedge.edge.as_str(), "nx completion edge identity")?,
+            crate::decode::ids::copy_typed_id::<CurveId>(ctx, curve.as_str(), "nx completion curve identity")?,
+            crate::decode::ids::copy_typed_id::<SurfaceId>(ctx, surface.as_str(), "nx completion surface identity")?,
+            edge_tolerances.get(&coedge.edge).copied(),
+            source_index,
+        ));
+    }
     if coedge_candidates.is_empty() {
         return Ok(());
     }
-    let required_keys = coedge_candidates
-        .iter()
-        .map(|(_, _, curve, surface, _, _)| (curve.clone(), surface.clone()))
-        .collect::<BTreeSet<_>>();
+    let mut required_keys = BTreeSet::new();
+    for (_, _, curve, surface, _, _) in &coedge_candidates {
+        ctx.charge_collection_items(1, "nx completion required chart keys")?;
+        required_keys.insert((
+            crate::decode::ids::copy_typed_id(ctx, curve.as_str(), "nx completion required curve")?,
+            crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx completion required surface")?,
+        ));
+    }
     let mut candidates =
         BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveGeometry, [f64; 2], Option<f64>)>>::new();
     let procedural_start = sources
@@ -2327,9 +2348,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         .skip(procedural_start)
     {
         if multiple_sources
-            && !sources.iter().any(|source| {
+            && !sources.iter().zip(&source_prefixes).any(|(source, prefix)| {
                 index >= source.procedural_start
-                    && stream_owns_id(procedural.id.as_str(), &source.scope.prefix())
+                    && stream_owns_id(procedural.id.as_str(), prefix)
             })
         {
             continue;
@@ -2345,53 +2366,75 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
-            let key = (owner.clone(), surface.clone());
+            let key = (
+                crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx completion candidate owner")?,
+                crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx completion candidate surface")?,
+            );
             if !required_keys.contains(&key) {
                 continue;
             }
-            let values = candidates.entry(key).or_default();
+            let values = match candidates.entry(key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "nx completion candidate keys")?;
+                    entry.insert(Vec::new())
+                }
+            };
             let candidate = (
-                pcurve.geometry.clone(),
+                pcurve.geometry.try_clone_for_decode(ctx, "nx completion candidate pcurve")?,
                 context.parameter_range().endpoints(),
                 procedural
                     .cache_fit_tolerance()
                     .map(cadmpeg_ir::geometry::FitTolerance::get),
             );
             if !values.contains(&candidate) {
+                ctx.charge_collection_items(1, "nx completion candidate values")?;
+                values.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx completion candidate values", 0, 1)
+                })?;
                 values.push(candidate);
             }
         }
     }
 
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        let edge_endpoint_contracts = coedge_candidates
-            .iter()
-            .map(|(_, edge_id, ..)| edge_id.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .filter_map(|edge_id| {
-                pcurve_edge_endpoint_contract_with_index(&model_index, &edge_id)
-                    .map(|contract| (edge_id, contract))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let mut edge_endpoint_contracts = BTreeMap::new();
+        for (_, edge_id, ..) in &coedge_candidates {
+            if edge_endpoint_contracts.contains_key(edge_id) {
+                continue;
+            }
+            if let Some(contract) = pcurve_edge_endpoint_contract_with_index(&model_index, edge_id) {
+                ctx.charge_collection_items(1, "nx completion edge endpoint contracts")?;
+                edge_endpoint_contracts.insert(
+                    crate::decode::ids::copy_typed_id::<cadmpeg_ir::ids::EdgeId>(ctx, edge_id.as_str(), "nx completion contract edge")?,
+                    contract,
+                );
+            }
+        }
         // A chart carrier's serialized endpoint witnesses are a necessary
         // edge-incidence condition. Reuse a prior sample-wise proof; evaluate
         // the face surface only for keys without that proof.
-        let endpoint_admissible_keys = coedge_candidates
-            .iter()
-            .filter_map(|(_, edge_id, curve, surface, edge_tolerance, _)| {
-                let key = (curve.clone(), surface.clone());
-                let [candidate] = candidates.get(&key)?.as_slice() else {
-                    return None;
-                };
-                let Some(witness) =
-                    linear_nurbs_curve_endpoint_witness_with_index(&model_index, curve)
+        let mut endpoint_admissible_keys = BTreeSet::new();
+        for (_, edge_id, curve, surface, edge_tolerance, _) in &coedge_candidates {
+            let key = (
+                crate::decode::ids::copy_typed_id(ctx, curve.as_str(), "nx completion admissible curve")?,
+                crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx completion admissible surface")?,
+            );
+            let Some(values) = candidates.get(&key) else {
+                continue;
+            };
+            let [candidate] = values.as_slice() else {
+                continue;
+            };
+            let admissible = if let Some(witness) =
+                linear_nurbs_curve_endpoint_witness_with_index(&model_index, curve)
+            {
+                let Some((edge_endpoints, edge_allowance)) =
+                    edge_endpoint_contracts.get(edge_id).copied()
                 else {
-                    return Some(key);
+                    continue;
                 };
-                let (edge_endpoints, edge_allowance) =
-                    edge_endpoint_contracts.get(edge_id).copied()?;
                 let fit_tolerance = candidate.2.or(*edge_tolerance);
                 pcurve_matches_edge_endpoint_contract(
                     witness,
@@ -2399,128 +2442,131 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                     edge_allowance,
                     fit_tolerance,
                 )
-                .then_some(key)
-            })
-            .collect::<BTreeSet<_>>();
+            } else {
+                true
+            };
+            if admissible {
+                ctx.charge_collection_items(1, "nx completion admissible chart keys")?;
+                endpoint_admissible_keys.insert(key);
+            }
+        }
         let mut witnessed_keys = BTreeSet::new();
-        let mut candidate_endpoints = candidates
-            .iter()
-            .filter(|(key, _)| endpoint_admissible_keys.contains(key))
-            .map(
-                |(key, values)| -> Result<Option<_>, cadmpeg_core::decode::ResourceLimit> {
-                    let [candidate] = values.as_slice() else {
-                        return Ok(None);
-                    };
-                    let witness = endpoint_witness_for_candidate(
-                        validated_endpoint_witnesses,
-                        key,
-                        &candidate.0,
-                        candidate.1,
-                    );
-                    if witness.is_some() {
-                        witnessed_keys.insert(key.clone());
-                    }
-                    let endpoints = if witness.is_some() {
-                        witness
-                    } else {
-                        pcurve_surface_endpoints_with_index_and_budget(
-                            &model_index,
-                            &key.1,
-                            &candidate.0,
-                            None,
-                            geometry_budget,
-                        )?
-                    };
-                    Ok(Some((key.clone(), endpoints)))
-                },
-            )
-            .try_fold(BTreeMap::new(), |mut values, endpoints| {
-                if let Some((key, endpoints)) = endpoints? {
-                    values.insert(key, endpoints);
+        let mut candidate_endpoints = BTreeMap::new();
+        for (key, values) in &candidates {
+            if !endpoint_admissible_keys.contains(key) {
+                continue;
+            }
+            let [candidate] = values.as_slice() else {
+                continue;
+            };
+            let witness = endpoint_witness_for_candidate(
+                validated_endpoint_witnesses,
+                key,
+                &candidate.0,
+                candidate.1,
+            );
+            if witness.is_some() {
+                ctx.charge_collection_items(1, "nx completion witnessed chart keys")?;
+                witnessed_keys.insert((
+                    crate::decode::ids::copy_typed_id(ctx, key.0.as_str(), "nx completion witnessed curve")?,
+                    crate::decode::ids::copy_typed_id(ctx, key.1.as_str(), "nx completion witnessed surface")?,
+                ));
+            }
+            let endpoints = if witness.is_some() {
+                witness
+            } else {
+                pcurve_surface_endpoints_with_index_and_budget(
+                    &model_index,
+                    &key.1,
+                    &candidate.0,
+                    None,
+                    geometry_budget,
+                )?
+            };
+            ctx.charge_collection_items(1, "nx completion candidate endpoints")?;
+            candidate_endpoints.insert((
+                crate::decode::ids::copy_typed_id(ctx, key.0.as_str(), "nx completion endpoint curve")?,
+                crate::decode::ids::copy_typed_id(ctx, key.1.as_str(), "nx completion endpoint surface")?,
+            ), endpoints);
+        }
+        let mut replacements = Vec::new();
+        for (coedge_id, edge_id, curve, surface, edge_tolerance, source_index) in coedge_candidates {
+            let key = (curve, surface);
+            let Some(candidate_values) = candidates.get(&key) else {
+                continue;
+            };
+            let [candidate] = candidate_values.as_slice() else {
+                continue;
+            };
+            let Some((edge_endpoints, edge_allowance)) =
+                edge_endpoint_contracts.get(&edge_id).copied()
+            else {
+                continue;
+            };
+            let fit_tolerance = candidate.2.or(edge_tolerance);
+            let matches = {
+                let Some(coincident_surface) = candidate_endpoints.get(&key).and_then(Option::as_ref) else {
+                    continue;
+                };
+                pcurve_matches_edge_endpoint_contract(
+                    *coincident_surface,
+                    edge_endpoints,
+                    edge_allowance,
+                    fit_tolerance,
+                )
+            };
+            if !matches {
+                if !witnessed_keys.remove(&key) {
+                    continue;
                 }
-                Ok::<_, cadmpeg_core::decode::ResourceLimit>(values)
-            })?;
-        let replacements = coedge_candidates
-            .into_iter()
-            .map(
-                |(coedge_id, edge_id, curve, surface, edge_tolerance, source_index)| -> Result<Option<_>, cadmpeg_core::CodecError> {
-                    let key = (curve.clone(), surface.clone());
-                    let Some(candidate_values) = candidates.get(&key) else {
-                        return Ok(None);
-                    };
-                    let [candidate] = candidate_values.as_slice() else {
-                        return Ok(None);
-                    };
-                    let Some((edge_endpoints, edge_allowance)) =
-                        edge_endpoint_contracts.get(&edge_id).copied() else {
-                        return Ok(None);
-                    };
-                    let fit_tolerance = candidate.2.or(edge_tolerance);
-                    let matches = {
-                        let Some(coincident_surface) = candidate_endpoints.get(&key).and_then(Option::as_ref) else {
-                            return Ok(None);
-                        };
-                        pcurve_matches_edge_endpoint_contract(
-                            *coincident_surface,
-                            edge_endpoints,
-                            edge_allowance,
-                            fit_tolerance,
-                        )
-                    };
-                    if !matches {
-                        if !witnessed_keys.remove(&key) {
-                            return Ok(None);
-                        }
-                        // A witness from another geometry phase is a shortcut,
-                        // not a new admission rule. Preserve the established
-                        // endpoint evaluator whenever the downstream contract
-                        // disagrees with the cached proof.
-                        let fallback = pcurve_surface_endpoints_with_index_and_budget(
-                            &model_index,
-                            &key.1,
-                            &candidate.0,
-                            None,
-                            geometry_budget,
-                        )?;
-                        candidate_endpoints.insert(key.clone(), fallback);
-                        let Some(coincident_surface) = candidate_endpoints.get(&key).and_then(Option::as_ref) else {
-                            return Ok(None);
-                        };
-                        if !pcurve_matches_edge_endpoint_contract(
-                            *coincident_surface,
-                            edge_endpoints,
-                            edge_allowance,
-                            fit_tolerance,
-                        ) {
-                            return Ok(None);
-                        }
-                    }
-                    let metadata = (|| {
-                        Some(cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
-                            None,
-                            Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
-                            fit_tolerance
-                                .map(cadmpeg_ir::geometry::FitTolerance::try_new)
-                                .transpose()
-                                .ok()?,
-                        ))
-                    })();
-                    let Some(metadata) = metadata else {
-                        return Ok(None);
-                    };
-                    Ok(Some((
-                        coedge_id,
-                        source_index,
-                        (candidate.0.clone(), metadata),
-                    )))
-                },
-            )
-            .try_fold(Vec::new(), |mut values, replacement| {
-                if let Some(replacement) = replacement? {
-                    values.push(replacement);
+                // A witness from another geometry phase is a shortcut. The
+                // endpoint evaluator resolves a disagreement with that proof.
+                let fallback = pcurve_surface_endpoints_with_index_and_budget(
+                    &model_index,
+                    &key.1,
+                    &candidate.0,
+                    None,
+                    geometry_budget,
+                )?;
+                let Some(slot) = candidate_endpoints.get_mut(&key) else {
+                    continue;
+                };
+                *slot = fallback;
+                let Some(coincident_surface) = slot.as_ref() else {
+                    continue;
+                };
+                if !pcurve_matches_edge_endpoint_contract(
+                    *coincident_surface,
+                    edge_endpoints,
+                    edge_allowance,
+                    fit_tolerance,
+                ) {
+                    continue;
                 }
-                Ok::<_, cadmpeg_core::CodecError>(values)
+            }
+            let metadata = (|| {
+                Some(cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                    None,
+                    Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
+                    fit_tolerance
+                        .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                        .transpose()
+                        .ok()?,
+                ))
+            })();
+            let Some(metadata) = metadata else {
+                continue;
+            };
+            ctx.charge_collection_items(1, "nx completion pcurve replacements")?;
+            replacements.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx completion pcurve replacements", 0, 1)
             })?;
+            replacements.push((
+                coedge_id,
+                source_index,
+                (candidate.0.try_clone_for_decode(ctx, "nx completion replacement pcurve")?, metadata),
+            ));
+        }
         replacements
     };
     for (coedge_id, source_index, (geometry, metadata)) in replacements {
@@ -2532,10 +2578,11 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let pcurve_id: PcurveId = source.scope.id(
+        let pcurve_id: PcurveId = source.scope.id_charged(
+            ctx,
             &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
             fin_xmt,
-        );
+        )?;
         if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
             continue;
         }
@@ -2543,9 +2590,30 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .graph
             .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| node.pos as u64);
+        ctx.charge_collection_items(1, "nx completed pcurve provenance")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
+            "nx completed pcurve provenance identity",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index("INTERSECTION_PCURVE".len()),
+            "nx completed pcurve provenance tag",
+        )?;
         annotations
             .note(&pcurve_id, &source.source_stream, source_offset)
             .tag("INTERSECTION_PCURVE");
+        ctx.charge_collection_items(1, "nx completed pcurve exactness")?;
+        for field in ["geometry", "parameter_range"] {
+            ctx.charge_collection_items(1, "nx completed pcurve exactness fields")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
+                "nx completed pcurve exactness identity",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(field.len()),
+                "nx completed pcurve exactness field",
+            )?;
+        }
         annotations
             .derived(&pcurve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -2553,12 +2621,25 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .derived(&pcurve_id, "parameter_range")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         if metadata.fit_tolerance().is_some() {
+            ctx.charge_collection_items(1, "nx completed pcurve exactness fields")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(pcurve_id.as_str().len()),
+                "nx completed pcurve exactness identity",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index("fit_tolerance".len()),
+                "nx completed pcurve exactness field",
+            )?;
             annotations
                 .derived(&pcurve_id, "fit_tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        ctx.charge_collection_items(1, "nx completed pcurve records")?;
+        ir.model.pcurves.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx completed pcurve records", 0, 1)
+        })?;
         ir.model.pcurves.push(Pcurve {
-            id: pcurve_id.clone(),
+            id: crate::decode::ids::copy_typed_id(ctx, pcurve_id.as_str(), "nx completed pcurve record identity")?,
             geometry,
             metadata,
         });
@@ -2568,6 +2649,10 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             .iter_mut()
             .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
         {
+            ctx.charge_collection_items(1, "nx completed coedge pcurve uses")?;
+            coedge.pcurves.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx completed coedge pcurve uses", 0, 1)
+            })?;
             coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: pcurve_id,
                 isoparametric: None,
@@ -2584,6 +2669,7 @@ mod tests {
 
     use super::super::geometry_work::GeometryWorkBudget;
     use super::{
+        attach_completed_intersection_pcurves_for_stream_with_budget,
         complete_support_uv_with_budget_and_endpoint_witnesses, ordered_support_uv_seed_candidates,
         support_uv_lane_geometry_work_limit,
         support_uv_lane_matches_surface_with_budget,
@@ -2598,6 +2684,53 @@ mod tests {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    fn attach_empty_model_under_policy(policy: &DecodePolicy) -> Result<(), cadmpeg_core::CodecError> {
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &[])
+        })?;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+        let geometry_budget = GeometryWorkBudget::from_context(&ctx, 100);
+        let mut ir = CadIr::empty();
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        attach_completed_intersection_pcurves_for_stream_with_budget(
+            &ctx,
+            &mut ir,
+            &graph,
+            &crate::decode::ids::IdScope::stream(0),
+            0,
+            0,
+            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:test")),
+            &mut annotations,
+            &BTreeMap::new(),
+            &geometry_budget,
+        )
+    }
+
+    #[test]
+    fn completion_attachment_refuses_scope_copy_at_retained_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        assert!(matches!(
+            attach_empty_model_under_policy(&policy),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx completion scope copy"
+        ));
+    }
+
+    #[test]
+    fn completion_attachment_refuses_source_prefixes_at_collection_limit() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            attach_empty_model_under_policy(&policy),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx completion source prefixes"
+        ));
+    }
 
     #[test]
     fn support_uv_completion_refuses_model_index_at_caller_collection_limit() {

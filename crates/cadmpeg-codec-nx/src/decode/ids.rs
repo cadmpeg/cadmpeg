@@ -43,6 +43,18 @@ fn nx() -> IdentityComponent {
 pub(crate) struct IdScope(IdentityComponent);
 
 impl IdScope {
+    /// Copy one decoded scope under the caller's retained-text limit.
+    pub(crate) fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Self, CodecError> {
+        let bytes = ctx.copy_retained(self.0.as_str().as_bytes(), "nx completion scope copy")?;
+        let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+        IdentityComponent::try_new(text)
+            .map(Self)
+            .map_err(CodecError::malformed)
+    }
+
     /// The NX scope of the given name.
     pub(crate) fn native(scope: impl Into<IdentityComponent>) -> Self {
         Self(scope.into())
@@ -94,11 +106,6 @@ impl IdScope {
             return None;
         };
         Some(Self(scope))
-    }
-
-    /// The `<format>:<scope>` prefix this scope mints under.
-    pub(super) fn prefix(&self) -> String {
-        format!("{}:{}", nx().as_str(), self.0.as_str())
     }
 
     /// Copy this scope's prefix after charging its retained text.

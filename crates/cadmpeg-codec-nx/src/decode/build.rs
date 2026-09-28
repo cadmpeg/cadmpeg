@@ -1369,6 +1369,7 @@ pub(super) fn try_decode_geometry(
         extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, completed_endpoint_witnesses)?;
         copy_endpoint_witnesses(ctx, &mut model_endpoint_witnesses, &validated_endpoint_witnesses)?;
         attach_completed_intersection_pcurves_for_stream_with_budget(
+            ctx,
             &mut ir,
             graph,
             &IdScope::stream_charged(ctx, si)?,
@@ -1421,6 +1422,7 @@ pub(super) fn try_decode_geometry(
         });
     }
     attach_completed_intersection_pcurves_for_model_with_budget(
+        ctx,
         &mut ir,
         &completion_sources,
         &mut annotations,

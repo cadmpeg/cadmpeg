@@ -839,17 +839,20 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
             .unwrap();
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
 
-    crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
-        &mut ir,
-        &graph,
-        &crate::decode::ids::IdScope::stream(0),
-        target_index + 1,
-        0,
-        source_stream.clone(),
-        &mut annotations,
-        &std::collections::BTreeMap::new(),
-        &geometry_budget,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
+            ctx,
+            &mut ir,
+            &graph,
+            &crate::decode::ids::IdScope::stream(0),
+            target_index + 1,
+            0,
+            source_stream.clone(),
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &geometry_budget,
+        )
+    })
     .expect("valid exactness fields");
     assert!(!ir
         .model
@@ -863,13 +866,16 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         coedge_start: 0,
         procedural_start: 0,
     };
-    crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
-        &mut ir,
-        std::slice::from_ref(&source),
-        &mut annotations,
-        &std::collections::BTreeMap::new(),
-        &geometry_budget,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::support_uv::attach_completed_intersection_pcurves_for_model_with_budget(
+            ctx,
+            &mut ir,
+            std::slice::from_ref(&source),
+            &mut annotations,
+            &std::collections::BTreeMap::new(),
+            &geometry_budget,
+        )
+    })
     .expect("valid exactness fields");
 
     let completed = ir
