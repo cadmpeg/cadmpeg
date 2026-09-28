@@ -2121,58 +2121,54 @@ pub(crate) fn equation_table(
 /// definition.
 pub(crate) fn placement_instructions(
     definition: &FeatureDefinition,
-) -> Vec<FeaturePlacementInstruction> {
+) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
     placement_instruction_rows(&definition.body, definition.offset)
 }
 
 fn placement_instruction_rows(
     payload: &[u8],
     definition_offset: usize,
-) -> Vec<FeaturePlacementInstruction> {
-    let Some(table_class) =
-        named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len())
-    else {
-        return Vec::new();
-    };
-    let mut rows = Vec::new();
-    for marker in 0..payload.len() {
+) -> impl Iterator<Item = FeaturePlacementInstruction> + '_ {
+    let table_class = named_array_class(payload, b"place_instruction_ptrs\0", 0, payload.len());
+    (0..payload.len()).filter_map(move |marker| {
+        let table_class = table_class?;
         if payload.get(marker..marker + 2) != Some(&[0xf1, psb::token::ENTITY_REF]) {
-            continue;
+            return None;
         }
         let Ok((class, after_class)) = psb::reference_id(payload, marker + 2) else {
-            continue;
+            return None;
         };
         if class != table_class || payload.get(after_class) != Some(&psb::token::COMPOUND_CLOSE) {
-            continue;
+            return None;
         }
         let mut cursor = after_class + 1;
         let Some(kind) = next_solver_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let zero_offset = payload.get(cursor) == Some(&0x18);
         if !zero_offset {
-            continue;
+            return None;
         }
         cursor += 1;
         let Ok(dimension_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(reference_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(geometry1_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Ok(geometry2_id) = next_nullable_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Some(member1) = next_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
         let Some(member2) = next_segment_int(payload, &mut cursor) else {
-            continue;
+            return None;
         };
-        rows.push(FeaturePlacementInstruction {
+        Some(FeaturePlacementInstruction {
             kind,
             zero_offset,
             dimension_id,
@@ -2182,9 +2178,8 @@ fn placement_instruction_rows(
             member1,
             member2,
             offset: definition_offset + marker,
-        });
-    }
-    rows
+        })
+    })
 }
 
 fn segment_table(

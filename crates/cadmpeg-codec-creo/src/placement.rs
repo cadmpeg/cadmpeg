@@ -941,10 +941,9 @@ fn zero_offset_standard_section_plane_equation(
 ) -> Option<SignedPlaneEquation> {
     let feature_id = definition.identity.owner_feature_id()?;
     let sketch_id = section.sketch_plane_entity_id?;
-    let instructions = placement_instructions(definition);
-    let instruction = instructions.first()?;
+    let mut instructions = placement_instructions(definition);
+    let instruction = instructions.next()?;
     instructions
-        .iter()
         .all(|candidate| {
             candidate.kind == instruction.kind
                 && candidate.zero_offset == instruction.zero_offset
@@ -973,7 +972,7 @@ fn zero_offset_standard_section_plane_equation(
         })
         .count();
     (datum_tables == 1).then_some(())?;
-    let tables = entity_tables
+    let mut tables = entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .filter(|table| {
@@ -982,11 +981,9 @@ fn zero_offset_standard_section_plane_equation(
                 .iter()
                 .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
-        })
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+        });
+    let table = tables.next()?;
+    tables.next().is_none().then_some(())?;
     let cap_id = table.entries[1].entity_id;
     let cap = plane_equation(
         cap_id,
@@ -994,7 +991,7 @@ fn zero_offset_standard_section_plane_equation(
         sources.model_planes,
         sources.outline_planes,
     )?;
-    let candidates = sources
+    let mut candidates = sources
         .datums
         .iter()
         .filter_map(|datum| {
@@ -1007,11 +1004,9 @@ fn zero_offset_standard_section_plane_equation(
             ((cap_alignment - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
                 && reference_alignment <= EPS_PLACEMENT_EXACT_GEOMETRY)
                 .then_some(equation)
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
     let aligned_cap_offset = if dot(candidate.normal, cap.normal).is_sign_negative() {
         -cap.offset
     } else {
@@ -1019,7 +1014,7 @@ fn zero_offset_standard_section_plane_equation(
     };
     let separation = (candidate.offset - aligned_cap_offset).abs();
     let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
-    (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(*candidate)
+    (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(candidate)
 }
 
 fn circular_profile_aligned_origin(
