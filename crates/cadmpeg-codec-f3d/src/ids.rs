@@ -834,11 +834,6 @@ native_record_id!(
     "design-decal-image"
 );
 native_record_id!(
-    /// The native design-dimension-recipe-record key.
-    native_design_dimension_recipe_record_id,
-    "design-dimension-recipe-record"
-);
-native_record_id!(
     /// The native design-dimension-locus-pair record key.
     native_design_dimension_locus_pair_id,
     "design-dimension-locus-pair"
