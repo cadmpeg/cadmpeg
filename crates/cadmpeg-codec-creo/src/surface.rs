@@ -2118,16 +2118,14 @@ impl SurfaceParameterRecord {
                 && psb::reference_id(&self.body, end + 1)
                     .is_ok_and(|(_, reference_end)| reference_end == self.body.len())
         };
-        let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
+        let contiguous_slots_end = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
-            let mut values = Vec::with_capacity(frame.slots.len());
             for slot in &frame.slots {
                 (slot.offset == cursor).then_some(())?;
                 cursor = cursor.checked_add(slot.raw.len())?;
-                values.push(slot.value?);
+                slot.value?.is_finite().then_some(())?;
             }
-            values.iter().all(|value| value.is_finite()).then_some(())?;
-            Some((values, cursor))
+            Some(cursor)
         };
         let (diameter_endpoints, extent_endpoints) = match self.scalar_frames.as_slice() {
             [frame]
@@ -2136,20 +2134,20 @@ impl SurfaceParameterRecord {
                     Some([0x15] | [0x00, 0x15, 0x1c])
                 ) =>
             {
-                let (values, end) = contiguous_values(frame)?;
-                let [first, _, second, a0, a1, a2, b0, b1, b2] = values.as_slice() else {
+                let end = contiguous_slots_end(frame)?;
+                let [first, _, second, a0, a1, a2, b0, b1, b2] = frame.slots.as_slice() else {
                     return None;
                 };
                 frame_reaches_body_end(end).then_some(())?;
-                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+                ([first.value?, second.value?], [[a0.value?, a1.value?, a2.value?], [b0.value?, b1.value?, b2.value?]])
             }
             [leading, trailing] if leading.slots.len() == 1 => {
-                let (leading_values, leading_end) = contiguous_values(leading)?;
-                let &[first] = leading_values.as_slice() else {
+                let leading_end = contiguous_slots_end(leading)?;
+                let [first] = leading.slots.as_slice() else {
                     return None;
                 };
-                let (trailing_values, trailing_end) = contiguous_values(trailing)?;
-                let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
+                let trailing_end = contiguous_slots_end(trailing)?;
+                let [second, a0, a1, a2, b0, b1, b2] = trailing.slots.as_slice() else {
                     return None;
                 };
                 let controls_match = (leading.offset == 1
@@ -2171,15 +2169,15 @@ impl SurfaceParameterRecord {
                         && self.body.get(..2) == Some(&[0xeb, 0xba])
                         && self.body.get(leading_end..trailing.offset) == Some(&[0x12]));
                 (controls_match && frame_reaches_body_end(trailing_end)).then_some(())?;
-                ([first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+                ([first.value?, second.value?], [[a0.value?, a1.value?, a2.value?], [b0.value?, b1.value?, b2.value?]])
             }
             [leading, trailing] => {
-                let (leading_values, leading_end) = contiguous_values(leading)?;
-                let [_, first] = leading_values.as_slice() else {
+                let leading_end = contiguous_slots_end(leading)?;
+                let [_, first] = leading.slots.as_slice() else {
                     return None;
                 };
-                let (trailing_values, trailing_end) = contiguous_values(trailing)?;
-                let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
+                let trailing_end = contiguous_slots_end(trailing)?;
+                let [second, a0, a1, a2, b0, b1, b2] = trailing.slots.as_slice() else {
                     return None;
                 };
                 ((leading.offset == 0
@@ -2187,7 +2185,7 @@ impl SurfaceParameterRecord {
                     && self.body.get(leading_end..trailing.offset) == Some(&[0x12])
                     && frame_reaches_body_end(trailing_end))
                 .then_some(())?;
-                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+                ([first.value?, second.value?], [[a0.value?, a1.value?, a2.value?], [b0.value?, b1.value?, b2.value?]])
             }
             _ => return None,
         };
