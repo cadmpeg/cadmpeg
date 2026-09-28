@@ -10,8 +10,7 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
 use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
@@ -199,15 +198,11 @@ fn exact_class_307_joint_origin(
         "307",
         class_307_joint_origin::LEN,
     )?;
-    let (identity_guid, identity_end) = lp_utf16_bounded(
-        bytes,
-        start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
-        36..=36,
-    )?;
-    let (kind, kind_end) = lp_utf16_bounded(
+    let identity_end = fixed_guid_end(bytes, start.checked_add(class_307_joint_origin::IDENTITY_GUID)?)?;
+    let kind_end = fixed_utf16_ascii_eq(
         bytes,
         start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,
-        11..=11,
+        "JointOrigin",
     )?;
     if paired_at != start.checked_add(class_307_joint_origin::LEN)?
         || marked_record_reference(
@@ -220,12 +215,10 @@ fn exact_class_307_joint_origin(
             start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
         )
         .is_none()
-        || !is_guid_relaxed(&identity_guid)
         || identity_end
             != start
                 .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
                 .checked_sub(3)?
-        || kind != "JointOrigin"
         || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
         || View::u32_le_at(
             bytes,
@@ -388,12 +381,8 @@ fn exact_class_363_identity_guids(
 )> {
     let occurrence_at = start.checked_add(class_363_identity::OCCURRENCE_GUID)?;
     let identity_at = start.checked_add(class_363_identity::COMPONENT_IDENTITY_GUID)?;
-    let (occurrence_guid, occurrence_end) = lp_utf16_bounded(bytes, occurrence_at, 36..=36)?;
-    let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-    let occurrence_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
-    let identity_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    let (occurrence_guid, occurrence_end) = fixed_relaxed_guid_text(bytes, occurrence_at)?;
+    let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
     if occurrence_end != identity_at || identity_end != identity_at.checked_add(76)? {
         return None;
     }

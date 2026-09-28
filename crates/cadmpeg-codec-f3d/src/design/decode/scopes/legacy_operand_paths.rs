@@ -5,8 +5,7 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::assembly_class_383_258_frame_359_identity as class_383_identity;
@@ -103,24 +102,16 @@ pub(super) fn exact_legacy_class_388_scope(
     if external_component == 0 {
         return None;
     }
-    let (component_identity, identity_end) = lp_utf16_bounded(
-        bytes,
-        start + class_388_assemble::COMPONENT_IDENTITY,
-        36..=36,
-    )?;
-    if !is_guid_relaxed(&component_identity)
-        || identity_end != start + class_388_assemble::COMPONENT_IDENTITY + 76
-    {
+    let identity_end = fixed_guid_end(bytes, start + class_388_assemble::COMPONENT_IDENTITY)?;
+    if identity_end != start + class_388_assemble::COMPONENT_IDENTITY + 76 {
         return None;
     }
-    let (kind, kind_end) = lp_utf16_bounded(
+    let kind_end = fixed_utf16_ascii_eq(
         bytes,
         start + class_388_assemble::KIND_CODE_UNIT_COUNT,
-        class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE as usize
-            ..=class_388_assemble::KIND_CODE_UNIT_COUNT_VALUE as usize,
+        "Assemble",
     )?;
-    if kind != "Assemble"
-        || kind_end != start + class_388_assemble::FEATURE_ORDINAL
+    if kind_end != start + class_388_assemble::FEATURE_ORDINAL
         || View::u32_le_at(bytes, start + class_388_assemble::FEATURE_ORDINAL)?
             != scope.feature_ordinal.get()
     {
@@ -492,12 +483,8 @@ fn exact_legacy_class_383_identity_guids(
 )> {
     let first_at = start.checked_add(class_383_identity::OCCURRENCE_GUID)?;
     let second_at = start.checked_add(class_383_identity::IDENTITY_GUID)?;
-    let (occurrence_guid, after_occurrence) = lp_utf16_bounded(bytes, first_at, 36..=36)?;
-    let (identity_guid, after_identity) = lp_utf16_bounded(bytes, second_at, 36..=36)?;
-    let occurrence_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
-    let identity_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+    let (occurrence_guid, after_occurrence) = fixed_relaxed_guid_text(bytes, first_at)?;
+    let (identity_guid, after_identity) = fixed_relaxed_guid_text(bytes, second_at)?;
     if after_occurrence != second_at
         || after_identity
             != start
@@ -766,13 +753,10 @@ fn exact_legacy_class_412_path(
     {
         return None;
     }
-    let (occurrence_guid, occurrence_end) = lp_utf16_bounded(
+    let (occurrence_guid, occurrence_end) = fixed_relaxed_guid_text(
         bytes,
         start.checked_add(class_412_path::OCCURRENCE_GUID)?,
-        36..=36,
     )?;
-    let occurrence_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid).ok()?;
     if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
         return None;
     }
@@ -785,9 +769,7 @@ fn exact_legacy_class_412_path(
     let mut identity_guids = Vec::with_capacity(identity_offsets.len());
     for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
         let identity_at = start.checked_add(relative_offset)?;
-        let (identity_guid, identity_end) = lp_utf16_bounded(bytes, identity_at, 36..=36)?;
-        let identity_guid =
-            crate::records::mesh::DesignRelaxedGuidText::try_from(identity_guid).ok()?;
+        let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
         let expected_end = match ordinal {
             0 => class_412_path::SECOND_IDENTITY_GUID,
             1 => class_412_path::IDENTITY_SEPARATOR,
