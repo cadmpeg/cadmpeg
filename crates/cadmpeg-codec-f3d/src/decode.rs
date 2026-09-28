@@ -3476,11 +3476,12 @@ fn project_mesh_bodies(
             )
             .collect();
         let channels = mesh_attribute_channels(
+            ctx,
             &body.attributes,
             body.vertices.len(),
             &body.triangles,
             &mut unresolved,
-        );
+        )?;
         // The paramesh registry states an unshaded mesh by carrying no
         // corner-normal channel, so the lane arrives absent, never empty.
         let record = id.clone();
@@ -3642,11 +3643,12 @@ fn bind_mesh_feature_definitions(
 /// the value table and expands those selections into one selector per triangle
 /// corner.
 fn mesh_attribute_channels(
+    ctx: &DecodeContext<'_>,
     attributes: &[crate::paramesh::MeshAttribute],
     vertices: usize,
     triangles: &[[u32; 3]],
     unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
-) -> Vec<cadmpeg_ir::tessellation::TessellationChannel> {
+) -> Result<Vec<cadmpeg_ir::tessellation::TessellationChannel>, CodecError> {
     use crate::paramesh::MeshAttributeDomain;
 
     let mut channels = Vec::new();
@@ -3662,14 +3664,18 @@ fn mesh_attribute_channels(
                     item_size,
                     attribute.role,
                     attribute.element_code(),
-                    attribute.values().to_vec(),
+                    ctx.copy_retained(attribute.values(), "copy F3D mesh channel values")?,
                 ) {
-                    Ok(channel) => channels.push(channel),
+                    Ok(channel) => {
+                        ctx.charge_collection_items(1, "collect F3D mesh channels")?;
+                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.push(channel);
+                    }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Vertex).or_default() += 1,
                 }
             }
             (MeshAttributeDomain::Corner, Some(item_size), Some(_)) => {
-                let Some(selectors) = attribute.corner_selectors(vertices, triangles) else {
+                let Some(selectors) = attribute.corner_selectors(ctx, vertices, triangles)? else {
                     *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1;
                     continue;
                 };
@@ -3678,37 +3684,48 @@ fn mesh_attribute_channels(
                     item_size,
                     attribute.role,
                     attribute.element_code(),
-                    attribute.values().to_vec(),
+                    ctx.copy_retained(attribute.values(), "copy F3D mesh channel values")?,
                 ) {
-                    Ok(channel) => channels.push(channel),
+                    Ok(channel) => {
+                        ctx.charge_collection_items(1, "collect F3D mesh channels")?;
+                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.push(channel);
+                    }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Corner).or_default() += 1,
                 }
             }
             (MeshAttributeDomain::Triangle, Some(item_size), Some(count))
                 if usize::try_from(count) == Ok(triangles.len()) && item_size == 4 =>
             {
-                let Some(indices) = (0..triangles.len())
-                    .map(|index| u32::try_from(index).ok())
-                    .collect::<Option<Vec<_>>>()
-                else {
+                if u32::try_from(triangles.len()).is_err() {
                     *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1;
                     continue;
-                };
+                }
+                ctx.charge_collection_items(u64::try_from(triangles.len()).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh triangle selectors", 0, u64::MAX))?, "collect F3D mesh triangle selectors")?;
+                let mut indices = Vec::new();
+                indices.try_reserve_exact(triangles.len()).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh triangle selectors", 0, u64::try_from(triangles.len()).unwrap_or(u64::MAX)))?;
+                for index in 0..triangles.len() {
+                    indices.push(u32::try_from(index).map_err(|_| CodecError::Malformed("F3D mesh triangle selector exceeds u32".into()))?);
+                }
                 match cadmpeg_ir::tessellation::TessellationChannel::new(
                     cadmpeg_ir::tessellation::ChannelAddressing::Triangle { indices },
                     item_size,
                     attribute.role,
                     attribute.element_code(),
-                    attribute.values().to_vec(),
+                    ctx.copy_retained(attribute.values(), "copy F3D mesh channel values")?,
                 ) {
-                    Ok(channel) => channels.push(channel),
+                    Ok(channel) => {
+                        ctx.charge_collection_items(1, "collect F3D mesh channels")?;
+                        channels.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect F3D mesh channels", 0, 1))?;
+                        channels.push(channel);
+                    }
                     Err(_) => *unresolved.entry(MeshAttributeDomain::Triangle).or_default() += 1,
                 }
             }
             (domain, _, _) => *unresolved.entry(domain).or_default() += 1,
         }
     }
-    channels
+    Ok(channels)
 }
 
 /// Report mesh attribute channels that the projector left unresolved, grouped by

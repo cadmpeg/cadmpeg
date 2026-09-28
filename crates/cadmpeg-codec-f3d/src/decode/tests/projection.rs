@@ -221,7 +221,10 @@ fn indexed_mesh_channels_project_default_and_override_selectors() {
         addressing: crate::paramesh::MeshAttributeAddressing::Corner(vec![0, 2]),
     };
     let mut unresolved = std::collections::BTreeMap::new();
-    let channels = mesh_attribute_channels(&[attribute], 3, &[[0, 1, 2]], &mut unresolved);
+    let channels = crate::test_support::with_decode_context(|ctx| {
+        mesh_attribute_channels(ctx, &[attribute], 3, &[[0, 1, 2]], &mut unresolved)
+            .expect("mesh attribute budget")
+    });
 
     assert!(unresolved.is_empty());
     assert_eq!(channels.len(), 1);
