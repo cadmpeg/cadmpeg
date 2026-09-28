@@ -1652,13 +1652,14 @@ pub(super) fn blend_spine_cache_fit_tolerance_with_index(
 }
 
 fn complete_blend_boundary_support_uv_with_index_and_budget(
+    ctx: &DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
     fit_tolerance: f64,
     seeds: [Option<Point2>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<[Vec<Point2>; 2]>, cadmpeg_core::CodecError> {
     let Some((blend_side, support_side)) = (0..2).find_map(|blend_side| {
         let (supports, _, _, _) = blend_surface_definition_with_index(index, surfaces[blend_side])?;
         let support_matches = supports
@@ -1675,10 +1676,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
     }) else {
         return Ok(None);
     };
-    let mut lanes = [
-        Vec::with_capacity(points.len()),
-        Vec::with_capacity(points.len()),
-    ];
+    let mut lanes = [Vec::new(), Vec::new()];
     for point in points {
         let blend_seed = lanes[blend_side].last().copied().or(seeds[blend_side]);
         let support_seed = lanes[support_side].last().copied().or(seeds[support_side]);
@@ -1706,6 +1704,12 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
         else {
             return Ok(None);
         };
+        ctx.charge_collection_items(2, "nx coupled support UV boundary lanes")?;
+        for lane in &mut lanes {
+            lane.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx coupled support UV boundary lanes", 0, 1)
+            })?;
+        }
         lanes[blend_side].push(blend_parameters);
         lanes[support_side].push(support_parameters);
     }
@@ -1730,7 +1734,7 @@ fn complete_coupled_support_uv(
     let mut lane_geometry_exhausted = false;
     let mut replacements = Vec::new();
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = &samples.points_charged(ctx)?;
         let parameters = &samples.parameters_charged(ctx)?;
@@ -1748,7 +1752,15 @@ fn complete_coupled_support_uv(
         else {
             continue;
         };
-        let lane_state = context.sides().each_ref().map(|side| side.pcurve.clone());
+        let [first_state, second_state] = context.sides().each_ref().map(|side| {
+            side.pcurve.as_ref().map(|pcurve| {
+                Ok::<_, cadmpeg_core::CodecError>(cadmpeg_ir::geometry::SupportPcurve::new(
+                    pcurve.geometry.try_clone_for_decode(ctx, "nx coupled support UV retry pcurve")?,
+                    pcurve.parameter_range,
+                ))
+            }).transpose()
+        });
+        let lane_state = [first_state?, second_state?];
         if failed_attempts
             .get(procedural_id)
             .is_some_and(|previous| previous == &lane_state)
@@ -1828,6 +1840,7 @@ fn complete_coupled_support_uv(
         );
         let geometry_budget = &lane_geometry_budget;
         let mut lanes = complete_blend_boundary_support_uv_with_index_and_budget(
+            ctx,
             &model_index,
             surfaces,
             points,
@@ -1847,7 +1860,11 @@ fn complete_coupled_support_uv(
             )?;
         }
         let Some(lanes) = lanes else {
-            failed_attempts.insert(procedural_id.clone(), lane_state);
+            ctx.charge_collection_items(1, "nx coupled support UV failed retries")?;
+            failed_attempts.insert(
+                crate::decode::ids::copy_typed_id(ctx, procedural_id.as_str(), "nx coupled support UV retry identity")?,
+                lane_state,
+            );
             let parent_exhausted = parent_geometry_budget
                 .consume_child(&lane_geometry_budget)
                 .is_err();
@@ -1889,21 +1906,52 @@ fn complete_coupled_support_uv(
                         None
                     };
                 let parameter_range = samples.parameter_range();
+                let count = cadmpeg_core::decode::u64_from_index(lanes[side].len());
+                ctx.charge_collection_items(count, "nx coupled support UV controls")?;
+                let mut controls = Vec::new();
+                controls.try_reserve_exact(lanes[side].len()).map_err(|_| {
+                    ctx.refuse_codec_limit("nx coupled support UV controls", 0, count)
+                })?;
+                controls.extend_from_slice(&lanes[side]);
                 let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     linear_knots(parameters, geometry_budget)?,
-                    lanes[side].clone(),
+                    controls,
                     None,
                     false,
                 )?;
                 let pcurve = PcurveGeometry::Nurbs { nurbs };
                 if let Some([Some(first), Some(last)]) = endpoint_values {
-                    endpoint_witnesses
-                        .entry((owner.clone(), surfaces[side].clone()))
-                        .or_default()
-                        .push((pcurve.clone(), parameter_range, [first, last]));
+                    let key = (
+                        crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx coupled support UV witness owner")?,
+                        crate::decode::ids::copy_typed_id(ctx, surfaces[side].as_str(), "nx coupled support UV witness surface")?,
+                    );
+                    let entries = match endpoint_witnesses.entry(key) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            ctx.charge_collection_items(1, "nx coupled support UV witness index")?;
+                            entry.insert(Vec::new())
+                        }
+                    };
+                    ctx.charge_collection_items(1, "nx coupled support UV endpoint witnesses")?;
+                    entries.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx coupled support UV endpoint witnesses", 0, 1)
+                    })?;
+                    entries.push((
+                        pcurve.try_clone_for_decode(ctx, "nx coupled support UV witness pcurve")?,
+                        parameter_range,
+                        [first, last],
+                    ));
                 }
-                replacements.push((procedural_id.clone(), side, pcurve));
+                ctx.charge_collection_items(1, "nx coupled support UV replacements")?;
+                replacements.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("nx coupled support UV replacements", 0, 1)
+                })?;
+                replacements.push((
+                    crate::decode::ids::copy_typed_id(ctx, procedural_id.as_str(), "nx coupled support UV replacement owner")?,
+                    side,
+                    pcurve,
+                ));
             }
         }
         let parent_exhausted = parent_geometry_budget
@@ -2499,21 +2547,64 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::super::geometry_work::GeometryWorkBudget;
     use super::{
-        ordered_support_uv_seed_candidates, support_uv_lane_geometry_work_limit,
+        complete_support_uv_with_budget_and_endpoint_witnesses, ordered_support_uv_seed_candidates,
+        support_uv_lane_geometry_work_limit,
         support_uv_lane_matches_surface_with_budget,
         unseeded_nurbs_surface_parameters_with_index_and_budget, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK,
         MAX_SUPPORT_UV_SAMPLES,
     };
     use crate::intersection::SupportUvLane;
-    use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, WorkBudget};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn support_uv_completion_refuses_model_index_at_caller_collection_limit() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: SurfaceId::mint("test:model:entity#synthetic:completion-limit-surface")
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("plane frame"),
+            )),
+            source_object: None,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded test input");
+        let support_budget = WorkBudget::new(1);
+        let geometry_budget = GeometryWorkBudget::from_context(&ctx, 100);
+        let mut endpoint_witnesses = BTreeMap::new();
+
+        assert!(matches!(
+            complete_support_uv_with_budget_and_endpoint_witnesses(
+                &ctx,
+                &mut ir,
+                &[],
+                (&support_budget, &geometry_budget),
+                (&support_budget, &geometry_budget),
+                &mut endpoint_witnesses,
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "model procedural surface carriers"
+        ));
+    }
 
     #[test]
     fn linear_offset_continuation_precedes_unvalidated_serialized_seeds() {
