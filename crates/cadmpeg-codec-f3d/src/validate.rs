@@ -1072,7 +1072,7 @@ fn validate_loaded(
     validate_extrude_parameter_operands(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings)?;
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records)?;
-    let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
+    let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings)?;
     let edge_identity_records =
         validate_edge_identity_operands(decode, &ctx, &mut findings, &expected_face_operands)?;
     let body_recipe_operand_records = validate_body_recipe_operands(decode, &ctx, &mut findings)?;
@@ -5594,7 +5594,7 @@ fn validate_fillet_operand_groups<'a>(
 fn validate_construction_operand_identities<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -5716,18 +5716,16 @@ fn validate_construction_operand_identities<'a>(
             && chain_entry_shape
             && following_shape
             && persistent_shape
-            && operand_identity_groups.insert((native_stream, identity.group_record_index));
+            && ctx.insert_unique(&mut operand_identity_groups,
+                (native_stream, identity.group_record_index),
+                "index F3D construction operand identity groups")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design construction operand identity has an invalid nested frame"
-                    .into(),
-                entity: Some(identity.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design construction operand identity has an invalid nested frame",
+                Some(ctx.copy_entity(&identity.id)?))?;
         }
     }
-    operand_identity_groups
+    Ok(operand_identity_groups)
 }
 
 /// Validate edge identity operands; returns their backing record set.
