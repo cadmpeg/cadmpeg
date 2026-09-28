@@ -960,6 +960,68 @@ pub(crate) fn history_input_body_id(
     )
 }
 
+/// Compose one history-input entity identity without copying an intermediate key.
+fn history_input_entity_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    kind: &'static str,
+    slot: impl std::fmt::Display,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let feature_key = feature.as_str().split_once('#').ok_or_else(||
+        cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?.1;
+    crate::container::format_retained(
+        ctx,
+        "retain F3D history input identity",
+        format_args!(
+            "f3d:history-input:{kind}#{}:{feature_key}:{previous_state_id}:{slot}",
+            feature_key.len(),
+        ),
+    )
+}
+
+macro_rules! charged_history_input_entity_id {
+    ($name:ident, $type:path, $kind:literal) => {
+        pub(crate) fn $name(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            feature: &cadmpeg_ir::features::FeatureId,
+            previous_state_id: i64,
+            slot: impl std::fmt::Display,
+        ) -> Result<$type, cadmpeg_core::CodecError> {
+            <$type>::mint(history_input_entity_id_charged(
+                ctx, feature, previous_state_id, $kind, slot,
+            )?).map_err(cadmpeg_core::CodecError::malformed)
+        }
+    };
+}
+
+charged_history_input_entity_id!(history_input_body_id_charged,
+    cadmpeg_ir::ids::HistoricalBodyId, "body");
+charged_history_input_entity_id!(history_input_face_id_charged,
+    cadmpeg_ir::ids::HistoricalFaceId, "face");
+charged_history_input_entity_id!(history_input_edge_id_charged,
+    cadmpeg_ir::ids::HistoricalEdgeId, "edge");
+charged_history_input_entity_id!(history_input_vertex_id_charged,
+    cadmpeg_ir::ids::HistoricalVertexId, "vertex");
+
+/// Compose the history-input state identity with one retained allocation.
+pub(crate) fn history_input_state_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+) -> Result<cadmpeg_ir::ids::FeatureInputTopologyId, cadmpeg_core::CodecError> {
+    let feature_key = feature.as_str().split_once('#').ok_or_else(||
+        cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?.1;
+    let value = crate::container::format_retained(
+        ctx,
+        "retain F3D history input identity",
+        format_args!("f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
+            feature_key.len()),
+    )?;
+    cadmpeg_ir::ids::FeatureInputTopologyId::mint(value)
+        .map_err(cadmpeg_core::CodecError::malformed)
+}
+
 // --- native design-record keys ---------------------------------------------
 //
 // Native design records are keyed `f3d:{scope}:{kind}#{offset}`, where `scope`
@@ -1456,6 +1518,36 @@ mod tests {
             super::history_input_edge_id(&prefix, 9).as_str(),
             "f3d:history-input:edge#7:a:b%20c:-3:9"
         );
+    }
+
+    #[test]
+    fn charged_history_input_ids_match_existing_identity_bytes() {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
+        let prefix = super::history_input_prefix(&feature.key(), -3);
+        assert_eq!(super::history_input_body_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_body_id(&prefix, 9));
+        assert_eq!(super::history_input_face_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_face_id(&prefix, 9));
+        assert_eq!(super::history_input_edge_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_edge_id(&prefix, 9));
+        assert_eq!(super::history_input_vertex_id_charged(&ctx, &feature, -3, 9).unwrap(),
+            super::history_input_vertex_id(&prefix, 9));
+        assert_eq!(super::history_input_state_id_charged(&ctx, &feature, -3).unwrap(),
+            super::history_input_state_id(&prefix));
+    }
+
+    #[test]
+    fn charged_history_input_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let feature = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#a:b%20c").unwrap();
+        let error = super::history_input_edge_id_charged(&ctx, &feature, -3, 9).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D history input identity"));
     }
 
     #[test]
