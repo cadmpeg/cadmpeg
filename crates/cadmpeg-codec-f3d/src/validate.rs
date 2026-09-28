@@ -758,6 +758,33 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(())
     }
 
+    fn push_ordered_group<K: Ord, T>(
+        &self,
+        groups: &mut std::collections::BTreeMap<K, Vec<T>>,
+        key: K,
+        value: T,
+        map_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        use std::collections::btree_map::Entry;
+        let items = match groups.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                self.charge_item(map_operation)?;
+                entry.insert(Vec::new())
+            }
+        };
+        self.charge_item(item_operation)?;
+        items.try_reserve(1).map_err(|_| {
+            self.decode.map_or_else(
+                || CodecError::malformed("F3D validation group allocation failed"),
+                |decode| decode.refuse_codec_limit(item_operation, 0, 1),
+            )
+        })?;
+        items.push(value);
+        Ok(())
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -1084,8 +1111,8 @@ fn validate_loaded(
     validate_sketch_relations(&ctx, &mut findings)?;
     validate_sketch_geometry_identities(&ctx, &mut findings)?;
     validate_sketch_relation_owners(decode, &ctx, &mut findings)?;
-    validate_body_links(&ctx, &mut findings);
-    validate_subentity_tags(&ctx, &mut findings);
+    validate_body_links(&ctx, &mut findings)?;
+    validate_subentity_tags(&ctx, &mut findings)?;
     validate_history_graphs(decode, &ctx, &mut findings)?;
     Ok(findings)
 }
@@ -8447,34 +8474,32 @@ fn validate_sketch_relation_owners(
 }
 
 /// Validate persistent body links and their history ordering.
-fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let ir = ctx.ir;
-    let body_ids = ir
+    let body_ids = ctx.collect_set(ir
         .model
         .bodies
         .iter()
         .map(|body| &body.id)
-        .collect::<HashSet<_>>();
+        , "index F3D persistent body targets")?;
     let mut body_links: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if body_ids.contains(id) => {
-                Some(link.target.clone())
+                Some(id)
             }
             _ => None,
         };
         let Some(target_key) = target_key else {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion persistent body link has an invalid target or group payload"
-                    .into(),
-                entity: Some(link.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion persistent body link has an invalid target or group payload",
+                Some(ctx.copy_entity(&link.id)?))?;
             continue;
         };
-        body_links.entry(target_key).or_default().push(link);
+        ctx.push_ordered_group(&mut body_links, target_key, link,
+            "index F3D persistent body link groups",
+            "collect F3D persistent body link members")?;
     }
     for links in body_links.values_mut() {
         links.sort_by_key(|link| link.ordinal);
@@ -8483,56 +8508,49 @@ fn validate_body_links(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .enumerate()
             .any(|(ordinal, link)| link.ordinal != ordinal as u32)
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion persistent body links have noncanonical history ordering".into(),
-                entity: links.first().map(|link| link.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion persistent body links have noncanonical history ordering",
+                links.first().map(|link| ctx.copy_entity(&link.id)).transpose()?)?;
         }
     }
+    Ok(())
 }
 
 /// Validate persistent subentity tags and their group ordering.
-fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let ir = ctx.ir;
-    let face_ids = ir
+    let face_ids = ctx.collect_set(ir
         .model
         .faces
         .iter()
         .map(|face| &face.id)
-        .collect::<HashSet<_>>();
-    let edge_ids = ir
+        , "index F3D persistent face targets")?;
+    let edge_ids = ctx.collect_set(ir
         .model
         .edges
         .iter()
         .map(|edge| &edge.id)
-        .collect::<HashSet<_>>();
+        , "index F3D persistent edge targets")?;
     let mut subentity_tags = std::collections::BTreeMap::new();
     for tag in &native.persistent_subentity_tags {
         let Some(target_key) = (match &tag.target {
             cadmpeg_ir::attributes::AttributeTarget::Face(id) if face_ids.contains(id) => {
-                Some(format!("face:{}", id.as_str()))
+                Some((1_u8, id.as_str()))
             }
             cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edge_ids.contains(id) => {
-                Some(format!("edge:{}", id.as_str()))
+                Some((0_u8, id.as_str()))
             }
             _ => None,
         }) else {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion persistent subentity tag has an invalid target or group payload"
-                    .into(),
-                entity: Some(tag.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion persistent subentity tag has an invalid target or group payload",
+                Some(ctx.copy_entity(&tag.id)?))?;
             continue;
         };
-        subentity_tags
-            .entry(target_key)
-            .or_insert_with(Vec::new)
-            .push(tag);
+        ctx.push_ordered_group(&mut subentity_tags, target_key, tag,
+            "index F3D persistent subentity tag groups",
+            "collect F3D persistent subentity tag members")?;
     }
     for tags in subentity_tags.values_mut() {
         tags.sort_by_key(|tag| tag.ordinal);
@@ -8541,14 +8559,12 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .enumerate()
             .any(|(ordinal, tag)| tag.ordinal != ordinal as u32)
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion persistent subentity tags have noncanonical group ordering".into(),
-                entity: tags.first().map(|tag| tag.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion persistent subentity tags have noncanonical group ordering",
+                tags.first().map(|tag| ctx.copy_entity(&tag.id)).transpose()?)?;
         }
     }
+    Ok(())
 }
 
 /// Validate each ASM history graph as a coherent state chain.
