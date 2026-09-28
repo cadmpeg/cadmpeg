@@ -620,8 +620,22 @@ pub(super) fn try_decode_freeform_surfaces(
                 .map(|record| record.object_id),
             "catia_freeform_census_face_ids",
         ));
-        let mut topology_ir = ir.clone();
-        let mut topology_annotations = annotations.clone();
+        let mut topology_ir = CadIr::empty();
+        let mut topology_annotations = AnnotationBuilder::new();
+        let payload_stream = if scan.brep.is_some() {
+            "MainDataStream+SurfacicReps"
+        } else {
+            "CATPart"
+        };
+        admitted!(annotate(
+            ctx,
+            &mut topology_annotations,
+            &payload_id,
+            payload_stream,
+            0,
+            scan.variant.id(),
+            Exactness::Unknown,
+        ));
         let topology_transferred = if let Some(graph) = b5_graph.take() {
             let transferred = match crate::families::b5::transfer::transfer(
                 &mut topology_ir,
@@ -3739,6 +3753,24 @@ fn append_a8_rolling_ball_pools(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn freeform_topology_seed_annotation_refuses_second_admission() {
+        let result = crate::test_support::with_collection_limit(2, |ctx| {
+            let mut base = cadmpeg_ir::AnnotationBuilder::new();
+            let mut candidate = cadmpeg_ir::AnnotationBuilder::new();
+            crate::assemble::annotate(
+                ctx, &mut base, "catia:payload:unknown#freeform", "CATPart", 0,
+                "freeform", cadmpeg_ir::Exactness::Unknown,
+            )?;
+            crate::assemble::annotate(
+                ctx, &mut candidate, "catia:payload:unknown#freeform", "CATPart", 0,
+                "freeform", cadmpeg_ir::Exactness::Unknown,
+            )
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_provenance"));
+    }
+
     #[test]
     fn freeform_spatial_circle_collection_refuses_before_growth() {
         let mut bytes = vec![0xb2, 0x03, 0x0f, 112, 0x05];
