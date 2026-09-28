@@ -19,7 +19,7 @@ use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
-use crate::surface::rows;
+use crate::surface::rows as checked_rows;
 use crate::surface::scalar_slots_with_tokens_and_end;
 use crate::surface::slot_equality;
 use crate::surface::LocalSystemClassification;
@@ -37,6 +37,11 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
+    crate::decode::with_test_decode_ctx(|ctx| checked_rows(ctx, payload))
+        .expect("surface rows are admitted")
+}
 
 fn service_scalar_tokens(
     kind: SurfaceKind,

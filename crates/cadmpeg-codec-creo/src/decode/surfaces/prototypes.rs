@@ -194,6 +194,7 @@ fn first_instance_surface_row(
 /// naming the section, its declared end, and the buffer length. `Ok(None)`
 /// states that no single complete surface array holds the prototype.
 pub(super) fn surface_prototype_frame_bounds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
     prototype_offset: usize,
@@ -214,7 +215,8 @@ pub(super) fn surface_prototype_frame_bounds(
     let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
     };
-    let mut matches = crate::surface::complete_surface_array_bounds(payload)
+    let complete_bounds = crate::surface::complete_surface_array_bounds(ctx, payload)?;
+    let mut matches = complete_bounds
         .into_iter()
         .filter(|(start, end)| {
             relative_prototype_offset >= *start && relative_prototype_offset < *end
@@ -316,7 +318,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             continue;
         };
         let Some((adjacent_start, adjacent_end)) =
-            surface_prototype_frame_bounds(scan, section, record.offset)?
+            surface_prototype_frame_bounds(ctx, scan, section, record.offset)?
         else {
             continue;
         };

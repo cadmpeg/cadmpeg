@@ -1470,7 +1470,7 @@ fn surface_rows(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(surface::rows(bytes)),
+        |bytes| surface::rows(ctx, bytes),
         |row, base| row.offset += base,
         |row| row.offset,
     )
@@ -1483,7 +1483,7 @@ fn cross_section_surface_rows(
     collect_section_records_result(
         ctx,
         cross_sections(sections),
-        |bytes| Ok(surface::cross_section_rows(bytes)),
+        |bytes| surface::cross_section_rows(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -1615,7 +1615,7 @@ fn tabulated_cylinder_curve_replays(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(surface::tabulated_cylinder_curve_replays(bytes)),
+        |bytes| surface::tabulated_cylinder_curve_replays(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.surface_row_offset += base;

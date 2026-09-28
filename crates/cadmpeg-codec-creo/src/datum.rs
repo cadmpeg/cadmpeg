@@ -119,7 +119,7 @@ pub(crate) fn planes(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumPlaneRecord>, CodecError> {
-    let rows = crate::surface::counted_row_bounds(payload);
+    let rows = crate::surface::counted_row_bounds(ctx, payload)?;
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut planes = Vec::new();
     for (index, (row, frame_end)) in rows.iter().enumerate().filter(|(_, (row, _))| {
@@ -149,7 +149,7 @@ pub(crate) fn cylinders(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<DatumCylinder>, CodecError> {
-    let rows = crate::surface::rows(payload);
+    let rows = crate::surface::rows(ctx, payload)?;
     let parameters = crate::surface::parameter_records(ctx, payload)?;
     let mut cylinders = Vec::new();
     for row in rows
