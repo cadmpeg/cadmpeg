@@ -590,13 +590,13 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         &first,
         &second,
     )? else {
-        refusal.push_solver(
+        refusal.push_solver(ctx,
             format_args!(
                 "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
                 jet.pos
             ),
             "states knot-aligned jet samples the degree-5 B-spline lowering does not close",
-        );
+        )?;
         return Ok(None);
     };
     let mut poles = Vec::new();
