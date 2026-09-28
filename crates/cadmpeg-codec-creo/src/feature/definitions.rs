@@ -1981,25 +1981,28 @@ fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<[Op
     Some(values)
 }
 
-fn equation_argument_slots(payload: &[u8], offset: &mut usize) -> Option<Vec<Option<u32>>> {
+fn equation_argument_slots(
+    payload: &[u8],
+    offset: &mut usize,
+) -> Option<([Option<u32>; 3], usize)> {
     match *payload.get(*offset)? {
         0xe4 => {
             *offset += 1;
-            Some(vec![Some(1)])
+            Some(([Some(1), None, None], 1))
         }
         0xe5 => {
             *offset += 1;
-            Some(vec![Some(0), Some(0)])
+            Some(([Some(0), Some(0), None], 2))
         }
         0xe6 => {
             *offset += 1;
-            Some(vec![Some(0), Some(0), Some(0)])
+            Some(([Some(0), Some(0), Some(0)], 3))
         }
         0xf6 => {
             *offset += 1;
-            Some(vec![None])
+            Some(([None; 3], 1))
         }
-        _ => Some(vec![Some(next_solver_int(payload, offset)?)]),
+        _ => Some(([Some(next_solver_int(payload, offset)?), None, None], 1)),
     }
 }
 
@@ -2015,14 +2018,14 @@ fn equation_arguments(
         None => *offset < end && payload.get(*offset) != Some(&0xf6),
     } {
         let before = *offset;
-        let slots = equation_argument_slots(payload, offset)?;
+        let (slots, slot_count) = equation_argument_slots(payload, offset)?;
         if *offset <= before
             || *offset > end
-            || explicit_count.is_some_and(|count| arguments.len() + slots.len() > count)
+            || explicit_count.is_some_and(|count| arguments.len() + slot_count > count)
         {
             return None;
         }
-        arguments.extend(slots);
+        arguments.extend_from_slice(&slots[..slot_count]);
     }
     explicit_count
         .is_none_or(|count| arguments.len() == count)
@@ -7616,6 +7619,21 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "creo segment row body"));
+    }
+
+    #[test]
+    fn equation_argument_tokens_expand_into_fixed_stack_slots() {
+        for (token, expected, count) in [
+            (0xe4, [Some(1), None, None], 1),
+            (0xe5, [Some(0), Some(0), None], 2),
+            (0xe6, [Some(0), Some(0), Some(0)], 3),
+            (0xf6, [None, None, None], 1),
+            (0x2a, [Some(42), None, None], 1),
+        ] {
+            let mut offset = 0;
+            assert_eq!(super::equation_argument_slots(&[token], &mut offset), Some((expected, count)));
+            assert_eq!(offset, 1);
+        }
     }
 
     #[test]
