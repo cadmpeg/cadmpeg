@@ -265,7 +265,11 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
     let scan = container::scan_bytes(&source);
-    let classification = crate::dialect::classify_layers(&scan);
+    let classification = crate::dialect::classify_layers(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
@@ -318,7 +322,11 @@ fn geometry_history_xml_refuses_scoped_limit() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
     let mut scan = container::scan_bytes(&source);
-    let classification = crate::dialect::classify_layers(&scan);
+    let classification = crate::dialect::classify_layers(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;

@@ -11,10 +11,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use super::{
-    classify_layers, dialect_loss, dialect_losses, SldprtDialect, DECLARED_SW_VERSION, FORMAT,
-    PARASOLID_FORMAT, VERIFIED_KERNELS,
-};
+use super::{SldprtDialect, DECLARED_SW_VERSION, FORMAT, PARASOLID_FORMAT, VERIFIED_KERNELS};
 use crate::container::scan_bytes;
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::make_block;
@@ -27,6 +24,57 @@ use cadmpeg_core::dialect::{Admission, DialectLayers};
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::report::Severity;
 use std::collections::BTreeSet;
+
+fn classify_layers(scan: &crate::container::ContainerScan<'_>) -> super::LayerClassification {
+    super::classify_layers(&cadmpeg_test_support::service_decode_context(), scan)
+        .expect("test dialect classification fits service policy")
+}
+
+fn dialect_loss(matched: &cadmpeg_core::dialect::DialectMatch) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    super::dialect_loss(&cadmpeg_test_support::service_decode_context(), matched)
+        .expect("test dialect loss fits service policy")
+}
+
+fn dialect_losses(layers: &DialectLayers) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    super::dialect_losses(&cadmpeg_test_support::service_decode_context(), layers)
+        .expect("test dialect losses fit service policy")
+}
+
+#[test]
+fn dialect_classification_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = synthetic_sldprt();
+    let scan = scan_bytes(&source);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = super::classify_layers(&ctx, &scan) else {
+        panic!("classification must refuse the collection limit");
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT Parasolid layers"));
+}
+
+#[test]
+fn dialect_classification_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = synthetic_sldprt();
+    let scan = scan_bytes(&source);
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = super::classify_layers(&ctx, &scan) else {
+        panic!("classification must refuse the retained limit");
+    };
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT Parasolid carrier"));
+}
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
@@ -151,7 +199,9 @@ fn duplicate_carrier_identity_is_omitted_with_a_typed_loss() {
 
     assert_eq!(kernel_count, 2);
     let mut losses = Vec::new();
-    classification.append_losses(&mut losses);
+    classification
+        .append_losses(&cadmpeg_test_support::service_decode_context(), &mut losses)
+        .expect("test dialect losses fit service policy");
     assert_eq!(
         losses
             .iter()
