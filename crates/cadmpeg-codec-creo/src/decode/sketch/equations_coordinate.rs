@@ -1127,7 +1127,11 @@ pub(super) fn section_equal_length_coordinate_values(
     candidates
 }
 
-fn quadratic_roots(quadratic: Coefficient, linear: Coefficient, constant: Coefficient) -> Vec<f64> {
+fn quadratic_roots(
+    quadratic: Coefficient,
+    linear: Coefficient,
+    constant: Coefficient,
+) -> crate::decode::quadratic::QuadraticRoots {
     let mut roots = crate::decode::quadratic::real_roots(quadratic, linear, constant);
     let quadratic = quadratic.stated();
     let linear = linear.stated();
