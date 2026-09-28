@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A sequence that contains its first element at construction.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NonEmpty<T> {
     first: T,
@@ -52,6 +55,18 @@ impl<T> NonEmpty<T> {
             first: map(self.first),
             rest: self.rest.into_iter().map(map).collect(),
         }
+    }
+
+    pub(crate) fn map_charged<U>(self, ctx: &DecodeContext<'_>, mut map: impl FnMut(T) -> U) -> Result<NonEmpty<U>, CodecError> {
+        let first = map(self.first);
+        let mut rest = Vec::new();
+        for value in self.rest {
+            ctx.charge_collection_items(1, "nx nonempty mapped entries")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<U>()), "nx nonempty mapped entries")?;
+            rest.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx nonempty mapped entries", 0, 1))?;
+            rest.push(map(value));
+        }
+        Ok(NonEmpty { first, rest })
     }
 }
 
