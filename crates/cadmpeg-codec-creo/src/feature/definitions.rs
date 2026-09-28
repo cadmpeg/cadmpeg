@@ -3840,20 +3840,33 @@ fn entity_intersection(
         .then_some(first)
 }
 
-fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
-    let table = find_bytes(payload, b"order_table\0", start, end)?;
+fn order_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"order_table\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"order_table\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, next) = psb::compact_int(payload, cursor + 1);
     cursor = next;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (value, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((value, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(value)
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+        return Ok(None);
+    };
     let prototype = (|| {
         let mut field = cursor;
         for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
@@ -3864,7 +3877,9 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         }
         Some(())
     })();
-    let (_, next) = psb::reference_id(payload, close + 2).ok()?;
+    let Ok((_, next)) = psb::reference_id(payload, close + 2) else {
+        return Ok(None);
+    };
     cursor = next;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
@@ -3876,11 +3891,16 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     // zero with the prototype row present states a body-row count the table
     // cannot hold, and refuses the table.
     let declared_body_rows = if prototype.is_some() {
-        declared_count.checked_sub(1)?
+        let Some(count) = declared_count.checked_sub(1) else {
+            return Ok(None);
+        };
+        count
     } else {
         declared_count
     };
-    let row_limit = usize::try_from(declared_body_rows).ok()?;
+    let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+        return Ok(None);
+    };
     while cursor < end && rows.len() < row_limit {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -3903,12 +3923,20 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
             || payload
                 .get(next)
                 .is_some_and(|byte| matches!(byte, 0xe0 | 0xf1 | 0xf3));
-        if (!row_separator && !table_boundary)
-            || !external_ids.insert(external_id)
-            || !internal_ids.insert(internal_id)
-        {
+        if !row_separator && !table_boundary {
             break;
         }
+        if external_ids.contains(&external_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order external ID nodes")?;
+        external_ids.insert(external_id);
+        if internal_ids.contains(&internal_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
+        internal_ids.insert(internal_id);
+        ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
         rows.push(FeatureOrderRow {
             external_id,
             internal_id,
@@ -3920,22 +3948,23 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         }
         cursor = next + 1;
     }
-    Some(FeatureOrderTable {
+    Ok(Some(FeatureOrderTable {
         declared_count,
         has_prototype: prototype.is_some(),
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_order_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<FeatureOrderTable> {
-    let (table, declared_count, cursor) = (start..end).find_map(|table| {
+) -> Result<Option<FeatureOrderTable>, CodecError> {
+    let Some((table, declared_count, cursor)) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -3943,7 +3972,9 @@ fn positional_order_table(
         (class == table_class
             && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
         .then_some((table, declared_count, after_reference + 2))
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let prototype = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
@@ -3963,17 +3994,19 @@ fn positional_order_table(
     // count the table cannot hold, and refuses the table. Each row consumes at
     // least one byte before its 0xe2 separator, so the row count cannot exceed
     // the unread bytes in the table window.
-    let (row_limit, capacity) = match prototype.filter(|&rows_start| rows_start < end) {
-        Some(rows_start) => {
-            let declared_body_rows = declared_count.checked_sub(1)?;
-            (
-                usize::try_from(declared_body_rows).ok()?,
-                bounded_len(u64::from(declared_body_rows), 1, end - rows_start).unwrap_or(0),
-            )
+    let row_limit = match prototype.filter(|&rows_start| rows_start < end) {
+        Some(_) => {
+            let Some(declared_body_rows) = declared_count.checked_sub(1) else {
+                return Ok(None);
+            };
+            let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+                return Ok(None);
+            };
+            row_limit
         }
-        None => (0, 0),
+        None => 0,
     };
-    let mut rows = Vec::with_capacity(capacity);
+    let mut rows = Vec::new();
     let mut cursor = prototype.unwrap_or(end);
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
@@ -3987,9 +4020,16 @@ fn positional_order_table(
         else {
             break;
         };
-        if !external_ids.insert(external_id) || !internal_ids.insert(internal_id) {
+        if external_ids.contains(&external_id) {
             break;
         }
+        ctx.charge_collection_items(1, "creo order external ID nodes")?;
+        external_ids.insert(external_id);
+        if internal_ids.contains(&internal_id) {
+            break;
+        }
+        ctx.charge_collection_items(1, "creo order internal ID nodes")?;
+        internal_ids.insert(internal_id);
         let row = FeatureOrderRow {
             external_id,
             internal_id,
@@ -3998,6 +4038,7 @@ fn positional_order_table(
         };
         cursor = next;
         if rows.len() + 1 == row_limit {
+            ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
             rows.push(row);
             break;
         }
@@ -4005,15 +4046,16 @@ fn positional_order_table(
             break;
         }
         cursor += 1;
+        ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
         rows.push(row);
     }
-    Some(FeatureOrderTable {
+    Ok(Some(FeatureOrderTable {
         declared_count,
         has_prototype: prototype.is_some(),
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
@@ -6734,11 +6776,14 @@ fn definitions_in_ranges(
             replay_trim_vertex_classes =
                 trim_table_header(payload, b"vert_tab\0", start, end).map(|header| header.classes);
         }
-        let order_table = order_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_order_table(payload, start, end, replay_order_class?))
-                .flatten()
-        });
+        let order_table = match order_table(ctx, payload, start, end)? {
+            Some(table) => Some(table),
+            None if positional => match replay_order_class {
+                Some(class) => positional_order_table(ctx, payload, start, end, class)?,
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
         }
@@ -7829,11 +7874,15 @@ mod tests {
         };
 
         let zero = table(0);
-        assert!(order_table(&zero, 0, zero.len()).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| order_table(ctx, &zero, 0, zero.len()))
+            .expect("order table admitted")
+            .is_none());
 
         let one = table(1);
         assert_eq!(
-            order_table(&one, 0, one.len()).map(|table| (
+            crate::decode::with_test_decode_ctx(|ctx| order_table(ctx, &one, 0, one.len()))
+                .expect("order table admitted")
+                .map(|table| (
                 table.declared_count,
                 table.has_prototype,
                 table.rows.len()
@@ -7854,11 +7903,19 @@ mod tests {
         };
 
         let zero = table(0);
-        assert!(positional_order_table(&zero, 0, zero.len(), 66).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            positional_order_table(ctx, &zero, 0, zero.len(), 66)
+        })
+        .expect("positional order table admitted")
+        .is_none());
 
         let two = table(2);
         assert_eq!(
-            positional_order_table(&two, 0, two.len(), 66).map(|table| (
+            crate::decode::with_test_decode_ctx(|ctx| {
+                positional_order_table(ctx, &two, 0, two.len(), 66)
+            })
+            .expect("positional order table admitted")
+            .map(|table| (
                 table.declared_count,
                 table.has_prototype,
                 table.rows.len()
