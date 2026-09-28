@@ -2915,7 +2915,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &self.ir,
                     materials.has_topology_assignments,
                 );
-                annotate_docstruct(&mut self.source_attributes, scan);
+                annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 match crate::xref::decode_with_scopes(self.ctx, scan, &self.native.design_parameter_scopes) {
                     Ok(Some(table)) => {
                         report_xref_placement_failures(&mut self.report, &table);
@@ -2944,7 +2944,7 @@ impl<'a> F3dDecodeSession<'a> {
                 self.report.notes.extend(decoded_materials.notes);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
-                annotate_docstruct(&mut self.source_attributes, scan);
+                annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
                 let xref_table = match crate::xref::decode_with_scopes(
                     self.ctx,
                     scan,
@@ -3049,7 +3049,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
                 match inputs.xref {
                     Ok(Some(table)) => {
-                        apply_assembly_classification(&mut self.report, scan, &table);
+                        apply_assembly_classification(self.ctx, &mut self.report, scan, &table)?;
                     }
                     Ok(None) => {}
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -3157,7 +3157,7 @@ fn decode_scanned_document<'a>(
             mut source_attributes,
             unknowns,
         } = build_metadata_ir(scan)?;
-        annotate_docstruct(&mut source_attributes, scan);
+        annotate_docstruct(ctx, &mut source_attributes, scan)?;
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(scan);
         let mut report = crate::report::build_decode_report(
@@ -3167,7 +3167,7 @@ fn decode_scanned_document<'a>(
             container_losses(ctx, scan)?,
         )?;
         match crate::xref::decode(ctx, scan) {
-            Ok(Some(table)) => apply_assembly_classification(&mut report, scan, &table),
+            Ok(Some(table)) => apply_assembly_classification(ctx, &mut report, scan, &table)?,
             Ok(None) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => report.losses.push(xref_parse_loss(&error)),
@@ -3763,16 +3763,20 @@ fn report_unresolved_mesh_attributes(
 
 /// Record the `Properties.dat` docstruct declaration on the source metadata.
 fn annotate_docstruct(
+    ctx: &DecodeContext<'_>,
     attributes: &mut std::collections::BTreeMap<String, String>,
     scan: &ContainerScan,
-) {
-    let Some(docstruct) = crate::xref::docstruct(scan) else {
-        return;
+) -> Result<(), CodecError> {
+    let Some(docstruct) = crate::xref::docstruct(ctx, scan)? else {
+        return Ok(());
     };
+    ctx.charge_collection_items(1, "record F3D docstruct type")?;
     attributes.insert("docstruct_type".into(), docstruct.doc_type);
     if let Some(subtype) = docstruct.subtype {
+        ctx.charge_collection_items(1, "record F3D docstruct subtype")?;
         attributes.insert("docstruct_subtype".into(), subtype);
     }
+    Ok(())
 }
 
 /// A warning for a present but unparseable `RedirectionsStream.dat`.
@@ -3897,12 +3901,13 @@ fn apply_bodyless_design_classification(
 /// its XREF targets, so producing no geometry is not a loss
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 fn apply_assembly_classification(
+    ctx: &DecodeContext<'_>,
     report: &mut DecodeBody,
     scan: &ContainerScan,
     table: &crate::xref::XrefTable,
-) {
-    if !crate::xref::is_assembly(scan, Some(table)) {
-        return;
+) -> Result<(), CodecError> {
+    if !crate::xref::is_assembly(ctx, scan, Some(table))? {
+        return Ok(());
     }
     report.losses.retain(|loss| {
         !(loss.severity >= Severity::Error
@@ -3946,6 +3951,7 @@ fn apply_assembly_classification(
         };
         report.notes.push(note);
     }
+    Ok(())
 }
 
 /// A decoded member whose authored source remains available to archive composition.

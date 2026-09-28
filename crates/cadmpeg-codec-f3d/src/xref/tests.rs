@@ -44,6 +44,81 @@ fn redirections_limit_context<'a>(
         .0
 }
 
+fn with_docstruct_scan(f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>)) {
+    let bytes = f3d_without_brep("assembly-design", "root.f3d", &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    f(&arena, &scan);
+}
+
+#[test]
+fn docstruct_json_refuses_materialized_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let error = super::docstruct(&ctx, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "preflight F3D properties JSON"));
+    });
+}
+
+#[test]
+fn docstruct_json_refuses_collection_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let error = super::docstruct(&ctx, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "parse F3D properties JSON"));
+    });
+}
+
+#[test]
+fn docstruct_json_refuses_recursion_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let error = super::docstruct(&ctx, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "scan F3D properties JSON"));
+    });
+}
+
+#[test]
+fn docstruct_type_refuses_retained_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let error = super::docstruct(&ctx, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D docstruct type"));
+    });
+}
+
+#[test]
+fn docstruct_subtype_refuses_retained_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = "assembly-design".len() as u64;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let error = super::docstruct(&ctx, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "copy F3D docstruct subtype"));
+    });
+}
+
 #[test]
 fn redirections_design_collection_refuses_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();

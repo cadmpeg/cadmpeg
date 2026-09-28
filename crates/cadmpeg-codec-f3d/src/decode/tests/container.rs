@@ -28,6 +28,44 @@ use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
+fn with_docstruct_scan(f: impl FnOnce(&cadmpeg_core::decode::DecodeArena, &crate::container::ContainerScan<'_>)) {
+    let bytes = f3d_without_brep("part-design", "part.f3d", &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    f(&arena, &scan);
+}
+
+#[test]
+fn docstruct_type_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 11;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let mut attributes = std::collections::BTreeMap::new();
+        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct type"));
+    });
+}
+
+#[test]
+fn docstruct_subtype_attribute_refuses_collection_limit() {
+    with_docstruct_scan(|arena, scan| {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 12;
+        let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
+            .unwrap().0;
+        let mut attributes = std::collections::BTreeMap::new();
+        let error = super::super::annotate_docstruct(&ctx, &mut attributes, scan).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "record F3D docstruct subtype"));
+    });
+}
+
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause
 /// that was never reached misreports which carrier is missing.

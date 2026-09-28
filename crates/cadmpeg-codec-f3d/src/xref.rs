@@ -12,6 +12,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::collections::HashSet;
 
+use serde::de::{DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -357,32 +358,173 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     })
 }
 
+/// Count the nodes in a JSON payload without retaining its value tree.
+struct CountJsonNodes<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    count: &'a std::cell::Cell<u64>,
+    overflowed: &'a std::cell::Cell<bool>,
+    refusal: &'a std::cell::RefCell<Option<CodecError>>,
+}
+
+impl<'de> DeserializeSeed<'de> for CountJsonNodes<'_, '_> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        let Some(next) = self.count.get().checked_add(1) else {
+            self.overflowed.set(true);
+            return Err(D::Error::custom("JSON node count overflows"));
+        };
+        self.count.set(next);
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> Visitor<'de> for CountJsonNodes<'_, '_> {
+    type Value = ();
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> { Ok(()) }
+    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> { Ok(()) }
+    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> { Ok(()) }
+    fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<(), E> { Ok(()) }
+    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> { Ok(()) }
+    fn visit_string<E: serde::de::Error>(self, _: String) -> Result<(), E> { Ok(()) }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+    fn visit_none<E: serde::de::Error>(self) -> Result<(), E> { Ok(()) }
+
+    fn visit_some<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
+        CountJsonNodes {
+            ctx: self.ctx,
+            count: self.count,
+            overflowed: self.overflowed,
+            refusal: self.refusal,
+        }
+            .deserialize(deserializer)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<(), A::Error> {
+        let _depth = match self.ctx.enter_nested("scan F3D properties JSON") {
+            Ok(depth) => depth,
+            Err(error) => {
+                self.refusal.replace(Some(error));
+                return Err(A::Error::custom("JSON nesting limit exceeded"));
+            }
+        };
+        while sequence.next_element_seed(CountJsonNodes {
+            ctx: self.ctx,
+            count: self.count,
+            overflowed: self.overflowed,
+            refusal: self.refusal,
+        })?.is_some() {}
+        Ok(())
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
+        let _depth = match self.ctx.enter_nested("scan F3D properties JSON") {
+            Ok(depth) => depth,
+            Err(error) => {
+                self.refusal.replace(Some(error));
+                return Err(A::Error::custom("JSON nesting limit exceeded"));
+            }
+        };
+        while map.next_key_seed(CountJsonNodes {
+            ctx: self.ctx,
+            count: self.count,
+            overflowed: self.overflowed,
+            refusal: self.refusal,
+        })?.is_some() {
+            map.next_value_seed(CountJsonNodes {
+                ctx: self.ctx,
+                count: self.count,
+                overflowed: self.overflowed,
+                refusal: self.refusal,
+            })?;
+        }
+        Ok(())
+    }
+}
+
 /// Parse the `docstruct` declaration of a non-empty `Properties.dat`, if
 /// present. The entry is a `u32` payload byte count followed by that many
 /// JSON bytes; count 0 is the empty slot and carries no declaration.
-pub(crate) fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
-    let bytes = scan.entry_bytes(PROPERTIES_ENTRY).ok()?;
+pub(crate) fn docstruct(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Option<Docstruct>, CodecError> {
+    let bytes = match scan.entry_bytes(PROPERTIES_ENTRY) {
+        Ok(bytes) => bytes,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
     let mut view = View::over_retained(bytes);
-    let count = view.u32_le()? as usize;
-    let payload = view.take(count)?;
-    let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
-    let docstruct = value.get("docstruct")?;
-    Some(Docstruct {
-        doc_type: docstruct.get("type")?.as_str()?.to_string(),
-        subtype: docstruct
-            .get("subtype")
-            .and_then(|subtype| subtype.as_str())
-            .map(str::to_owned),
+    let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+        return Ok(None);
+    };
+    let Some(payload) = view.take(count) else {
+        return Ok(None);
+    };
+    let payload_bytes = u64::try_from(payload.len())
+        .map_err(|_| ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX))?;
+    let _reservation = ctx.reserve_scoped(payload_bytes, "preflight F3D properties JSON")?;
+    ctx.charge_work(payload_bytes, "scan F3D properties JSON")?;
+    let item_count = std::cell::Cell::new(0_u64);
+    let overflowed = std::cell::Cell::new(false);
+    let refusal = std::cell::RefCell::new(None);
+    let mut parser = serde_json::Deserializer::from_slice(payload);
+    if (CountJsonNodes {
+        ctx,
+        count: &item_count,
+        overflowed: &overflowed,
+        refusal: &refusal,
     })
+        .deserialize(&mut parser)
+        .and_then(|()| parser.end())
+        .is_err()
+    {
+        if let Some(error) = refusal.into_inner() {
+            return Err(error);
+        }
+        if overflowed.get() {
+            return Err(ctx.refuse_codec_limit("preflight F3D properties JSON", 0, u64::MAX));
+        }
+        return Ok(None);
+    }
+    ctx.charge_collection_items(item_count.get(), "parse F3D properties JSON")?;
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(payload) else {
+        return Ok(None);
+    };
+    let Some(docstruct) = value.get("docstruct") else {
+        return Ok(None);
+    };
+    let Some(doc_type) = docstruct.get("type").and_then(serde_json::Value::as_str) else {
+        return Ok(None);
+    };
+    let doc_type = copy_string_charged(ctx, doc_type, "copy F3D docstruct type")?;
+    let subtype = docstruct
+            .get("subtype")
+            .and_then(serde_json::Value::as_str)
+            .map(|subtype| copy_string_charged(ctx, subtype, "copy F3D docstruct subtype"))
+            .transpose()?;
+    Ok(Some(Docstruct { doc_type, subtype }))
 }
 
 /// A valid assembly document: declared `assembly-design`, at least one
 /// outgoing XREF, and no B-rep streams. Its model is the placement of its
 /// XREF targets.
-pub(crate) fn is_assembly(scan: &ContainerScan, table: Option<&XrefTable>) -> bool {
-    crate::container::design_breps(scan).next().is_none()
-        && table.is_some_and(|table| !table.references.is_empty())
-        && docstruct(scan).is_some_and(|docstruct| docstruct.doc_type == "assembly-design")
+pub(crate) fn is_assembly(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    table: Option<&XrefTable>,
+) -> Result<bool, CodecError> {
+    if crate::container::design_breps(scan).next().is_some()
+        || !table.is_some_and(|table| !table.references.is_empty())
+    {
+        return Ok(false);
+    }
+    Ok(docstruct(ctx, scan)?.is_some_and(|docstruct| docstruct.doc_type == "assembly-design"))
 }
 
 /// The lineage/version design entry for one reference: the entry whose
