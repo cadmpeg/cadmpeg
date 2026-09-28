@@ -537,6 +537,41 @@ fn geometry_kind_counts_keep_sorted_report_text() {
 }
 
 #[test]
+fn metadata_unknown_collection_refuses_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let limited = context(&arena, 0);
+    let mut unknowns = Vec::new();
+    let error = super::super::append_metadata_unknown(&limited, &mut unknowns, brep)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D metadata unknowns"));
+    assert!(unknowns.is_empty());
+}
+
+#[test]
+fn metadata_unknown_id_refuses_retained_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let brep = crate::container::select_fallback_brep(&scan).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut unknowns = Vec::new();
+    let error = super::super::append_metadata_unknown(&limited, &mut unknowns, brep)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
