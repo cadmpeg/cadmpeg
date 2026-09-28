@@ -237,3 +237,40 @@ fn material_schema_id_index_refuses_collection_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D schema appearance IDs"));
 }
+
+macro_rules! material_item_limit_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("test decode context");
+            let mut items = Vec::new();
+            let error = super::super::push_material_item(&ctx, &mut items, 1, $operation)
+                .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
+}
+
+material_item_limit_test!(material_assignment_vector_refuses_collection_limit, "collect F3D material assignments");
+material_item_limit_test!(material_browser_appearance_vector_refuses_collection_limit, "collect F3D browser body appearances");
+material_item_limit_test!(material_body_override_vector_refuses_collection_limit, "collect F3D body appearance overrides");
+material_item_limit_test!(material_assignment_appearance_vector_refuses_collection_limit, "collect F3D assignment appearances");
+material_item_limit_test!(material_override_binding_vector_refuses_collection_limit, "collect F3D override appearance bindings");
+
+#[test]
+fn material_assignment_id_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = crate::ids::native_scoped_id_charged(&ctx, "BulkStream", "material-assignment", 1)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native record ID"));
+}

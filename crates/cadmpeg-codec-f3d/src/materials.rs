@@ -705,7 +705,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
-            out.push(Appearance {
+            push_material_item(ctx, &mut out, Appearance {
                 id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
                 name: assignment
                     .visual_preset
@@ -723,7 +723,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 base_color: None,
                 properties: BTreeMap::new(),
                 textures: Vec::new(),
-            });
+            }, "collect F3D assignment appearances")?;
         }
     }
     for appearance in &mut out {
@@ -757,7 +757,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
-        bindings.push(AppearanceBinding {
+        push_material_item(ctx, &mut bindings, AppearanceBinding {
             id: crate::ids::body_appearance_binding_id(
                 over.entity_suffix,
                 over.visual_guid.identity_key(),
@@ -777,7 +777,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     .cloned()
                     .unwrap_or_default(),
             )?,
-        });
+        }, "collect F3D override appearance bindings")?;
     }
     let face_assignments = decode_face_appearance_assignments(ctx, scan)?;
     let has_topology_assignments =
@@ -985,12 +985,13 @@ pub(crate) fn decode_design_assignments(
             else {
                 continue;
             };
-            out.push(DesignMaterialAssignment {
-                id: crate::ids::native_scoped_id(
+            let assignment = DesignMaterialAssignment {
+                id: crate::ids::native_scoped_id_charged(
+                    ctx,
                     &entry.name,
                     "material-assignment",
-                    presentation.byte_offset as usize,
-                ),
+                    presentation.byte_offset,
+                )?,
                 asm_body_key: body_binding.asm_key,
                 asm_body_key_offset: body_binding.asm_key_offset as u64,
 
@@ -1009,7 +1010,8 @@ pub(crate) fn decode_design_assignments(
                         offset: field.offset,
                     }
                 }),
-            });
+            };
+            push_material_item(ctx, &mut out, assignment, "collect F3D material assignments")?;
         }
     }
     Ok(out)
@@ -1047,22 +1049,25 @@ fn decode_body_appearance_overrides(
         };
         let body_map = crate::design::decode::body::body_bindings(ctx, bytes, &metadata)?;
         let mut appearances = browser_body_appearances(bytes);
-        appearances.extend(
+        for presentation in
             crate::design::decode::presentation::body_presentations(ctx, bytes, &metadata)?
-                .into_iter()
-                .filter_map(|presentation| {
-                    if presentation.owner
-                        != crate::design::decode::presentation::BodyPresentationOwner::Bare
-                        || presentation.browser_node.is_none()
-                    {
-                        return None;
-                    }
-                    Some((
-                        presentation.entity_suffix,
-                        presentation.material?.visual_guid,
-                    ))
-                }),
-        );
+        {
+            if presentation.owner
+                != crate::design::decode::presentation::BodyPresentationOwner::Bare
+                || presentation.browser_node.is_none()
+            {
+                continue;
+            }
+            let Some(material) = presentation.material else {
+                continue;
+            };
+            push_material_item(
+                ctx,
+                &mut appearances,
+                (presentation.entity_suffix, material.visual_guid),
+                "collect F3D browser body appearances",
+            )?;
+        }
         for (entity_suffix, visual_guid) in appearances {
             let Some(map_pair) =
                 unique_body_map_pair(&body_map, entity_suffix, "browser body appearance")?
@@ -1080,11 +1085,11 @@ fn decode_body_appearance_overrides(
             else {
                 continue;
             };
-            out.push(BodyAppearanceOverride {
+            push_material_item(ctx, &mut out, BodyAppearanceOverride {
                 body,
                 entity_suffix,
                 visual_guid,
-            });
+            }, "collect F3D body appearance overrides")?;
         }
     }
     out.sort_by(|left, right| {
