@@ -30,8 +30,6 @@ fn offset_store_named_point_test<'a>(blocks: impl IntoIterator<Item = &'a [u8]>)
 use crate::om::operation_body_reference;
 use crate::om::operation_body_references;
 use crate::om::operation_body_write_frames;
-use crate::om::operation_common_frames;
-use crate::om::operation_terminal_frame;
 use crate::om::sections;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
@@ -59,6 +57,54 @@ fn operation_payload_strings(record: crate::om::operation_record::OperationPaylo
 
 fn operation_payload_text_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::OperationPayloadTextFrame<'_>> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_payload_text_frames(ctx, record)).unwrap()
+}
+
+fn operation_common_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::common_frame::CommonFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_common_frames(ctx, record)).unwrap()
+}
+
+fn operation_terminal_frame(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::OperationTerminalFrame> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_terminal_frame(ctx, record)).unwrap()
+}
+
+fn one_common_frame_payload() -> &'static [u8] {
+    &[0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00]
+}
+
+#[test]
+fn om_common_frame_route_refuses_collection_limit() {
+    let bytes = one_common_frame_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_common_frame_route_refuses_retained_limit() {
+    let bytes = one_common_frame_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_common_frame_route_refuses_work_limit() {
+    let bytes = one_common_frame_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn simple_hole_repeated_scalar_lane(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::nonempty::NonEmpty<crate::om::scalar::RepeatedScalar<usize>>> {
