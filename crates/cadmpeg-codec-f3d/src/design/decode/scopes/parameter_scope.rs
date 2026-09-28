@@ -376,11 +376,12 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_rectangular_pattern_construction(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     parameter_owners,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
                 {
