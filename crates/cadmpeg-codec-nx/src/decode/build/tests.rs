@@ -3,7 +3,9 @@
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-use super::{push_unknown_link, reserve_unknown_pair, unknown_stream_metadata};
+use super::{
+    push_unknown_link, reserve_unknown_pair, retain_live_annotations, unknown_stream_metadata,
+};
 
 fn preview_stream() -> crate::parasolid::Stream {
     crate::parasolid::Stream {
@@ -19,6 +21,29 @@ fn preview_unknown() -> cadmpeg_ir::unknown::UnknownRecord {
         unknown_stream_metadata(ctx, 0, &preview_stream())
             .expect("preview metadata fits the service profile")
     })
+}
+
+#[test]
+fn live_annotations_refuse_first_identity_at_collection_limit() {
+    let unknown = preview_unknown();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+    let error = retain_live_annotations(
+        &ctx,
+        &cadmpeg_ir::document::CadIr::empty(),
+        &[unknown],
+        &mut cadmpeg_ir::Annotations::default(),
+    )
+    .expect_err("one live identity needs one slot");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx live annotation identities"
+    ));
 }
 
 #[test]
