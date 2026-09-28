@@ -1045,7 +1045,7 @@ impl NativeModel {
         let feature_datum_csys_payload_scalars =
             feature_datum_csys_payload_scalars(container, &feature_datum_csys_payloads);
         let feature_datum_csys_descriptors =
-            feature_datum_csys_descriptors(container, &feature_datum_csys_constructions);
+            feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_plane_headers = feature_datum_plane_headers(container);
         let feature_datum_plane_block_uses =
             feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);

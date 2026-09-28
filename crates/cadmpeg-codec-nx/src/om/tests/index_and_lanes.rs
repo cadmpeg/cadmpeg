@@ -722,7 +722,8 @@ fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
 #[test]
 fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
-    let descriptor = datum_csys_descriptor_block(bytes).unwrap();
+    let descriptor = crate::test_support::with_decode_context(|ctx| datum_csys_descriptor_block(ctx, bytes))
+        .unwrap().unwrap();
     assert_eq!(descriptor.prefix(), [0x02, 0x01]);
     assert_eq!(
         descriptor.identity().as_str(),
@@ -733,7 +734,22 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
 
     let mut ambiguous = bytes.to_vec();
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
-    assert!(datum_csys_descriptor_block(&ambiguous).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| datum_csys_descriptor_block(ctx, &ambiguous))
+        .unwrap().is_none());
+}
+
+#[test]
+fn om_datum_csys_descriptor_route_refuses_retained_limit() {
+    let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .expect("test root is admitted");
+    assert!(matches!(
+        datum_csys_descriptor_block(&ctx, bytes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
 }
 
 #[test]

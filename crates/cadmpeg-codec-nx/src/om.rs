@@ -2485,8 +2485,11 @@ pub(crate) fn draft_construction_binary32_lanes(
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
-pub(crate) fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::CsysDescriptor> {
-    csys_descriptor::CsysDescriptor::read(bytes)
+pub(crate) fn datum_csys_descriptor_block(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<csys_descriptor::CsysDescriptor>, CodecError> {
+    csys_descriptor::CsysDescriptor::read_charged(ctx, bytes)
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
