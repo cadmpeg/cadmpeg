@@ -181,7 +181,9 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
         "",
     ]));
 
-    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        crate::value_block::parse(ctx, &bytes)
+    }).expect("service budget").len(), 1);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(native.alias_rows.is_empty());
     assert_eq!(native.value_blocks.len(), 1);

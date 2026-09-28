@@ -91,7 +91,13 @@ pub fn standard_topology(data: &[u8]) {
 
 /// Exercise `7C0B` value-block parsing.
 pub fn value_blocks(data: &[u8]) {
-    let _probe = crate::value_block::parse(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::value_block::parse(&ctx, data);
 }
 
 /// Exercise `7C08` object-graph parsing.

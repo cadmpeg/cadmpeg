@@ -6,6 +6,36 @@
 use super::{tokenize, InlineBytes, ValueBlock, ValueField};
 use crate::test_support::test_object_graph::{catalog_stream, value_block_stream};
 
+fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
+    crate::test_support::with_service_context(|ctx| super::parse(ctx, bytes))
+        .expect("value block fixture fits the service limits")
+}
+
+#[test]
+fn value_block_payload_refuses_retained_and_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = value_block_stream(&[0x81]);
+    bytes.extend_from_slice(&[0x7c, 0x02]);
+    for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if dimension == ResourceDimension::RetainedBytes {
+            policy.limits.max_retained_bytes = 0;
+        } else {
+            policy.limits.max_collection_items = 0;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("value block fixture fits the input limit");
+        let error = super::parse(&ctx, &bytes)
+            .expect_err("the retained payload exceeds the selected limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == "catia_value_block_payload"));
+    }
+    assert_eq!(parse(&bytes).len(), 1);
+}
+
 #[test]
 fn typed_payloads_hide_embedded_schema_marker_bytes() {
     let payload = [
@@ -129,7 +159,7 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
         "Sketch",
     ]));
 
-    let blocks = crate::value_block::parse(&bytes);
+    let blocks = parse(&bytes);
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pos, 0);
     assert_eq!(blocks[0].declared_len(), 15);
@@ -142,7 +172,7 @@ fn native_value_blocks_require_a_complete_adjacent_catalog() {
     let mut bytes = value_block_stream(&[0x81]);
     bytes.extend_from_slice(&[0x7c, 0x02]);
 
-    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
+    assert_eq!(parse(&bytes).len(), 1);
     assert!(crate::native::CatiaNative::decode(&bytes)
         .value_blocks
         .is_empty());
