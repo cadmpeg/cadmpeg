@@ -5413,6 +5413,9 @@ pub(crate) fn surface_patch_recipe_structure(
         let mut fields = Vec::with_capacity(6);
         for _ in 0..6 {
             let delimiter_at = remaining.iter().position(|word| *word == -1)?;
+            if delimiter_at > 2 {
+                return None;
+            }
             let field = remaining.get(..delimiter_at)?.to_vec();
             if field.is_empty() || field.iter().any(|word| *word < 0) {
                 return None;

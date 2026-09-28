@@ -112,6 +112,13 @@ fn referenced_operand_faces_refuses_collection_limit() {
 }
 
 #[test]
+fn surface_patch_long_field_rejected_before_copy() {
+    let mut program = vec![0; 7];
+    program.extend_from_slice(&[2, 1, 2, 3, -1]);
+    assert!(crate::design::decode::operands::surface_patch_recipe_structure(&program, 4).is_none());
+}
+
+#[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
