@@ -8350,10 +8350,12 @@ fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
     (left - right).abs() <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
 }
 
-fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
+fn nurbs_shared_boundary_curves_match(
+    ctx: &DecodeContext<'_>,
+    left: &NurbsCurve,
+    right: &NurbsCurve,
+) -> Result<bool, CodecError> {
     let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
-        let left_points = left.control_points();
-        let right_points = right.control_points();
         left.degree() == right.degree()
             && left.periodic() == right.periodic()
             && left.knots().len() == right.knots().len()
@@ -8363,29 +8365,32 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
                 .zip(right.knots())
                 .all(|(left, right)| nurbs_shared_boundary_scalar_matches(*left, *right))
             && left.pole_count() == right.pole_count()
-            && left_points.iter().zip(right_points).all(|(left, right)| {
-                [left.x, left.y, left.z]
+            && (0..left.pole_count()).all(|index| {
+                let Some((left_point, right_point)) = left.pole_rows().point_at(index)
+                    .zip(right.pole_rows().point_at(index)) else { return false };
+                let left_point = left_point.get();
+                let right_point = right_point.get();
+                [left_point.x, left_point.y, left_point.z]
                     .into_iter()
-                    .zip([right.x, right.y, right.z])
+                    .zip([right_point.x, right_point.y, right_point.z])
                     .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
+                    && match (left.pole_rows().weight_at(index), right.pole_rows().weight_at(index)) {
+                        (None, None) => true,
+                        (Some(left), Some(right)) => nurbs_shared_boundary_scalar_matches(left, right),
+                        _ => false,
+                    }
             })
-            && match (left.pole_rows().weights(), right.pole_rows().weights()) {
-                (None, None) => true,
-                (Some(left), Some(right)) => {
-                    left.len() == right.len()
-                        && left
-                            .into_iter()
-                            .zip(right)
-                            .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
-                }
-                _ => false,
-            }
     };
-    same_payload(left, right)
-        || cadmpeg_ir::eval::nurbs_curve_parameter_domain(right)
-            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
-            .and_then(|range| reverse_nurbs_curve(right, range).ok())
-            .is_some_and(|reversed| same_payload(left, &reversed))
+    if same_payload(left, right) {
+        return Ok(true);
+    }
+    let Some(range) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(right)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints) else {
+            return Ok(false);
+        };
+    Ok(reverse_nurbs_curve(ctx, right, range)?
+        .ok()
+        .is_some_and(|reversed| same_payload(left, &reversed)))
 }
 
 fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 4]> {
@@ -8459,12 +8464,16 @@ fn standard_shared_nurbs_boundary_pair_options(
     let Some(right_boundaries) = nurbs_surface_boundary_curves(right) else {
         return Ok(None);
     };
-    let shared_boundary = |left: &NurbsCurve| {
-        right_boundaries
-            .iter()
-            .any(|right| nurbs_shared_boundary_curves_match(left, right))
-    };
-    if !left_boundaries.iter().any(shared_boundary) {
+    let mut shared = [false; 4];
+    for (index, left) in left_boundaries.iter().enumerate() {
+        for right in &right_boundaries {
+            if nurbs_shared_boundary_curves_match(ctx, left, right)? {
+                shared[index] = true;
+                break;
+            }
+        }
+    }
+    if !shared.contains(&true) {
         return Ok(None);
     }
     Ok(Some(crate::resource::collect_vec(
@@ -8472,8 +8481,9 @@ fn standard_shared_nurbs_boundary_pair_options(
         options.iter().copied().filter(|pair| {
             left_boundaries
                 .iter()
-                .filter(|boundary| shared_boundary(boundary))
-                .any(|boundary| {
+                .zip(shared)
+                .filter(|(_, matches)| *matches)
+                .any(|(boundary, _)| {
                     pair.iter().all(|point| {
                         points
                             .get(*point)

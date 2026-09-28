@@ -6,6 +6,7 @@
 //! interval canonicalization, and exact circular-helix fitting.
 
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::KnotValue;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -206,11 +207,21 @@ pub(crate) fn reverse_pcurve_geometry(
             if !pcurve_weights_are_positive(nurbs) {
                 return Ok(None);
             }
-            let reversed_knots = reverse_knots(nurbs.knots(), range);
-            let mut poles = nurbs.pole_rows().clone();
+            let reversed_knots = reverse_knots(ctx, nurbs.knots(), range)?;
+            let mut poles = match nurbs.pole_rows() {
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points } =>
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial {
+                        points: crate::resource::copy_retained_slice(ctx, points, "catia_reverse_pcurve_poles")?,
+                    },
+                cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } =>
+                    cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational {
+                        points: crate::resource::copy_retained_slice(ctx, points, "catia_reverse_pcurve_poles")?,
+                    },
+            };
             poles.reverse();
             note_refusal(ctx,
-                PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic()),
+                reversed_knots.admit().and_then(|knots|
+                    PcurveNurbs::from_admitted_parts(nurbs.degree(), knots, poles, nurbs.periodic())),
                 refusal, record).map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
         }
         _ => Ok(None),
@@ -275,7 +286,7 @@ pub(crate) fn reverse_curve_geometry(
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            note_refusal(ctx, reverse_nurbs_curve(nurbs, range), refusal, record)
+            note_refusal(ctx, reverse_nurbs_curve(ctx, nurbs, range)?, refusal, record)
                 .map(|curve| curve.map(|curve| (
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)), range)))
         }
@@ -285,43 +296,51 @@ pub(crate) fn reverse_curve_geometry(
 
 /// Reflect knots without summing the interval endpoints. Subtracting from
 /// the nearer endpoint preserves small spans at large parameter offsets.
-fn reverse_knots(knots: &[f64], [lower, upper]: [f64; 2]) -> Vec<f64> {
-    knots
-        .iter()
-        .rev()
-        .map(|&knot| {
-            let reflected = if (knot - lower).abs() <= (upper - knot).abs() {
-                upper - (knot - lower)
-            } else {
-                lower + (upper - knot)
-            };
-            if reflected == 0.0 {
-                0.0
-            } else {
-                reflected
-            }
-        })
-        .collect()
+fn reverse_knots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    knots: &[f64],
+    [lower, upper]: [f64; 2],
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+    let mut reversed = crate::resource::copy_retained_slice(ctx, knots, "catia_reverse_knots")?;
+    reversed.reverse();
+    for knot in &mut reversed {
+        let reflected = if (*knot - lower).abs() <= (upper - *knot).abs() {
+            upper - (*knot - lower)
+        } else {
+            lower + (upper - *knot)
+        };
+        *knot = if reflected == 0.0 { 0.0 } else { reflected };
+    }
+    Ok(reversed)
 }
 
 /// Reverse a NURBS carrier in the stated parameter chart.
 pub(crate) fn reverse_nurbs_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     curve: &NurbsCurve,
     range: [f64; 2],
-) -> Result<NurbsCurve, NurbsError> {
+) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
-        return Err(NurbsError::Structure(
-            "reversal range must be finite and ordered".into(),
-        ));
+        let message = crate::resource::copy_retained_str(ctx,
+            "reversal range must be finite and ordered", "catia_reverse_curve_range_error")?;
+        return Ok(Err(NurbsError::Structure(message)));
     }
-    let mut poles = curve.pole_rows().clone();
+    let mut poles = match curve.pole_rows() {
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } =>
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial {
+                points: crate::resource::copy_retained_slice(ctx, points, "catia_reverse_curve_poles")?,
+            },
+        cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } =>
+            cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
+                points: crate::resource::copy_retained_slice(ctx, points, "catia_reverse_curve_poles")?,
+            },
+    };
     poles.reverse();
-    NurbsCurve::new(
-        curve.degree(),
-        reverse_knots(curve.knots(), range),
-        poles,
-        curve.periodic(),
-    )
+    let knots = match reverse_knots(ctx, curve.knots(), range)?.admit() {
+        Ok(knots) => knots,
+        Err(error) => return Ok(Err(error)),
+    };
+    Ok(NurbsCurve::from_admitted_parts(curve.degree(), knots, poles, curve.periodic()))
 }
 
 /// State one trim endpoint inside the carrier domain, or refuse it.

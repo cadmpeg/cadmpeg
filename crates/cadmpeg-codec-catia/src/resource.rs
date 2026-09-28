@@ -696,7 +696,8 @@ pub(crate) fn copy_nurbs_curve(
             points: copy_retained_slice(ctx, points, operation)?,
         },
     };
-    NurbsCurve::new(curve.degree(), knots, poles, curve.periodic()).map_err(CodecError::malformed)
+    NurbsCurve::from_admitted_parts(curve.degree(), knots, poles, curve.periodic())
+        .map_err(CodecError::malformed)
 }
 
 pub(crate) fn copy_pcurve_geometry(
