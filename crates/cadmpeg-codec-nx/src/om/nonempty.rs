@@ -8,6 +8,13 @@ pub(crate) struct NonEmpty<T> {
 }
 
 impl<T> NonEmpty<T> {
+    pub(crate) fn from_vec(mut values: Vec<T>) -> Option<Self> {
+        if values.is_empty() {
+            return None;
+        }
+        let first = values.remove(0);
+        Some(Self { first, rest: values })
+    }
     pub(crate) fn new(values: impl IntoIterator<Item = T>) -> Option<Self> {
         let mut values = values.into_iter();
         Some(Self {

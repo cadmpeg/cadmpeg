@@ -1933,14 +1933,17 @@ pub(super) struct ParasolidChartRecord {
 }
 
 /// Decode every complete physical Parasolid chart source record.
-pub(super) fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
+pub(super) fn parasolid_chart_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidChartRecord>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
         let point_layout = subtype.chart_point_layout();
-        for chart in crate::intersection::chart_source_records(&stream.inflated, point_layout) {
+        for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)? {
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",
@@ -1956,7 +1959,7 @@ pub(super) fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartR
         }
     }
     records.sort_by(|left, right| left.id.cmp(&right.id));
-    records
+    Ok(records)
 }
 
 /// Complete typed source record for one Parasolid surface-intersection curve.

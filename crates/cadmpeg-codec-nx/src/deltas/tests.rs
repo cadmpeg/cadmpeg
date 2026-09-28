@@ -972,16 +972,16 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
 fn deltas_walks_complete_intersection_auxiliary_records() {
     let source = ext11_charted_intersection_curve_stream();
     let blend_source = blend_bound_charted_intersection_curve_stream();
-    let chart_pos = crate::intersection::chart_source_records(
+    let chart_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_records(ctx,
         &source,
         crate::intersection::ChartPointLayout::Ext11,
-    )[0]
+    )).unwrap()[0]
     .pos;
-    let (_, chart_end) = crate::intersection::chart_source_record_at(
+    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_record_at(ctx,
         &source,
         chart_pos,
         crate::intersection::ChartPointLayout::Ext11,
-    )
+    )).unwrap()
     .expect("chart");
     let term_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, &source)).unwrap()[0].pos;
     let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");

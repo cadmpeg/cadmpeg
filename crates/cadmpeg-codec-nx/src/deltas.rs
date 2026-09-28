@@ -3003,10 +3003,11 @@ fn consume_intersection_auxiliary(
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
     let (family, xmt, end) = if let Some((chart, end)) = crate::intersection::chart_source_record_at(
+        ctx,
         stream,
         offset,
         crate::intersection::ChartPointLayout::Ext11,
-    ) {
+    )? {
         (RecordFamily::Chart, chart.xmt, end)
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (RecordFamily::TermUse, term.xmt, end)
