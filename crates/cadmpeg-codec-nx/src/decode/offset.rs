@@ -618,24 +618,31 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             None => None,
         };
 
-        let mut u_breaks = support_net.u_knots[support_net.u_degree..=support_net.u_count].to_vec();
-        u_breaks.extend(&candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count]);
+        let mut u_breaks = match copy_offset_knots(&support_net.u_knots[support_net.u_degree..=support_net.u_count], geometry_budget) {
+            Ok(breaks) => breaks,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let candidate_u_breaks = &candidate_net.u_knots[candidate_net.u_degree..=candidate_net.u_count];
+        if let Err(limit) = geometry_budget.reserve_vec(&mut u_breaks, candidate_u_breaks.len(), "nx offset u breaks") { return Some(Err(limit)); }
+        u_breaks.extend(candidate_u_breaks);
         u_breaks.sort_by(f64::total_cmp);
         u_breaks.dedup();
-        let mut v_breaks = support_net.v_knots[support_net.v_degree..=support_net.v_count].to_vec();
-        v_breaks.extend(&candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count]);
+        let mut v_breaks = match copy_offset_knots(&support_net.v_knots[support_net.v_degree..=support_net.v_count], geometry_budget) {
+            Ok(breaks) => breaks,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let candidate_v_breaks = &candidate_net.v_knots[candidate_net.v_degree..=candidate_net.v_count];
+        if let Err(limit) = geometry_budget.reserve_vec(&mut v_breaks, candidate_v_breaks.len(), "nx offset v breaks") { return Some(Err(limit)); }
+        v_breaks.extend(candidate_v_breaks);
         v_breaks.sort_by(f64::total_cmp);
         v_breaks.dedup();
-        let mut rectangles = u_breaks
-            .windows(2)
-            .filter(|span| span[0] < span[1])
-            .flat_map(|u| {
-                v_breaks
-                    .windows(2)
-                    .filter(|span| span[0] < span[1])
-                    .map(move |v| [u[0], u[1], v[0], v[1]])
-            })
-            .collect::<Vec<_>>();
+        let mut rectangles = Vec::new();
+        for u in u_breaks.windows(2).filter(|span| span[0] < span[1]) {
+            for v in v_breaks.windows(2).filter(|span| span[0] < span[1]) {
+                if let Err(limit) = geometry_budget.reserve_vec(&mut rectangles, 1, "nx offset rectangles") { return Some(Err(limit)); }
+                rectangles.push([u[0], u[1], v[0], v[1]]);
+            }
+        }
         if rectangles.is_empty() {
             return None;
         }
@@ -714,8 +721,10 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 normal_size - normal_u_numerator * half_u - normal_v_numerator * half_v;
             if !minimum_normal.is_finite() || minimum_normal <= 0.0 {
                 let split_u = normal_u_numerator * (u1 - u0) >= normal_v_numerator * (v1 - v0);
-                if !subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u) {
-                    return None;
+                match subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u, geometry_budget) {
+                    Ok(true) => {},
+                    Ok(false) => return None,
+                    Err(limit) => return Some(Err(limit)),
                 }
                 continue;
             }
@@ -739,8 +748,10 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
                 continue;
             }
             let split_u = u_lipschitz * (u1 - u0) >= v_lipschitz * (v1 - v0);
-            if !subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u) {
-                return None;
+            match subdivide_offset_rectangle(&mut rectangles, [u0, u1, v0, v1], [u, v], split_u, geometry_budget) {
+                Ok(true) => {},
+                Ok(false) => return None,
+                Err(limit) => return Some(Err(limit)),
             }
         }
         Some(Ok(certified_bound))
@@ -850,17 +861,20 @@ pub(super) fn subdivide_offset_rectangle(
     [u0, u1, v0, v1]: [f64; 4],
     [u, v]: [f64; 2],
     split_u: bool,
-) -> bool {
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let u_divisible = u != u0 && u != u1;
     let v_divisible = v != v0 && v != v1;
     if u_divisible && (split_u || !v_divisible) {
+        let _reservation = geometry_budget.reserve_vec(rectangles, 2, "nx offset subdivision rectangles")?;
         rectangles.extend([[u0, u, v0, v1], [u, u1, v0, v1]]);
-        true
+        Ok(true)
     } else if v_divisible {
+        let _reservation = geometry_budget.reserve_vec(rectangles, 2, "nx offset subdivision rectangles")?;
         rectangles.extend([[u0, u1, v0, v], [u0, u1, v, v1]]);
-        true
+        Ok(true)
     } else {
-        false
+        Ok(false)
     }
 }
 
