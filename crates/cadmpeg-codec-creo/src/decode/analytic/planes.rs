@@ -405,16 +405,11 @@ pub(in crate::decode) fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEq
 }
 
 pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
-    let planes = candidates
-        .iter()
-        .copied()
-        .map(canonical_plane)
-        .collect::<Option<Vec<_>>>()?;
-    let first = *planes.first()?;
+    let mut planes = candidates.iter().copied().map(canonical_plane);
+    let first = planes.next()??;
     let first_distance = dot(first.normal, first.origin);
     planes
-        .iter()
-        .all(|plane| {
+        .all(|plane| plane.is_some_and(|plane| {
             let distance = dot(plane.normal, plane.origin);
             let scale = first_distance.abs().max(distance.abs()).max(1.0);
             first
@@ -423,7 +418,7 @@ pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation
                 .zip(plane.normal)
                 .all(|(left, right)| (left - right).abs() <= EPS_AGREE)
                 && (first_distance - distance).abs() <= EPS_AGREE * scale
-        })
+        }))
         .then_some(first)
 }
 
@@ -1940,26 +1935,41 @@ fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {
 }
 
 pub(super) fn agreed_topology_bound_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     points: impl IntoIterator<Item = [f64; 3]>,
     curve_planes: impl IntoIterator<Item = PlaneEquation>,
     lines: impl IntoIterator<Item = BoundaryLine>,
-) -> Option<PlaneEquation> {
-    let points = points.into_iter().collect::<Vec<_>>();
-    let lines = lines.into_iter().collect::<Vec<_>>();
-    let candidates = topology_bound_plane(points.iter().copied())
+) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
+    let mut admitted_points = Vec::new();
+    for point in points {
+        ctx.try_reserve_items(&mut admitted_points, 1, "creo plane boundary points")?;
+        admitted_points.push(point);
+    }
+    let mut admitted_lines = Vec::new();
+    for line in lines {
+        ctx.try_reserve_items(&mut admitted_lines, 1, "creo plane boundary lines")?;
+        admitted_lines.push(line);
+    }
+    let mut candidates = Vec::new();
+    for candidate in topology_bound_plane(admitted_points.iter().copied())
         .into_iter()
         .chain(curve_planes)
-        .chain(topology_bound_line_plane(&lines))
-        .collect::<Vec<_>>();
-    let plane = agreed_plane(&candidates)?;
-    let points_agree = points
+        .chain(topology_bound_line_plane(&admitted_lines))
+    {
+        ctx.try_reserve_items(&mut candidates, 1, "creo plane boundary candidates")?;
+        candidates.push(candidate);
+    }
+    let Some(plane) = agreed_plane(&candidates) else {
+        return Ok(None);
+    };
+    let points_agree = admitted_points
         .iter()
         .all(|point| point_on_carrier(*point, CarrierEquation::Plane(plane)));
-    let lines_agree = lines.iter().all(|line| {
+    let lines_agree = admitted_lines.iter().all(|line| {
         point_on_carrier(line.origin, CarrierEquation::Plane(plane))
             && dot(line.direction, plane.normal).abs() <= EPS_AGREE
     });
-    (points_agree && lines_agree).then_some(plane)
+    Ok((points_agree && lines_agree).then_some(plane))
 }
 
 #[cfg(test)]
