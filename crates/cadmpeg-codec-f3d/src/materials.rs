@@ -45,8 +45,42 @@ const NO_ASSET_LIB_ID: &str = "00000000-0000-0000-0000-000000000000";
 
 /// The library identifier an `InstanceProperties` record stores, when it names
 /// a library.
-fn library_id(asset_lib_id: &str) -> Option<String> {
-    (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
+fn library_id(
+    ctx: &DecodeContext<'_>,
+    asset_lib_id: &str,
+) -> Result<Option<String>, CodecError> {
+    if asset_lib_id.is_empty() || asset_lib_id == NO_ASSET_LIB_ID {
+        return Ok(None);
+    }
+    Ok(Some(copy_material_text(ctx, asset_lib_id, "copy F3D appearance library ID")?))
+}
+
+fn copy_material_text(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let length = u64::try_from(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn push_material_item<T>(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    items.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    items.push(value);
+    Ok(())
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
@@ -714,42 +748,40 @@ fn appearances_from_schema_records(
             }
             TextureAssetResult::Usable(texture) => texture,
         };
-        match textures.entry(texture.asset_guid.clone()) {
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(texture);
+        match textures.get(&texture.asset_guid) {
+            None => {
+                ctx.charge_collection_items(1, "index F3D texture assets")?;
+                let key = copy_material_text(ctx, &texture.asset_guid, "copy F3D texture asset key")?;
+                textures.insert(key, texture);
             }
-            std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &texture => {}
-            std::collections::btree_map::Entry::Occupied(entry) => {
+            Some(existing) if existing == &texture => {}
+            Some(_) => {
                 return Err(CodecError::malformed(format_args!(
-                    "Protein texture asset {} has conflicting payloads",
-                    entry.key()
+                    "Protein texture asset {} has conflicting payloads", texture.asset_guid
                 )));
             }
         }
     }
-    let appearances = records
-        .iter()
-        .filter(|record| {
-            !matches!(
-                record.schema.as_str(),
-                "UnifiedBitmapSchema" | "BumpMapSchema"
-            )
-        })
-        .map(|record| {
+    let mut appearances = Vec::new();
+    for record in records.iter().filter(|record| {
+        !matches!(record.schema.as_str(), "UnifiedBitmapSchema" | "BumpMapSchema")
+    }) {
             let mut properties = BTreeMap::new();
             let mut connected = Vec::new();
             for (id, property) in &record.properties {
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
+                    ctx.charge_collection_items(1, "collect F3D appearance properties")?;
                     properties.insert(
-                        neutral_property_name(id).to_owned(),
+                        copy_material_text(ctx, neutral_property_name(id), "copy F3D appearance property name")?,
                         cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
                     );
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
-                        connected.push(texture.to_ref(ctx, id)?);
+                        let reference = texture.to_ref(ctx, id)?;
+                        push_material_item(ctx, &mut connected, reference, "collect F3D connected textures")?;
                     }
                 }
             }
@@ -759,7 +791,7 @@ fn appearances_from_schema_records(
                     .then_with(|| left.asset_guid.cmp(&right.asset_guid))
             });
             let base_color = appearance_base_color(record);
-            Ok(Appearance {
+            let appearance = Appearance {
                 id: crate::ids::appearance_id(
                     cadmpeg_ir::ids::IdentityKey::try_new(&record.guid).map_err(|error| {
                         CodecError::malformed(format_args!(
@@ -767,12 +799,16 @@ fn appearances_from_schema_records(
                         ))
                     })?,
                 ),
-                name: Some(record.base.clone()),
-                asset_guid: Some(record.guid.clone()),
-                library_id: library_id(&record.asset_lib_id),
-                visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
+                name: Some(copy_material_text(ctx, &record.base, "copy F3D appearance name")?),
+                asset_guid: Some(copy_material_text(ctx, &record.guid, "copy F3D appearance GUID")?),
+                library_id: library_id(ctx, &record.asset_lib_id)?,
+                visual_guid: if is_physical_schema(&record.schema) {
+                    None
+                } else {
+                    Some(copy_material_text(ctx, &record.guid, "copy F3D appearance visual GUID")?)
+                },
                 physical_token: None,
-                schema: Some(record.schema.clone()),
+                schema: Some(copy_material_text(ctx, &record.schema, "copy F3D appearance schema")?),
                 category: None,
                 base_color,
                 properties: cadmpeg_core::text::named_entries(
@@ -780,9 +816,9 @@ fn appearances_from_schema_records(
                     properties,
                 )?,
                 textures: connected,
-            })
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+            };
+            push_material_item(ctx, &mut appearances, appearance, "collect F3D appearances")?;
+    }
     Ok((appearances, untyped_distance_properties))
 }
 
@@ -1975,8 +2011,8 @@ fn decode_fixed_record(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<
             },
         )?),
         name: Some(base),
-        asset_guid: Some(guid.clone()),
-        library_id: library_id(&asset_lib_id),
+        asset_guid: Some(copy_material_text(ctx, &guid, "copy F3D fixed appearance GUID")?),
+        library_id: library_id(ctx, &asset_lib_id)?,
         visual_guid: (!matches!(
             schema.as_str(),
             "PhysMatSchema"
