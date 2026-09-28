@@ -10,7 +10,7 @@ use super::{
     closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
     compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
     compact_line_region_addresses, complete_ordered_compact_line_profile,
-    current_linked_semicircle_record, indexed_rectangle_from_line_cycle,
+    current_linked_semicircle_record,
     legacy_extended_rectangle_diagonal_endpoint, ordered_compact_line_profile,
     ordered_rectangle_corners, resolve_two_center_semicircle_profile, tangent_bounded_curve,
     unique_dimensioned_rectangle_markers,
@@ -23,6 +23,43 @@ use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
+
+fn indexed_rectangle_from_line_cycle(
+    payload: &[u8],
+    markers: &[&SketchInputEntity],
+) -> Option<[Point2; 4]> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    super::indexed_rectangle_from_line_cycle(&ctx, payload, markers).unwrap()
+}
+
+#[test]
+fn indexed_rectangle_refuses_collection_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT rectangle marker roster"));
+}
+
+#[test]
+fn indexed_rectangle_refuses_work_limit() {
+    let markers = rectangle_limit_markers();
+    let marker_refs = markers.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 11;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::indexed_rectangle_from_line_cycle(&ctx, &[], &marker_refs).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sort SLDPRT rectangle marker roster"));
+}
 
 fn compact_region_payload() -> Vec<u8> {
     let mut payload = b"moSketchRegion_c".to_vec();

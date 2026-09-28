@@ -1463,9 +1463,10 @@ fn ordered_tolerant_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> 
 }
 
 pub(super) fn indexed_rectangle_from_line_cycle(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     markers: &[&SketchInputEntity],
-) -> Option<[Point2; 4]> {
+) -> Result<Option<[Point2; 4]>, CodecError> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum EndpointSpace {
         Roster,
@@ -1493,11 +1494,20 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         }
     }
 
-    let mut roster = markers.to_vec();
+    let mut roster = Vec::new();
+    ctx.reserve_collection_vec(&mut roster, markers.len(), "collect SLDPRT rectangle marker roster")?;
+    roster.extend_from_slice(markers);
+    let marker_count = cadmpeg_core::decode::u64_from_index(roster.len());
+    let sort_work = marker_count
+        .checked_mul(u64::from(usize::BITS - roster.len().leading_zeros()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("sort SLDPRT rectangle marker roster", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(sort_work, "sort SLDPRT rectangle marker roster")?;
     roster.sort_unstable_by_key(|marker| marker.offset());
-    let records = markers
-        .iter()
-        .filter_map(|marker| {
+    let mut records = Vec::new();
+    for marker in markers {
+        let record = (|| {
             let offset = usize::try_from(marker.offset()).ok()?;
             if let Some(endpoints) = legacy_extended_rectangle_line_endpoints(payload, offset) {
                 return (marker.kind() == SketchInputKind::LineOrCircle).then_some(
@@ -1560,8 +1570,16 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 alternate_locus: payload.get(offset + 23..offset + 27)
                     == Some(&[0x05, 0x00, 0x01, 0x00]),
             })
-        })
-        .collect::<Vec<_>>();
+        })();
+        if let Some(record) = record {
+            ctx.reserve_collection_vec(&mut records, 1, "collect SLDPRT rectangle line records")?;
+            records.push(record);
+            if records.len() > 4 {
+                return Ok(None);
+            }
+        }
+    }
+    Ok((|| {
     let mut endpoint_spaces = records
         .iter()
         .map(RectangleLineRecord::endpoint_space)
@@ -1775,16 +1793,19 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             }
         })
         .flatten()?;
-    let coordinates = known.iter().copied().collect::<HashMap<_, _>>();
     (edges.len() == 4
         || edges.iter().all(|[first, second]| {
-            let (Some(first), Some(second)) = (coordinates.get(first), coordinates.get(second))
+            let (Some(first), Some(second)) = (
+                known.iter().find(|(vertex, _)| vertex == first).map(|(_, point)| point),
+                known.iter().find(|(vertex, _)| vertex == second).map(|(_, point)| point),
+            )
             else {
                 return false;
             };
             same_dimension_length(first[0], second[0]) ^ same_dimension_length(first[1], second[1])
         }))
     .then_some(corners)
+    })())
 }
 
 pub(super) fn compact_legacy_rectangle_line_endpoints(
