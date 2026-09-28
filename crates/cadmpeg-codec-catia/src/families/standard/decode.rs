@@ -2233,7 +2233,7 @@ fn try_decode_standard_populations(
         typed.sphere,
         typed.torus,
     )));
-    crate::assemble::insert_unresolved_carrier_loss(&merged.ir, &mut merged.report.losses);
+    crate::assemble::insert_unresolved_carrier_loss(ctx, &merged.ir, &mut merged.report.losses)?;
     Ok(Some(merged))
 }
 
@@ -3121,7 +3121,8 @@ fn try_decode_standard_population(
     }
     let annotations = annotations.build();
 
-    let mut report = build_geometry_report(
+    let mut report = match build_geometry_report(
+        ctx,
         &ir,
         scan,
         &typed,
@@ -3135,7 +3136,10 @@ fn try_decode_standard_population(
             admitted_standard_face_rows: face_count,
         },
         topology_failure.map(StandardTopologyFailure::message),
-    );
+    ) {
+        Ok(report) => report,
+        Err(error) => return Some(Err(error)),
+    };
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
         report.losses.push(CatiaLossCode::GeometryPcurveRechartNonFinite.note(format!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
