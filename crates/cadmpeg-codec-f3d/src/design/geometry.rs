@@ -1877,10 +1877,10 @@ fn profile_boundary(
             }));
         }
     }
-    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance) {
+    if let Some(polygon) = line_profile_vertices(profile, entities, tolerance, ctx)? {
         return Ok(Some(ProfileBoundary::Polygon(polygon)));
     }
-    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance) {
+    if let Some(arc_loop) = circular_arc_profile_segments(profile, entities, tolerance, ctx)? {
         return Ok(Some(ProfileBoundary::CircularArcLoop(arc_loop)));
     }
     Ok(certified_profile_loop(profile, entities, tolerance, ctx)?
@@ -2135,13 +2135,14 @@ fn circular_arc_profile_segments(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<Vec<ProfileBoundarySegment>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<ProfileBoundarySegment>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let mut segments = Vec::with_capacity(profile.len());
+    let mut segments = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         let segment = match *entity.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => {
                 let [start, end] = if use_.reversed {
@@ -2172,34 +2173,36 @@ fn circular_arc_profile_segments(
                     end_angle,
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         let (start, end) = boundary_segment_endpoints(&segment);
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
-            return None;
+            return Ok(None);
         }
         previous_end = Some(end);
-        segments.push(segment);
+        push_geometry_item(ctx, &mut segments, segment,
+            "f3d circular arc profile segment")?;
     }
-    let first_start = segments.first().map(boundary_segment_endpoints)?.0;
-    (segments.len() >= 2
+    let first_start = geometric!(segments.first().map(boundary_segment_endpoints)).0;
+    Ok((segments.len() >= 2
         && previous_end.is_some_and(|end| point_distance(end, first_start) <= tolerance))
-    .then_some(segments)
+    .then_some(segments))
 }
 
 fn line_profile_vertices(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Option<Vec<Point2>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Point2>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    let mut vertices = Vec::with_capacity(profile.len());
+    let mut vertices = Vec::new();
     let mut previous_end = None;
     for use_ in profile {
-        let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+        let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
-            return None;
+            return Ok(None);
         };
         let (start, end) = (start.get(), end.get());
         let [start, end] = if use_.reversed {
@@ -2208,17 +2211,18 @@ fn line_profile_vertices(
             [start, end]
         };
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
-            return None;
+            return Ok(None);
         }
-        vertices.push(start);
+        push_geometry_item(ctx, &mut vertices, start,
+            "f3d line profile vertex")?;
         previous_end = Some(end);
     }
     if vertices.len() < 3
         || previous_end.is_none_or(|end| point_distance(end, vertices[0]) > tolerance)
     {
-        return None;
+        return Ok(None);
     }
-    Some(vertices)
+    Ok(Some(vertices))
 }
 
 fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Point2) {
