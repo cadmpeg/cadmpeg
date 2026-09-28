@@ -2185,12 +2185,14 @@ pub(crate) fn extrude_payload_header(record: OperationPayload<'_>) -> Option<Ext
 
 /// Decode wrapped member lanes following branch-`11` body scalar clauses.
 pub(crate) fn operation_body_members(
+    ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
-) -> Vec<OperationBodyMemberGroup> {
-    operation_body_reference_candidates(record)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(body_ordinal, reference)| {
+) -> Result<Vec<OperationBodyMemberGroup>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.bytes().len()), "scan NX operation body members")?;
+    let mut groups = Vec::new();
+    for (body_ordinal, reference) in operation_body_reference_candidates(record).enumerate() {
+        let mut failure = None;
+        let group = (|| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
             if record.bytes().get(end..end + 2) != Some(&[0xff, 0x11]) {
@@ -2209,7 +2211,7 @@ pub(crate) fn operation_body_members(
                 return None;
             }
             at += 2;
-            let mut members = Vec::with_capacity(count - 1);
+            let mut members = Vec::new();
             for _ in 0..count - 1 {
                 if record.bytes().get(at) != Some(&0x2e) {
                     return None;
@@ -2222,6 +2224,10 @@ pub(crate) fn operation_body_members(
                     return None;
                 }
                 at += 1;
+                if let Err(error) = reserve_om_retained_item(ctx, &mut members, "NX operation body members") {
+                    failure = Some(error);
+                    return None;
+                }
                 members.push(LocatedCompactIndex {
                     atom,
                     offset: record.offset() + member_at,
@@ -2232,8 +2238,14 @@ pub(crate) fn operation_body_members(
                 body_object_index: reference.object_index.value(),
                 members,
             })
-        })
-        .collect()
+        })();
+        if let Some(error) = failure { return Err(error); }
+        if let Some(group) = group {
+            reserve_om_retained_item(ctx, &mut groups, "NX operation body member groups")?;
+            groups.push(group);
+        }
+    }
+    Ok(groups)
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.

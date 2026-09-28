@@ -11,8 +11,11 @@ use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
 use crate::om::operation_body_11_continuations;
-use crate::om::operation_body_members;
 use crate::om::operation_body_reference_lanes;
+
+fn operation_body_members_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBodyMemberGroup> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_members(ctx, record)).unwrap()
+}
 use crate::om::pattern_references::PatternReferences;
 use crate::om::point_feature_payload_header;
 use crate::om::point_feature_scalar_lane;
@@ -1238,7 +1241,7 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let members = operation_body_members(record);
+    let members = operation_body_members_for_test(record);
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].members.len(), 2);
     assert_eq!(members[0].body_reference_ordinal, 0);
@@ -1250,7 +1253,7 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     assert_eq!(members[0].members[1].atom.raw(), [0x80, 0x01]);
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(operation_body_members(
+    assert!(operation_body_members_for_test(
         crate::om::operation_record::OperationBodyInput::new(
             truncated,
             record.offset(),
@@ -1955,3 +1958,31 @@ fn om_offset_store_class_lane_refuses_identity_index_collection_limit() {
 mod numeric_expressions;
 
 mod registry;
+
+fn body_members_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, "SEW").unwrap();
+    crate::om::operation_body_members(&ctx, record).unwrap_err()
+}
+
+#[test]
+fn body_members_refuse_collection_limit() {
+    let error = body_members_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn body_members_refuse_retained_limit() {
+    let error = body_members_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn body_members_refuse_work_limit() {
+    let error = body_members_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
