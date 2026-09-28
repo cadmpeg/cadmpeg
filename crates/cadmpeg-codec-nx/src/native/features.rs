@@ -5040,36 +5040,35 @@ pub(super) fn feature_datum_csys_constructions(
 
 /// Reconstruct datum-plane object payloads across ordered store blocks.
 pub(super) fn feature_datum_plane_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
-) -> Vec<FeatureDatumPlanePayload> {
+) -> Result<Vec<FeatureDatumPlanePayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(container);
-    headers
-        .iter()
-        .filter(|header| {
-            header
-                .resolved_data_blocks(DatumPlaneBlockLane::Object)
-                .next()
-                .is_some()
-        })
-        .filter_map(|header| {
-            let data_blocks = header
-                .resolved_data_blocks(DatumPlaneBlockLane::Object)
-                .cloned()
-                .collect::<Vec<_>>();
-            let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            let lanes = crate::om::datum_index::scan(&payload);
-            let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
-            let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
-            Some(FeatureDatumPlanePayload {
-                id: format!("nx:feature-history:datum-plane-payload#{key}"),
-                operation_label: header.operation_label.clone(),
-                datum_plane_header: header.id.clone(),
-                content,
-                index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
-            })
-        })
-        .collect()
+    let mut output = Vec::new();
+    for header in headers {
+        if header.resolved_data_blocks(DatumPlaneBlockLane::Object).next().is_none() {
+            continue;
+        }
+        let data_blocks = header
+            .resolved_data_blocks(DatumPlaneBlockLane::Object)
+            .cloned()
+            .collect::<Vec<_>>();
+        let Some((payload, content)) = FeaturePayloadContent::from_source(data_blocks, &blocks) else {
+            continue;
+        };
+        let lanes = crate::om::datum_index::scan(ctx, &payload)?;
+        let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
+        let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        output.push(FeatureDatumPlanePayload {
+            id: format!("nx:feature-history:datum-plane-payload#{key}"),
+            operation_label: header.operation_label.clone(),
+            datum_plane_header: header.id.clone(),
+            content,
+            index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
+        });
+    }
+    Ok(output)
 }
 
 /// Reconstruct the two leading object blocks of each datum coordinate system.
