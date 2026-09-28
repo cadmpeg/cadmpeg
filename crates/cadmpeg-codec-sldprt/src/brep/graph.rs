@@ -1844,8 +1844,7 @@ fn decode_graph(
     let mut edge_set: HashSet<u16> = HashSet::new();
     let mut edge_endpoint_positions = HashMap::<u16, [cadmpeg_ir::math::Point3; 2]>::new();
     let mut reversed_edge_orientation = HashSet::<u16>::new();
-    let mut edge_attrs: Vec<u16> = edge_ends.keys().copied().collect();
-    edge_attrs.sort_unstable();
+    let edge_attrs = sorted_graph_attrs(ctx, edge_ends.keys().copied(), "order Parasolid edges")?;
     for e in edge_attrs {
         let (start_v, end_v, curve_attr) = edge_ends[&e];
         let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
@@ -1883,9 +1882,11 @@ fn decode_graph(
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             admit_brep_entity(ctx)?;
+            ctx.reserve_collection_vec(&mut out.points, 1, "collect Parasolid closed-circle points")?;
             out.points
                 .push(Point::new(point_id.clone(), finite_position, None));
             admit_brep_entity(ctx)?;
+            ctx.reserve_collection_vec(&mut out.vertices, 1, "collect Parasolid closed-circle vertices")?;
             out.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
@@ -1906,6 +1907,7 @@ fn decode_graph(
                 ))
             };
             if let (Some(start), Some(end)) = (position(start_v), position(end_v)) {
+                reserve_graph_map_key(ctx, &mut edge_endpoint_positions, &e, "index Parasolid edge endpoint positions")?;
                 edge_endpoint_positions.insert(e, [start, end]);
             }
         }
@@ -1921,6 +1923,7 @@ fn decode_graph(
             if let Some(endpoints) = edge_endpoint_positions.get_mut(&e) {
                 endpoints.swap(0, 1);
             }
+            reserve_graph_set_key(ctx, &mut reversed_edge_orientation, &e, "track reversed Parasolid edges")?;
             reversed_edge_orientation.insert(e);
         }
         let eu = t.edge_uses().get(&e);
@@ -1929,6 +1932,7 @@ fn decode_graph(
             match carriers.curve(curve_attr) {
                 Some(indexed) => {
                     let carrier = indexed.carrier();
+                    reserve_graph_set_key(ctx, &mut emitted_curves, &curve_attr, "track emitted Parasolid curves")?;
                     if emitted_curves.insert(curve_attr) {
                         emit_curve(ctx, &mut out, carrier)?;
                         if matches!(indexed, IndexedCurve::Derived(_)) {
@@ -1942,6 +1946,7 @@ fn decode_graph(
                     curve = Some(id_curve(curve_attr));
                 }
                 _ => {
+                    reserve_graph_set_key(ctx, &mut emitted_curves, &curve_attr, "track emitted Parasolid curves")?;
                     if emitted_curves.insert(curve_attr) {
                         let offset = eu.map_or(0, |record| record.offset);
                         annotations
@@ -1949,6 +1954,7 @@ fn decode_graph(
                             .tag("unknown_curve");
                         annotations.exactness(id_curve(curve_attr), Exactness::Unknown);
                         admit_brep_entity(ctx)?;
+                        ctx.reserve_collection_vec(&mut out.curves, 1, "collect unknown Parasolid curves")?;
                         out.curves.push(Curve {
                             id: id_curve(curve_attr),
                             source_object: None,
@@ -1967,6 +1973,7 @@ fn decode_graph(
             .note(id_edge(e), &source_stream, off as u64)
             .tag("00_10");
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.edges, 1, "collect Parasolid edges")?;
         out.edges.push(Edge {
             id: id_edge(e),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -1978,6 +1985,7 @@ fn decode_graph(
             end: end_id,
             tolerance: None,
         });
+        reserve_graph_set_key(ctx, &mut edge_set, &e, "track emitted Parasolid edges")?;
         edge_set.insert(e);
     }
 
@@ -6479,6 +6487,7 @@ fn emit_curve(
     carrier: &CurveCarrier,
 ) -> Result<(), cadmpeg_core::CodecError> {
     admit_brep_entity(ctx)?;
+    ctx.reserve_collection_vec(&mut out.curves, 1, "collect Parasolid curves")?;
     out.curves.push(Curve {
         id: id_curve(carrier.attr),
         source_object: None,
