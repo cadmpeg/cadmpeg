@@ -1539,12 +1539,14 @@ pub(super) fn directed_pcurve_points(
 
 #[cfg(test)]
 pub(in crate::decode) fn solve_pcurve_vertex_domains(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
-) -> BTreeMap<u32, [f64; 3]> {
+) -> Result<BTreeMap<u32, [f64; 3]>, cadmpeg_core::CodecError> {
     solve_pcurve_vertex_domains_with_authoritative_points(
+        ctx,
         constraints,
         fixed_points,
         analytic_domains,
@@ -1561,12 +1563,13 @@ pub(in crate::decode) fn solve_pcurve_vertex_domains(
 /// intersection or carrier curve must not erase it merely because that
 /// inferred geometry is inconsistent.
 pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     constraints: &[PcurveVertexConstraint],
     fixed_points: &BTreeMap<u32, [f64; 3]>,
     analytic_domains: &BTreeMap<u32, Vec<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
     authoritative_points: &BTreeMap<u32, [f64; 3]>,
-) -> BTreeMap<u32, [f64; 3]> {
+) -> Result<BTreeMap<u32, [f64; 3]>, cadmpeg_core::CodecError> {
     // A point outside the finite range agrees with no point.
     let agree = |first: [f64; 3], second: [f64; 3]| {
         finite_model_point(first)
@@ -1578,11 +1581,13 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         if vertices[0] == vertices[1] {
             match domains.entry(vertices[0]) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(if agree(points[0], points[1]) {
-                        vec![points[0]]
-                    } else {
-                        Vec::new()
-                    });
+                    ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+                    let mut domain = Vec::new();
+                    if agree(points[0], points[1]) {
+                        ctx.try_reserve_items(&mut domain, 1, "creo pcurve domain points")?;
+                        domain.push(points[0]);
+                    }
+                    entry.insert(domain);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let domain = entry.get_mut();
@@ -1596,7 +1601,16 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             continue;
         }
         for vertex in vertices {
-            let domain = domains.entry(*vertex).or_insert_with(|| points.to_vec());
+            let domain = match domains.entry(*vertex) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+                    let mut domain = Vec::new();
+                    ctx.try_reserve_items(&mut domain, points.len(), "creo pcurve domain points")?;
+                    domain.extend_from_slice(points);
+                    entry.insert(domain)
+                }
+            };
             domain.retain(|candidate| points.iter().any(|point| agree(*candidate, *point)));
         }
     }
@@ -1606,7 +1620,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         }
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(candidates.clone());
+                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+                let mut domain = Vec::new();
+                ctx.try_reserve_items(&mut domain, candidates.len(), "creo analytic domain points")?;
+                domain.extend_from_slice(candidates);
+                entry.insert(domain);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 entry
@@ -1618,7 +1636,11 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     for (vertex, point) in fixed_points {
         match domains.entry(*vertex) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                entry.insert(vec![*point]);
+                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+                let mut domain = Vec::new();
+                ctx.try_reserve_items(&mut domain, 1, "creo fixed domain points")?;
+                domain.push(*point);
+                entry.insert(domain);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 entry
@@ -1649,44 +1671,63 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             if vertices[0] == vertices[1] {
                 continue;
             }
-            let first = domains.get(&vertices[0]).cloned().unwrap_or_default();
-            let second = domains.get(&vertices[1]).cloned().unwrap_or_default();
-            let retained_first = first
-                .iter()
-                .copied()
-                .filter(|first| {
-                    second
+            let (retained_first, retained_second, first_len, second_len) = {
+                let first = domains.get(&vertices[0]).map(Vec::as_slice).unwrap_or(&[]);
+                let second = domains.get(&vertices[1]).map(Vec::as_slice).unwrap_or(&[]);
+                let mut retained_first = Vec::new();
+                for candidate in first {
+                    if second
                         .iter()
-                        .any(|second| compatible(*first, *second, *points))
-                })
-                .collect::<Vec<_>>();
-            let retained_second = second
-                .iter()
-                .copied()
-                .filter(|second| {
-                    first
+                        .any(|other| compatible(*candidate, *other, *points))
+                    {
+                        ctx.try_reserve_items(
+                            &mut retained_first,
+                            1,
+                            "creo retained first pcurve domain",
+                        )?;
+                        retained_first.push(*candidate);
+                    }
+                }
+                let mut retained_second = Vec::new();
+                for candidate in second {
+                    if first
                         .iter()
-                        .any(|first| compatible(*first, *second, *points))
-                })
-                .collect::<Vec<_>>();
-            changed |= retained_first.len() != first.len() || retained_second.len() != second.len();
+                        .any(|other| compatible(*other, *candidate, *points))
+                    {
+                        ctx.try_reserve_items(
+                            &mut retained_second,
+                            1,
+                            "creo retained second pcurve domain",
+                        )?;
+                        retained_second.push(*candidate);
+                    }
+                }
+                (retained_first, retained_second, first.len(), second.len())
+            };
+            changed |= retained_first.len() != first_len || retained_second.len() != second_len;
+            if !domains.contains_key(&vertices[0]) {
+                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+            }
             domains.insert(vertices[0], retained_first);
+            if !domains.contains_key(&vertices[1]) {
+                ctx.charge_collection_items(1, "creo pcurve domain nodes")?;
+            }
             domains.insert(vertices[1], retained_second);
         }
         if !changed {
             break;
         }
     }
-    domains
-        .into_iter()
-        .filter_map(|(vertex, mut domain)| {
-            domain.dedup_by(|first, second| agree(*first, *second));
-            let [point] = domain.as_slice() else {
-                return None;
-            };
-            Some((vertex, *point))
-        })
-        .collect()
+    let mut solved = BTreeMap::new();
+    for (vertex, mut domain) in domains {
+        domain.dedup_by(|first, second| agree(*first, *second));
+        let [point] = domain.as_slice() else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "creo solved pcurve vertex nodes")?;
+        solved.insert(vertex, *point);
+    }
+    Ok(solved)
 }
 
 pub(super) fn native_pcurve_midpoint(
