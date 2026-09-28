@@ -1208,25 +1208,26 @@ impl<'a> Section<'a> {
     /// separator form may be skipped when it leads to another complete group.
     /// Any other byte stops the journal so later record-region data cannot
     /// become state.
-    pub(crate) fn operation_state_journal_groups(&self) -> Option<Vec<JournalGroup<usize>>> {
+    pub(crate) fn operation_state_journal_groups(&self, ctx: &DecodeContext<'_>) -> Result<Option<Vec<JournalGroup<usize>>>, CodecError> {
         let is_feature_history = self
             .types
             .iter()
             .any(|definition| definition.name == "UGS::FEATURE_RECORD");
         if !is_feature_history {
-            return None;
+            return Ok(None);
         }
-        let (base_offset, bytes) = self.record_area_parts()?;
-        let header = self.record_area_header()?;
-        let product = header.product.offset.checked_sub(base_offset)?;
-        let product_end = record_area_product_end(bytes, product)?;
-        let start = operation_state_journal_start(bytes, product_end)?;
-        let end = self
-            .cached_operation_labels
-            .first()
-            .and_then(|label| label.header.offset().checked_sub(base_offset))
-            .unwrap_or(bytes.len());
-        operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
+        let Some((base_offset, bytes, start, end)) = (|| {
+            let (base_offset, bytes) = self.record_area_parts()?;
+            let header = self.record_area_header()?;
+            let product = header.product.offset.checked_sub(base_offset)?;
+            let product_end = record_area_product_end(bytes, product)?;
+            let start = operation_state_journal_start(bytes, product_end)?;
+            let end = self.cached_operation_labels.first()
+                .and_then(|label| label.header.offset().checked_sub(base_offset))
+                .unwrap_or(bytes.len());
+            Some((base_offset, bytes, start, end))
+        })() else { return Ok(None) };
+        operation_state_journal_groups_before_boundary(ctx, bytes, start, end, base_offset)
     }
 
     fn operation_state_block(
@@ -3154,24 +3155,26 @@ fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usi
 }
 
 fn operation_state_journal_groups_before_boundary(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<JournalGroup<usize>>> {
+) -> Result<Option<Vec<JournalGroup<usize>>>, CodecError> {
     if start >= end || end > bytes.len() {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(end - start), "scan NX state-journal groups")?;
     let mut groups = Vec::new();
     let mut at = start;
     let mut previous_ordinal = None;
     loop {
-        let Some(group) = JournalGroup::read(bytes, at, end, base_offset) else {
+        let Some(group) = JournalGroup::read(ctx, bytes, at, end, base_offset)? else {
             let mut next = at;
             while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
                 next += 2;
             }
-            if next == at || JournalGroup::read(bytes, next, end, base_offset).is_none() {
+            if next == at || JournalGroup::read(ctx, bytes, next, end, base_offset)?.is_none() {
                 break;
             }
             at = next;
@@ -3180,14 +3183,16 @@ fn operation_state_journal_groups_before_boundary(
         for row in group.rows().iter() {
             let ordinal = row.ordinal().value();
             if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
-                return None;
+                return Ok(None);
             }
             previous_ordinal = Some(ordinal);
         }
-        at = group.end_offset().checked_sub(base_offset)?;
+        let Some(next) = group.end_offset().checked_sub(base_offset) else { return Ok(None) };
+        at = next;
+        reserve_om_retained_item(ctx, &mut groups, "NX state-journal groups")?;
         groups.push(group);
     }
-    (!groups.is_empty()).then_some(groups)
+    Ok((!groups.is_empty()).then_some(groups))
 }
 
 /// Decode a complete bounded state journal.
@@ -3204,7 +3209,7 @@ fn operation_state_journal(
     let mut groups = Vec::new();
     let mut at = start;
     while at < end {
-        let group = JournalGroup::read(bytes, at, end, base_offset)?;
+        let group = crate::test_support::with_decode_context(|ctx| JournalGroup::read(ctx, bytes, at, end, base_offset)).ok()??;
         at = group.end_offset().checked_sub(base_offset)?;
         groups.push(group);
     }

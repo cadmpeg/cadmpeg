@@ -291,10 +291,9 @@ pub(super) fn operation_state_journal_groups(ctx: &cadmpeg_core::decode::DecodeC
 ) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError>
 {
     let sections = container.om_sections(ctx)?;
-    Ok(crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+    let mut out = Vec::new();
+    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+        .into_iter().enumerate() {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -303,31 +302,28 @@ pub(super) fn operation_state_journal_groups(ctx: &cadmpeg_core::decode::DecodeC
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                continue;
             };
-            let Some(groups) = section.operation_state_journal_groups() else {
-                return Vec::new();
+            let Some(groups) = section.operation_state_journal_groups(ctx)? else {
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            groups
-                .into_iter()
-                .enumerate()
-                .filter_map(move |(ordinal, group)| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmOperationStateJournalGroup {
+            for (ordinal, group) in groups.into_iter().enumerate() {
+                let Some(ordinal) = u32::try_from(ordinal).ok() else { continue };
+                let Some(frame) = group.into_absolute(ctx, entry_offset)? else { continue };
+                out.push(OmOperationStateJournalGroup {
                         id: format!(
                             "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
                         ),
                         section_link: link.id.clone(),
                         ordinal,
-                        frame: group.into_absolute(entry_offset)?,
+                        frame,
                         source_entry: entry.name.clone(),
-                    })
-                })
-                .collect()
-        })
-        .collect())
+                });
+            }
+    }
+    Ok(out)
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
