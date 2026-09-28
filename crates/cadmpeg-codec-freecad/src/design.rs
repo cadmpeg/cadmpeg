@@ -5687,6 +5687,15 @@ fn hole_definition(
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = profile_ref(ctx, owner, properties, sketches)?;
+    let (designation_label, class_label, fit_label) =
+        if enumeration_selector(properties, "ThreadType", 0).is_some_and(|value| value != 0) {
+            let designation = enumeration_label(ctx, properties, "ThreadSize")?;
+            match bool_selector(properties, "Threaded", false) {
+                Some(true) => (designation, enumeration_label(ctx, properties, "ThreadClass")?, None),
+                Some(false) => (designation, None, enumeration_label(ctx, properties, "ThreadFit")?),
+                None => (designation, None, None),
+            }
+        } else { (None, None, None) };
     let ProfileRef::Planar(planar_profile) = profile else { return Ok(None); };
     Ok((|| {
     if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
@@ -5796,7 +5805,7 @@ fn hole_definition(
     } else {
         let threaded = bool_selector(properties, "Threaded", false)?;
         let standard = cadmpeg_core::text::NonBlankString::new(thread_standard(thread_type)?)?;
-        let designation = enumeration_label(properties, "ThreadSize");
+        let designation = designation_label;
         let modeled = if property(properties, "ModelThread").is_some() {
             bool_selector(properties, "ModelThread", false)?
         } else {
@@ -5830,7 +5839,7 @@ fn hole_definition(
             HoleSpecification::Threaded {
                 standard,
                 designation,
-                class: enumeration_label(properties, "ThreadClass"),
+                class: class_label,
                 modeled,
                 cosmetic,
                 pitch: positive("ThreadPitch")
@@ -5845,7 +5854,7 @@ fn hole_definition(
             HoleSpecification::Clearance {
                 standard,
                 designation,
-                fit: enumeration_label(properties, "ThreadFit"),
+                fit: fit_label,
                 modeled,
                 cosmetic,
                 hand,
@@ -6113,61 +6122,48 @@ fn binder_target(
     }))
 }
 
-fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
-    let property = property(properties, name)?;
+fn enumeration_label(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord], name: &str) -> Result<Option<String>, CodecError> {
+    let Some(property) = property(properties, name) else { return Ok(None); };
     if property.type_name != "App::PropertyEnumeration" {
-        return None;
+        return Ok(None);
     }
-    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
+    let Some(document) = roxmltree::Document::parse(property.xml.text()).ok() else { return Ok(None); };
     let root = document.root_element();
     if !root.has_tag_name("Property") {
-        return None;
+        return Ok(None);
     }
-    let values = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let (integer, custom_list) = match values.as_slice() {
-        [integer] if integer.has_tag_name("Integer") => (*integer, None),
-        [integer, custom_list]
-            if integer.has_tag_name("Integer") && custom_list.has_tag_name("CustomEnumList") =>
-        {
-            (*integer, Some(*custom_list))
-        }
-        _ => return None,
-    };
+    let mut values = root.children().filter(roxmltree::Node::is_element);
+    let Some(integer) = values.next().filter(|value| value.has_tag_name("Integer")) else { return Ok(None); };
+    let custom_list = values.next();
+    if values.next().is_some() || custom_list.is_some_and(|value| !value.has_tag_name("CustomEnumList")) {
+        return Ok(None);
+    }
     if integer.children().any(|child| child.is_element()) {
-        return None;
+        return Ok(None);
     }
     let custom = match integer.attribute("CustomEnum") {
         None => false,
         Some("true") => true,
-        Some(_) => return None,
+        Some(_) => return Ok(None),
     };
     if custom != custom_list.is_some() {
-        return None;
+        return Ok(None);
     }
-    let index = integer.attribute("value")?.parse::<usize>().ok()?;
-    let custom_list = custom_list?;
-    let count = custom_list.attribute("count")?.parse::<usize>().ok()?;
-    let enum_values = custom_list
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if enum_values.len() != count {
-        return None;
+    let Some(index) = integer.attribute("value").and_then(|value| value.parse::<usize>().ok()) else { return Ok(None); };
+    let Some(custom_list) = custom_list else { return Ok(None); };
+    let Some(count) = custom_list.attribute("count").and_then(|value| value.parse::<usize>().ok()) else { return Ok(None); };
+    let mut selected = None;
+    let mut actual = 0usize;
+    for value in custom_list.children().filter(roxmltree::Node::is_element) {
+        if !value.has_tag_name("Enum") || value.children().any(|child| child.is_element()) {
+            return Ok(None);
+        }
+        let Some(label) = value.attribute("value") else { return Ok(None); };
+        if actual == index { selected = Some(label); }
+        actual += 1;
     }
-    enum_values
-        .into_iter()
-        .map(|value| {
-            if !value.has_tag_name("Enum") || value.children().any(|child| child.is_element()) {
-                return None;
-            }
-            value.attribute("value").map(str::to_owned)
-        })
-        .collect::<Option<Vec<_>>>()?
-        .get(index)
-        .cloned()
+    if actual != count { return Ok(None); }
+    selected.map(|label| retained_string(ctx, label, "fcstd hole enumeration label")).transpose()
 }
 
 #[derive(Clone, Copy)]

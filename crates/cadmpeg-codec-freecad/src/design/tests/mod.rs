@@ -12,6 +12,22 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn hole_enumeration_selected_label_refuses_at_retained_limit() {
+    let property = crate::native::PropertyRecord {
+        id: "thread-size".into(), owner: "hole".into(), name: "ThreadSize".into(),
+        type_name: "App::PropertyEnumeration".into(),
+        family: crate::native::PropertyFamily::Unknown, status: None,
+        body: crate::native::PropertyBody::Transient, order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><Integer value=\"1\" CustomEnum=\"true\"/><CustomEnumList count=\"2\"><Enum value=\"M4\"/><Enum value=\"M6\"/></CustomEnumList></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd hole enumeration label", |ctx| {
+        super::enumeration_label(ctx, &[&property], "ThreadSize")
+    });
+}
+
+#[test]
 fn binder_sources_and_selectors_refuse_at_matching_limits() {
     let mut support = linked_property("binder", "Support", "binder-support");
     let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
