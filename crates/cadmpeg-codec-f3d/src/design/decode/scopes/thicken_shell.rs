@@ -3,9 +3,8 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::thicken_class_347_scope_frame as thicken_347;
 use crate::records::feature::direct_face;
@@ -48,14 +47,12 @@ pub(super) fn exact_legacy_thicken_class_347(
     {
         return None;
     }
-    let (guid, guid_end) =
-        lp_utf16_bounded(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT, 36..=36)?;
-    if guid_end != start + thicken_347::ZERO_RUN_3 || !is_guid_relaxed(&guid) {
+    let guid_end = fixed_guid_end(bytes, start + thicken_347::GUID_CODE_UNIT_COUNT)?;
+    if guid_end != start + thicken_347::ZERO_RUN_3 {
         return None;
     }
-    let (kind, kind_end) =
-        lp_utf16_bounded(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, 7..=7)?;
-    if kind != "Thicken" || kind_end != start + thicken_347::FEATURE_ORDINAL {
+    let kind_end = fixed_utf16_ascii_eq(bytes, start + thicken_347::KIND_CODE_UNIT_COUNT, "Thicken")?;
+    if kind_end != start + thicken_347::FEATURE_ORDINAL {
         return None;
     }
     let reference_entries = [
@@ -130,24 +127,16 @@ pub(super) fn exact_shell_class_369_261(
         Some(1) => true,
         _ => return None,
     };
-    let (guid, guid_end) = lp_utf16_bounded(
+    let guid_end = fixed_utf16_ascii_eq(
         bytes,
         start + shell_369_261::GUID_CODE_UNIT_COUNT,
-        shell_369_261::GUID_CODE_UNIT_COUNT_VALUE as usize
-            ..=shell_369_261::GUID_CODE_UNIT_COUNT_VALUE as usize,
+        "00000000-0000-0000-0000-000000000000",
     )?;
-    if guid != "00000000-0000-0000-0000-000000000000"
-        || guid_end != start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES
-    {
+    if guid_end != start + shell_369_261::ZERO_RUN_3_BEFORE_REFERENCES {
         return None;
     }
-    let (kind, kind_end) = lp_utf16_bounded(
-        bytes,
-        start + shell_369_261::KIND_CODE_UNIT_COUNT,
-        shell_369_261::KIND_CODE_UNIT_COUNT_VALUE as usize
-            ..=shell_369_261::KIND_CODE_UNIT_COUNT_VALUE as usize,
-    )?;
-    if kind != "Shell" || kind_end != start + shell_369_261::FEATURE_ORDINAL {
+    let kind_end = fixed_utf16_ascii_eq(bytes, start + shell_369_261::KIND_CODE_UNIT_COUNT, "Shell")?;
+    if kind_end != start + shell_369_261::FEATURE_ORDINAL {
         return None;
     }
     let reference_entries = [

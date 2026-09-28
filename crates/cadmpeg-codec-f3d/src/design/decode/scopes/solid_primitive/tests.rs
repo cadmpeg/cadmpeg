@@ -30,9 +30,9 @@ fn fixed_guid_scan_matches_decoded_relaxed_guid_validation() {
         }
         let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
             .and_then(|(guid, end)| crate::bytes::is_guid_relaxed(&guid).then_some(end));
-        assert_eq!(super::fixed_guid_end(&bytes, 0), prior);
+        assert_eq!(crate::design::decode::text::fixed_guid_end(&bytes, 0), prior);
         bytes.pop();
-        assert_eq!(super::fixed_guid_end(&bytes, 0), None);
+        assert_eq!(crate::design::decode::text::fixed_guid_end(&bytes, 0), None);
     }
 }
 
