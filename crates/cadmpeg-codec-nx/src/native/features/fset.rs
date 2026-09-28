@@ -261,7 +261,11 @@ pub(in crate::native) fn feature_fset_construction_payloads(
                 }) {
                     return None;
                 }
-                let (_, content) = FeaturePayloadContent::from_source(data_blocks, blocks)?;
+                let content = match FeaturePayloadContent::from_source(ctx, data_blocks, blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
                 let group_name = match group {
                     FeatureFsetReferenceGroup::First => "first",
                     FeatureFsetReferenceGroup::Second => "second",
@@ -269,7 +273,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
                 let operation_key = graph
                     .operation_label
                     .strip_prefix("nx:feature-history:operation-label#")?;
-                Some(FeatureConstructionPayload {
+                Some(Ok(FeatureConstructionPayload {
                     id: format!(
                         "nx:feature-history:fset-construction-payload#{operation_key}-{group_name}"
                     ),
@@ -279,10 +283,10 @@ pub(in crate::native) fn feature_fset_construction_payloads(
                         group,
                     },
                     content,
-                })
+                }))
             })
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 #[cfg(test)]

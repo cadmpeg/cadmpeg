@@ -5376,11 +5376,14 @@ pub(super) fn feature_datum_plane_payloads(
             .resolved_data_blocks(DatumPlaneBlockLane::Object)
             .cloned()
             .collect::<Vec<_>>();
-        let Some((payload, content)) = FeaturePayloadContent::from_source(data_blocks, &blocks)
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)?
         else {
             continue;
         };
-        let lanes = crate::om::datum_index::scan(ctx, &payload)?;
+        let Some(joined) = JoinedPayload::from_source(ctx, content.block_ids(), &blocks)? else {
+            continue;
+        };
+        let lanes = crate::om::datum_index::scan(ctx, joined.bytes())?;
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
         let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         output.push(FeatureDatumPlanePayload {
@@ -5408,17 +5411,21 @@ pub(super) fn feature_datum_csys_payloads(
                 construction.frame.members()[0].1.clone(),
                 construction.frame.members()[1].1.clone(),
             ];
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            Some(FeatureDatumCsysPayload {
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(Ok(FeatureDatumCsysPayload {
                 id: construction
                     .id
                     .replacen("datum-csys-construction", "datum-csys-payload", 1),
                 operation_label: construction.operation_label.clone(),
                 construction: construction.id.clone(),
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Shared body for construction-payload frame extractors. Reconstruct each
@@ -5887,8 +5894,12 @@ pub(super) fn feature_sketch_construction_payloads(
                 .map(|member| member.data_block.clone())
                 .collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            Some(FeatureConstructionPayload {
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(Ok(FeatureConstructionPayload {
                 id: construction.id.replacen(
                     "sketch-construction-inputs",
                     "sketch-construction-payload",
@@ -5899,9 +5910,9 @@ pub(super) fn feature_sketch_construction_payloads(
                     construction_inputs: construction.id.clone(),
                 },
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.
@@ -7038,9 +7049,13 @@ pub(super) fn feature_projected_curve_construction_payloads(
             }) {
                 return None;
             }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(FeatureConstructionPayload {
+            Some(Ok(FeatureConstructionPayload {
                 id: format!(
                     "nx:feature-history:projected-curve-construction-payload#{operation_key}"
                 ),
@@ -7053,9 +7068,9 @@ pub(super) fn feature_projected_curve_construction_payloads(
                         .collect(),
                 },
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Decode canonical printable strings from reconstructed projected-curve payloads.
@@ -7360,16 +7375,20 @@ pub(super) fn feature_surface_construction_payloads(
             }) {
                 return None;
             }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(FeatureSurfaceConstructionPayload {
+            Some(Ok(FeatureSurfaceConstructionPayload {
                 id: format!("nx:feature-history:surface-construction-payload#{operation_key}"),
                 operation_label: operation_label.to_string(),
                 construction_references: graph.each_ref().map(|reference| reference.id.clone()),
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Decode exact scalar-pair frames from reconstructed surface payloads.
@@ -8184,8 +8203,12 @@ pub(super) fn feature_block_construction_payloads(
                 .map(|member| member.data_block.clone())
                 .collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            Some(FeatureConstructionPayload {
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(Ok(FeatureConstructionPayload {
                 id: construction
                     .id
                     .replacen("block-construction", "block-construction-payload", 1),
@@ -8194,9 +8217,9 @@ pub(super) fn feature_block_construction_payloads(
                     construction: construction.id.clone(),
                 },
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.

@@ -783,8 +783,12 @@ pub(in crate::native) fn feature_draft_construction_payloads(
                 .indices()
                 .map(|row| row.target.clone())
                 .collect::<Vec<_>>();
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
-            Some(FeatureConstructionPayload {
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(Ok(FeatureConstructionPayload {
                 id: lane.id.replacen(
                     "draft-construction-index-lane#",
                     "draft-construction-payload#",
@@ -795,9 +799,9 @@ pub(in crate::native) fn feature_draft_construction_payloads(
                     index_lane: lane.id.clone(),
                 },
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.
@@ -840,17 +844,21 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             }) {
                 return None;
             }
-            let (_, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
+            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
+                Ok(Some(content)) => content,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let (_, key) = lane.id.rsplit_once('#')?;
-            Some(FeatureDraftConstructionGraphPayload {
+            Some(Ok(FeatureDraftConstructionGraphPayload {
                 id: format!("nx:feature-history:draft-construction-graph-payload#{key}"),
                 operation_label: lane.operation_label.clone(),
                 index_lane: lane.id.clone(),
                 construction_references: graph.each_ref().map(|reference| reference.id.clone()),
                 content,
-            })
+            }))
         })
-        .collect())
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed draft graph payloads.

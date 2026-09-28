@@ -6,6 +6,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use std::collections::BTreeMap;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FeaturePayloadBlock {
@@ -45,37 +48,48 @@ impl<B: AsRef<[FeaturePayloadBlock]>> FeaturePayloadContent<B> {
 
 impl<B: AsRef<[FeaturePayloadBlock]> + TryFrom<Vec<FeaturePayloadBlock>>> FeaturePayloadContent<B> {
     pub(super) fn from_source(
+        ctx: &DecodeContext<'_>,
         ids: impl IntoIterator<Item = String>,
         blocks: &BTreeMap<String, (&[u8], u64)>,
-    ) -> Option<(Vec<u8>, Self)> {
-        let sources = ids
-            .into_iter()
-            .map(|id| {
-                let (bytes, offset) = *blocks.get(&id)?;
-                Some((id, bytes, offset))
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let byte_len = sources.iter().try_fold(0usize, |total, (_, bytes, _)| {
-            total.checked_add(bytes.len())
-        })?;
-        let mut payload = Vec::new();
-        payload.try_reserve_exact(byte_len).ok()?;
+    ) -> Result<Option<Self>, CodecError> {
+        let mut hash = Sha256::new();
         let mut rows = Vec::new();
-        rows.try_reserve_exact(sources.len()).ok()?;
-        for (id, bytes, source_offset) in sources {
-            payload.extend_from_slice(bytes);
+        let mut reservation = ctx.reserve_scoped(0, "retain NX feature payload blocks")?;
+        let mut byte_len = 0u64;
+        for id in ids {
+            let Some((bytes, source_offset)) = blocks.get(&id).copied() else {
+                return Ok(None);
+            };
+            let length = u64_from_index(bytes.len());
+            byte_len = byte_len.checked_add(length).ok_or_else(|| {
+                ctx.refuse_codec_limit("count NX feature payload bytes", 0, 1)
+            })?;
+            ctx.charge_work(length.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("hash NX feature payload bytes", 0, 1)
+            })?, "hash NX feature payload bytes")?;
+            let record_bytes = std::mem::size_of::<FeaturePayloadBlock>()
+                .checked_add(id.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature payload blocks", 0, 1))?;
+            reservation.grow(u64_from_index(record_bytes))?;
+            ctx.charge_collection_items(1, "NX feature payload blocks")?;
+            rows.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX feature payload blocks", 0, 1)
+            })?;
+            hash.update(bytes);
             rows.push(FeaturePayloadBlock {
                 id,
-                byte_len: bytes.len() as u64,
+                byte_len: length,
                 source_offset,
             });
         }
-        let content = Self::new(
-            B::try_from(rows).ok()?,
-            crate::native::hex::Sha256Hex::digest(&payload),
-        )
-        .ok()?;
-        Some((payload, content))
+        let Ok(blocks) = B::try_from(rows) else {
+            return Ok(None);
+        };
+        reservation.commit()?;
+        ctx.charge_retained(64, "retain NX feature payload digest")?;
+        let digest = crate::native::hex::Sha256Hex::from_digest(hash.finalize().into());
+        let content = Self::new(blocks, digest).map_err(CodecError::Malformed)?;
+        Ok(Some(content))
     }
 }
 
