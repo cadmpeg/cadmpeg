@@ -785,6 +785,21 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(())
     }
 
+    fn insert_ordered_witness<K: Ord, V>(
+        &self,
+        values: &mut std::collections::BTreeMap<K, V>,
+        key: K,
+        value: V,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        use std::collections::btree_map::Entry;
+        if let Entry::Vacant(entry) = values.entry(key) {
+            self.charge_item(operation)?;
+            entry.insert(value);
+        }
+        Ok(())
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -1041,7 +1056,7 @@ fn validate_loaded(
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
         , "index F3D face group members")?;
-    validate_act(&ctx, &mut findings);
+    validate_act(&ctx, &mut findings)?;
     validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings)?;
     validate_canvas_images(&ctx, &mut findings)?;
@@ -1119,22 +1134,19 @@ fn validate_loaded(
 
 /// Validate ACT record identity, table/group joins, ordered registries, and the
 /// stored document-root discriminator.
-fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut streams = std::collections::BTreeMap::<&str, &str>::new();
     let mut record_indices = HashSet::new();
     for entity in &native.act_entities {
         let stream = entity.stream();
-        streams.entry(stream).or_insert(entity.id());
-        let unique_index = record_indices.insert((stream, entity.record_index()));
+        ctx.insert_ordered_witness(&mut streams, stream, entity.id().as_str(), "index F3D ACT streams")?;
+        let unique_index = ctx.insert_unique(&mut record_indices,
+            (stream, entity.record_index()), "index F3D ACT record indices")?;
         if !unique_index {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ACT entity has an invalid identity, table membership, or change-group frame"
-                    .into(),
-                entity: Some(entity.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT entity has an invalid identity, table membership, or change-group frame",
+                Some(ctx.copy_entity(entity.id())?))?;
         }
     }
 
@@ -1142,23 +1154,19 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut guid_offsets = HashSet::new();
     for guid in &native.act_guids {
         let stream = guid.stream();
-        streams.entry(stream).or_insert(guid.id());
-        let unique_ordinal = guid_ordinals
-            .entry(stream)
-            .or_insert_with(|| (HashSet::new(), guid.id()))
-            .0
-            .insert(guid.ordinal);
-        let unique_offset = guid_offsets.insert((stream, guid.byte_offset()));
+        ctx.insert_ordered_witness(&mut streams, stream, guid.id().as_str(), "index F3D ACT streams")?;
+        ctx.insert_ordered_witness(&mut guid_ordinals, stream,
+            (HashSet::new(), guid.id().as_str()), "index F3D ACT GUID streams")?;
+        let unique_ordinal = ctx.insert_unique(&mut guid_ordinals.get_mut(stream).ok_or_else(||
+            CodecError::malformed("F3D ACT GUID stream index missing"))?.0,
+            guid.ordinal, "index F3D ACT GUID ordinals")?;
+        let unique_offset = ctx.insert_unique(&mut guid_offsets,
+            (stream, guid.byte_offset()), "index F3D ACT GUID offsets")?;
         let valid = unique_offset && unique_ordinal;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "Fusion ACT GUID-pool entry has an invalid identity, ordinal, offset, or GUID"
-                        .into(),
-                entity: Some(guid.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT GUID-pool entry has an invalid identity, ordinal, offset, or GUID",
+                Some(ctx.copy_entity(guid.id())?))?;
         }
     }
 
@@ -1167,22 +1175,19 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut table_reference_offsets = HashSet::new();
     for reference in &native.act_table_references {
         let stream = reference.stream();
-        streams.entry(stream).or_insert(reference.id());
-        let unique_ordinal = table_reference_ordinals
-            .entry(stream)
-            .or_insert_with(|| (HashSet::new(), reference.id()))
-            .0
-            .insert(reference.ordinal);
-        let unique_offset = table_reference_offsets.insert((stream, reference.byte_offset()));
+        ctx.insert_ordered_witness(&mut streams, stream, reference.id().as_str(), "index F3D ACT streams")?;
+        ctx.insert_ordered_witness(&mut table_reference_ordinals, stream,
+            (HashSet::new(), reference.id().as_str()), "index F3D ACT table streams")?;
+        let unique_ordinal = ctx.insert_unique(&mut table_reference_ordinals.get_mut(stream).ok_or_else(||
+            CodecError::malformed("F3D ACT table stream index missing"))?.0,
+            reference.ordinal, "index F3D ACT table ordinals")?;
+        let unique_offset = ctx.insert_unique(&mut table_reference_offsets,
+            (stream, reference.byte_offset()), "index F3D ACT table offsets")?;
         let valid = unique_ordinal && unique_offset;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ACT table reference has an invalid identity, ordinal, or offset"
-                    .into(),
-                entity: Some(reference.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT table reference has an invalid identity, ordinal, or offset",
+                Some(ctx.copy_entity(reference.id())?))?;
         }
     }
 
@@ -1191,52 +1196,49 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut registry_names = HashSet::new();
     for channel in &native.act_registry_channels {
         let stream = channel.stream();
-        streams.entry(stream).or_insert(channel.id());
-        let unique_ordinal = registry_ordinals
-            .entry(stream)
-            .or_insert_with(|| (HashSet::new(), channel.id()))
-            .0
-            .insert(channel.ordinal);
-        let unique_offset = registry_offsets.insert((stream, channel.byte_offset()));
-        let unique_name = registry_names.insert((stream, channel.name()));
+        ctx.insert_ordered_witness(&mut streams, stream, channel.id().as_str(), "index F3D ACT streams")?;
+        ctx.insert_ordered_witness(&mut registry_ordinals, stream,
+            (HashSet::new(), channel.id().as_str()), "index F3D ACT registry streams")?;
+        let unique_ordinal = ctx.insert_unique(&mut registry_ordinals.get_mut(stream).ok_or_else(||
+            CodecError::malformed("F3D ACT registry stream index missing"))?.0,
+            channel.ordinal, "index F3D ACT registry ordinals")?;
+        let unique_offset = ctx.insert_unique(&mut registry_offsets,
+            (stream, channel.byte_offset()), "index F3D ACT registry offsets")?;
+        let unique_name = ctx.insert_unique(&mut registry_names,
+            (stream, channel.name()), "index F3D ACT registry names")?;
         let valid = unique_offset && unique_name && unique_ordinal;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ACT channel-registry entry has an invalid identity, ordinal, offset, name, or GUID"
-                    .into(),
-                entity: Some(channel.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT channel-registry entry has an invalid identity, ordinal, offset, name, or GUID",
+                Some(ctx.copy_entity(channel.id())?))?;
         }
     }
 
     let mut root_counts = HashMap::<&str, usize>::new();
     for root in &native.act_root_components {
         let stream = root.stream();
-        streams.entry(stream).or_insert(root.id());
+        ctx.insert_ordered_witness(&mut streams, stream, root.id().as_str(), "index F3D ACT streams")?;
+        if !root_counts.contains_key(stream) {
+            ctx.charge_item("index F3D ACT root counts")?;
+            root_counts.try_reserve(1).map_err(|_| ctx.decode.map_or_else(
+                || CodecError::malformed("F3D ACT root count allocation failed"),
+                |decode| decode.refuse_codec_limit("index F3D ACT root counts", 0, 1)))?;
+        }
         *root_counts.entry(stream).or_default() += 1;
-        let unique_record_index = record_indices.insert((stream, root.record_index));
+        let unique_record_index = ctx.insert_unique(&mut record_indices,
+            (stream, root.record_index), "index F3D ACT record indices")?;
         if !unique_record_index {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference"
-                    .into(),
-                entity: Some(root.id().clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference",
+                Some(ctx.copy_entity(root.id())?))?;
         }
     }
 
     for (stream, witness) in streams {
         if root_counts.get(stream).copied() != Some(1) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ACT stream does not have exactly one document-root component link"
-                    .into(),
-                entity: Some(witness.into()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion ACT stream does not have exactly one document-root component link",
+                Some(ctx.copy_entity(witness)?))?;
         }
     }
     for (ordinals, witness, family) in guid_ordinals
@@ -1261,14 +1263,16 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(length)
         });
         if !contiguous {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!("Fusion ACT {family} ordinals are not contiguous from zero"),
-                entity: Some(witness.into()),
-            });
+            let message = match family {
+                "GUID pool" => "Fusion ACT GUID pool ordinals are not contiguous from zero",
+                "table reference" => "Fusion ACT table reference ordinals are not contiguous from zero",
+                _ => "Fusion ACT channel registry ordinals are not contiguous from zero",
+            };
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                message, Some(ctx.copy_entity(witness)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate unique configuration entries and a single authored table.
