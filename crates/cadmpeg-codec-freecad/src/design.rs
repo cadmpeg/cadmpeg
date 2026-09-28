@@ -174,7 +174,7 @@ pub(crate) fn transfer(
                 })
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_loft(&object.type_name) {
-            loft_definition(&object.type_name, &owned, &sketch_ids)
+            loft_definition(ctx, &object.type_name, &owned, &sketch_ids)?
                 .or_else(|| cached_shape_definition(&owned))
                 .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_sweep(&object.type_name) {
@@ -5463,58 +5463,63 @@ fn boolean_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&Proper
 }
 
 fn loft_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-) -> Option<FeatureDefinition> {
-    let profiles = property(properties, "Profile")
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let linked_objects = || property(properties, "Profile")
         .into_iter()
         .chain(property(properties, "Sections"))
         .flat_map(PropertyRecord::links)
-        .filter_map(|link| link.as_ref()?.object())
-        .map(|object| {
-            sketches.get(object).cloned().map_or_else(
-                || ProfileRef::Planar(PlanarProfileRef::Native(object.to_owned())),
-                |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
-            )
-        })
-        .collect::<Vec<_>>();
+        .filter_map(|link| link.as_ref()?.object());
+    let mut profiles = collection_vec(ctx, linked_objects().count(), "fcstd loft profiles")?;
+    for object in linked_objects() {
+        let profile = match sketches.get(object) {
+            Some(sketch) => PlanarProfileRef::Sketch(SketchId::mint(retained_string(ctx, sketch.as_str(), "fcstd loft sketch identity")?).map_err(CodecError::malformed)?),
+            None => PlanarProfileRef::Native(retained_string(ctx, object, "fcstd loft native profile identity")?),
+        };
+        profiles.push(ProfileRef::Planar(profile));
+    }
     if profiles.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let max_degree = if property(properties, "MaxDegree").is_some() {
-        let value = u32::try_from(integer_property(properties, "MaxDegree")?).ok()?;
-        Some(std::num::NonZeroU32::new(value)?)
+        let Some(value) = integer_property(properties, "MaxDegree")
+            .and_then(|value| u32::try_from(value).ok())
+            .and_then(std::num::NonZeroU32::new) else { return Ok(None); };
+        Some(value)
     } else {
         None
     };
     let part_design = kind.starts_with("PartDesign::");
-    Some(FeatureDefinition::Operation(FeatureOperation::Loft {
-        sections: profiles
-            .into_iter()
-            .map(cadmpeg_ir::features::LoftSection::Profile)
-            .collect(),
+    let Some(closed) = bool_selector(properties, "Closed", false) else { return Ok(None); };
+    let solid = if part_design { true } else {
+        let Some(value) = bool_selector(properties, "Solid", true) else { return Ok(None); };
+        value
+    };
+    let Some(ruled) = bool_selector(properties, "Ruled", false) else { return Ok(None); };
+    let linearize = if part_design { false } else {
+        let Some(value) = bool_selector(properties, "Linearize", false) else { return Ok(None); };
+        value
+    };
+    let allow_multi_profile_faces = if part_design {
+        let Some(value) = bool_selector(properties, "AllowMultiFace", false) else { return Ok(None); };
+        Some(value)
+    } else { None };
+    let mut sections = collection_vec(ctx, profiles.len(), "fcstd loft sections")?;
+    sections.extend(profiles.into_iter().map(cadmpeg_ir::features::LoftSection::Profile));
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Loft {
+        sections,
         guidance: cadmpeg_ir::features::LoftGuidance::Guides(Vec::new()),
         op: operation_boolean(kind),
-        closed: bool_selector(properties, "Closed", false)?,
-        solid: if part_design {
-            true
-        } else {
-            bool_selector(properties, "Solid", true)?
-        },
-        ruled: bool_selector(properties, "Ruled", false)?,
-        linearize: if part_design {
-            false
-        } else {
-            bool_selector(properties, "Linearize", false)?
-        },
+        closed,
+        solid,
+        ruled,
+        linearize,
         max_degree,
-        allow_multi_profile_faces: if part_design {
-            Some(bool_selector(properties, "AllowMultiFace", false)?)
-        } else {
-            None
-        },
-    }))
+        allow_multi_profile_faces,
+    })))
 }
 
 fn sweep_definition(
