@@ -76,7 +76,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let mut transferred = BTreeSet::new();
-    let carriers = placed_carriers(scan, ir, source_carriers);
+    let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let solved_vertices = solved_topological_vertices(
         ctx,
         scan,

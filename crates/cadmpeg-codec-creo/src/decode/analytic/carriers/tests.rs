@@ -10,6 +10,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 fn carrier_surface(id: u32, geometry: SurfaceGeometry) -> Surface {
     Surface {
@@ -44,6 +46,102 @@ fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::Su
         next_surface: 0,
         offset: 0,
     }
+}
+
+fn placed_carrier_collection_error(
+    scan: &crate::container::ContainerScan,
+    ir: &CadIr,
+    limit: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    match placed_carriers(
+        &ctx,
+        scan,
+        ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    ) {
+        Ok(_) => panic!("one carrier collection exceeds limit"),
+        Err(error) => error,
+    }
+}
+
+fn assert_placed_carrier_refusal(error: CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn placed_carriers_refuse_plane_carrier_node() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.positional_frames.push(crate::surface::OutlinePlane {
+        surface_id: 7,
+        origin: [0.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 0,
+    });
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
+        "creo placed carrier nodes",
+    );
+}
+
+#[test]
+fn placed_carriers_refuse_row_id_node() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(carrier_row(7, crate::surface::SurfaceKind::Plane));
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &CadIr::empty(), 0),
+        "creo placed carrier row IDs",
+    );
+}
+
+#[test]
+fn placed_carriers_refuse_row_count_node() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(carrier_row(7, crate::surface::SurfaceKind::Plane));
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &CadIr::empty(), 1),
+        "creo placed carrier row counts",
+    );
+}
+
+fn rowless_cylinder_input() -> (crate::container::ContainerScan<'static>, CadIr) {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(cylinder_surface(7, 2.0));
+    (scan, ir)
+}
+
+#[test]
+fn placed_carriers_refuse_rowless_group_node() {
+    let (scan, ir) = rowless_cylinder_input();
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &ir, 0),
+        "creo rowless carrier groups",
+    );
+}
+
+#[test]
+fn placed_carriers_refuse_rowless_group_member() {
+    let (scan, ir) = rowless_cylinder_input();
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &ir, 1),
+        "creo rowless carrier members",
+    );
+}
+
+#[test]
+fn placed_carriers_refuse_rowless_carrier_node() {
+    let (scan, ir) = rowless_cylinder_input();
+    assert_placed_carrier_refusal(
+        placed_carrier_collection_error(&scan, &ir, 2),
+        "creo placed carrier nodes",
+    );
 }
 
 fn topology_plane() -> PlaneEquation {
@@ -126,11 +224,11 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!placed_carriers(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )
+    )).expect("service placed carriers")
     .contains_key(&7));
 }
 
@@ -177,11 +275,11 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
         .expect("valid CylinderSurface fixture"),
     ));
 
-    let carriers = placed_carriers(
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    );
+    )).expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder))
@@ -238,11 +336,11 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 0.2));
 
-    let carriers = placed_carriers(
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    );
+    )).expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.origin == [0.0, 0.0, 0.0]
@@ -292,11 +390,11 @@ fn duplicate_model_surface_ids_remove_native_carrier() {
         ),
     ]);
 
-    assert!(!placed_carriers(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )
+    )).expect("service placed carriers")
     .contains_key(&7));
 }
 
@@ -306,11 +404,11 @@ fn placed_carriers_admits_unique_rowless_model_surface() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(cylinder_surface(7, 2.0));
 
-    let carriers = placed_carriers(
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    );
+    )).expect("service placed carriers");
     assert!(matches!(
         carriers.get(&7),
         Some(CarrierEquation::Cylinder(cylinder)) if cylinder.radius == 2.0
@@ -325,11 +423,11 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
         .surfaces
         .extend([cylinder_surface(7, 2.0), cylinder_surface(7, 3.0)]);
 
-    assert!(!placed_carriers(
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| placed_carriers(ctx,
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default()
-    )
+    )).expect("service placed carriers")
     .contains_key(&7));
 }
 

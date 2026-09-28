@@ -1052,7 +1052,7 @@ pub(in super::super) fn transfer_native_brep(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir, source_carriers);
+    let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let planes = carriers
         .iter()
         .filter_map(|(id, carrier)| match carrier {

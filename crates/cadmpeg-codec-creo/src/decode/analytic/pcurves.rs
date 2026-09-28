@@ -830,7 +830,7 @@ fn pcurve_edge_endpoint_evidence_with_diagnostics(
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
 ), cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir, source_carriers);
+    let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     pcurve_edge_endpoint_evidence_with_carriers(ctx, scan, ir, &carriers, source_carriers)
 }
 

@@ -176,7 +176,7 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
         panic!("placed plane was not admitted");
     };
     assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
-    let carriers = crate::decode::analytic::carriers::placed_carriers(&scan, &ir, &source_carriers);
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)).expect("service placed carriers");
     let Some(crate::decode::analytic::equations::CarrierEquation::Plane(source_plane)) =
         carriers.get(&18)
     else {
@@ -222,7 +222,7 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
         )
         .expect("placed plane transfer");
     });
-    let carriers = crate::decode::analytic::carriers::placed_carriers(&scan, &ir, &source_carriers);
+    let carriers = crate::decode::with_test_decode_ctx(|ctx| crate::decode::analytic::carriers::placed_carriers(ctx, &scan, &ir, &source_carriers)).expect("service placed carriers");
     let Some(crate::decode::analytic::equations::CarrierEquation::Plane(plane)) = carriers.get(&18)
     else {
         panic!("placed plane was lost before native topology transfer");
