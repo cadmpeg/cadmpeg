@@ -18,6 +18,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -876,23 +877,10 @@ fn rotated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
-            let first_points = first.pole_rows().raw_points();
-            let second_points = second.pole_rows().raw_points();
-            let first_weights = first.pole_rows().weights();
-            let second_weights = second.pole_rows().weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
-                && first_points.len() == second_points.len()
-                && first_points
-                    .iter()
-                    .zip(&second_points)
-                    .all(|(a, b)| point_matches(*a, *b))
-                && match (&first_weights, &second_weights) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => equal_scalars(a, b),
-                    _ => false,
-                }
+                && nurbs_poles_match(first, second, point_matches)
         }
         _ => false,
     }
@@ -990,23 +978,10 @@ fn translated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
-            let first_points = first.pole_rows().raw_points();
-            let second_points = second.pole_rows().raw_points();
-            let first_weights = first.pole_rows().weights();
-            let second_weights = second.pole_rows().weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
-                && first_points.len() == second_points.len()
-                && first_points
-                    .iter()
-                    .zip(&second_points)
-                    .all(|(a, b)| point_matches(*a, *b))
-                && match (&first_weights, &second_weights) {
-                    (None, None) => true,
-                    (Some(a), Some(b)) => equal_scalars(a, b),
-                    _ => false,
-                }
+                && nurbs_poles_match(first, second, point_matches)
         }
         _ => false,
     }
@@ -1034,6 +1009,29 @@ fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
             .all(|(first, second)| scalar_close(*first, *second))
 }
 
+fn nurbs_poles_match(
+    first: &PcurveNurbs,
+    second: &PcurveNurbs,
+    point_matches: impl Fn(Point2, Point2) -> bool,
+) -> bool {
+    match (first.pole_rows(), second.pole_rows()) {
+        (PcurveNurbsPoles::Polynomial { points: first },
+         PcurveNurbsPoles::Polynomial { points: second }) => {
+            first.len() == second.len()
+                && first.iter().zip(second).all(|(a, b)| point_matches(a.get(), b.get()))
+        }
+        (PcurveNurbsPoles::Rational { points: first },
+         PcurveNurbsPoles::Rational { points: second }) => {
+            first.len() == second.len()
+                && first.iter().zip(second).all(|(a, b)| {
+                    point_matches(a.point.get(), b.point.get())
+                        && scalar_close(a.weight.get(), b.weight.get())
+                })
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1050,11 +1048,52 @@ mod tests {
         },
     };
     use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
         SketchId,
     };
     use cadmpeg_test_support::wire;
+
+    #[test]
+    fn translated_nurbs_match_borrowed_rational_poles() {
+        let source = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
+            curve: PcurveNurbs::from_lanes(
+                1, vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)],
+                Some(vec![1.0, 2.0]), false,
+            ).unwrap(),
+        }).unwrap();
+        let shifted = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
+            curve: PcurveNurbs::from_lanes(
+                1, vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(4.0, 5.0), Point2::new(5.0, 5.0)],
+                Some(vec![1.0, 2.0]), false,
+            ).unwrap(),
+        }).unwrap();
+        assert!(translated_sketch_geometry_matches(
+            &source, &shifted, Point2::new(3.0, 5.0)));
+    }
+
+    #[test]
+    fn rotated_nurbs_match_borrowed_rational_poles() {
+        let source = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
+            curve: PcurveNurbs::from_lanes(
+                1, vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(1.0, 0.0), Point2::new(2.0, 0.0)],
+                Some(vec![1.0, 2.0]), false,
+            ).unwrap(),
+        }).unwrap();
+        let rotated = SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
+            curve: PcurveNurbs::from_lanes(
+                1, vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 1.0), Point2::new(0.0, 2.0)],
+                Some(vec![1.0, 2.0]), false,
+            ).unwrap(),
+        }).unwrap();
+        assert!(super::rotated_sketch_geometry_matches(
+            &source, &rotated, Point2::new(0.0, 0.0), std::f64::consts::FRAC_PI_2));
+    }
 
     #[test]
     fn constraint_index_refuses_each_collection_growth() {
