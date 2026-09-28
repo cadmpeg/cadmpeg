@@ -382,16 +382,16 @@ type PendingExt11SupportUv = (
 /// parameter domain, so its first and last model-space samples are the
 /// pcurve's endpoint witnesses.
 pub(super) fn validated_support_uv_endpoint_witnesses(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
-) -> EndpointWitnesses {
-    let procedural_by_id = ir
-        .model
-        .procedural_curves
-        .iter()
-        .map(|procedural| (&procedural.id, procedural))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<EndpointWitnesses, cadmpeg_core::CodecError> {
+    let mut procedural_by_id = BTreeMap::new();
+    for procedural in &ir.model.procedural_curves {
+        ctx.charge_collection_items(1, "nx validated procedural index")?;
+        procedural_by_id.insert(&procedural.id, procedural);
+    }
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
     for (procedural_id, samples, _, _) in pending {
         let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
@@ -409,30 +409,45 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
             continue;
         }
         for (side, support) in context.sides().iter().enumerate() {
-            if !validated_lanes.contains(&(procedural_id.clone(), side))
+            if !validated_lanes.contains(&(
+                crate::decode::ids::copy_typed_id(ctx, procedural_id.as_str(), "nx validated lane lookup")?,
+                side,
+            ))
                 || pcurve_requires_completion(
                     support.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
                 )
             {
                 continue;
             }
-            let Some(surface) = support.surface.clone() else {
+            let Some(surface) = &support.surface else {
                 continue;
             };
-            let Some(pcurve) = support.pcurve.clone() else {
+            let Some(pcurve) = &support.pcurve else {
                 continue;
             };
-            witnesses
-                .entry((owner.clone(), surface))
-                .or_default()
-                .push((
-                    pcurve.geometry,
-                    context.parameter_range().endpoints(),
-                    samples.endpoints(),
-                ));
+            let key = (
+                crate::decode::ids::copy_typed_id(ctx, owner.as_str(), "nx validated witness owner")?,
+                crate::decode::ids::copy_typed_id(ctx, surface.as_str(), "nx validated witness surface")?,
+            );
+            let entries = match witnesses.entry(key) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "nx validated witness index")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.charge_collection_items(1, "nx validated endpoint witnesses")?;
+            entries.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx validated endpoint witnesses", 0, 1)
+            })?;
+            entries.push((
+                pcurve.geometry.try_clone_for_decode(ctx, "nx validated witness pcurve")?,
+                context.parameter_range().endpoints(),
+                samples.endpoints(),
+            ));
         }
     }
-    witnesses
+    Ok(witnesses)
 }
 
 pub(super) fn missing_support_parameter(value: f64) -> bool {
