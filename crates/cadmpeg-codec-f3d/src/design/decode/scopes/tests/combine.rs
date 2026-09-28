@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::combine::exact_combine_operation;
+use crate::design::decode::scopes::combine::{
+    exact_combine_operation, take_external_reference_identity,
+};
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::feature_project::project_combine;
 use crate::records::decal::DesignRecordHeader;
@@ -12,6 +14,152 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+#[test]
+fn external_reference_text_fields_refuse_retained_limits() {
+    let asset = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    let link = "component-body-link";
+    let property = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let version = "urn:test:version:2";
+    let mut bytes = vec![1];
+    bytes.extend_from_slice(&7_u64.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    lp_utf16(&mut bytes, asset);
+    bytes.push(0);
+    lp_utf16(&mut bytes, link);
+    bytes.push(1);
+    lp_utf16(&mut bytes, property);
+    lp_utf16(&mut bytes, version);
+    let total = asset.len() + link.len() + property.len() + version.len();
+    for limit in [
+        asset.len() - 1,
+        asset.len() + link.len() - 1,
+        asset.len() + link.len() + property.len() - 1,
+        total - 1,
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = take_external_reference_identity(&ctx, &bytes, &mut 0);
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d Design UTF-16 text"));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = total as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut cursor = 0;
+    let identity = take_external_reference_identity(&ctx, &bytes, &mut cursor)
+        .unwrap()
+        .expect("admitted external reference");
+    assert_eq!(cursor, bytes.len());
+    assert_eq!(identity.link_name, link);
+    assert_eq!(identity.version.unwrap().version_urn.value, version);
+}
+
+#[test]
+fn combine_selector_identity_text_refuses_retained_limits() {
+    let scope_index = 90_u32;
+    let mut bytes = vec![0_u8; 363];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"329");
+    bytes[7..11].copy_from_slice(&scope_index.to_le_bytes());
+    bytes[29] = 1;
+    bytes[30] = 1;
+    bytes[31..35].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[35] = 1;
+    bytes[36..44].copy_from_slice(&700_u64.to_le_bytes());
+    indexed_header(&mut bytes, *b"261", scope_index);
+    indexed_header(&mut bytes, *b"304", 91);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&24_u32.to_le_bytes());
+    bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+    bytes.extend_from_slice(&23_u32.to_le_bytes());
+    bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+    bytes.extend_from_slice(&7_u64.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    push_reference_u64(&mut bytes, 92);
+    indexed_header(&mut bytes, *b"261", 91);
+    indexed_header(&mut bytes, *b"312", 92);
+    bytes.extend_from_slice(&[0; 14]);
+    push_reference_u64(&mut bytes, 95);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
+    lp_utf16(&mut bytes, "22222222-2222-4222-8222-222222222222");
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    push_reference_u64(&mut bytes, 5_001);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&6_001_u64.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&7_u32.to_le_bytes());
+    lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
+    bytes.push(0);
+    lp_utf16(&mut bytes, "component-body-link");
+    bytes.push(1);
+    lp_utf16(&mut bytes, "33333333-3333-4333-8333-333333333333");
+    lp_utf16(&mut bytes, "urn:example:version:4");
+    bytes.extend_from_slice(&9_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&11_u64.to_le_bytes());
+    bytes.extend_from_slice(&48_u32.to_le_bytes());
+    bytes.extend_from_slice(&12_u64.to_le_bytes());
+    push_reference_u64(&mut bytes, 94);
+    bytes.extend_from_slice(&[0; 2]);
+    push_reference_u64(&mut bytes, 93);
+    bytes.push(0);
+    push_reference_u64(&mut bytes, u64::from(scope_index));
+    indexed_header(&mut bytes, *b"261", 92);
+    indexed_header(&mut bytes, *b"304", 93);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    push_reference_u64(&mut bytes, 94);
+    bytes.extend_from_slice(&[0; 6]);
+    indexed_header(&mut bytes, *b"261", 93);
+    indexed_header(&mut bytes, *b"312", 94);
+    lp_utf16(&mut bytes, "44444444-4444-4444-8444-444444444444");
+    lp_utf16(&mut bytes, "55555555-5555-4555-8555-555555555555");
+    indexed_header(&mut bytes, *b"261", 94);
+    let mut scope = DesignParameterScope::empty(
+        "scope", crate::records::feature::scope::DesignFeatureKind::Combine, scope_index,
+    );
+    scope.try_edit(|draft| {
+        draft.byte_offset = 0;
+        draft.reference_count_offset = draft.byte_offset + 9;
+        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+        draft.layout_fixture_references();
+        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    scope.class_tag = "329".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "261".to_owned().try_into().unwrap();
+    scope.try_edit(|draft| {
+        draft.frame_length = 363;
+        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![91, 92, 93, 94]);
+        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+        draft.layout_fixture_references();
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    for limit in [35_u64, 71_u64] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = exact_combine_operation(&ctx, &bytes, &records, &scope);
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d Design UTF-16 text"));
+    }
+}
 
 #[test]
 fn combine_tools_refuse_collection_limit() {

@@ -163,12 +163,12 @@ pub(super) fn bind_axial_assembly_operand_targets(
             continue;
         };
         let Some(first) =
-            exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)
+            exact_assembly_axial_operand_target(ctx, bytes, records, scope, &frames[0], scopes)?
         else {
             continue;
         };
         let Some(second) =
-            exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)
+            exact_assembly_axial_operand_target(ctx, bytes, records, scope, &frames[1], scopes)?
         else {
             continue;
         };
@@ -214,13 +214,14 @@ struct ExactIndexedRecordPair {
 }
 
 fn exact_assembly_axial_operand_target(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     assembly: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     scopes: &[DesignParameterScope],
-) -> Option<DesignAssemblyAxialOperandTarget> {
-    let component = exact_assembly_axial_component_operand(bytes, records, assembly, frame)
+) -> Result<Option<DesignAssemblyAxialOperandTarget>, CodecError> {
+    let component = exact_assembly_axial_component_operand(ctx, bytes, records, assembly, frame)?
         .and_then(|component| {
             let role = &component.selectors[0].occurrence_role;
             let mut matches = scopes.iter().filter(|scope| {
@@ -265,18 +266,19 @@ fn exact_assembly_axial_operand_target(
         }),
         _ => None,
     };
-    match (component, root) {
+    Ok(match (component, root) {
         (Some(target), None) | (None, Some(target)) => Some(target),
         _ => None,
-    }
+    })
 }
 
 fn exact_assembly_axial_component_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
-) -> Option<AxialComponentOperand> {
+) -> Result<Option<AxialComponentOperand>, CodecError> {
     if !matches!(scope.frame_length(), 705 | 772)
         || scope
             .reference_members()
@@ -285,31 +287,32 @@ fn exact_assembly_axial_component_operand(
             .count()
             != 1
     {
-        return None;
+        return Ok(None);
     }
-    let search_start = usize::try_from(scope.paired_byte_offset()).ok()?;
-    let mut candidates = records
-        .offsets(frame.reference_record_index)
-        .iter()
-        .copied()
-        .filter(|start| *start >= search_start)
-        .filter_map(|start| {
-            exact_assembly_axial_component_operand_at(bytes, records, scope, frame, start)
-        });
-    let candidate = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
+    let Some(search_start) = usize::try_from(scope.paired_byte_offset()).ok() else {
+        return Ok(None);
+    };
+    let mut candidate = None;
+    for start in records.offsets(frame.reference_record_index).iter().copied().filter(|start| *start >= search_start) {
+        if let Some(next) = exact_assembly_axial_component_operand_at(ctx, bytes, records, scope, frame, start)? {
+            if candidate.is_some() {
+                return Ok(None);
+            }
+            candidate = Some(next);
+        }
     }
-    Some(candidate)
+    Ok(candidate)
 }
 
 fn exact_assembly_axial_component_operand_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     start: usize,
-) -> Option<AxialComponentOperand> {
+) -> Result<Option<AxialComponentOperand>, CodecError> {
+    (|| {
     let construction_class_tag =
         exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
     let paired_at = start.checked_add(axial_carrier::PAIRED_INDEXED_HEADER)?;
@@ -376,8 +379,16 @@ fn exact_assembly_axial_component_operand_at(
         return None;
     }
     let second_axis_at = second_axis.byte_offset;
-    let first = exact_assembly_axial_selector(bytes, records, first_axis, second_axis_at)?;
-    let second = exact_assembly_axial_selector(bytes, records, second_axis, start)?;
+    let first = match exact_assembly_axial_selector(ctx, bytes, records, first_axis, second_axis_at) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let second = match exact_assembly_axial_selector(ctx, bytes, records, second_axis, start) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !first.selects_same_object(&second)
         || !first
             .occurrence_role
@@ -386,7 +397,7 @@ fn exact_assembly_axial_component_operand_at(
     {
         return None;
     }
-    Some(AxialComponentOperand {
+    Some(Ok(AxialComponentOperand {
         construction_record_index: frame.reference_record_index,
         construction_class_tag,
         construction_byte_offset: u64::try_from(start).ok()?,
@@ -398,15 +409,18 @@ fn exact_assembly_axial_component_operand_at(
         construction_paired_class_tag,
         construction_paired_byte_offset: u64::try_from(paired_at).ok()?,
         selectors: Box::new([first, second]),
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_assembly_axial_selector(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     axis: ExactIndexedRecordPair,
     limit: usize,
-) -> Option<DesignAssemblyAxialSelectorIdentity> {
+) -> Result<Option<DesignAssemblyAxialSelectorIdentity>, CodecError> {
+    (|| {
     let axis_record_index = axis.record_index;
     let selector_record_index = axis_record_index.checked_add(3)?;
     let mut selector_offsets = records
@@ -465,7 +479,11 @@ fn exact_assembly_axial_selector(
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let external = take_external_reference_identity(bytes, &mut cursor)?;
+    let external = match take_external_reference_identity(ctx, bytes, &mut cursor) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !external
         .asset_id
         .as_str()
@@ -502,7 +520,7 @@ fn exact_assembly_axial_selector(
         return None;
     }
 
-    Some(DesignAssemblyAxialSelectorIdentity {
+    Some(Ok(DesignAssemblyAxialSelectorIdentity {
         axis_record_index,
         axis_class_tag: axis.class_tag.try_into().ok()?,
         axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
@@ -535,7 +553,8 @@ fn exact_assembly_axial_selector(
         role_byte_offset: u64::try_from(role_at).ok()?,
         occurrence_role,
         occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_paired_indexed_record_between(
