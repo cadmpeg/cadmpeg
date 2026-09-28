@@ -120,6 +120,19 @@ fn extrusion_span_refuses_offsets_whose_length_overflows() {
     );
 }
 
+#[test]
+fn extrusion_span_keeps_the_first_offset_in_a_near_duplicate_pair() {
+    let plane = |z| ([0.0, 0.0, z], [0.0, 0.0, 1.0]);
+    assert_eq!(
+        super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], [plane(1.0), plane(1.0 + 5.0e-10)]),
+        super::ExtrusionSpan::new(0.0, 1.0)
+    );
+    assert_eq!(
+        super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], [plane(5.0e-10), plane(-5.0e-10)]),
+        super::ExtrusionSpan::new(0.0, 5.0e-10)
+    );
+}
+
 fn test_decode_ctx_with_collection_limit<'a>(
     arena: &'a cadmpeg_core::decode::DecodeArena,
     policy: &'a cadmpeg_core::decode::DecodePolicy,
