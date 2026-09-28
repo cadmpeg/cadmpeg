@@ -28,7 +28,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
 };
@@ -65,17 +64,6 @@ enum BoundaryEdgeSelectionError {
     Ambiguous,
     PcurveDisagreement,
     Resource(CodecError),
-}
-
-fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
-    IgesLossCode::BoundaryPcurveOutsideSupportDomain
-        .note(format!(
-            "IGES entity type {} form {}: {}",
-            entry.entity_type,
-            entry.form,
-            message.into()
-        ))
-        .with_provenance(entry.loss_provenance())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2256,17 +2244,17 @@ pub(super) fn project(
                 }
                 if pcurve_outside_support {
                     if segment.parameter_curves_authoritative {
-                        losses.push(boundary_parameter_loss(
-                            entry,
-                            "boundary parameter curve leaves the declared support parameter bounds",
-                        ));
+                        super::push_attributed_loss(ctx, &mut losses, entry,
+                            IgesLossCode::BoundaryPcurveOutsideSupportDomain,
+                            format_args!("IGES entity type {} form {}: boundary parameter curve leaves the declared support parameter bounds", entry.entity_type, entry.form),
+                        )?;
                         valid = false;
                         break;
                     }
-                    losses.push(boundary_parameter_loss(
-                        entry,
-                        "alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained",
-                    ));
+                    super::push_attributed_loss(ctx, &mut losses, entry,
+                        IgesLossCode::BoundaryPcurveOutsideSupportDomain,
+                        format_args!("IGES entity type {} form {}: alternate boundary parameter curve leaves the declared support parameter bounds; model-space curve retained", entry.entity_type, entry.form),
+                    )?;
                     pcurves.clear();
                 }
                 let (source_edge, start, end, pcurves_agree) = match select_boundary_edge(
