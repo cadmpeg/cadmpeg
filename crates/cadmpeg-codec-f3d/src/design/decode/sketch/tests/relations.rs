@@ -126,7 +126,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
+    let mut parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
             .members
@@ -167,7 +167,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
                 text_reference: 2394
@@ -210,7 +210,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = tested_parse_classed_sketch_relation(
+    let mut parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -268,7 +268,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextPath {
                 text_reference: 304,
@@ -304,7 +304,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed =
+    let mut parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
     assert_eq!(
         parsed
@@ -324,7 +324,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::Circular {
                 angle_parameter: 336,
@@ -367,7 +367,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed =
+    let mut parsed =
         tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
     assert_eq!(
         parsed
@@ -394,7 +394,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     ));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &parsed)
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected rectangular pattern definition");
     };
