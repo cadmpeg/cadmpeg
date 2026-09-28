@@ -1277,8 +1277,8 @@ impl NativeModel {
             data_block_control_handle_pairs(&data_block_control_references);
         let data_block_references =
             data_block_references(container, &object_records, &expression_declarations);
-        let data_block_counted_index_lanes = data_block_counted_index_lanes(container);
-        let data_block_abr_reference_lanes = data_block_abr_reference_lanes(container);
+        let data_block_counted_index_lanes = data_block_counted_index_lanes(ctx, container)?;
+        let data_block_abr_reference_lanes = data_block_abr_reference_lanes(ctx, container)?;
         let data_block_index_rows = data_block_index_rows(ctx, container)?;
         let data_block_linked_index_rows = data_block_linked_index_rows(ctx, container)?;
         let data_block_target_index_rows = data_block_target_index_rows(ctx, container)?;
