@@ -93,7 +93,6 @@ pub(crate) fn preflight(
 ) -> Result<bool, CodecError> {
     let payload_bytes = u64::try_from(payload.len())
         .map_err(|_| ctx.refuse_codec_limit(preflight_operation, 0, u64::MAX))?;
-    let _reservation = ctx.reserve_scoped(payload_bytes, preflight_operation)?;
     ctx.charge_work(payload_bytes, scan_operation)?;
     let item_count = Cell::new(0_u64);
     let overflowed = Cell::new(false);
