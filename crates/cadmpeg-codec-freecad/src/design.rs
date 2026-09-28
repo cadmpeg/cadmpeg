@@ -181,13 +181,14 @@ pub(crate) fn transfer(
             sweep_definition(&object.type_name, &owned, &sketch_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(
+                ctx,
                 &object.type_name,
                 &object.id,
                 &owned,
                 &sketch_ids,
                 objects,
                 &properties_by_owner,
-            )
+            )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
@@ -211,16 +212,17 @@ pub(crate) fn transfer(
             scale_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_hole(&object.type_name) {
             hole_definition(
+                ctx,
                 &object.id,
                 &owned,
                 &sketch_ids,
                 objects,
                 &properties_by_owner,
                 program_version,
-            )
+            )?
             .map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_extrusion(&object.type_name) {
-            let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
+            let profile = match profile_ref(ctx, &object.id, &owned, &sketch_ids)? {
                 ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => {
                     ["Profile", "Sketch", "Base", "Source"]
                         .iter()
@@ -3469,17 +3471,24 @@ fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
 }
 
 fn profile_ref(
+    ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
-) -> ProfileRef {
+) -> Result<ProfileRef, CodecError> {
     let Some((property, target)) = profile_target(properties) else {
-        return ProfileRef::Planar(PlanarProfileRef::Unresolved(owner.to_owned()));
+        return Ok(ProfileRef::Planar(PlanarProfileRef::Unresolved(
+            retained_string(ctx, owner, "fcstd unresolved profile reference")?,
+        )));
     };
-    sketches.get(target).cloned().map_or_else(
-        || ProfileRef::Planar(PlanarProfileRef::Native(property.id.clone())),
-        |sketch| ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)),
-    )
+    Ok(ProfileRef::Planar(match sketches.get(target) {
+        Some(sketch) => PlanarProfileRef::Sketch(cadmpeg_ir::sketches::SketchId::mint(
+            retained_string(ctx, sketch.as_str(), "fcstd sketch profile reference")?,
+        ).map_err(CodecError::malformed)?),
+        None => PlanarProfileRef::Native(retained_string(
+            ctx, &property.id, "fcstd native profile reference",
+        )?),
+    }))
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
@@ -3531,8 +3540,9 @@ fn revolution_definition(
     } else {
         None
     };
+    let profile = profile_ref(ctx, owner, properties, sketches)?;
     Ok((|| {
-    let profile = match profile_ref(owner, properties, sketches) {
+    let profile = match profile {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
     };
@@ -5409,14 +5419,16 @@ fn sweep_definition(
 }
 
 fn hole_definition(
+    ctx: &DecodeContext<'_>,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
-) -> Option<FeatureDefinition> {
-    let profile = profile_ref(owner, properties, sketches);
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let profile = profile_ref(ctx, owner, properties, sketches)?;
+    Ok((|| {
     if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
     }
@@ -5605,6 +5617,7 @@ fn hole_definition(
         taper_angle,
         allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     }))
+    })())
 }
 
 fn freecad_program_version(value: &str) -> Option<(u64, u64)> {
@@ -5639,13 +5652,15 @@ fn thread_standard(value: u64) -> Option<&'static str> {
 }
 
 fn helical_sweep_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some((law, axis_origin, axis_direction)) = (|| {
     let law = match enumeration_selector(properties, "Mode", 0)? {
         0 => HelicalSweepLaw::PitchHeightAngle,
         1 => HelicalSweepLaw::PitchTurnsAngle,
@@ -5661,7 +5676,10 @@ fn helical_sweep_definition(
             ),
             None => axis_reference(properties, "ReferenceAxis", objects, properties_by_owner)?,
         };
-    let profile = profile_ref(owner, properties, sketches);
+    Some((law, axis_origin, axis_direction))
+    })() else { return Ok(None); };
+    let profile = profile_ref(ctx, owner, properties, sketches)?;
+    Ok((|| {
     if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
     }
@@ -5705,6 +5723,7 @@ fn helical_sweep_definition(
     Some(FeatureDefinition::Operation(
         FeatureOperation::HelicalSweep { construction, op },
     ))
+    })())
 }
 
 fn binder_definition(
