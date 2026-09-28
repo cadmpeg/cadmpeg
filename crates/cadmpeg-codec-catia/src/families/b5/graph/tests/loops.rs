@@ -8,7 +8,7 @@ use crate::families::b5::graph::{
     face_surface_references, incidence_vertex_coordinates,
     loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
     loop_references_and_metadata,
-    parameter_incidence, parse_face,
+    parameter_incidence,
     parse_face_record, parse_loop, parse_loop_record,
     pcurve_parameter_domain,
     sphere_great_circle_point, typed_face_records_from_records,
@@ -22,6 +22,17 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn parse_face(
+    record: &B5FaceRecord,
+    loops: &BTreeMap<u32, B5Loop>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+    aliases: &BTreeMap<u32, u32>,
+) -> Option<super::super::B5Face> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_face(ctx, record, loops, surfaces, aliases)
+    }).expect("service budget")
+}
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
@@ -1226,6 +1237,12 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
     )]);
     let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
     let aliases = BTreeMap::from([(11, 10)]);
+
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_face(ctx, &record, &loops, &surfaces, &aliases)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_loop_ids"));
 
     let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
     assert_eq!(face.surface, 10);
