@@ -405,6 +405,18 @@ impl NativeRecord {
         self.fields.clone()
     }
 
+    /// Clone codec-owned fields after admitting the value tree and its bytes.
+    pub fn fields_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Map<String, Value>, NativeConvertError> {
+        let Value::Object(mut fields) = self.to_typed_charged::<Value>(ctx)? else {
+            return Err(NativeConvertError::NonObject);
+        };
+        fields.remove("id");
+        Ok(fields)
+    }
+
     /// One codec-owned field.
     ///
     /// `id` is not a codec-owned field and is never answered here.
