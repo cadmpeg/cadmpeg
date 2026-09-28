@@ -32,6 +32,7 @@ use crate::families::standard::decode::standard_oriented_analytic_curve_paramete
 use crate::families::standard::decode::standard_pcurve_geometry as charged_standard_pcurve_geometry;
 use crate::families::standard::decode::standard_serialized_endpoint_pairs;
 use crate::families::standard::decode::standard_native_support_edge_ids;
+use crate::families::standard::decode::ensure_native_edge_support_surface;
 use crate::families::standard::decode::standard_successor_endpoint_points;
 use crate::families::standard::decode::unique_native_identity_points;
 use crate::families::standard::decode::witness_arc_end;
@@ -2224,4 +2225,35 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
     assert!((short[0] - 0.0).abs() < ANGLE_TOLERANCE);
     assert!((short[1] - std::f64::consts::FRAC_PI_2).abs() < ANGLE_TOLERANCE);
     assert!((long[1] - 1.5 * std::f64::consts::PI).abs() < ANGLE_TOLERANCE);
+}
+
+#[test]
+fn native_edge_support_match_refuses_work_limit() {
+    let source = crate::test_support::with_service_context(|ctx| {
+        crate::assemble::cgm_source(ctx, "surface", 42)
+    }).expect("service profile admits source identity");
+    let id = SurfaceId::mint("catia:test:surface#matching".to_owned())
+        .expect("surface identity");
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry: geometry.clone(),
+        source_object: Some(source),
+    });
+    let carrier = crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry);
+    let refused = crate::test_support::with_work_limit(0, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        ensure_native_edge_support_surface(&mut ir, &mut AnnotationBuilder::new(), 42,
+            &carrier, &mut admission)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_edge_support_source_scan"));
+    let matched = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        ensure_native_edge_support_surface(&mut ir, &mut AnnotationBuilder::new(), 42,
+            &carrier, &mut admission)
+    }).expect("service profile admits surface match");
+    assert_eq!(matched, id);
+    assert_eq!(ir.model.surfaces.len(), 1);
 }
