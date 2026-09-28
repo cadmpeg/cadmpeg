@@ -3,7 +3,6 @@ use super::exact_pattern_identity_wrapper;
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
 use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
-use crate::design::decode::scopes::pattern::exact_rectangular_pattern_construction;
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
@@ -12,6 +11,28 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+fn tested_rectangular_pattern_construction(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameter_owners: &[crate::records::parameters::DesignParameterOwner],
+) -> Option<crate::records::feature::patterns::DesignRectangularPatternConstruction> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        super::exact_rectangular_pattern_construction(ctx, bytes, records, scope, parameter_owners).unwrap()
+    })
+}
+
+fn tested_rectangular_pattern_instances(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    construction: &crate::records::feature::patterns::DesignRectangularPatternConstruction,
+) -> Option<crate::records::feature::patterns::DesignRectangularPatternInstances> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        super::exact_rectangular_pattern_instances(ctx, bytes, records, scope, construction).unwrap()
+    })
+}
 
 #[test]
 fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
@@ -461,7 +482,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(52, 2, 10.0, 503),
         owner(53, 3, 0.0, 504),
     ];
-    let rectangular = exact_rectangular_pattern_construction(
+    let rectangular = tested_rectangular_pattern_construction(
         &[],
         &crate::design::test_support::indexed_record_offsets_for_test(&[]),
         &scope,
@@ -495,7 +516,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let rectangular = exact_rectangular_pattern_construction(
+    let rectangular = tested_rectangular_pattern_construction(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -528,7 +549,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
-        exact_rectangular_pattern_construction(
+        tested_rectangular_pattern_construction(
             &[],
             &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
@@ -545,7 +566,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
-        exact_rectangular_pattern_construction(
+        tested_rectangular_pattern_construction(
             &[],
             &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
@@ -556,7 +577,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut excess_lane = rectangular_owners.to_vec();
     excess_lane.push(owner(54, 4, 1.0, 505));
     assert_eq!(
-        exact_rectangular_pattern_construction(
+        tested_rectangular_pattern_construction(
             &[],
             &crate::design::test_support::indexed_record_offsets_for_test(&[]),
             &scope,
@@ -1234,7 +1255,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
             },
         )
         .unwrap();
-    let instances = super::exact_rectangular_pattern_instances(
+    let instances = tested_rectangular_pattern_instances(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -1246,4 +1267,65 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
         instances.frames().last().unwrap().transform.value[2][3],
         1e200
     );
+}
+
+#[test]
+fn rectangular_pattern_instance_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        crate::records::feature::scope::DesignFeatureKind::RPattern,
+        0,
+    );
+    scope.try_edit(|draft| {
+        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+            100, 50, 51, 52, 53, 110, 120, 130, 140,
+        ]);
+        draft.layout_fixture_references();
+        draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+        draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let mut bytes = Vec::new();
+    append_transform_record(&mut bytes, 100, [0., 0., 0.]);
+    for index in 50..=53 {
+        append_header(&mut bytes, index);
+    }
+    append_header(&mut bytes, 110);
+    append_transform_record(&mut bytes, 120, [0., 0., 5e199]);
+    append_transform_record(&mut bytes, 130, [0., 0., 1e200]);
+    append_header(&mut bytes, 140);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(
+        crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+            u_count: 3,
+            v_count: 1,
+            u_extent: 1e200,
+            v_extent: 0.,
+            owner_record_indices: [50, 51, 52, 53],
+            value_offsets: [501, 502, 503, 504],
+            instances: None,
+        },
+    ).unwrap();
+    for (limit, operation) in [
+        (2, "f3d rectangular pattern record indices"),
+        (11, "f3d rectangular pattern reference starts"),
+        (14, "f3d rectangular pattern candidate groups"),
+        (15, "f3d rectangular pattern transform candidates"),
+        (18, "f3d rectangular pattern candidate run"),
+        (21, "f3d rectangular pattern matching runs"),
+        (22, "f3d rectangular pattern instances"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::exact_rectangular_pattern_instances(
+            &ctx, &bytes, &records, &scope, &construction,
+        ).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
+    }
 }

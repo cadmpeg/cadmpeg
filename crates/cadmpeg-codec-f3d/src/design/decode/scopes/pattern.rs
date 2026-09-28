@@ -18,6 +18,8 @@ use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
@@ -25,11 +27,13 @@ const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
 
 pub(super) fn exact_rectangular_pattern_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignRectangularPatternConstruction> {
+) -> Result<Option<DesignRectangularPatternConstruction>, CodecError> {
+    let parsed = (|| {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::RectangularPattern) {
         return None;
     }
@@ -59,7 +63,7 @@ pub(super) fn exact_rectangular_pattern_construction(
     };
     let u_count_value = exact_count(u_count.evaluated_value().get())?;
     let v_count_value = exact_count(v_count.evaluated_value().get())?;
-    let mut construction = DesignRectangularPatternConstruction::try_from(
+    let construction = DesignRectangularPatternConstruction::try_from(
         patterns::DesignRectangularPatternConstructionWire {
             u_count: u_count_value,
             v_count: v_count_value,
@@ -81,17 +85,23 @@ pub(super) fn exact_rectangular_pattern_construction(
         },
     )
     .ok()?;
-    construction.instances =
-        exact_rectangular_pattern_instances(bytes, records, scope, &construction);
     Some(construction)
+    })();
+    let Some(mut construction) = parsed else {
+        return Ok(None);
+    };
+    construction.instances = exact_rectangular_pattern_instances(ctx, bytes, records, scope, &construction)?;
+    Ok(Some(construction))
 }
 
 fn exact_rectangular_pattern_instances(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
-) -> Option<DesignRectangularPatternInstances> {
+) -> Result<Option<DesignRectangularPatternInstances>, CodecError> {
+    let parsed = (|| {
     let mut active = [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
@@ -114,7 +124,13 @@ fn exact_rectangular_pattern_instances(
     {
         return None;
     }
-    let mut record_indices = Vec::with_capacity(count);
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d rectangular pattern record indices") {
+        return Some(Err(error));
+    }
+    let mut record_indices = Vec::new();
+    if record_indices.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern record indices allocation", 0, 1)));
+    }
     record_indices.push(*scope.reference_members().values().next()?);
     record_indices.extend(
         scope
@@ -122,16 +138,24 @@ fn exact_rectangular_pattern_instances(
             .values_in(6..count.checked_add(5)?)?
             .copied(),
     );
-    let reference_starts = scope
-        .reference_members()
-        .values()
-        .map(|record_index| {
-            records
-                .first_at_or_after(0, *record_index)
-                .map(|offset| (*record_index, offset))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let mut candidates = Vec::with_capacity(count);
+    let reference_count = scope.reference_members().len();
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(reference_count), "f3d rectangular pattern reference starts") {
+        return Some(Err(error));
+    }
+    let mut reference_starts = Vec::new();
+    if reference_starts.try_reserve(reference_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern reference starts allocation", 0, 1)));
+    }
+    for record_index in scope.reference_members().values() {
+        reference_starts.push((*record_index, records.first_at_or_after(0, *record_index)?));
+    }
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d rectangular pattern candidate groups") {
+        return Some(Err(error));
+    }
+    let mut candidates = Vec::new();
+    if candidates.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern candidate groups allocation", 0, 1)));
+    }
     let mut scanned_bytes = 0_usize;
     for record_index in &record_indices {
         let start = reference_starts
@@ -146,7 +170,12 @@ fn exact_rectangular_pattern_instances(
         if span > 1_048_576 || scanned_bytes > 16_777_216 {
             return None;
         }
-        candidates.push(exact_rigid_transform_candidates(bytes, start, end)?);
+        let candidate = match exact_rigid_transform_candidates(ctx, bytes, start, end) {
+            Ok(Some(candidate)) => candidate,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
+        candidates.push(candidate);
     }
     let first_candidates = candidates.first()?;
     let final_candidates = candidates.last()?;
@@ -161,7 +190,14 @@ fn exact_rectangular_pattern_instances(
             if (distance - extent.abs()).abs() > EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8 {
                 continue;
             }
-            let mut run = vec![*first];
+            if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d rectangular pattern candidate run") {
+                return Some(Err(error));
+            }
+            let mut run = Vec::new();
+            if run.try_reserve(count).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern candidate run allocation", 0, 1)));
+            }
+            run.push(*first);
             let mut unique = true;
             for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
                 let fraction = (ordinal + 1) as f64 / (count - 1) as f64;
@@ -189,6 +225,12 @@ fn exact_rectangular_pattern_instances(
             }
             if unique {
                 run.push(*final_candidate);
+                if let Err(error) = ctx.charge_collection_items(1, "f3d rectangular pattern matching runs") {
+                    return Some(Err(error));
+                }
+                if runs.try_reserve(1).is_err() {
+                    return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern matching runs allocation", 0, 1)));
+                }
                 runs.push(run);
             }
         }
@@ -202,30 +244,36 @@ fn exact_rectangular_pattern_instances(
     let [run] = runs.as_slice() else {
         return None;
     };
-    Some(DesignRectangularPatternInstances::Bodies(
-        record_indices
-            .into_iter()
-            .zip(run)
-            .map(
-                |(record_index, (value, offset))| patterns::DesignPatternInstance {
-                    record_index,
-                    transform: crate::records::identity::Located {
-                        value: *value,
-                        offset: *offset,
-                    },
-                },
-            )
-            .collect(),
-    ))
+    if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "f3d rectangular pattern instances") {
+        return Some(Err(error));
+    }
+    let mut instances = Vec::new();
+    if instances.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern instances allocation", 0, 1)));
+    }
+    for (record_index, (value, offset)) in record_indices.into_iter().zip(run) {
+        instances.push(patterns::DesignPatternInstance {
+            record_index,
+            transform: crate::records::identity::Located {
+                value: *value,
+                offset: *offset,
+            },
+        });
+    }
+    Some(Ok(DesignRectangularPatternInstances::Bodies(instances)))
+    })();
+    parsed.transpose()
 }
 
 type TransformCandidate = (crate::records::sketch_placement::SketchPlacementMatrix, u64);
 
 fn exact_rigid_transform_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
-) -> Option<Vec<TransformCandidate>> {
+) -> Result<Option<Vec<TransformCandidate>>, CodecError> {
+    let parsed = (|| {
     /// The single byte image of `1.0_f64`, the last lane of a rigid
     /// transform's fixed `0 0 0 1` bottom row.
     const ONE_F64_LE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0xF0, 0x3F];
@@ -258,10 +306,18 @@ fn exact_rigid_transform_candidates(
         if let Ok(transform) =
             crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
         {
+            if let Err(error) = ctx.charge_collection_items(1, "f3d rectangular pattern transform candidates") {
+                return Some(Err(error));
+            }
+            if candidates.try_reserve(1).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d rectangular pattern transform candidates allocation", 0, 1)));
+            }
             candidates.push((transform, u64::try_from(offset).ok()?));
         }
     }
-    (!candidates.is_empty()).then_some(candidates)
+    (!candidates.is_empty()).then_some(Ok(candidates))
+    })();
+    parsed.transpose()
 }
 
 fn same_transform_basis(
