@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::fmt::Write;
 
 use cadmpeg_core::decode::View;
 
@@ -245,31 +246,102 @@ pub(super) fn fast_load_component_object_groups(
     occurrences: &[FastLoadComponentOccurrence],
     object_uuid_values: &[ObjectUuidValue],
 ) -> Result<Vec<FastLoadComponentObjectGroup>, cadmpeg_core::CodecError> {
+    let scan_work = uuids.len().checked_mul(2)
+        .and_then(|count| count.checked_mul(occurrences.len().checked_add(object_uuid_values.len())?))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load object groups", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_work), "scan NX fast-load object groups")?;
     let mut groups = Vec::new();
     for uuid in uuids {
-        let uses = occurrences
-            .iter()
-            .filter(|occurrence| occurrence.component_uuid == uuid.id)
-            .map(|occurrence| occurrence.id.clone())
-            .collect::<Vec<_>>();
-        let values = object_uuid_values
-            .iter()
-            .filter(|value| value.uuid == uuid.uuid)
-            .map(|value| value.id.clone())
-            .collect::<Vec<_>>();
+        let mut use_count = 0usize;
+        let mut value_count = 0usize;
+        let mut text_bytes = 0usize;
+        for occurrence in occurrences.iter().filter(|occurrence| occurrence.component_uuid == uuid.id) {
+            use_count = use_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group occurrence count", 0, 1))?;
+            text_bytes = text_bytes.checked_add(occurrence.id.len()).ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group text", 0, 1))?;
+        }
+        for value in object_uuid_values.iter().filter(|value| value.uuid == uuid.uuid) {
+            value_count = value_count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group value count", 0, 1))?;
+            text_bytes = text_bytes.checked_add(value.id.len()).ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group text", 0, 1))?;
+        }
+        if use_count == 0 || use_count != value_count { continue; }
+        let list_count = use_count.checked_add(value_count)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group list count", 0, 1))?;
+        let list_slots = list_count.checked_mul(std::mem::size_of::<String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group list slots", 0, 1))?;
+        let temporary_bytes = list_slots.checked_add(text_bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load group temporary bytes", 0, 1))?;
+        let _temporary = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(temporary_bytes), "NX fast-load group temporary lists")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(list_count), "NX fast-load group temporary lists")?;
+        let mut uses = Vec::new();
+        uses.try_reserve_exact(use_count).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group uses", 0, 1))?;
+        for occurrence in occurrences.iter().filter(|occurrence| occurrence.component_uuid == uuid.id) {
+            uses.push(copy_structure_text_raw(ctx, &occurrence.id, "allocate NX fast-load group use")?);
+        }
+        let mut values = Vec::new();
+        values.try_reserve_exact(value_count).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group values", 0, 1))?;
+        for value in object_uuid_values.iter().filter(|value| value.uuid == uuid.uuid) {
+            values.push(copy_structure_text_raw(ctx, &value.id, "allocate NX fast-load group value")?);
+        }
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text_bytes), "retain NX fast-load group member text")?;
         let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
             continue;
         };
+        ctx.charge_collection_items(1, "NX fast-load object groups")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FastLoadComponentObjectGroup>()), "retain NX fast-load object groups")?;
+        groups.try_reserve_exact(1).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load object groups", 0, 1))?;
+        let uuid_text = copy_structure_text(ctx, uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {
-            id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
-            component_uuid: uuid.id.clone(),
-            uuid: uuid.uuid.clone(),
+            id: structure_identity(ctx, "nx:fast-load:object-group#", uuid.ordinal)?,
+            component_uuid: copy_structure_text(ctx, &uuid.id, "retain NX fast-load group component UUID")?,
+            uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
             members,
-            source_entry: uuid.source_entry.clone(),
+            source_entry: copy_structure_text(ctx, &uuid.source_entry, "retain NX fast-load group source entry")?,
             source_offset: uuid.source_offset,
         });
     }
     Ok(groups)
+}
+
+fn copy_structure_text_raw(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut text = String::new();
+    text.try_reserve_exact(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+    text.push_str(value);
+    Ok(text)
+}
+
+fn copy_structure_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+    copy_structure_text_raw(ctx, value, operation)
+}
+
+fn structure_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    prefix: &str,
+    ordinal: u32,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut remaining = ordinal;
+    let mut digits = 1usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let length = prefix.len().checked_add(digits)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX fast-load group identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "retain NX fast-load group identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group identity", 0, 1))?;
+    write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit("write NX fast-load group identity", 0, 1))?;
+    Ok(id)
 }
 
 struct SourceOccurrence {
@@ -883,6 +955,54 @@ mod tests {
             .unwrap()
             .is_empty()
         );
+    }
+
+    fn fast_load_object_group_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let container = container(payload(&["plate"], &[1]));
+        let (_, uuids, occurrences) = fast_load_component_roster(&container).unwrap();
+        let value = ObjectUuidValue {
+            id: "object-uuid#0".to_string(),
+            section_ordinal: 0,
+            uuid: uuids[0].uuid.clone(),
+            records: crate::om::nonempty::NonEmpty::new(["record#0".to_string()]).unwrap(),
+            source_entry: "om".to_string(),
+            source_offset: 0,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        fast_load_component_object_groups(&ctx, &uuids, occurrences.as_slice(), &[value]).unwrap_err()
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_collection_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_retained_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_scoped_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn fast_load_object_groups_refuse_work_limit() {
+        let error = fast_load_object_group_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]
