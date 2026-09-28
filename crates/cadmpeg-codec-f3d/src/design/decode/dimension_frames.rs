@@ -1444,71 +1444,51 @@ pub(crate) fn decode_dimension_annotation_frames(
         curves,
         ..
     } = inputs;
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_companions = owners
-        .iter()
-        .filter(|owner| {
-            let Some(stream) = native_stream(owner.id()) else {
-                return false;
-            };
-            parameters
-                .get(&(stream, owner.parameter_record_index()))
-                .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
-        })
-        .filter_map(|owner| {
-            Some((
-                (
-                    native_stream(owner.id())?.to_owned(),
-                    owner.companion_record_index(),
-                ),
-                owner,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let parameters = dimension_parameter_index(
+        ctx, parameters, "f3d dimension annotation parameter index",
+        "f3d dimension annotation parameter index allocation",
+    )?;
+    let dimension_companions = dimension_companion_keys(
+        ctx, owners, &parameters, "f3d dimension annotation companions",
+        "f3d dimension annotation companion allocation",
+    )?;
     let mut out = Vec::new();
-    let streams = companions
-        .iter()
-        .filter_map(|companion| native_stream(companion.id()))
-        .collect::<HashSet<_>>();
     let mut decoded_offsets = HashSet::new();
-    for stream in streams {
+    for (companion_ordinal, companion) in companions.iter().enumerate() {
+        let Some(stream) = native_stream(companion.id()) else { continue };
+        if companions[..companion_ordinal]
+            .iter()
+            .any(|previous| native_stream(previous.id()) == Some(stream))
+        {
+            continue;
+        }
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
         };
-        let geometry_indices = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(stream))
-            .map(|point| point.record_index)
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(stream))
-                    .map(|curve| curve.record_index),
-            )
-            .collect::<HashSet<_>>();
-        let sketch_entities = entities
-            .iter()
-            .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
-            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
-            .collect::<HashSet<_>>();
-        let governed_owners = owners
-            .iter()
-            .filter(|owner| {
-                native_stream(owner.id()) == Some(stream)
-                    && dimension_companions
-                        .contains_key(&(stream.to_owned(), owner.companion_record_index()))
-            })
-            .map(|owner| (owner.record_index(), owner.companion_record_index()))
-            .collect::<HashMap<_, _>>();
+        let geometry_indices = dimension_geometry_indices(ctx, stream, points, curves)?;
+        let mut sketch_entities = HashSet::new();
+        for entity in entities.iter().filter(|entity| {
+            native_stream(&entity.id) == Some(stream) && entity.in_sketch_module()
+        }) {
+            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else { continue };
+            ctx.charge_collection_items(1, "f3d dimension annotation sketch entities")?;
+            sketch_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension annotation sketch entity allocation", 0, 1)
+            })?;
+            sketch_entities.insert(index);
+        }
+        let mut governed_owners = HashMap::new();
+        for owner in owners.iter().filter(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && dimension_companions.contains(&(stream, owner.companion_record_index()))
+        }) {
+            ctx.charge_collection_items(1, "f3d dimension annotation governed owners")?;
+            governed_owners.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension annotation governed owner allocation", 0, 1)
+            })?;
+            governed_owners.insert(owner.record_index(), owner.companion_record_index());
+        }
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut intervals = Vec::new();
         for companion in companions.iter().filter(|companion| native_stream(companion.id()) == Some(stream)) {
@@ -1565,24 +1545,37 @@ pub(crate) fn decode_dimension_annotation_frames(
                 let Some(at) = at.filter(|at| *at < end) else {
                     break;
                 };
-                if let Some(mut frame) = parse_dimension_annotation_frame(
-                    bytes,
+                if let Some(parsed) = parse_dimension_annotation_frame(
+                    ctx, bytes,
                     at,
                     containing_companion_record_index,
                     &governed_owners,
                     &geometry_indices,
                     &sketch_entities,
-                )
-                .filter(|frame| frame.paired_byte_offset() < end as u64)
-                {
-                    frame.id = ids::native_design_dimension_annotation_frame_id(
-                        &entry.name,
-                        frame.byte_offset(),
-                    );
+                ) {
+                    let mut frame = parsed?;
+                    if frame.paired_byte_offset() >= end as u64 {
+                        position = at.saturating_add(1);
+                        continue;
+                    }
+                    frame.id = design_record_id_charged(
+                        ctx, &entry.name, ":design-dimension-annotation-frame#", frame.byte_offset(),
+                        "f3d dimension annotation frame ID", "f3d dimension annotation frame ID allocation",
+                    )?;
                     position = usize::try_from(frame.paired_byte_offset())
                         .unwrap_or(at)
                         .saturating_add(1);
-                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset())) {
+                    let key = (stream, frame.byte_offset());
+                    if !decoded_offsets.contains(&key) {
+                        ctx.charge_collection_items(1, "f3d dimension annotation decoded offsets")?;
+                        decoded_offsets.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d dimension annotation offset allocation", 0, 1)
+                        })?;
+                        decoded_offsets.insert(key);
+                        ctx.charge_collection_items(1, "f3d dimension annotation frames")?;
+                        out.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d dimension annotation frame allocation", 0, 1)
+                        })?;
                         out.push(frame);
                     }
                 } else {
@@ -1596,13 +1589,14 @@ pub(crate) fn decode_dimension_annotation_frames(
 }
 
 fn parse_dimension_annotation_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-) -> Option<DesignDimensionAnnotationFrame> {
+) -> Option<Result<DesignDimensionAnnotationFrame, CodecError>> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -1616,7 +1610,14 @@ fn parse_dimension_annotation_frame(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    let mut operands = Vec::with_capacity(count);
+    let count_charge = u64::try_from(count).ok()?;
+    if let Err(error) = ctx.charge_collection_items(count_charge, "f3d dimension annotation operands") {
+        return Some(Err(error));
+    }
+    let mut operands = Vec::new();
+    if operands.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d dimension annotation operand allocation", 0, count_charge)));
+    }
     for _ in 0..count {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
@@ -1656,8 +1657,11 @@ fn parse_dimension_annotation_frame(
         }
         paired_search = at.checked_add(1)?;
     };
-    let mut tails = Vec::new();
+    let mut matched_tail = None;
     for tail in annotation_byte_offset..paired_byte_offset.saturating_sub(15) {
+        if let Err(error) = ctx.charge_work(1, "f3d dimension annotation tail scan") {
+            return Some(Err(error));
+        }
         if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0; 6]) {
             continue;
         }
@@ -1678,7 +1682,14 @@ fn parse_dimension_annotation_frame(
             continue;
         }
         let mut cursor = tail + 15;
-        let mut return_members = Vec::with_capacity(return_count);
+        let return_count_charge = u64::try_from(return_count).ok()?;
+        if let Err(error) = ctx.charge_collection_items(return_count_charge, "f3d dimension annotation return members") {
+            return Some(Err(error));
+        }
+        let mut return_members = Vec::new();
+        if return_members.try_reserve(return_count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d dimension annotation return member allocation", 0, return_count_charge)));
+        }
         let mut valid = true;
         for _ in 0..return_count {
             if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6])
@@ -1710,31 +1721,34 @@ fn parse_dimension_annotation_frame(
         {
             continue;
         }
-        let mut operand_members = operands
-            .iter()
-            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
-            .collect::<Vec<_>>();
-        let mut returned = return_members
-            .iter()
-            .map(|member| member.value.get())
-            .collect::<Vec<_>>();
-        operand_members.sort_unstable();
-        returned.sort_unstable();
-        if operand_members != returned {
+        let mut operand_members = [0u32; 64];
+        let mut operand_count = 0usize;
+        for operand in &operands {
+            if let Some(index) = operand.geometry_record_index {
+                operand_members[operand_count] = index.get();
+                operand_count += 1;
+            }
+        }
+        let mut returned = [0u32; 64];
+        for (slot, member) in returned.iter_mut().zip(&return_members) {
+            *slot = member.value.get();
+        }
+        operand_members[..operand_count].sort_unstable();
+        returned[..return_members.len()].sort_unstable();
+        if operand_members[..operand_count] != returned[..return_members.len()] {
             continue;
         }
-        tails.push((
+        if matched_tail.is_some() {
+            return None;
+        }
+        matched_tail = Some((
             tail,
             governing_owner_record_index,
             governing_companion_record_index,
             return_members,
         ));
     }
-    let [(tail, governing_owner_record_index, governing_companion_record_index, return_members)] =
-        tails.as_slice()
-    else {
-        return None;
-    };
+    let (tail, governing_owner_record_index, governing_companion_record_index, return_members) = matched_tail?;
     if bytes.get(paired_byte_offset + 11..paired_byte_offset + 19) != Some(&[0; 8])
         || bytes.get(paired_byte_offset + 19) != Some(&1)
         || bytes.get(paired_byte_offset + 24..paired_byte_offset + 30) != Some(&[0; 6])
@@ -1745,22 +1759,28 @@ fn parse_dimension_annotation_frame(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
+    let annotation_bytes = match ctx.copy_retained(
+        bytes.get(annotation_byte_offset..tail)?, "f3d dimension annotation bytes",
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) => return Some(Err(error)),
+    };
     DesignDimensionAnnotationFrame::try_new(
         crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: String::new(),
             companion_record_index,
-            governing_companion_record_index: *governing_companion_record_index,
+            governing_companion_record_index,
             byte_offset: start as u64,
             class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
             record_index,
             frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
             operands,
             entity_genesis,
-            annotation_bytes: bytes.get(annotation_byte_offset..*tail)?.to_vec(),
+            annotation_bytes,
             annotation_byte_offset: annotation_byte_offset as u64,
-            governing_owner_record_index: *governing_owner_record_index,
-            governing_owner_reference_offset: (*tail + 1) as u64,
-            return_members: return_members.clone(),
+            governing_owner_record_index,
+            governing_owner_reference_offset: (tail + 1) as u64,
+            return_members,
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
             paired_byte_offset: paired_byte_offset as u64,
             owner_reference,
@@ -1768,6 +1788,7 @@ fn parse_dimension_annotation_frame(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 /// Stable Fusion type whose indexed records carry the older direct dimension
