@@ -1012,18 +1012,15 @@ fn parse_from_records_with_class21(
         .iter()
         .map(|(&object_id, pcurve)| (object_id, pcurve.surface))
         .collect::<HashMap<_, _>>();
-    let a8_headers: BTreeMap<u32, crate::families::a5a8::records::A8SurfaceHeader> = frames
-        .iter()
-        .filter_map(|frame| {
-            crate::families::a5a8::records::a8_surface_header_from_object_frame(
-                bytes,
-                frame.start,
-                frame.end,
-                frame.object_id,
-            )
-        })
-        .map(|header| (header.object_id, header))
-        .collect();
+    let mut a8_headers = BTreeMap::new();
+    for frame in frames {
+        if let Some(header) = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+            ctx, bytes, frame.start, frame.end, frame.object_id,
+        )? {
+            crate::resource::insert_btree_map(ctx, &mut a8_headers, header.object_id, header,
+                "catia_b5_a8_surface_headers")?;
+        }
+    }
     let mut surfaces: BTreeMap<u32, B5Surface> = records
         .iter()
         .filter_map(|record| {
@@ -1897,18 +1894,15 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         };
         merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(surface.geometry));
     }
-    let headers = frames
-        .iter()
-        .filter_map(|frame| {
-            crate::families::a5a8::records::a8_surface_header_from_object_frame(
-                bytes,
-                frame.start,
-                frame.end,
-                frame.object_id,
-            )
-        })
-        .map(|header| (header.object_id, header))
-        .collect::<HashMap<_, _>>();
+    let mut headers = HashMap::new();
+    for frame in frames {
+        if let Some(header) = crate::families::a5a8::records::a8_surface_header_from_object_frame(
+            ctx, bytes, frame.start, frame.end, frame.object_id,
+        )? {
+            crate::resource::insert_map(ctx, &mut headers, header.object_id, header,
+                "catia_b5_targeted_a8_headers")?;
+        }
+    }
     let mut records = HashMap::<u32, Option<B5Record>>::new();
     for frame in frames {
         if !is_surface_class(frame.class) {

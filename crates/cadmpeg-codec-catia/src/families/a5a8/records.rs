@@ -189,7 +189,7 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     if frame.family != 0xa8 || frame.class != 0x34 || frame.end != frame_end {
         return None;
     }
-    let parsed = parse_a8_surface_header(
+    let layout = scan_a8_surface_layout(
         data,
         A8Frame {
             pos: frame_start,
@@ -198,20 +198,20 @@ pub(in crate::families) fn a8_nested_b5_run_start(
             object_id: frame.object_id,
         },
     )?;
-    let suffix_start = if parsed.header.pole_storage == PoleStorage::Elided {
-        parsed.pole_start.checked_add(141)?
+    let suffix_start = if layout.pole_storage == PoleStorage::Elided {
+        layout.pole_start.checked_add(141)?
     } else {
         let poles = crate::nurbs_surface_control_count(
-            usize::try_from(parsed.header.u_count()?).ok()?,
-            usize::try_from(parsed.header.v_count()?).ok()?,
+            usize::try_from(layout.u.poles).ok()?,
+            usize::try_from(layout.v.poles).ok()?,
         )?;
         let pole_bytes = poles.checked_mul(24)?;
-        let weight_bytes = if parsed.header.rational {
+        let weight_bytes = if layout.rational {
             poles.checked_mul(8)?
         } else {
             0
         };
-        parsed
+        layout
             .pole_start
             .checked_add(pole_bytes)?
             .checked_add(weight_bytes)?
@@ -220,7 +220,7 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[FiniteReal]) -> Option<usize> {
+fn parse_a8_elided_surface_tail(data: &[u8], at: usize, expected_v_span: f64) -> Option<usize> {
     let end = at.checked_add(141)?;
     let tail = data.get(at..end)?;
     if tail[0] != 0x05
@@ -242,8 +242,6 @@ fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[FiniteReal]) 
     let zero_w = read_f64(44)?;
     let one_v = read_f64(52)?;
     let zero_x = read_f64(60)?;
-    let (&v_last, &v_first) = v_knots.last().zip(v_knots.first())?;
-    let expected_v_span = v_last.get() - v_first.get();
     (zero_u == 0.0
         && positive_u.is_finite()
         && positive_u > 0.0
@@ -1243,7 +1241,7 @@ pub(crate) fn a8_surfaces(
 ) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
     for frame in a8_frames(data, 0x34) {
-        let Some(parsed) = parse_a8_surface_header(data, frame) else { continue };
+        let Some(parsed) = parse_a8_surface_header(ctx, data, frame)? else { continue };
         if let Some(surface) = a8_surface_from_parsed(ctx, data, parsed, refusal)? {
             crate::resource::push(ctx, &mut surfaces, surface, "catia_a8_inline_surfaces")?;
         }
@@ -1278,21 +1276,29 @@ pub(in crate::families) fn resolved_a8_surfaces(
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
-fn a8_surface_headers(data: &[u8]) -> impl Iterator<Item = A8SurfaceHeader> + '_ {
+#[cfg(test)]
+fn a8_surface_headers<'a>(
+    ctx: &'a DecodeContext<'_>, data: &'a [u8],
+) -> impl Iterator<Item = Result<A8SurfaceHeader, CodecError>> + 'a {
     a8_frames(data, 0x34)
-        .filter_map(|frame| {
-            a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id)
+        .filter_map(move |frame| {
+            match a8_surface_header_from_object_frame(ctx, data, frame.pos, frame.end, frame.object_id) {
+                Ok(Some(header)) => Some(Ok(header)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            }
         })
 }
 
 /// Decode one selected `a8 <flag> 34` frame's parameter lattice.
 pub(in crate::families) fn a8_surface_header_from_object_frame(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
     object_id: u32,
-) -> Option<A8SurfaceHeader> {
-    parse_selected_a8_surface_header(data, start, end, object_id).map(|parsed| parsed.header)
+) -> Result<Option<A8SurfaceHeader>, CodecError> {
+    Ok(parse_selected_a8_surface_header(ctx, data, start, end, object_id)?.map(|parsed| parsed.header))
 }
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
@@ -1304,7 +1310,7 @@ pub(in crate::families) fn resolved_a8_surface_from_object_frame(
     object_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let Some(parsed) = parse_selected_a8_surface_header(data, start, end, object_id) else {
+    let Some(parsed) = parse_selected_a8_surface_header(ctx, data, start, end, object_id)? else {
         return Ok(None);
     };
     if parsed.header.pole_storage == PoleStorage::Elided {
@@ -1325,7 +1331,8 @@ fn a8_surface_from_external_grid(
     header: &A8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FreeformSurface>, CodecError> {
-    let mut ranges = a8_external_grid_candidate_ranges(data, header);
+    let Some(need) = ExternalGridNeed::from_header(header) else { return Ok(None) };
+    let mut ranges = a8_external_grid_candidate_ranges(data, need);
     let Some(range) = ranges.next() else { return Ok(None) };
     if ranges.next().is_some() { return Ok(None) }
     let Some(ExternalGridCandidate {
@@ -1364,8 +1371,9 @@ pub(in crate::families) fn a8_external_grid_ranges(
     data: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
     let mut ranges = Vec::new();
-    for header in a8_surface_headers(data) {
-        for range in a8_external_grid_candidate_ranges(data, &header) {
+    for frame in a8_frames(data, 0x34) {
+        let Some(layout) = scan_a8_surface_layout(data, frame) else { continue };
+        for range in a8_external_grid_candidate_ranges(data, ExternalGridNeed::from_layout(frame.object_id, &layout)) {
             crate::resource::push(ctx, &mut ranges, range,
                 "catia_a8_external_grid_ranges")?;
         }
@@ -1380,24 +1388,51 @@ struct ExternalGridCandidate {
     weights: Option<Vec<NonZeroReal>>,
 }
 
+#[derive(Clone, Copy)]
+struct ExternalGridNeed {
+    object_id: u32,
+    u_count: u32,
+    v_count: u32,
+    rational: bool,
+    pole_storage: PoleStorage,
+}
+
+impl ExternalGridNeed {
+    fn from_header(header: &A8SurfaceHeader) -> Option<Self> {
+        Some(Self {
+            object_id: header.object_id,
+            u_count: header.u_count()?,
+            v_count: header.v_count()?,
+            rational: header.rational,
+            pole_storage: header.pole_storage,
+        })
+    }
+
+    fn from_layout(object_id: u32, layout: &A8SurfaceLayout) -> Self {
+        Self {
+            object_id,
+            u_count: layout.u.poles,
+            v_count: layout.v.poles,
+            rational: layout.rational,
+            pole_storage: layout.pole_storage,
+        }
+    }
+}
+
 fn a8_external_grid_candidate_ranges<'a>(
     data: &'a [u8],
-    header: &'a A8SurfaceHeader,
+    need: ExternalGridNeed,
 ) -> impl Iterator<Item = Range<usize>> + 'a {
     let layout = (|| {
-    if header.pole_storage != PoleStorage::Elided { return None }
+    if need.pole_storage != PoleStorage::Elided { return None }
     let (Some(u_count), Some(v_count)) = (
-        header
-            .u_count()
-            .and_then(|count| usize::try_from(count).ok()),
-        header
-            .v_count()
-            .and_then(|count| usize::try_from(count).ok()),
+        usize::try_from(need.u_count).ok(),
+        usize::try_from(need.v_count).ok(),
     ) else {
         return None;
     };
     let poles = crate::nurbs_surface_control_count(u_count, v_count)?;
-    let weight_bytes = if header.rational {
+    let weight_bytes = if need.rational {
         poles.checked_mul(8)?
     } else {
         0
@@ -1409,11 +1444,11 @@ fn a8_external_grid_candidate_ranges<'a>(
     })();
     object_stream_frames(data)
         .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
-        .filter(|frame| {
+        .filter(move |frame| {
             let Some(mut at) = frame.payload.checked_add(1) else {
                 return false;
             };
-            object_stream_reference(data, &mut at) == Some(header.object_id)
+            object_stream_reference(data, &mut at) == Some(need.object_id)
         })
     .filter_map(move |frame| {
         let (poles, grid_bytes) = layout?;
@@ -1427,7 +1462,7 @@ fn a8_external_grid_candidate_ranges<'a>(
             f64_point(data, at)?;
             at += 24;
         }
-        if header.rational {
+        if need.rational {
             for _ in 0..poles {
                 NonZeroReal::new(f64_le(data, at)?.get())?;
                 at += 8;
@@ -1588,18 +1623,19 @@ struct ParsedA8SurfaceHeader {
 }
 
 fn parse_selected_a8_surface_header(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
     object_id: u32,
-) -> Option<ParsedA8SurfaceHeader> {
-    let frame = object_stream_frame(data, start)?;
-    (frame.family == 0xa8
+) -> Result<Option<ParsedA8SurfaceHeader>, CodecError> {
+    let Some(frame) = object_stream_frame(data, start) else { return Ok(None) };
+    if !(frame.family == 0xa8
         && frame.class == 0x34
         && frame.end == end
-        && frame.object_id == object_id)
-        .then_some(())?;
+        && frame.object_id == object_id) { return Ok(None) }
     parse_a8_surface_header(
+        ctx,
         data,
         A8Frame {
             pos: start,
@@ -1610,68 +1646,128 @@ fn parse_selected_a8_surface_header(
     )
 }
 
-fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8SurfaceHeader> {
-    let A8Frame {
-        pos,
-        payload,
-        end,
-        object_id,
-    } = frame;
+#[derive(Clone, Copy)]
+struct A8LaneLayout {
+    distinct_start: usize,
+    multiplicity_start: usize,
+    count: usize,
+    poles: u32,
+}
+
+struct A8SurfaceLayout {
+    u_degree: u32,
+    v_degree: u32,
+    u: A8LaneLayout,
+    v: A8LaneLayout,
+    pole_start: usize,
+    rational: bool,
+    pole_storage: PoleStorage,
+}
+
+fn scan_a8_lane(
+    data: &[u8], at: &mut usize, count: usize, degree: u32, end: usize,
+) -> Option<(A8LaneLayout, f64, f64)> {
+    let distinct_start = *at;
+    if at.checked_add(count.checked_mul(8)?)? > end {
+        return None;
+    }
+    let mut first = None;
+    let mut last = None;
+    for _ in 0..count {
+        let value = f64_le(data, *at)?.get();
+        if last.is_some_and(|previous| previous >= value) {
+            return None;
+        }
+        first.get_or_insert(value);
+        last = Some(value);
+        *at += 8;
+    }
+    let multiplicity_start = *at;
+    let mut total = 0u32;
+    for _ in 0..count {
+        total = total.checked_add(compact_int(data, at)?)?;
+    }
+    let poles = total.checked_sub(degree.checked_add(1)?)?;
+    Some((A8LaneLayout { distinct_start, multiplicity_start, count, poles }, first?, last?))
+}
+
+fn scan_a8_surface_layout(data: &[u8], frame: A8Frame) -> Option<A8SurfaceLayout> {
+    let A8Frame { payload, end, .. } = frame;
     if end.checked_sub(payload)? < 20 {
         return None;
     }
-    let mut at = payload.checked_add(1)?; // framing + lead byte
+    let mut at = payload.checked_add(1)?;
     let u_degree = compact_int(data, &mut at)?;
-    at = at.checked_add(2)?; // flags
-    let u_distinct_count = compact_int(data, &mut at)? as usize;
+    at = at.checked_add(2)?;
+    let u_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at = consume_array_marker(data, at)?;
-    let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?;
-    let u_mults = compact_values(data, &mut at, u_distinct_count)?;
+    let (u, _, _) = scan_a8_lane(data, &mut at, u_count, u_degree, end)?;
     let v_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
-    let v_distinct_count = compact_int(data, &mut at)? as usize;
+    let v_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at = consume_array_marker(data, at)?;
-    let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
-    let v_mults = compact_values(data, &mut at, v_distinct_count)?;
+    let (v, v_first, v_last) = scan_a8_lane(data, &mut at, v_count, v_degree, end)?;
     let mode = *data.get(at)?;
     at += 1;
     if !(1..=9).contains(&u_degree)
         || !(1..=9).contains(&v_degree)
-        || u_distinct_count < 2
-        || v_distinct_count < 2
+        || u_count < 2 || v_count < 2
         || !matches!(mode, 0x01 | 0x05)
+        || u.poles == 0 || v.poles == 0
     {
-        return None;
-    }
-    let u_knots = A8KnotLane::try_new(u_distinct, u_mults)?;
-    let v_knots = A8KnotLane::try_new(v_distinct, v_mults)?;
-    let u_count = u_knots.pole_count(u_degree)?;
-    let v_count = v_knots.pole_count(v_degree)?;
-    if u_count == 0 || v_count == 0 {
         return None;
     }
     let tail_end = at.checked_add(141)?;
     let elided = tail_end <= end
         && closed_a8_child_run(data, tail_end, end)
-        && parse_a8_elided_surface_tail(data, at, v_knots.distinct()).is_some();
-    Some(ParsedA8SurfaceHeader {
+        && parse_a8_elided_surface_tail(data, at, v_last - v_first).is_some();
+    Some(A8SurfaceLayout {
+        u_degree, v_degree, u, v, pole_start: at, rational: mode == 0x05,
+        pole_storage: if elided { PoleStorage::Elided } else { PoleStorage::Inline },
+    })
+}
+
+fn materialize_a8_lane(
+    ctx: &DecodeContext<'_>, data: &[u8], layout: A8LaneLayout,
+) -> Result<Option<A8KnotLane>, CodecError> {
+    let mut distinct = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut distinct, layout.count, "catia_a8_distinct_knots")?;
+    let mut at = layout.distinct_start;
+    for _ in 0..layout.count {
+        let Some(value) = f64_le(data, at) else { return Ok(None) };
+        distinct.push(value);
+        at += 8;
+    }
+    let mut multiplicities = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut multiplicities, layout.count, "catia_a8_multiplicities")?;
+    at = layout.multiplicity_start;
+    for _ in 0..layout.count {
+        let Some(value) = compact_int(data, &mut at) else { return Ok(None) };
+        multiplicities.push(value);
+    }
+    Ok(A8KnotLane::try_new(distinct, multiplicities))
+}
+
+fn parse_a8_surface_header(
+    ctx: &DecodeContext<'_>, data: &[u8], frame: A8Frame,
+) -> Result<Option<ParsedA8SurfaceHeader>, CodecError> {
+    let Some(layout) = scan_a8_surface_layout(data, frame) else { return Ok(None) };
+    let Some(u_knots) = materialize_a8_lane(ctx, data, layout.u)? else { return Ok(None) };
+    let Some(v_knots) = materialize_a8_lane(ctx, data, layout.v)? else { return Ok(None) };
+    Ok(Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
-            pos,
-            object_id,
-            u_degree,
-            v_degree,
+            pos: frame.pos,
+            object_id: frame.object_id,
+            u_degree: layout.u_degree,
+            v_degree: layout.v_degree,
             u_knots,
             v_knots,
-            rational: mode == 0x05,
-            pole_storage: if elided {
-                PoleStorage::Elided
-            } else {
-                PoleStorage::Inline
-            },
+            rational: layout.rational,
+            pole_storage: layout.pole_storage,
         },
-        pole_start: at,
-        end,
-    })
+        pole_start: layout.pole_start,
+        end: frame.end,
+    }))
 }
 
 fn a8_surface_from_parsed(
@@ -1791,10 +1887,6 @@ fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<
         *at += 8;
     }
     Some(values)
-}
-
-fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
-    (0..count).map(|_| compact_int(bytes, at)).collect()
 }
 
 fn a5_int(byte: u8) -> Option<u32> {
