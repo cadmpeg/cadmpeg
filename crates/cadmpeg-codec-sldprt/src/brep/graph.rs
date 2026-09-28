@@ -818,12 +818,14 @@ fn emit_offset_surface(
         None,
     );
     admit_brep_entity(sink.ctx)?;
+    sink.ctx.reserve_collection_vec(&mut sink.out.procedural_surfaces, 1, "collect Parasolid offset constructions")?;
     sink.out.procedural_surfaces.push(procedural);
     let geometry = SurfaceGeometry::Procedural {
         construction,
         cache: None,
     };
     admit_brep_entity(sink.ctx)?;
+    sink.ctx.reserve_collection_vec(&mut sink.out.surfaces, 1, "collect Parasolid offset surfaces")?;
     sink.out.surfaces.push(Surface {
         id: surface,
         source_object: None,
@@ -836,14 +838,25 @@ fn emit_offset_surface(
 ///
 /// An untyped reference is still a valid opaque support surface. Offset
 /// carriers recurse because a cycle cannot define a surface.
-fn support_is_acyclic(attr: u16, carriers: &CarrierIndex, resolving: &mut HashSet<u16>) -> bool {
+fn support_is_acyclic(
+    ctx: &DecodeContext<'_>,
+    attr: u16,
+    carriers: &CarrierIndex,
+    resolving: &mut HashSet<u16>,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let _depth = ctx.enter_nested("check Parasolid surface support")?;
+    ctx.charge_work(1, "check Parasolid surface support")?;
+    reserve_graph_set_key(ctx, resolving, &attr, "track Parasolid surface support")?;
     if !resolving.insert(attr) {
-        return false;
+        return Ok(false);
     }
-    let acyclic = carriers.surface(attr).is_some()
-        || carriers
-            .offset(attr)
-            .is_none_or(|offset| support_is_acyclic(offset.support, carriers, resolving));
+    let acyclic = if carriers.surface(attr).is_some() {
+        Ok(true)
+    } else if let Some(offset) = carriers.offset(attr) {
+        support_is_acyclic(ctx, offset.support, carriers, resolving)
+    } else {
+        Ok(true)
+    };
     resolving.remove(&attr);
     acyclic
 }
@@ -861,6 +874,9 @@ fn ensure_surface_support(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     resolving: &mut HashSet<u16>,
 ) -> Result<Option<SurfaceId>, cadmpeg_core::CodecError> {
+    let _depth = sink.ctx.enter_nested("resolve Parasolid surface support")?;
+    sink.ctx.charge_work(1, "resolve Parasolid surface support")?;
+    reserve_graph_set_key(sink.ctx, resolving, &attr, "track resolved Parasolid support")?;
     if !resolving.insert(attr) {
         return Ok(None);
     }
@@ -883,6 +899,7 @@ fn ensure_surface_support(
                     .note(&id, source_stream, carrier.offset as u64)
                     .tag("procedural_support");
                 admit_brep_entity(sink.ctx)?;
+                sink.ctx.reserve_collection_vec(&mut sink.out.surfaces, 1, "collect Parasolid support surfaces")?;
                 sink.out.surfaces.push(Surface {
                     id: id.clone(),
                     source_object: None,
@@ -941,6 +958,7 @@ fn ensure_surface_support(
                 annotations.exactness(&surface, Exactness::Unknown);
                 sink.out.stats.unknown_procedural_supports += 1;
                 admit_brep_entity(sink.ctx)?;
+                sink.ctx.reserve_collection_vec(&mut sink.out.surfaces, 1, "collect Parasolid opaque supports")?;
                 sink.out.surfaces.push(Surface {
                     id: surface.clone(),
                     source_object: None,
@@ -2307,7 +2325,7 @@ fn decode_graph(
             }
             _ => {
                 let resolved_offset = if let Some(offset) = carriers.offset(f.surface_attr) {
-                    if support_is_acyclic(offset.support, carriers, &mut HashSet::new()) {
+                    if support_is_acyclic(ctx, offset.support, carriers, &mut HashSet::new())? {
                         ensure_surface_support(
                             &mut BrepSink { ctx, out: &mut out },
                             offset.support,
@@ -2324,15 +2342,22 @@ fn decode_graph(
                 } else {
                     None
                 };
-                let blend_attrs = carriers.blend(f.surface_attr).and_then(|blend| {
-                    let face_edges: HashSet<u16> = f
-                        .loops
-                        .iter()
-                        .flat_map(|(_, ring)| ring)
-                        .filter_map(|coedge| t.coedges().get(coedge))
-                        .map(|coedge| coedge.refs[6])
-                        .filter(|edge| *edge != 0)
-                        .collect();
+                let blend_attrs = (|| -> Result<_, cadmpeg_core::CodecError> {
+                    let Some(blend) = carriers.blend(f.surface_attr) else {
+                        return Ok(None);
+                    };
+                    let mut face_edges = HashSet::new();
+                    for (_, ring) in &f.loops {
+                        for coedge in ring {
+                            ctx.charge_work(1, "select Parasolid blend face edges")?;
+                            if let Some(edge) = t.coedges().get(coedge).map(|coedge| coedge.refs[6]) {
+                                if edge != 0 {
+                                    reserve_graph_set_key(ctx, &mut face_edges, &edge, "collect Parasolid blend face edges")?;
+                                    face_edges.insert(edge);
+                                }
+                            }
+                        }
+                    }
                     let [Some(first_attr), Some(second_attr)] =
                         blend.supports.map(|support| match support {
                             BlendSupportRef::Surface(attr) => Some(attr),
@@ -2354,16 +2379,15 @@ fn decode_graph(
                             }
                         })
                     else {
-                        return None;
+                        return Ok(None);
                     };
-                    if ![first_attr, second_attr]
-                        .into_iter()
-                        .all(|attr| support_is_acyclic(attr, carriers, &mut HashSet::new()))
-                    {
-                        return None;
+                    for attr in [first_attr, second_attr] {
+                        if !support_is_acyclic(ctx, attr, carriers, &mut HashSet::new())? {
+                            return Ok(None);
+                        }
                     }
-                    Some((blend, first_attr, second_attr))
-                });
+                    Ok(Some((blend, first_attr, second_attr)))
+                })()?;
                 let resolved_blend = if let Some((blend, first_attr, second_attr)) = blend_attrs {
                     if let Some(first) = ensure_surface_support(
                         &mut BrepSink { ctx, out: &mut out },
@@ -2407,6 +2431,7 @@ fn decode_graph(
                 } else if let Some((blend, first, second)) = resolved_blend {
                     let spine = if let Some(indexed) = carriers.curve(blend.spine) {
                         let carrier = indexed.carrier();
+                        reserve_graph_set_key(ctx, &mut emitted_curves, &blend.spine, "track Parasolid blend spines")?;
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(ctx, &mut out, carrier)?;
                             annotations
@@ -2442,6 +2467,7 @@ fn decode_graph(
                         })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     admit_brep_entity(ctx)?;
+                    ctx.reserve_collection_vec(&mut out.procedural_surfaces, 1, "collect Parasolid blend constructions")?;
                     out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.clone(),
                         ProceduralSurfaceDefinition::Blend(admitted_payload),
@@ -2455,6 +2481,7 @@ fn decode_graph(
                         .note(id_surf(f.bridge_attr), &source_stream, blend.offset as u64)
                         .tag("00_38");
                     admit_brep_entity(ctx)?;
+                    ctx.reserve_collection_vec(&mut out.surfaces, 1, "collect Parasolid blend surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2479,6 +2506,7 @@ fn decode_graph(
                         annotations.exactness(id_surf(f.bridge_attr), exactness);
                     }
                     admit_brep_entity(ctx)?;
+                    ctx.reserve_collection_vec(&mut out.surfaces, 1, "collect Parasolid swept surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2491,6 +2519,7 @@ fn decode_graph(
                         .tag("unknown_surface");
                     annotations.exactness(id_surf(f.bridge_attr), Exactness::Unknown);
                     admit_brep_entity(ctx)?;
+                    ctx.reserve_collection_vec(&mut out.surfaces, 1, "collect Parasolid opaque surfaces")?;
                     out.surfaces.push(Surface {
                         id: id_surf(f.bridge_attr),
                         source_object: None,
@@ -2505,6 +2534,7 @@ fn decode_graph(
             .note(id_face(f.bridge_attr), &source_stream, surf_off as u64)
             .tag("00_0e");
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.faces, 1, "collect Parasolid faces")?;
         out.faces.push(Face {
             id: id_face(f.bridge_attr),
             shell: ShellId::compose(
