@@ -6183,8 +6183,7 @@ fn pattern_definition(
         properties_by_owner,
         ..
     } = sources;
-    let seeds = (|| -> Option<Vec<FeatureId>> {
-        let originals = property(properties, "Originals")
+    let originals = property(properties, "Originals")
             .filter(|property| !property.links().is_empty())
             .or_else(|| {
                 property(properties, "BaseFeature").filter(|property| {
@@ -6195,50 +6194,34 @@ fn pattern_definition(
                         .any(|link| link.object().is_some_and(|object| !object.is_empty()))
                 })
             });
-        if let Some(originals) = originals {
-            let seeds = originals
-                .links()
-                .iter()
-                .filter_map(|link| link.as_ref()?.object())
-                .map(|target| {
-                    features.get(target).cloned().map(Some).or_else(|| {
-                        objects
-                            .iter()
-                            .find(|object| object.id == target)
-                            .filter(|object| {
-                                matches!(
-                                    object.type_name.as_str(),
-                                    "App::Line"
-                                        | "App::Plane"
-                                        | "App::Point"
-                                        | "App::CoordinateSystem"
-                                )
-                            })
-                            .map(|_| None)
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            if seeds.is_empty() {
-                return None;
+    let seeds = if let Some(originals) = originals {
+        let linked_objects = || originals.links().iter().filter_map(|link| link.as_ref()?.object());
+        let mut count = 0usize;
+        for target in linked_objects() {
+            if features.contains_key(target) {
+                count += 1;
+            } else if !objects.iter().any(|object| object.id == target && matches!(
+                object.type_name.as_str(), "App::Line" | "App::Plane" | "App::Point" | "App::CoordinateSystem"
+            )) {
+                return Ok(None);
             }
-            Some(seeds)
-        } else if let Some(seeds) =
-            multi_transform_stage_seeds(owner, features, objects, properties_by_owner)
-        {
-            Some(seeds)
-        } else {
-            Some(vec![implicit_body_predecessor(
-                owner,
-                features,
-                objects,
-                properties_by_owner,
-            )?])
         }
-    })();
-    let Some(seeds) = seeds else { return Ok(None) };
+        if count == 0 { return Ok(None); }
+        let mut seeds = collection_vec(ctx, count, "fcstd pattern source seeds")?;
+        for target in linked_objects() {
+            if let Some(feature) = features.get(target) {
+                seeds.push(FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd pattern seed identity")?).map_err(CodecError::malformed)?);
+            }
+        }
+        seeds
+    } else if let Some(seeds) = multi_transform_stage_seeds(ctx, owner, features, objects, properties_by_owner)? {
+        seeds
+    } else {
+        let Some(feature) = implicit_body_predecessor(owner, features, objects, properties_by_owner) else { return Ok(None); };
+        let mut seeds = collection_vec(ctx, 1, "fcstd implicit pattern seed")?;
+        seeds.push(FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd implicit pattern seed identity")?).map_err(CodecError::malformed)?);
+        seeds
+    };
 
     let pattern =
         if kind.ends_with("MultiTransform") {
@@ -6292,47 +6275,54 @@ fn pattern_definition(
             };
             pattern
         };
+    let mut pattern_seeds = collection_vec(ctx, seeds.len(), "fcstd pattern seed variants")?;
+    pattern_seeds.extend(seeds.into_iter().map(PatternSeed::Feature));
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Pattern {
-            seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
+            seeds: pattern_seeds,
             pattern,
         },
     )))
 }
 
 fn multi_transform_stage_seeds(
+    ctx: &DecodeContext<'_>,
     stage: &str,
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<Vec<FeatureId>> {
-    objects.iter().find_map(|consumer| {
-        let owned = properties_by_owner.get(consumer.id.as_str())?;
-        let transformations = property(owned, "Transformations")?;
-        transformations
+) -> Result<Option<Vec<FeatureId>>, CodecError> {
+    for consumer in objects {
+        let Some(owned) = properties_by_owner.get(consumer.id.as_str()) else { continue; };
+        let Some(transformations) = property(owned, "Transformations") else { continue; };
+        if !transformations
             .links()
             .iter()
             .any(|link| link.as_ref().and_then(crate::native::LinkTarget::object) == Some(stage))
-            .then_some(())?;
-        let originals = property(owned, "Originals")
+        { continue; }
+        let Some(originals) = property(owned, "Originals")
             .filter(|property| !property.links().is_empty())
-            .or_else(|| property(owned, "BaseFeature"))?;
-        let seeds = originals
-            .links()
-            .iter()
-            .filter_map(|link| link.as_ref()?.object())
-            .map(|object| features.get(object).cloned())
-            .collect::<Option<Vec<_>>>()?;
-        (!seeds.is_empty()).then_some(seeds)
-    })
+            .or_else(|| property(owned, "BaseFeature")) else { continue; };
+        let linked_objects = || originals.links().iter().filter_map(|link| link.as_ref()?.object());
+        if linked_objects().any(|object| !features.contains_key(object)) { continue; }
+        let count = linked_objects().count();
+        if count == 0 { continue; }
+        let mut seeds = collection_vec(ctx, count, "fcstd multi-transform source seeds")?;
+        for object in linked_objects() {
+            let Some(feature) = features.get(object) else { continue; };
+            seeds.push(FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd multi-transform seed identity")?).map_err(CodecError::malformed)?);
+        }
+        return Ok(Some(seeds));
+    }
+    Ok(None)
 }
 
-fn implicit_body_predecessor(
+fn implicit_body_predecessor<'a>(
     owner: &str,
-    features: &HashMap<&str, FeatureId>,
+    features: &'a HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<FeatureId> {
+) -> Option<&'a FeatureId> {
     objects.iter().find_map(|object| {
         let owned = properties_by_owner.get(object.id.as_str())?;
         let members = body_membership_property(owned)?;
@@ -6343,7 +6333,7 @@ fn implicit_body_predecessor(
             .iter()
             .rev()
             .filter_map(|link| link.as_ref()?.object())
-            .find_map(|member| features.get(member).cloned())
+            .find_map(|member| features.get(member))
     })
 }
 
