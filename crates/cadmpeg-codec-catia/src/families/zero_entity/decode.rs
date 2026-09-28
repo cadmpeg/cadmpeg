@@ -1054,7 +1054,9 @@ pub(in crate::families) fn try_decode_zero_entity(
         }
     };
 
-    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+    if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
+        return Some(Err(error));
+    }
     let mut coverage: cadmpeg_ir::report::decode::Coverage = [
         (
             crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,

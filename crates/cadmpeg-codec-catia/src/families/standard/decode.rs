@@ -3116,7 +3116,9 @@ fn try_decode_standard_population(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
-    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+    if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
+        return Some(Err(error));
+    }
     let annotations = annotations.build();
 
     let mut report = build_geometry_report(
