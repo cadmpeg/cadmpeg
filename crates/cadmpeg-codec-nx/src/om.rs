@@ -1057,8 +1057,8 @@ impl<'a> IndexedSection<'a> {
 
 impl<'a> FixedEntityRecord<'a> {
     /// Decode every strictly framed printable string in this bounded record.
-    pub(crate) fn string_values(&self) -> Vec<StringValue<'a>> {
-        string_values(self.bytes, self.offset)
+    pub(crate) fn string_values(&self, ctx: &DecodeContext<'_>) -> Result<Vec<StringValue<'a>>, CodecError> {
+        string_values(ctx, self.bytes, self.offset)
     }
 
     /// Decode tagged references within this fixed-record table.
@@ -3568,13 +3568,12 @@ pub(crate) fn references(
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.
-pub(crate) fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
+pub(crate) fn string_values<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], base_offset: usize) -> Result<Vec<StringValue<'a>>, CodecError> {
     const MARKER: &[u8] = &[0x66, 0x32, 0x03];
-    bytes
-        .windows(MARKER.len())
-        .enumerate()
-        .filter(|(_, window)| *window == MARKER)
-        .filter_map(|(offset, _)| {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX printable strings")?;
+    let mut values = Vec::new();
+    for (offset, _) in bytes.windows(MARKER.len()).enumerate().filter(|(_, window)| *window == MARKER) {
+        let value = (|| {
             let declared = usize::from(*bytes.get(offset + 3)?);
             let text_len = declared.checked_sub(2)?;
             let start = offset.checked_add(4)?;
@@ -3586,8 +3585,13 @@ pub(crate) fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue
                 offset: base_offset + offset,
                 value,
             })
-        })
-        .collect()
+        })();
+        if let Some(value) = value {
+            reserve_om_retained_item(ctx, &mut values, "NX printable strings")?;
+            values.push(value);
+        }
+    }
+    Ok(values)
 }
 
 /// Decode complete `03 26, canonical UUID text, 00` values in `bytes`.

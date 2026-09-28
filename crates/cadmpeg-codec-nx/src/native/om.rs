@@ -4211,44 +4211,32 @@ pub(super) fn store_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, conta
 /// Decode self-framed printable values from bounded NX OM records.
 pub(super) fn string_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<StringValue>, cadmpeg_core::CodecError>
 {
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
             let Some(records) = section.as_fixed() else {
-                return Vec::new();
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            records
-                .iter()
-                .enumerate()
-                .flat_map(|(record_ordinal, record)| {
-                    record.string_values().into_iter().enumerate().map(
-                        move |(value_ordinal, value)| {
-                            (record_ordinal, value_ordinal, record.object_id.0, value)
-                        },
-                    )
-                })
-                .map(move |(record_ordinal, value_ordinal, object_id, value)| {
-                    let record =
+            for (record_ordinal, record) in records.iter().enumerate() {
+                for (value_ordinal, value) in record.string_values(ctx)?.into_iter().enumerate() {
+                    let record_id =
                         format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    StringValue {
+                    output.push(StringValue {
                         id: format!(
                             "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
                             value.offset
                         ),
-                        record,
-                        object_id,
+                        record: record_id,
+                        object_id: record.object_id.0,
                         ordinal: value_ordinal as u32,
                         value: value.value.into_owned(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
-                    }
-                })
-                .collect()
-        })
-        .collect())
+                    });
+                }
+            }
+    }
+    Ok(output)
 }
 
 /// Decode ordered tagged references from bounded NX OM records.
