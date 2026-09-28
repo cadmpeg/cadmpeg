@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Siemens JT integer packet decoding used by embedded NX display models.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteBinary32;
 use serde::{Deserialize, Serialize};
@@ -113,6 +113,26 @@ fn try_vec<T>(ctx: &DecodeContext<'_>, capacity: usize) -> Result<Vec<T>, CodecE
         .try_reserve_exact(capacity)
         .map_err(|_| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))?;
     Ok(values)
+}
+
+fn try_scoped_vec<'a, T>(
+    ctx: &'a DecodeContext<'_>,
+    capacity: usize,
+) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(capacity);
+    ctx.charge_collection_items(count, "nx JT decoded vector")?;
+    let bytes = capacity
+        .checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))?;
+    let reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "nx JT decoded vector",
+    )?;
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(capacity)
+        .map_err(|_| ctx.refuse_codec_limit("nx JT decoded vector", 0, count))?;
+    Ok((values, reservation))
 }
 
 /// Reconstruct JT primal integers from predictor residuals.
@@ -331,7 +351,8 @@ fn decode_vertex_normals_inner(
     }
     let mut cursor = 6usize;
     let normals = if expected_bits == 0 {
-        let mut components = propagate_resource!(try_vec(ctx, 3));
+        let (mut components, _components_reservation) =
+            propagate_resource!(try_scoped_vec(ctx, 3));
         for _ in 0..3 {
             let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
             cursor = cursor.checked_add(exponent_len)?;
@@ -348,7 +369,7 @@ fn decode_vertex_normals_inner(
         }
         normals
     } else {
-        let mut codes = propagate_resource!(try_vec(ctx, 4));
+        let (mut codes, _codes_reservation) = propagate_resource!(try_scoped_vec(ctx, 4));
         for _ in 0..4 {
             let (values, byte_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
             cursor = cursor.checked_add(byte_len)?;
@@ -415,7 +436,8 @@ fn decode_vertex_texture_coordinates_inner(
         return None;
     }
     let mut cursor = 6usize;
-    let mut components = propagate_resource!(try_vec(ctx, component_count));
+    let (mut components, _components_reservation) =
+        propagate_resource!(try_scoped_vec(ctx, component_count));
     if expected_bits == 0 {
         for _ in 0..component_count {
             let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
@@ -428,7 +450,8 @@ fn decode_vertex_texture_coordinates_inner(
             components.push(propagate_resource!(lossless_coordinate_component(ctx, &exponents, &mantissae))?);
         }
     } else {
-        let mut ranges = propagate_resource!(try_vec(ctx, component_count));
+        let (mut ranges, _ranges_reservation) =
+            propagate_resource!(try_scoped_vec(ctx, component_count));
         for _ in 0..component_count {
             let minimum = View::f32_le_at(bytes, cursor)?;
             let maximum = View::f32_le_at(bytes, cursor + 4)?;
@@ -439,13 +462,15 @@ fn decode_vertex_texture_coordinates_inner(
             ranges.push(QuantizedRange::new(minimum, maximum)?);
             cursor = cursor.checked_add(9)?;
         }
-        for range in ranges {
+        let mut component_reservations = std::array::from_fn::<_, 4, _>(|_| None);
+        for (component_index, range) in ranges.into_iter().enumerate() {
             let (residuals, byte_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != count {
                 return None;
             }
-            let mut component = propagate_resource!(try_vec(ctx, count));
+            let (mut component, reservation) = propagate_resource!(try_scoped_vec(ctx, count));
+            component_reservations[component_index] = Some(reservation);
             for code in propagate_resource!(unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1)) {
                 component.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
@@ -509,7 +534,8 @@ fn decode_vertex_colors_inner(
     }
     let mut cursor = 6usize;
     let colors = if expected_bits == 0 {
-        let mut components = propagate_resource!(try_vec(ctx, component_count));
+        let (mut components, _components_reservation) =
+            propagate_resource!(try_scoped_vec(ctx, component_count));
         for _ in 0..component_count {
             let (exponents, exponent_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
             cursor = cursor.checked_add(exponent_len)?;
@@ -543,8 +569,9 @@ fn decode_vertex_colors_inner(
             _ => return None,
         };
         cursor = cursor.checked_add(1)?;
-        let mut ranges = propagate_resource!(try_vec(ctx, 4));
-        let mut component_bits = propagate_resource!(try_vec(ctx, 4));
+        let (mut ranges, _ranges_reservation) = propagate_resource!(try_scoped_vec(ctx, 4));
+        let (mut component_bits, _bits_reservation) =
+            propagate_resource!(try_scoped_vec(ctx, 4));
         if hsv {
             for range in [[0.0, 6.0], [0.0, 1.0], [0.0, 1.0], [0.0, 1.0]] {
                 let bits = *bytes.get(cursor)?;
@@ -568,14 +595,17 @@ fn decode_vertex_colors_inner(
                 cursor = cursor.checked_add(9)?;
             }
         }
-        let mut components = propagate_resource!(try_vec(ctx, 4));
+        let (mut components, _components_reservation) =
+            propagate_resource!(try_scoped_vec(ctx, 4));
+        let mut component_reservations = std::array::from_fn::<_, 4, _>(|_| None);
         for component in 0..4 {
             let (residuals, byte_len) = propagate_resource!(decode_int32_cdp2_inner(ctx, bytes.get(cursor..)?, 0))?;
             cursor = cursor.checked_add(byte_len)?;
             if residuals.len() != count {
                 return None;
             }
-            let mut values = propagate_resource!(try_vec(ctx, count));
+            let (mut values, reservation) = propagate_resource!(try_scoped_vec(ctx, count));
+            component_reservations[component] = Some(reservation);
             for code in propagate_resource!(unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1)) {
                 values.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
@@ -712,7 +742,9 @@ fn decode_vertex_coordinates_inner(
 ) -> Result<Option<(Vec<[FiniteBinary32; 3]>, u32, usize)>, CodecError> {
     let decoded: Option<Result<_, CodecError>> = (|| {
     let mut cursor = 0usize;
-    let mut components = propagate_resource!(try_vec(ctx, 3));
+    let (mut components, _components_reservation) =
+        propagate_resource!(try_scoped_vec(ctx, 3));
+    let mut component_reservations = std::array::from_fn::<_, 3, _>(|_| None);
     for component in 0..3 {
         if quantization_bits[component] == 0 {
             let (exponent_residuals, exponent_len) =
@@ -736,7 +768,9 @@ fn decode_vertex_coordinates_inner(
             if residuals.len() != vertex_count {
                 return None;
             }
-            let mut values = propagate_resource!(try_vec(ctx, vertex_count));
+            let (mut values, reservation) =
+                propagate_resource!(try_scoped_vec(ctx, vertex_count));
+            component_reservations[component] = Some(reservation);
             for code in propagate_resource!(unpack_predictor_residuals(ctx, &residuals, Predictor::Lag1)) {
                 values.push(dequantize_uniform(
                     u32::try_from(code).ok()?,
