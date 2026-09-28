@@ -24,7 +24,6 @@ use crate::surface::plane_envelopes;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
-use crate::surface::positional_frame_planes;
 use crate::surface::rows;
 use crate::surface::scalar_frames;
 use crate::surface::scalar_slots_with_tokens_and_end;
@@ -45,6 +44,15 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn positional_frame_planes(
+    parameters: &[SurfaceParameterRecord],
+    rows: &[SurfaceRow],
+) -> Vec<OutlinePlane> {
+    super::with_decode_ctx(&[], |ctx| {
+        crate::surface::positional_frame_planes(ctx, parameters, rows)
+    })
+}
 
 fn sequential_named_local_system_slots(
     body: &[u8],
@@ -86,8 +94,7 @@ fn derives_one_held_coordinate_outline_plane() {
     );
 }
 
-#[test]
-fn derives_plane_from_unique_six_scalar_positional_frame() {
+fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
     let slot = |value, offset| SurfaceParameterScalar {
         value: Some(value),
         raw: vec![offset as u8],
@@ -122,6 +129,12 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
         next_surface: 0,
         offset: 3,
     };
+    (record, row)
+}
+
+#[test]
+fn derives_plane_from_unique_six_scalar_positional_frame() {
+    let (record, row) = unique_positional_frame_fixture();
 
     assert_eq!(
         positional_frame_planes(std::slice::from_ref(&record), std::slice::from_ref(&row)),
@@ -141,6 +154,35 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
     let mut ambiguous = record;
     ambiguous.scalar_frames[0].slots[4].value = Some(2.0);
     assert!(positional_frame_planes(&[ambiguous], &[row]).is_empty());
+}
+
+fn positional_frame_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let (record, row) = unique_positional_frame_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    )
+    .expect("empty root");
+    crate::surface::positional_frame_planes(
+        &ctx, std::slice::from_ref(&record), std::slice::from_ref(&row),
+    )
+    .expect_err("positional plane collection exceeds limit")
+}
+
+#[test]
+fn positional_frame_refuses_candidate_vector() {
+    let error = positional_frame_limit_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional plane candidates"));
+}
+
+#[test]
+fn positional_frame_refuses_output_vector() {
+    let error = positional_frame_limit_error(1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo positional frame planes"));
 }
 
 #[test]

@@ -2832,7 +2832,7 @@ pub(crate) fn scan_bytes<'a>(
     let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, &sections)?;
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
     let positional_frame_planes =
-        surface::positional_frame_planes(&surface_parameters, &surface_rows);
+        surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
     let placement_outline_planes =
         placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)?;
     let cross_section_outline_planes = surface::placed_outline_planes(
