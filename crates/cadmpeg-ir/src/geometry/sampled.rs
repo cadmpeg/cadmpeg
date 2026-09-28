@@ -4,6 +4,8 @@
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -62,6 +64,19 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
+    /// Copy both sampled lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            vertices: super::copy_decode_slice(&self.vertices, ctx, operation)?,
+            triangles: super::copy_decode_slice(&self.triangles, ctx, operation)?,
+            chordal_deflection: self.chordal_deflection,
+        })
+    }
+
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,
@@ -466,6 +481,27 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
+    /// Copy the sample lane through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let samples = match &self.samples {
+            PolylineSamples::Unparameterized { points } => PolylineSamples::Unparameterized {
+                points: super::copy_decode_slice(points, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
+            PolylineSamples::Parameterized { vertices } => PolylineSamples::Parameterized {
+                vertices: super::copy_decode_slice(vertices, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
+        };
+        Ok(Self { samples, chordal_deflection: self.chordal_deflection })
+    }
+
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(

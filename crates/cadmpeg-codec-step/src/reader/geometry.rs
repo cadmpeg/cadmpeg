@@ -1160,10 +1160,11 @@ pub(super) fn decode(
                 .model
                 .curves
                 .get(parent_index.0)
-                .and_then(|curve| curve.geometry.solved().cloned())
+                .and_then(|curve| curve.geometry.solved())
             else {
                 continue;
             };
+            let basis = basis.try_clone_for_decode(ctx, "step_curve_replica_basis")?;
             let Ok(placed) = cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
             else {
                 push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
@@ -1215,8 +1216,11 @@ pub(super) fn decode(
                 .curves
                 .get(&basis_step)
                 .and_then(|index| ir.model.curves.get(index.0))
-                .and_then(|candidate| candidate.geometry.solved().cloned())
+                .map(|candidate| &candidate.geometry)
             else {
+                continue;
+            };
+            let Some(solved_geometry) = geometry.solved() else {
                 continue;
             };
             let record_scale = unit_scales.length([id]);
@@ -1230,7 +1234,7 @@ pub(super) fn decode(
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
-                    geometry: &CurveGeometry::Solved(geometry.clone()),
+                    geometry,
                     angle_scale: record_angle_scale,
                     linear_parameter_scale: linear_parameter_scale.get(),
                     parameter_offset,
@@ -1255,7 +1259,7 @@ pub(super) fn decode(
                 continue;
             };
             let parameter_range = trimmed_curve_parameter_range(
-                &CurveGeometry::Solved(geometry.clone()),
+                geometry,
                 start,
                 end,
                 sense,
@@ -1287,9 +1291,10 @@ pub(super) fn decode(
                     }
                 };
             let curve_index = CurveIndex(ir.model.curves.len());
+            let copied_geometry = solved_geometry.try_clone_for_decode(ctx, "step_trim_curve_carrier")?;
             push_geometry_vec(&mut ir.model.curves, Curve {
                 id: curve.clone(),
-                geometry: CurveGeometry::Solved(geometry.clone()),
+                geometry: CurveGeometry::Solved(copied_geometry),
                 source_object: None,
             }, ctx, "step_geometry_ir_curves")?;
 
@@ -1386,12 +1391,13 @@ pub(super) fn decode(
             .curves
             .get(&source_step)
             .and_then(|index| ir.model.curves.get(index.0))
-            .and_then(|candidate| candidate.geometry.solved().cloned())
+            .and_then(|candidate| candidate.geometry.solved())
         else {
             continue;
         };
         let curve = CurveId::from(ids::data(kind!("curve"), id));
         let curve_index = CurveIndex(ir.model.curves.len());
+        let copied_geometry = geometry.try_clone_for_decode(ctx, "step_offset_curve_carrier")?;
         let procedural =
             match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_from_parts(
                 source,
@@ -1416,7 +1422,7 @@ pub(super) fn decode(
             };
         push_geometry_vec(&mut ir.model.curves, Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Solved(geometry),
+            geometry: CurveGeometry::Solved(copied_geometry),
             source_object: None,
         }, ctx, "step_geometry_ir_curves")?;
         let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
@@ -1791,15 +1797,18 @@ pub(super) fn decode(
                 .surfaces
                 .get(&support_step)
                 .and_then(|index| ir.model.surfaces.get(index.0))
-                .and_then(|surface| surface.geometry.solved().cloned())
+                .map(|surface| &surface.geometry)
             else {
                 defer_geometry_dependency(&mut surface_waiting_on, support_step, id, ctx, "step_deferred_surface_groups", "step_deferred_surface_members")?;
+                continue;
+            };
+            let Some(solved_geometry) = geometry.solved() else {
                 continue;
             };
             let Some(parameter_scales) = surface_parameter_scales_for_step(
                 ir,
                 &SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                &SurfaceGeometry::Solved(geometry.clone()),
+                geometry,
                 record_scale,
                 record_angle_scale,
                 &source_curve_parameter_scales,
@@ -1817,7 +1826,7 @@ pub(super) fn decode(
             for ((range, sense), domain) in parameter_ranges
                 .iter_mut()
                 .zip([u_sense, v_sense])
-                .zip(surface_periodic_domains(&geometry))
+                .zip(surface_periodic_domains(solved_geometry))
             {
                 if let Some(domain) = domain {
                     if sense && range[1] < range[0] {
@@ -1838,9 +1847,10 @@ pub(super) fn decode(
             };
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+            let copied_geometry = solved_geometry.try_clone_for_decode(ctx, "step_trim_surface_carrier")?;
             push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(geometry),
+                geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
             }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
@@ -1944,7 +1954,7 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .get(support_index.0)
-                .and_then(|surface| surface.geometry.solved().cloned())
+                .and_then(|surface| surface.geometry.solved())
                 .zip(boundaries)
                 .zip(implicit_outer)
                 .map(|((geometry, boundaries), implicit_outer)| {
@@ -1961,9 +1971,10 @@ pub(super) fn decode(
                 continue;
             };
             let surface_index = SurfaceIndex(ir.model.surfaces.len());
+            let copied_geometry = geometry.try_clone_for_decode(ctx, "step_curve_bounded_surface_carrier")?;
             push_geometry_vec(&mut ir.model.surfaces, Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(geometry),
+                geometry: SurfaceGeometry::Solved(copied_geometry),
                 source_object: None,
             }, ctx, "step_geometry_ir_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
@@ -2051,10 +2062,11 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .get(parent_index.0)
-                .and_then(|surface| surface.geometry.solved().cloned())
+                .and_then(|surface| surface.geometry.solved())
             else {
                 continue;
             };
+            let basis = basis.try_clone_for_decode(ctx, "step_surface_replica_basis")?;
             let Ok(placed) =
                 cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
             else {
@@ -2270,8 +2282,8 @@ pub(super) fn decode(
             )), ctx, "step_geometry_losses")?;
             continue;
         };
-        let mut geometry = geometry.clone();
-        if geometry.try_scale_coordinates(*scales).is_err() {
+        let mut geometry = geometry.try_clone_for_decode(ctx, "step_pcurve_carrier_copy")?;
+        if !geometry.try_scale_coordinates_for_decode(*scales, ctx, "step_pcurve_coordinate_scale")? {
             push_geometry_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
             )), ctx, "step_geometry_losses")?;

@@ -16,10 +16,26 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
+
+pub(super) fn copy_decode_slice<T: Copy>(
+    values: &[T],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(values.len())))?;
+    copied.extend_from_slice(values);
+    Ok(copied)
+}
 
 pub mod analytic;
 pub mod nurbs;
@@ -151,6 +167,32 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
+    /// Copy a decoded surface through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Plane(value) => Self::Plane(*value),
+            Self::Cylinder(value) => Self::Cylinder(*value),
+            Self::Cone(value) => Self::Cone(*value),
+            Self::Sphere(value) => Self::Sphere(*value),
+            Self::Torus(value) => Self::Torus(*value),
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                ctx.charge_collection_items(1, operation)?;
+                Self::Transformed(PlacedSurface {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown { record: record.clone() },
+        })
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedSurface`] stores its own depth, so this reads one field and
@@ -364,6 +406,46 @@ pub enum SolvedCurveGeometry {
 }
 
 impl SolvedCurveGeometry {
+    /// Copy a decoded curve through the caller's collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Line(value) => Self::Line(*value),
+            Self::Circle(value) => Self::Circle(*value),
+            Self::Ellipse(value) => Self::Ellipse(*value),
+            Self::Parabola(value) => Self::Parabola(*value),
+            Self::Hyperbola(value) => Self::Hyperbola(*value),
+            Self::Degenerate(value) => Self::Degenerate(*value),
+            Self::Composite { segments, self_intersect } => {
+                ctx.charge_collection_items(u64_from_index(segments.len()), operation)?;
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(segments.len())
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len())))?;
+                for segment in segments.iter() {
+                    copied.push(segment.clone());
+                }
+                Self::Composite {
+                    segments: CompositeCurveSegments(copied),
+                    self_intersect: *self_intersect,
+                }
+            }
+            Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
+            Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
+            Self::Transformed(value) => {
+                ctx.charge_collection_items(1, operation)?;
+                Self::Transformed(PlacedCurve {
+                    basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
+                    transform: value.transform,
+                    depth: value.depth,
+                })
+            }
+            Self::Unknown { record } => Self::Unknown { record: record.clone() },
+        })
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedCurve`] stores its own depth, so this reads one field and

@@ -10,9 +10,26 @@ pub(crate) mod scratch;
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+fn copy_decode_grid<T: Copy>(
+    rows: &[Vec<T>],
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Vec<Vec<T>>, CodecError> {
+    ctx.charge_collection_items(u64_from_index(rows.len()), operation)?;
+    let mut copied = Vec::new();
+    copied.try_reserve_exact(rows.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(rows.len())))?;
+    for row in rows {
+        copied.push(super::copy_decode_slice(row, ctx, operation)?);
+    }
+    Ok(copied)
+}
 
 /// Knot values that are finite and non-decreasing.
 ///
@@ -999,6 +1016,38 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Copy the admitted lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(u64_from_index(self.u_knots.len()), operation)?;
+        let u_knots = self.u_knots.try_clone()
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.u_knots.len())))?;
+        ctx.charge_collection_items(u64_from_index(self.v_knots.len()), operation)?;
+        let v_knots = self.v_knots.try_clone()
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.v_knots.len())))?;
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: copy_decode_grid(rows, ctx, operation)?,
+            },
+            NurbsPoleGrid::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: copy_decode_grid(rows, ctx, operation)?,
+            },
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
@@ -1335,6 +1384,26 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Copy the admitted lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
+        let knots = self.knots.try_clone()
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(self.knots.len())))?;
+        let poles = match &self.poles {
+            NurbsPoles3::Polynomial { points } => NurbsPoles3::Polynomial {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+            NurbsPoles3::Rational { points } => NurbsPoles3::Rational {
+                points: super::copy_decode_slice(points, ctx, operation)?,
+            },
+        };
+        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+    }
+
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a
