@@ -77,7 +77,7 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     ]);
     bytes.extend([0x99; 16]);
 
-    let map = crate::om::state_counter::StateCounterMap::read(&bytes, 0).expect("counter map");
+    let map = crate::test_support::with_decode_context(|ctx| crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 0)).unwrap().expect("counter map");
     let table = crate::test_support::with_decode_context(|ctx| {
         operation_state_group_table_before_counter_map(ctx, &bytes, map.offset(), 0)
     })
