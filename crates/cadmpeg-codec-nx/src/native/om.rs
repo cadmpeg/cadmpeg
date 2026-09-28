@@ -4334,39 +4334,98 @@ pub(super) fn data_block_control_references(
 
 /// Join maximal two-token adjacent persistent-handle runs atomically.
 pub(super) fn data_block_control_handle_pairs(
+    ctx: &DecodeContext<'_>,
     references: &[DataBlockControlReference],
-) -> Vec<DataBlockControlHandlePair> {
+) -> Result<Vec<DataBlockControlHandlePair>, CodecError> {
+    use std::fmt::Write;
+
+    let mut temporary = ctx.reserve_scoped(0, "NX control handle pair index")?;
     let mut by_block = BTreeMap::<&str, Vec<(&DataBlockControlReference, u32)>>::new();
     for reference in references {
         let DirectReference::PersistentHandle(handle) = reference.reference else {
             continue;
         };
-        by_block
-            .entry(reference.data_block.as_str())
-            .or_default()
-            .push((reference, handle));
+        let key = reference.data_block.as_str();
+        ctx.charge_work(
+            u64::from(usize::BITS - by_block.len().leading_zeros()) + 1,
+            "index NX control handle pair references",
+        )?;
+        if !by_block.contains_key(key) {
+            ctx.charge_collection_items(1, "NX control handle pair blocks")?;
+            temporary.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, Vec<(&DataBlockControlReference, u32)>)>() + 64,
+            ))?;
+        }
+        let entries = by_block.entry(key).or_default();
+        ctx.charge_collection_items(1, "NX control handle pair references")?;
+        temporary.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&DataBlockControlReference, u32)>(),
+        ))?;
+        entries.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX control handle pair references", 0, 1)
+        })?;
+        entries.push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (data_block, mut block_references) in by_block {
+        let count = block_references.len();
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        let comparisons = count_u64
+            .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX control handle pair references", 0, 1))?;
+        ctx.charge_work(comparisons, "sort NX control handle pair references")?;
+        let scratch_bytes = count
+            .checked_mul(std::mem::size_of::<(&DataBlockControlReference, u32)>())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX control handle pair references", 0, 1))?;
+        let _sort_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(scratch_bytes),
+            "sort NX control handle pair references",
+        )?;
         block_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < block_references.len() {
             let start = at;
-            while block_references.get(at + 1).is_some_and(|next| {
-                next.0.source_offset == block_references[at].0.source_offset + 5
+            while at.checked_add(1).and_then(|next| block_references.get(next)).is_some_and(|next| {
+                block_references[at].0.source_offset.checked_add(5) == Some(next.0.source_offset)
             }) {
                 at += 1;
             }
             let run = &block_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
+                let id_length = "nx:om-data-block-control:handle-pair#".len()
+                    .checked_add(first.source_offset.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX control handle pair id", 0, 1))?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(id_length),
+                    "NX control handle pair id",
+                )?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(id_length),
+                    "retain NX control handle pair id",
+                )?;
+                let mut id = String::new();
+                id.try_reserve_exact(id_length).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX control handle pair id", 0, 1)
+                })?;
+                write!(&mut id, "nx:om-data-block-control:handle-pair#{}", first.source_offset)
+                    .map_err(|_| ctx.refuse_codec_limit("format NX control handle pair id", 0, 1))?;
+                let data_block = copy_om_retained_text(ctx, data_block, "retain NX control handle pair block")?;
+                let first_reference = copy_om_retained_text(ctx, &first.id, "retain NX control handle first reference")?;
+                let second_reference = copy_om_retained_text(ctx, &second.id, "retain NX control handle second reference")?;
+                ctx.charge_entities(1, "NX control handle pair")?;
+                ctx.charge_collection_items(1, "NX control handle pairs")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlHandlePair>()),
+                    "retain NX control handle pair",
+                )?;
+                pairs.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX control handle pairs", 0, 1)
+                })?;
                 pairs.push(DataBlockControlHandlePair {
-                    id: format!(
-                        "nx:om-data-block-control:handle-pair#{}",
-                        first.source_offset
-                    ),
-                    data_block: data_block.to_string(),
-                    first_reference: first.id.clone(),
-                    second_reference: second.id.clone(),
+                    id,
+                    data_block,
+                    first_reference,
+                    second_reference,
                     first_handle: *first_handle,
                     second_handle: *second_handle,
                     source_offset: first.source_offset,
@@ -4375,7 +4434,7 @@ pub(super) fn data_block_control_handle_pairs(
             at += 1;
         }
     }
-    pairs
+    Ok(pairs)
 }
 
 /// Decode framed object references from offset-only OM data blocks.
