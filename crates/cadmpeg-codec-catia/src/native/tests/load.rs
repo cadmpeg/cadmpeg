@@ -328,6 +328,49 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
+fn native_configuration_production_propagates_retained_refusal() {
+    let file = standard_catpart_with_configuration_incidences(8, 5, 7);
+    let native = crate::native::CatiaNative::decode(&file);
+    let graph = &native.object_graphs[0];
+    let configuration_entity = &native.entity_records[0];
+    let configuration_object = graph.records.iter()
+        .find(|record| record.id == configuration_entity.object_record)
+        .expect("configuration object record");
+    let row_entity = &native.entity_records[1];
+    let row_object = graph.records.iter()
+        .find(|record| record.id == row_entity.object_record)
+        .expect("configuration row object record");
+    let classes = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_class_index(ctx, graph.records.iter())
+    }).expect("service profile admits classes");
+    let (expressions, expression_entities, entities, terminal_nulls, bindings) =
+        crate::test_support::with_service_context(|ctx| {
+            super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
+        }).expect("service profile admits semantic indexes");
+    let references = super::super::CatiaEntityReferenceIndex {
+        entities: &entities, classes: &classes, terminal_nulls: &terminal_nulls,
+    };
+    let configuration = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::object_production(ctx, configuration_entity, configuration_object,
+            &references, &expressions, &expression_entities, &bindings)
+    });
+    assert!(matches!(configuration, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_configuration_entry"));
+    let row = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::schema_configuration_row_link(ctx, row_entity.entity_id, row_object,
+            &entities, &classes, &terminal_nulls)
+    });
+    assert!(matches!(row, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_reference_entity"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::object_production(ctx, configuration_entity, configuration_object,
+            &references, &expressions, &expression_entities, &bindings)
+    }).expect("service profile admits configuration production");
+    assert!(matches!(service,
+        Some(crate::native::CatiaEntityObjectProduction::SchemaConfigurationRecord(_))));
+}
+
+#[test]
 fn schema_configuration_productions_retain_exact_same_graph_incidence() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);

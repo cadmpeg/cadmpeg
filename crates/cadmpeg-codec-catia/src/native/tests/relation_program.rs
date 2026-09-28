@@ -232,6 +232,12 @@ fn relation_program_output_selects_only_the_framing_specific_paramout_slot() {
 
 #[test]
 fn relation_program_inputs_require_complete_unique_signature_bindings() {
+    let resolve = |signature: &crate::native::CatiaRelationTypeSignature,
+                   dependencies: &[crate::native::CatiaRelationParameterDependency]| {
+        crate::test_support::with_service_context(|ctx| {
+            crate::native::resolved_relation_program_inputs(ctx, signature, dependencies)
+        }).expect("service profile admits input resolution")
+    };
     let signature = crate::native::CatiaRelationTypeSignature {
         inputs: vec![
             crate::native::CatiaRelationTypeInput {
@@ -263,7 +269,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         dependency("#1_ /2", vec![reference(10)]),
         dependency("#2_", vec![reference(11)]),
     ];
-    let inputs = crate::native::resolved_relation_program_inputs(&signature, &complete)
+    let inputs = resolve(&signature, &complete)
         .expect("complete ordered input bindings");
     assert_eq!(
         inputs
@@ -279,7 +285,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         dependency("#2_", vec![reference(11)]),
     ];
     assert!(
-        crate::native::resolved_relation_program_inputs(&signature, &compact_ordinal).is_some()
+        resolve(&signature, &compact_ordinal).is_some()
     );
 
     let zero = crate::native::CatiaRelationTypeSignature {
@@ -287,15 +293,15 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         result_type: "Real".to_string(),
     };
     assert_eq!(
-        crate::native::resolved_relation_program_inputs(&zero, &[]),
+        resolve(&zero, &[]),
         Some(Vec::new())
     );
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[dependency("#1_", vec![reference(10)])]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -303,7 +309,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -312,7 +318,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -321,7 +327,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10), reference(12)]),
@@ -329,7 +335,7 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
-    assert!(crate::native::resolved_relation_program_inputs(
+    assert!(resolve(
         &signature,
         &[
             dependency("#1_", vec![reference(10)]),
@@ -338,6 +344,90 @@ fn relation_program_inputs_require_complete_unique_signature_bindings() {
         ]
     )
     .is_none());
+}
+
+#[test]
+fn native_relation_symbols_and_candidates_refuse_nested_limits() {
+    let symbols = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::native::relation_symbols(ctx, "#1_ + #2_")
+    });
+    assert!(matches!(symbols, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_symbols"));
+    let service_symbols = crate::test_support::with_service_context(|ctx| {
+        crate::native::relation_symbols(ctx, "#1_ + #2_")
+    }).expect("service profile admits relation symbols");
+    assert_eq!(service_symbols, [(0, "#1_".to_string()), (6, "#2_".to_string())]);
+
+    let candidate = crate::native::CatiaEntityReference::resolved_or_unresolved(
+        10, Some("entity-10".to_string()), Some("param".to_string()));
+    let bindings = std::collections::HashMap::from([(
+        "graph".to_string(),
+        std::collections::HashMap::from([("#1_".to_string(), vec![candidate])]),
+    )]);
+    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_dependency_candidates"));
+    let dependencies = crate::test_support::with_service_context(|ctx| {
+        crate::native::relation_parameter_dependencies(ctx, "#1_", "graph", &bindings)
+    }).expect("service profile admits relation dependency");
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].candidates[0].entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_resolved_input_refuses_entity_set_limit() {
+    let signature = crate::native::CatiaRelationTypeSignature {
+        inputs: vec![crate::native::CatiaRelationTypeInput {
+            parameter: "#1_".to_string(), input_type: "Real".to_string(),
+        }],
+        result_type: "Real".to_string(),
+    };
+    let dependencies = vec![crate::native::CatiaRelationParameterDependency {
+        source_offset: 0,
+        symbol: "#1_".to_string(),
+        candidates: vec![crate::native::CatiaEntityReference::resolved_or_unresolved(
+            10, Some("entity-10".to_string()), Some("param".to_string()))],
+    }];
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_input_entity_ids"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits work limit");
+    let work_refusal = crate::native::resolved_relation_program_inputs(&ctx, &signature, &dependencies);
+    assert!(matches!(work_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_input_matching"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::native::resolved_relation_program_inputs(ctx, &signature, &dependencies)
+    }).expect("service profile admits resolved input").expect("one resolved input");
+    assert_eq!(service[0].entity.entity(), Some("entity-10"));
+}
+
+#[test]
+fn native_entity_reference_refuses_retained_copy() {
+    let entities = std::collections::HashMap::from([(
+        ("graph".to_string(), 10_u32), "entity-10".to_string(),
+    )]);
+    let classes = std::collections::HashMap::from([(
+        ("graph".to_string(), 10_u32), "param".to_string(),
+    )]);
+    let terminal_nulls = std::collections::HashMap::new();
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_reference_entity"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        crate::native::entity_reference(ctx, "graph", 10, &entities, &classes, &terminal_nulls)
+    }).expect("service profile admits entity reference");
+    assert_eq!(service.entity(), Some("entity-10"));
+    assert_eq!(service.class_name(), Some("param"));
 }
 
 #[test]
