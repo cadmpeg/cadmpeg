@@ -4000,6 +4000,7 @@ fn decode_result(
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(
+        ctx,
         scan,
         report_scope,
         retained.source_attributes,

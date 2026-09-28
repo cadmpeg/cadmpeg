@@ -68,7 +68,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut scan = crate::container::scan(&ctx, root).unwrap();
     scan.breps.push(scan.breps[0].clone());
 
-    let (layers, losses) = classify_layers(&scan);
+    let (layers, losses) = classify_layers(&ctx, &scan).unwrap();
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code, F3dLossCode::DialectLayerCollision.kind());
     assert_eq!(
@@ -78,6 +78,58 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
             .count(),
         2
     );
+}
+
+#[test]
+fn primary_dialect_clone_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "classify F3D primary dialect layer"));
+}
+
+#[test]
+fn extra_dialect_collection_refuses_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect layers"), "{error:?}");
+}
+
+#[test]
+fn dialect_collision_loss_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (scan_ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
+    let mut scan = crate::container::scan(&scan_ctx, root).unwrap();
+    scan.breps.push(scan.breps[0].clone());
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect collision losses"), "{error:?}");
 }
 
 #[test]
