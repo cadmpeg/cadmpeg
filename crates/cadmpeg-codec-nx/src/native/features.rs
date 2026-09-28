@@ -5439,9 +5439,10 @@ fn construction_payload_frames<P, S, R>(
         .iter()
         .map(|payload| -> Result<Vec<R>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(
+                ctx,
                 data_blocks(payload).iter().map(|block| &block.id),
                 &blocks,
-            ) else {
+            )? else {
                 return Ok(Vec::new());
             };
             let source_offset = |relative: usize| joined.source_offset(relative as u64);
@@ -6063,7 +6064,7 @@ pub(super) fn feature_sketch_payload_scalars(
                     .map(|member| member.data_block.clone())
                     .collect::<Vec<_>>();
                 data_blocks.push(construction.terminal_data_block.clone());
-                let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
+                let Some(joined) = JoinedPayload::from_source(ctx, data_blocks.iter(), &blocks)? else {
                     return Ok(Vec::new());
                 };
                 let construction_payload = construction.id.replacen(
@@ -6163,7 +6164,7 @@ pub(super) fn feature_sketch_payload_names(
                     .map(|member| member.data_block.clone())
                     .collect::<Vec<_>>();
                 data_blocks.push(construction.terminal_data_block.clone());
-                let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
+                let Some(joined) = JoinedPayload::from_source(ctx, data_blocks.iter(), &blocks)? else {
                     return Ok(Vec::new());
                 };
                 let construction_payload = construction.id.replacen(
@@ -7066,7 +7067,7 @@ pub(super) fn feature_projected_curve_construction_strings(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
     for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
             continue;
         };
         for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
@@ -7382,7 +7383,7 @@ pub(super) fn feature_surface_construction_scalar_pairs(
         .iter()
         .map(
             |payload| -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-                let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+                let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
                 else {
                     return Ok(Vec::new());
                 };
@@ -7421,7 +7422,7 @@ pub(super) fn feature_surface_construction_strings(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
     for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
             continue;
         };
         for (ordinal, value) in crate::om::surface_payload_strings(ctx, joined.bytes())?
@@ -8208,7 +8209,7 @@ pub(super) fn feature_block_payload_scalars(
     let projected = payloads
         .iter()
         .map(|payload| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+            let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
             else {
                 return Ok(Vec::new());
             };
@@ -8248,7 +8249,7 @@ pub(super) fn feature_block_payload_names(
     let projected = payloads
         .iter()
         .map(|payload| -> Result<Vec<FeaturePayloadName>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+            let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
             else {
                 return Ok(Vec::new());
             };

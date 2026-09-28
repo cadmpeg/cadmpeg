@@ -860,55 +860,33 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
     payloads: &[FeatureDraftConstructionGraphPayload],
 ) -> Result<Vec<FeatureDraftConstructionFixedLane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut failure = None;
-    let lanes = payloads
-        .iter()
-        .flat_map(|payload| {
-            if failure.is_some() {
-                return Vec::new();
-            }
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+    let mut lanes = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
+            continue;
+        };
+        for (ordinal, lane) in crate::om::draft_construction_fixed_lanes(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = lane.offset();
+            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))? else {
+                continue;
             };
-            let rows = match crate::om::draft_construction_fixed_lanes(ctx, joined.bytes()) {
-                Ok(rows) => rows,
-                Err(error) => {
-                    failure = Some(error);
-                    return Vec::new();
-                }
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            rows.into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset();
-                    let lane = match lane
-                        .try_map_locations(ctx, |offset, ()| joined.source_offset(offset))
-                    {
-                        Ok(Some(lane)) => lane,
-                        Ok(None) => return None,
-                        Err(error) => {
-                            failure = Some(error);
-                            return None;
-                        }
-                    };
-                    Some(FeatureDraftConstructionFixedLane {
-                        id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        graph_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        lane,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    if let Some(error) = failure {
-        Err(error)
-    } else {
-        Ok(lanes)
+            lanes.push(FeatureDraftConstructionFixedLane {
+                id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                graph_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                lane,
+                source_offset,
+            });
+        }
     }
+    Ok(lanes)
 }
 
 /// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
@@ -918,55 +896,33 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
     payloads: &[FeatureDraftConstructionGraphPayload],
 ) -> Result<Vec<FeatureDraftConstructionBinary32Lane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let mut failure = None;
-    let lanes = payloads
-        .iter()
-        .flat_map(|payload| {
-            if failure.is_some() {
-                return Vec::new();
-            }
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Vec::new();
+    let mut lanes = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
+            continue;
+        };
+        for (ordinal, lane) in crate::om::draft_construction_binary32_lanes(ctx, joined.bytes())?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = lane.offset();
+            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset))? else {
+                continue;
             };
-            let rows = match crate::om::draft_construction_binary32_lanes(ctx, joined.bytes()) {
-                Ok(rows) => rows,
-                Err(error) => {
-                    failure = Some(error);
-                    return Vec::new();
-                }
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
+                continue;
             };
-            rows.into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset();
-                    let lane = match lane
-                        .try_map_locations(ctx, |offset, ()| joined.source_offset(offset))
-                    {
-                        Ok(Some(lane)) => lane,
-                        Ok(None) => return None,
-                        Err(error) => {
-                            failure = Some(error);
-                            return None;
-                        }
-                    };
-                    Some(FeatureDraftConstructionBinary32Lane {
-                        id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        graph_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        lane,
-                        source_offset: joined.source_offset(payload_offset)?,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    if let Some(error) = failure {
-        Err(error)
-    } else {
-        Ok(lanes)
+            lanes.push(FeatureDraftConstructionBinary32Lane {
+                id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                graph_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                lane,
+                source_offset,
+            });
+        }
     }
+    Ok(lanes)
 }
 
 /// Decode canonical printable strings from reconstructed draft graph payloads.
@@ -978,7 +934,7 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
     for payload in payloads {
-        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
             continue;
         };
         for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
@@ -1014,7 +970,7 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
         .iter()
         .map(
             |payload| -> Result<Vec<FeatureDraftConstructionIdentityFrame>, CodecError> {
-                let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+                let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
                 else {
                     return Ok(Vec::new());
                 };
