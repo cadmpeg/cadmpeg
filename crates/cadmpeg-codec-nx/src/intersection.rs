@@ -374,15 +374,15 @@ pub(crate) fn scan_with_graph(
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
 ) -> Result<CurveScan, CodecError> {
-    let uv = uv_records(stream);
+    let uv = uv_records(ctx, stream)?;
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
     scan_with_auxiliaries(
         ctx,
         &chart_records(stream, point_layout),
-        &term_records(stream),
+        &term_records(ctx, stream)?,
         &uv,
-        &blend_bound_records(stream),
+        &blend_bound_records(ctx, stream)?,
         graph,
         constructions,
         CrossFormCollision::Reject,
@@ -426,14 +426,14 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     graph: &topology::Graph,
 ) -> Result<CurveScan, CodecError> {
     let mut charts = chart_records(base_stream, ChartPointLayout::Xyz3);
-    let mut terms = term_records(base_stream);
-    let mut uv = uv_records(base_stream);
-    let mut bridges = blend_bound_records(base_stream);
+    let mut terms = term_records(ctx, base_stream)?;
+    let mut uv = uv_records(ctx, base_stream)?;
+    let mut bridges = blend_bound_records(ctx, base_stream)?;
     for replacement_stream in replacement_streams {
         charts.extend(chart_records(replacement_stream, ChartPointLayout::Ext11));
-        terms.extend(term_records(replacement_stream));
-        uv.extend(uv_records(replacement_stream));
-        bridges.extend(blend_bound_records(replacement_stream));
+        extend_replacement_map(ctx, &mut terms, term_records(ctx, replacement_stream)?, "NX replacement term keys")?;
+        extend_replacement_map(ctx, &mut uv, uv_records(ctx, replacement_stream)?, "NX replacement UV keys")?;
+        extend_replacement_map(ctx, &mut bridges, blend_bound_records(ctx, replacement_stream)?, "NX replacement bridge keys")?;
     }
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
@@ -447,6 +447,21 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         constructions,
         CrossFormCollision::PreferDeltaTwin,
     )
+}
+
+fn extend_replacement_map<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeMap<u32, T>,
+    replacement: BTreeMap<u32, T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    for (xmt, value) in replacement {
+        if !target.contains_key(&xmt) {
+            ctx.charge_collection_items(1, operation)?;
+        }
+        target.insert(xmt, value);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -687,23 +702,66 @@ fn construction_has_endpoint_witnesses(
         || graph.unique_curve_edge_witness(construction.xmt).is_some()
 }
 
-fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
-    blend_bounds(stream)
-        .into_iter()
-        .map(|b| (b.state.xmt(), b.state.blend_surface()))
-        .collect()
+fn blend_bound_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<BTreeMap<u32, u32>, CodecError> {
+    let mut records = BTreeMap::new();
+    for bound in blend_bounds(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX blend-bound map keys")?;
+        records.insert(bound.state.xmt(), bound.state.blend_surface());
+    }
+    Ok(records)
 }
 
 /// Decode complete type-59 second-support bridge records.
-pub(crate) fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
+pub(crate) fn blend_bounds(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<BlendBound>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX blend-bound record index")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.len()), "scan NX blend bounds")?;
     for tag in find_tags(stream, [0, 59]) {
         if let Some((bound, _)) = blend_bound_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, bound.state.xmt(), bound);
+            insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, bound.state.xmt(), bound)?;
         }
     }
-    out.into_values().collect()
+    unique_values_charged(ctx, out, "NX blend-bound records")
+}
+
+fn insert_unique_charged<'ctx, T>(
+    ctx: &'ctx DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'ctx>,
+    records: &mut BTreeMap<u32, T>,
+    duplicates: &mut BTreeSet<u32>,
+    xmt: u32,
+    record: T,
+) -> Result<(), CodecError> {
+    if duplicates.contains(&xmt) {
+        return Ok(());
+    }
+    if records.contains_key(&xmt) {
+        ctx.charge_collection_items(1, "NX duplicate intersection identities")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+    } else {
+        ctx.charge_collection_items(1, "NX intersection record index")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, T)>()))?;
+    }
+    insert_unique(records, duplicates, xmt, record);
+    Ok(())
+}
+
+fn unique_values_charged<T>(
+    ctx: &DecodeContext<'_>,
+    records: BTreeMap<u32, T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let count = records.len();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, operation)?;
+    let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut out = Vec::new();
+    out.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    out.extend(records.into_values());
+    Ok(out)
 }
 
 pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
@@ -1002,20 +1060,24 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
     ))
 }
 
-fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
-    term_use_records(stream)
-        .into_iter()
-        .map(|term| (term.xmt, Point3::from(term.point.get())))
-        .collect()
+fn term_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<BTreeMap<u32, Point3>, CodecError> {
+    let mut records = BTreeMap::new();
+    for term in term_use_records(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX term-use map keys")?;
+        records.insert(term.xmt, Point3::from(term.point.get()));
+    }
+    Ok(records)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline `term_use` records.
-pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
+pub(crate) fn term_use_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<TermUse>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX term-use record index")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.len()), "scan NX term-use records")?;
     for tag in find_tags(stream, [0, 41]) {
         if let Some((term, _)) = term_use_at(stream, tag) {
-            insert_unique(&mut out, &mut duplicates, term.xmt, term);
+            insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, term.xmt, term)?;
         }
     }
     for label in find_iter(stream, b"term_use") {
@@ -1023,11 +1085,11 @@ pub(crate) fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
             if let Some((term, _)) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
-                insert_unique(&mut out, &mut duplicates, term.xmt, term);
+                insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, term.xmt, term)?;
             }
         }
     }
-    out.into_values().collect()
+    unique_values_charged(ctx, out, "NX term-use records")
 }
 
 pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
@@ -1078,22 +1140,26 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
-    support_uv_records(stream)
-        .into_iter()
-        .map(|record| (record.xmt, record.values))
-        .collect()
+fn uv_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<BTreeMap<u32, SupportUvValues>, CodecError> {
+    let mut records = BTreeMap::new();
+    for record in support_uv_records(ctx, stream)? {
+        ctx.charge_collection_items(1, "NX support-UV map keys")?;
+        records.insert(record.xmt, record.values);
+    }
+    Ok(records)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
-pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
+pub(crate) fn support_uv_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Vec<SupportUvRecord>, CodecError> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX support-UV record index")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream.len()), "scan NX support-UV records")?;
     let mut tag = 0usize;
     while tag.saturating_add(2) <= stream.len() {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
             if let Some((record, end)) = support_uv_record_at(stream, tag) {
-                insert_unique(&mut out, &mut duplicates, record.xmt, record);
+                insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, record.xmt, record)?;
                 // A complete counted UV lane owns its scalar payload. Do not
                 // rescan payload bytes as nested support arrays.
                 tag = end;
@@ -1113,14 +1179,14 @@ pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
             let pos = tail + INLINE_UV_TAIL.len();
             if let Some((record, end)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos)
             {
-                insert_unique(&mut out, &mut duplicates, record.xmt, record);
+                insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, record.xmt, record)?;
                 label_start = end;
                 continue;
             }
         }
         label_start = label + 1;
     }
-    out.into_values().collect()
+    unique_values_charged(ctx, out, "NX support-UV records")
 }
 
 pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(SupportUvRecord, usize)> {

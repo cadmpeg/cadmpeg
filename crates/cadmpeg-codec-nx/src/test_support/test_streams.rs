@@ -1094,11 +1094,11 @@ pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
     .expect("ext11 chart bounds");
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
-    for term in crate::intersection::term_use_records(ext11) {
+    for term in crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, ext11)).unwrap() {
         let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
-    let support_uv = crate::intersection::support_uv_records(ext11)
+    let support_uv = crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, ext11)).unwrap()
         .into_iter()
         .next()
         .expect("ext11 support UV");

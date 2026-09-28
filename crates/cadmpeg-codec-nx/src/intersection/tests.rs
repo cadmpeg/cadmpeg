@@ -24,6 +24,45 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point2;
 use std::collections::BTreeMap;
 
+fn blend_bound_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let stream = blend_bound_charted_intersection_curve_stream();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, policy).unwrap();
+    crate::intersection::blend_bounds(&ctx, &stream).expect_err("blend-bound resource refusal")
+}
+
+#[test]
+fn intersection_blend_bound_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn intersection_blend_bound_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn intersection_blend_bound_route_refuses_scoped_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    assert!(matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn intersection_blend_bound_route_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(blend_bound_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
     use cadmpeg_ir::geometry::{
@@ -215,7 +254,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let base_term = charted_intersection_curve_topology_partition_stream();
     let mut term = base_term.clone();
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
-    assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, &term)).unwrap().len(), 1);
     let scan = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &term, crate::intersection::ChartPointLayout::Xyz3)).unwrap();
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
@@ -232,7 +271,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 
     let mut uv = charted_intersection_curve_topology_partition_stream();
     append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);
-    assert!(crate::intersection::support_uv_records(&uv).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, &uv)).unwrap().is_empty());
     let [curve] = crate::test_support::with_decode_context(|ctx| crate::intersection::scan(ctx, &uv, crate::intersection::ChartPointLayout::Xyz3)).unwrap()
         .curves
         .try_into()
@@ -241,7 +280,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 
     let mut blend_bound = blend_bound_charted_intersection_curve_stream();
     append_record(&mut blend_bound, &[0, 59, 0, 14], 24);
-    assert!(crate::intersection::blend_bounds(&blend_bound).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::intersection::blend_bounds(ctx, &blend_bound)).unwrap().is_empty());
 }
 
 #[test]
@@ -502,7 +541,7 @@ fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
     outer[8] = 2;
     outer[9..9 + nested.len()].copy_from_slice(&nested);
 
-    let records = crate::intersection::support_uv_records(&outer);
+    let records = crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, &outer)).unwrap();
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].xmt, 23);
     assert_eq!(records[0].values.values().len(), 4);

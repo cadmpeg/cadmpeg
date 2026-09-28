@@ -983,12 +983,12 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
         crate::intersection::ChartPointLayout::Ext11,
     )
     .expect("chart");
-    let term_pos = crate::intersection::term_use_records(&source)[0].pos;
+    let term_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, &source)).unwrap()[0].pos;
     let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
-    let support_uv_pos = crate::intersection::support_uv_records(&source)[0].pos;
+    let support_uv_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, &source)).unwrap()[0].pos;
     let (_, support_uv_end) =
         crate::intersection::support_uv_record_at(&source, support_uv_pos).expect("support UV");
-    let blend_bound_pos = crate::intersection::blend_bounds(&blend_source)[0].pos;
+    let blend_bound_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::blend_bounds(ctx, &blend_source)).unwrap()[0].pos;
     let (_, blend_bound_end) =
         crate::intersection::blend_bound_at(&blend_source, blend_bound_pos).expect("blend bound");
 
@@ -1053,7 +1053,7 @@ fn deltas_walks_status_framed_blend_bound_records() {
     );
     assert_eq!(census.records[1].canonical_bytes, escaped);
     assert_eq!(
-        crate::intersection::blend_bounds(&stream)
+        crate::test_support::with_decode_context(|ctx| crate::intersection::blend_bounds(ctx, &stream)).unwrap()
             .into_iter()
             .map(|record| record.framing)
             .collect::<Vec<_>>(),
