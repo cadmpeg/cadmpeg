@@ -290,6 +290,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let position = section_point_in_model(transform, entity.start());
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve_id.clone(),
@@ -343,6 +344,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let face_id = revolution_id!(FaceId, cadmpeg_ir::identity_key!("face").colon(index));
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id: surface_id.clone(),

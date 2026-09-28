@@ -853,6 +853,7 @@ pub(super) fn transfer_section_entities(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,
@@ -909,6 +910,7 @@ pub(super) fn transfer_section_entities(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,
@@ -966,6 +968,7 @@ pub(super) fn transfer_section_entities(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,
@@ -1007,6 +1010,7 @@ pub(super) fn transfer_section_entities(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,

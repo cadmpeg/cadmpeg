@@ -1616,6 +1616,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id: id.clone(),

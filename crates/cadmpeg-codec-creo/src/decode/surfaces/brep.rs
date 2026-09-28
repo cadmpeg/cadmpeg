@@ -1697,6 +1697,7 @@ pub(in super::super) fn transfer_native_brep(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve,
@@ -1910,6 +1911,7 @@ pub(in super::super) fn transfer_native_brep(
                 );
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
                 source_carriers.admit_surface(
+                    ctx,
                     ir,
                     Surface {
                         id: surface.clone(),
@@ -2257,6 +2259,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -2328,6 +2331,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,

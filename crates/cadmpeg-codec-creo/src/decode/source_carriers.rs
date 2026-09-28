@@ -210,9 +210,18 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_surface(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut surface: Surface,
     ) -> Result<(), CodecError> {
+        if !self.surfaces.contains_key(&surface.id) {
+            ctx.charge_collection_items(1, "creo source surface nodes")?;
+        }
+        let source_id = SurfaceId::mint(ctx.copy_retained_text(
+            surface.id.as_str(),
+            "creo source surface IDs",
+        )?)
+        .map_err(CodecError::malformed)?;
         let source_geometry = surface.geometry.clone();
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
@@ -224,7 +233,8 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.surfaces.insert(surface.id.clone(), source_geometry);
+        self.surfaces.insert(source_id, source_geometry);
+        ctx.try_reserve_items(&mut ir.model.surfaces, 1, "creo model surfaces")?;
         ir.model.surfaces.push(surface);
         Ok(())
     }
@@ -252,9 +262,18 @@ impl SourceUnitCarriers {
 
     pub(super) fn admit_curve(
         &mut self,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         mut curve: Curve,
     ) -> Result<(), CodecError> {
+        if !self.curves.contains_key(&curve.id) {
+            ctx.charge_collection_items(1, "creo source curve nodes")?;
+        }
+        let source_id = CurveId::mint(ctx.copy_retained_text(
+            curve.id.as_str(),
+            "creo source curve IDs",
+        )?)
+        .map_err(CodecError::malformed)?;
         let source_geometry = curve.geometry.clone();
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
@@ -266,7 +285,8 @@ impl SourceUnitCarriers {
                 },
             )?;
         }
-        self.curves.insert(curve.id.clone(), source_geometry);
+        self.curves.insert(source_id, source_geometry);
+        ctx.try_reserve_items(&mut ir.model.curves, 1, "creo model curves")?;
         ir.model.curves.push(curve);
         Ok(())
     }
@@ -555,6 +575,88 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    #[test]
+    fn source_curve_admission_refuses_each_outer_boundary() {
+        let curve = Curve {
+            id: CurveId::mint("creo:test:source-curve#1").expect("identity grammar"),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        let arena = DecodeArena::new();
+        for (limit, operation) in [
+            (0, "creo source curve nodes"),
+            (1, "creo model curves"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let mut ir = CadIr::empty();
+            let mut carriers = SourceUnitCarriers::default();
+            let error = carriers
+                .admit_curve(&ctx, &mut ir, curve.clone())
+                .expect_err("curve collection boundary exceeds its limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .admit_curve(&ctx, &mut CadIr::empty(), curve.clone())
+            .expect_err("source curve ID copy exceeds its limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo source curve IDs"), "{error:?}");
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::default();
+        crate::decode::with_test_decode_ctx(|ctx| carriers.admit_curve(ctx, &mut ir, curve.clone()))
+            .expect("service curve admission");
+        assert_eq!(ir.model.curves, vec![curve]);
+        assert_eq!(carriers.curve_geometry(&ir.model.curves[0]), &ir.model.curves[0].geometry);
+    }
+
+    #[test]
+    fn source_surface_admission_refuses_each_outer_boundary() {
+        let surface = Surface {
+            id: SurfaceId::mint("creo:test:source-surface#1").expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        };
+        let arena = DecodeArena::new();
+        for (limit, operation) in [
+            (0, "creo source surface nodes"),
+            (1, "creo model surfaces"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let mut ir = CadIr::empty();
+            let mut carriers = SourceUnitCarriers::default();
+            let error = carriers
+                .admit_surface(&ctx, &mut ir, surface.clone())
+                .expect_err("surface collection boundary exceeds its limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::default()
+            .admit_surface(&ctx, &mut CadIr::empty(), surface.clone())
+            .expect_err("source surface ID copy exceeds its limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo source surface IDs"), "{error:?}");
+        let mut ir = CadIr::empty();
+        let mut carriers = SourceUnitCarriers::default();
+        crate::decode::with_test_decode_ctx(|ctx| carriers.admit_surface(ctx, &mut ir, surface.clone()))
+            .expect("service surface admission");
+        assert_eq!(ir.model.surfaces, vec![surface]);
+        assert_eq!(carriers.surface_geometry(&ir.model.surfaces[0]), &ir.model.surfaces[0].geometry);
+    }
 
     #[test]
     fn feature_admission_refuses_before_model_vector_growth() {
@@ -1283,8 +1385,8 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = source_carriers
-            .admit_surface(&mut ir, surface)
+        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_surface(ctx, &mut ir, surface))
             .expect_err("millimeter radius cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.surfaces.is_empty());
@@ -1304,8 +1406,8 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        let error = source_carriers
-            .admit_curve(&mut ir, curve)
+        let error = crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx, &mut ir, curve))
             .expect_err("millimeter origin cannot be represented");
         assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
         assert!(ir.model.curves.is_empty());
@@ -1329,8 +1431,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let scale = PositiveReal::new(25.4).expect("inch scale");
         let mut source_carriers = SourceUnitCarriers::new(Some(scale));
-        source_carriers
-            .admit_surface(&mut ir, surface)
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_surface(ctx, &mut ir, surface))
             .expect("surface admission");
         let procedural = ProceduralSurface::new(
             ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1").expect("identity grammar"),
@@ -1397,15 +1499,15 @@ mod tests {
         let curve_id = CurveId::mint("creo:depdb:curve#1").expect("identity grammar");
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
-        source_carriers
-            .admit_curve(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx,
                 &mut ir,
                 Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
                 },
-            )
+            ))
             .expect("curve admission");
         source_carriers
             .admit_procedural_curve(
@@ -1463,8 +1565,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        source_carriers
-            .admit_curve(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx,
                 &mut ir,
                 Curve {
                     id: curve_id.clone(),
@@ -1477,7 +1579,7 @@ mod tests {
                     )),
                     source_object: None,
                 },
-            )
+            ))
             .expect("curve admission");
         let vertex =
             cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
@@ -1511,8 +1613,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        source_carriers
-            .admit_curve(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx,
                 &mut ir,
                 Curve {
                     id: curve_id.clone(),
@@ -1525,7 +1627,7 @@ mod tests {
                     )),
                     source_object: None,
                 },
-            )
+            ))
             .expect("curve admission");
         (ir, source_carriers, curve_id)
     }
@@ -1592,8 +1694,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
-        source_carriers
-            .admit_curve(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_curve(ctx,
                 &mut ir,
                 Curve {
                     id: curve_id.clone(),
@@ -1606,7 +1708,7 @@ mod tests {
                     )),
                     source_object: None,
                 },
-            )
+            ))
             .expect("curve admission");
         source_carriers
             .admit_vertex(
@@ -1709,8 +1811,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-        source_carriers
-            .admit_surface(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_surface(ctx,
                 &mut ir,
                 Surface {
                     id: surface_id.clone(),
@@ -1724,7 +1826,7 @@ mod tests {
                     )),
                     source_object: None,
                 },
-            )
+            ))
             .expect("surface admission");
         source_carriers
             .admit_pcurve(
@@ -1796,8 +1898,8 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
         let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
-        source_carriers
-            .admit_surface(
+        crate::decode::with_test_decode_ctx(|ctx| source_carriers
+            .admit_surface(ctx,
                 &mut ir,
                 Surface {
                     id: surface_id.clone(),
@@ -1811,7 +1913,7 @@ mod tests {
                     )),
                     source_object: None,
                 },
-            )
+            ))
             .expect("surface admission");
         let error = source_carriers
             .admit_pcurve(

@@ -130,6 +130,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -244,6 +245,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -322,6 +324,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -389,6 +392,7 @@ pub(in super::super) fn transfer_hole_cylinders(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -519,6 +523,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -1213,6 +1218,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -1457,6 +1463,7 @@ pub(in super::super) fn transfer_positional_cones(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -1525,6 +1532,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
@@ -1599,6 +1607,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,
@@ -1647,6 +1656,7 @@ pub(in super::super) fn transfer_cross_section_planes(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id,

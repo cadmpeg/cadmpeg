@@ -40,8 +40,8 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
     let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
         cadmpeg_ir::scalar::PositiveReal::new(25.4),
     );
-    source_carriers
-        .admit_surface(
+    crate::decode::with_test_decode_ctx(|ctx| source_carriers
+        .admit_surface(ctx,
             &mut ir,
             Surface {
                 id: SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 7),
@@ -55,7 +55,7 @@ fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
                 )),
                 source_object: None,
             },
-        )
+        ))
         .expect("surface admission");
     let local = std::collections::BTreeMap::from([(
         7,

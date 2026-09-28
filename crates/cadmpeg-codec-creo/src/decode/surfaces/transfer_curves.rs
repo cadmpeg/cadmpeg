@@ -143,6 +143,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id: id.clone(),
@@ -361,6 +362,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         );
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
+            ctx,
             ir,
             Curve {
                 id: id.clone(),

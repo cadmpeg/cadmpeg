@@ -516,6 +516,7 @@ pub(super) fn transfer_fc05_cap_circles(
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id,
@@ -567,6 +568,7 @@ pub(super) fn transfer_fc05_cap_circles(
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
+            ctx,
             ir,
             Surface {
                 id: surface_id,

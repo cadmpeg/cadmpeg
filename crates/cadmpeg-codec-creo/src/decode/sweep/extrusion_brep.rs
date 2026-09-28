@@ -266,6 +266,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             );
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id: id.clone(),
@@ -447,6 +448,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     };
                     ctx.charge_entities(1, "admit Creo model curves")?;
                     source_carriers.admit_curve(
+                        ctx,
                         ir,
                         Curve {
                             id: curve_id.clone(),
@@ -514,6 +516,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let origin = section_point_in_model(transform, start);
                 ctx.charge_entities(1, "admit Creo model curves")?;
                 source_carriers.admit_curve(
+                    ctx,
                     ir,
                     Curve {
                         id: curve_id.clone(),
@@ -807,6 +810,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 };
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
                 source_carriers.admit_surface(
+                    ctx,
                     ir,
                     Surface {
                         id: surface_id.clone(),
