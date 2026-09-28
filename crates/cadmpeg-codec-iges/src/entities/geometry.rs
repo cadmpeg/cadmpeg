@@ -2,7 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::decode_resource::{collect_optional_vec, insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth};
+use crate::decode_resource::{clone_optional_identity, collect_optional_vec, insert_optional_btree_map, insert_optional_btree_set, reserve_vec, reserve_vec_growth};
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -1286,10 +1286,9 @@ pub(crate) struct SourceSequences {
 }
 
 impl SourceSequences {
-    fn insert<K: Ord + Clone>(
+    fn insert<K: Ord + std::fmt::Display + TryFrom<String>>(
         values: &mut BTreeMap<K, u32>,
         id: &K,
-        spelling: &str,
         sequence: u32,
         ctx: Option<&DecodeContext<'_>>,
         operation: &'static str,
@@ -1300,39 +1299,39 @@ impl SourceSequences {
         }
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, operation)?;
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(spelling.len()), "iges source sequence key")?;
         }
-        values.insert(id.clone(), sequence);
+        let key = clone_optional_identity(ctx, id, "iges source sequence key")?;
+        values.insert(key, sequence);
         Ok(())
     }
 
     /// Records the entry a body was decoded from, and -- when the body's key is
     /// rooted at that entry -- that the body is its neutral form.
     pub(super) fn record_body(&mut self, id: &BodyId, sequence: u32, stem: &crate::ids::Stem, ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-        Self::insert(&mut self.bodies, id, id.as_str(), sequence, ctx, "iges source body sequences")?;
+        Self::insert(&mut self.bodies, id, sequence, ctx, "iges source body sequences")?;
         if let Some(origin) = stem.origin() {
-            Self::insert(&mut self.body_neutral_forms, id, id.as_str(), origin, ctx, "iges source neutral body forms")?;
+            Self::insert(&mut self.body_neutral_forms, id, origin, ctx, "iges source neutral body forms")?;
         }
         Ok(())
     }
 
     pub(super) fn record_face(&mut self, id: &FaceId, sequence: u32, ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-        Self::insert(&mut self.faces, id, id.as_str(), sequence, ctx, "iges source face sequences")
+        Self::insert(&mut self.faces, id, sequence, ctx, "iges source face sequences")
     }
 
     pub(super) fn record_curve(&mut self, id: &CurveId, sequence: u32, ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-        Self::insert(&mut self.curves, id, id.as_str(), sequence, ctx, "iges source curve sequences")
+        Self::insert(&mut self.curves, id, sequence, ctx, "iges source curve sequences")
     }
 
     pub(super) fn record_surface(&mut self, id: &SurfaceId, sequence: u32, ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
-        Self::insert(&mut self.surfaces, id, id.as_str(), sequence, ctx, "iges source surface sequences")
+        Self::insert(&mut self.surfaces, id, sequence, ctx, "iges source surface sequences")
     }
 
     /// Records the entry a point is the neutral form of, when its key is rooted
     /// at one.
     pub(super) fn record_point(&mut self, id: &PointId, stem: &crate::ids::Stem, ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
         if let Some(sequence) = stem.origin() {
-            Self::insert(&mut self.points, id, id.as_str(), sequence, ctx, "iges source point sequences")?;
+            Self::insert(&mut self.points, id, sequence, ctx, "iges source point sequences")?;
         }
         Ok(())
     }
