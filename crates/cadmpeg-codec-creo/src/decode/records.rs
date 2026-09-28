@@ -28,7 +28,6 @@ use super::feature_history::round::replayed_torus_minor_radius;
 use super::native_records::{
     CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
     CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
-    CreoCurveParameterOpaqueSpan, CreoCurveParameterReference, CreoCurveParameterScalar,
     CreoFeatureFieldValue, CreoFeatureOperationState, CreoOperationNameRecord, CreoFeatureOutline,
     CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoPlaneEnvelope, CreoPositionalConeFrame,
     CreoPositionalCylinderFrame, CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment,
@@ -2512,27 +2511,32 @@ fn serialize_surface_named_value<S: serde::Serializer>(
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveParameterRecord {
+pub(super) struct CreoCurveParameterRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     type_byte: u8,
-    body: Vec<u8>,
-    scalar_values: Vec<f64>,
-    scalar_tokens: Vec<CreoCurveParameterScalar>,
-    skipped_references: Vec<u32>,
-    references: Vec<CreoCurveParameterReference>,
-    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    body: &'a [u8],
+    #[serde(serialize_with = "serialize_curve_scalar_values")]
+    scalar_values: &'a [crate::curve::CurveParameterScalar],
+    #[serde(serialize_with = "serialize_curve_scalar_tokens")]
+    scalar_tokens: &'a [crate::curve::CurveParameterScalar],
+    #[serde(serialize_with = "serialize_curve_reference_ids")]
+    skipped_references: &'a [crate::curve::CurveParameterReference],
+    #[serde(serialize_with = "serialize_curve_references")]
+    references: &'a [crate::curve::CurveParameterReference],
+    #[serde(serialize_with = "serialize_curve_opaque_spans")]
+    opaque_spans: &'a [crate::curve::CurveParameterOpaqueSpan],
     reference_geometry: [u32; 2],
     suffix: &'static str,
     suffix_candidate_count: Option<usize>,
     pub(super) offset: usize,
     body_offset: usize,
     suffix_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveTopologyRowRecord {
+pub(super) struct CreoCurveTopologyRowRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     type_byte: u8,
@@ -2541,45 +2545,124 @@ pub(super) struct CreoCurveTopologyRowRecord {
     faces: [u32; 2],
     next_edges: [u32; 2],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCrossSectionCurveRowRecord {
+pub(super) struct CreoCrossSectionCurveRowRecord<'a> {
     pub(super) id: String,
     curve_id: u32,
     type_byte: u8,
     feature_id: u32,
     directions: [u8; 2],
     suffix: crate::curve::DepdbCurveSuffix,
-    body: Vec<u8>,
-    scalar_values: Vec<f64>,
-    scalar_tokens: Vec<CreoCurveParameterScalar>,
-    references: Vec<CreoCurveParameterReference>,
-    opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    body: &'a [u8],
+    #[serde(serialize_with = "serialize_curve_scalar_values")]
+    scalar_values: &'a [crate::curve::CurveParameterScalar],
+    #[serde(serialize_with = "serialize_curve_scalar_tokens")]
+    scalar_tokens: &'a [crate::curve::CurveParameterScalar],
+    #[serde(serialize_with = "serialize_curve_references")]
+    references: &'a [crate::curve::CurveParameterReference],
+    #[serde(serialize_with = "serialize_curve_opaque_spans")]
+    opaque_spans: &'a [crate::curve::CurveParameterOpaqueSpan],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoTabulatedCylinderCurveReplayRecord {
+pub(super) struct CreoTabulatedCylinderCurveReplayRecord<'a> {
     pub(super) id: String,
-    body: Vec<u8>,
+    body: &'a [u8],
     surface_id: u32,
     curve_id: u32,
     curve_type: u8,
     flip: u8,
     tangent_condition: u8,
     degree: u8,
-    parameter_body: Vec<u8>,
+    parameter_body: &'a [u8],
     control_point_ids: [u32; 4],
     successor_reference: u32,
-    control_point_bodies: [Vec<u8>; 4],
+    control_point_bodies: &'a [Vec<u8>; 4],
     control_points: [Option<[f64; 2]>; 4],
     terminal_reference: u32,
     pub(super) offset: usize,
     surface_row_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
+}
+
+fn serialize_curve_scalar_values<S: serde::Serializer>(
+    tokens: &[crate::curve::CurveParameterScalar],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(tokens.iter().map(|token| token.value))
+}
+
+struct CurveScalarToken<'a>(&'a crate::curve::CurveParameterScalar);
+
+impl Serialize for CurveScalarToken<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoCurveParameterScalar", 4)?;
+        record.serialize_field("value", &self.0.value)?;
+        record.serialize_field("raw", &self.0.raw)?;
+        record.serialize_field("offset", &self.0.offset)?;
+        record.serialize_field("length", &self.0.raw.len())?;
+        record.end()
+    }
+}
+
+fn serialize_curve_scalar_tokens<S: serde::Serializer>(
+    tokens: &[crate::curve::CurveParameterScalar],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(tokens.iter().map(CurveScalarToken))
+}
+
+fn serialize_curve_reference_ids<S: serde::Serializer>(
+    references: &[crate::curve::CurveParameterReference],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(references.iter().map(|reference| reference.entity_id))
+}
+
+struct CurveReference<'a>(&'a crate::curve::CurveParameterReference);
+
+impl Serialize for CurveReference<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoCurveParameterReference", 3)?;
+        record.serialize_field("entity_id", &self.0.entity_id)?;
+        record.serialize_field("offset", &self.0.offset)?;
+        record.serialize_field("length", &self.0.length)?;
+        record.end()
+    }
+}
+
+fn serialize_curve_references<S: serde::Serializer>(
+    references: &[crate::curve::CurveParameterReference],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(references.iter().map(CurveReference))
+}
+
+struct CurveOpaqueSpan<'a>(&'a crate::curve::CurveParameterOpaqueSpan);
+
+impl Serialize for CurveOpaqueSpan<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoCurveParameterOpaqueSpan", 3)?;
+        record.serialize_field("raw", &self.0.raw)?;
+        record.serialize_field("offset", &self.0.offset)?;
+        record.serialize_field("length", &self.0.raw.len())?;
+        record.end()
+    }
+}
+
+fn serialize_curve_opaque_spans<S: serde::Serializer>(
+    spans: &[crate::curve::CurveParameterOpaqueSpan],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(spans.iter().map(CurveOpaqueSpan))
 }
 
 pub(super) fn surface_row_records<'a>(
@@ -2845,160 +2928,160 @@ mod surface_projection_limit_tests {
     }
 }
 
-fn curve_occurrence_identity(curve_id: u32, offset: usize, occurrence_count: usize) -> String {
-    if occurrence_count == 1 {
-        curve_id.to_string()
-    } else {
-        // The separator sorts before a decimal digit.  This keeps source-order
-        // emission lexicographically ordered when a repeated id is followed by
-        // an id with the repeated id as a decimal prefix, such as `1` and `10`.
-        format!("{curve_id}-{offset:020}")
+struct CurveOccurrenceIdentity {
+    curve_id: u32,
+    offset: usize,
+    occurrence_count: usize,
+}
+
+impl std::fmt::Display for CurveOccurrenceIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.occurrence_count == 1 {
+            write!(formatter, "{}", self.curve_id)
+        } else {
+            // The separator sorts before a decimal digit, preserving the
+            // source-order identity when repeated IDs have decimal prefixes.
+            write!(formatter, "{}-{:020}", self.curve_id, self.offset)
+        }
     }
 }
 
-pub(super) fn curve_parameter_records(
-    scan: &ContainerScan,
-    records: &[crate::curve::CurveParameterRecord],
+fn curve_id_counts(
+    ctx: &DecodeContext<'_>,
+    ids: impl IntoIterator<Item = u32>,
+    operation: &'static str,
+) -> Result<BTreeMap<u32, usize>, CodecError> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for id in ids {
+        let count = match counts.entry(id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, operation)?;
+                entry.insert(0)
+            }
+        };
+        *count = (*count).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    }
+    Ok(counts)
+}
+
+pub(super) fn curve_parameter_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    parameters: &'a [crate::curve::CurveParameterRecord],
     id_namespace: &str,
-) -> Vec<CreoCurveParameterRecord> {
-    let curve_id_counts =
-        records
-            .iter()
-            .fold(BTreeMap::<u32, usize>::new(), |mut counts, record| {
-                *counts.entry(record.curve_id).or_default() += 1;
-                counts
-            });
-    records
-        .iter()
-        .map(|record| CreoCurveParameterRecord {
-            id: format!(
+) -> Result<Vec<CreoCurveParameterRecord<'a>>, CodecError> {
+    let counts = curve_id_counts(
+        ctx,
+        parameters.iter().map(|record| record.curve_id),
+        "creo native curve parameter count nodes",
+    )?;
+    let mut records = Vec::new();
+    for record in parameters {
+        let id = ctx.format_retained(
+            format_args!(
                 "creo:{id_namespace}:curve_parameter#{}",
-                curve_occurrence_identity(
-                    record.curve_id,
-                    record.offset,
-                    curve_id_counts[&record.curve_id],
-                )
+                CurveOccurrenceIdentity {
+                    curve_id: record.curve_id,
+                    offset: record.offset,
+                    occurrence_count: counts[&record.curve_id],
+                }
             ),
+            "creo native curve parameter record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native curve parameter records")?;
+        records.push(CreoCurveParameterRecord {
+            id,
             curve_id: record.curve_id,
             type_byte: record.type_byte,
-            body: record.body.clone(),
-            scalar_values: record.scalar_values(),
-            scalar_tokens: record
-                .scalar_tokens
-                .iter()
-                .map(|token| CreoCurveParameterScalar {
-                    value: token.value,
-                    raw: token.raw.clone(),
-                    offset: token.offset,
-                    length: token.raw.len(),
-                })
-                .collect(),
-            skipped_references: record.skipped_references(),
-            references: record
-                .references
-                .iter()
-                .map(|reference| CreoCurveParameterReference {
-                    entity_id: reference.entity_id,
-                    offset: reference.offset,
-                    length: reference.length,
-                })
-                .collect(),
-            opaque_spans: record
-                .opaque_spans
-                .iter()
-                .map(|span| CreoCurveParameterOpaqueSpan {
-                    raw: span.raw.clone(),
-                    offset: span.offset,
-                    length: span.raw.len(),
-                })
-                .collect(),
+            body: &record.body,
+            scalar_values: &record.scalar_tokens,
+            scalar_tokens: &record.scalar_tokens,
+            skipped_references: &record.references,
+            references: &record.references,
+            opaque_spans: &record.opaque_spans,
             reference_geometry: record.reference_geometry,
             suffix: "unique",
             suffix_candidate_count: None,
             offset: record.offset,
             body_offset: record.body_offset,
             suffix_offset: record.suffix_offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn cross_section_curve_row_records(
-    scan: &ContainerScan,
-) -> Vec<CreoCrossSectionCurveRowRecord> {
-    let curve_id_counts = scan.curves.cross_section_rows.iter().fold(
-        BTreeMap::<u32, usize>::new(),
-        |mut counts, row| {
-            *counts.entry(row.id).or_default() += 1;
-            counts
-        },
-    );
-    scan.curves
-        .cross_section_rows
-        .iter()
-        .map(|row| CreoCrossSectionCurveRowRecord {
-            id: format!(
+pub(super) fn cross_section_curve_row_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoCrossSectionCurveRowRecord<'a>>, CodecError> {
+    let counts = curve_id_counts(
+        ctx,
+        scan.curves.cross_section_rows.iter().map(|row| row.id),
+        "creo native cross section curve count nodes",
+    )?;
+    let mut records = Vec::new();
+    for row in &scan.curves.cross_section_rows {
+        let id = ctx.format_retained(
+            format_args!(
                 "creo:cross_section_geometry:curve_row#{}",
-                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+                CurveOccurrenceIdentity {
+                    curve_id: row.id,
+                    offset: row.offset,
+                    occurrence_count: counts[&row.id],
+                }
             ),
+            "creo native cross section curve record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native cross section curve records")?;
+        records.push(CreoCrossSectionCurveRowRecord {
+            id,
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
             directions: row.directions,
             suffix: row.suffix,
-            body: row.body.clone(),
-            scalar_values: row.scalar_tokens.iter().map(|token| token.value).collect(),
-            scalar_tokens: row
-                .scalar_tokens
-                .iter()
-                .map(|token| CreoCurveParameterScalar {
-                    value: token.value,
-                    raw: token.raw.clone(),
-                    offset: token.offset,
-                    length: token.raw.len(),
-                })
-                .collect(),
-            references: row
-                .references
-                .iter()
-                .map(|reference| CreoCurveParameterReference {
-                    entity_id: reference.entity_id,
-                    offset: reference.offset,
-                    length: reference.length,
-                })
-                .collect(),
-            opaque_spans: row
-                .opaque_spans
-                .iter()
-                .map(|span| CreoCurveParameterOpaqueSpan {
-                    raw: span.raw.clone(),
-                    offset: span.offset,
-                    length: span.raw.len(),
-                })
-                .collect(),
+            body: &row.body,
+            scalar_values: &row.scalar_tokens,
+            scalar_tokens: &row.scalar_tokens,
+            references: &row.references,
+            opaque_spans: &row.opaque_spans,
             offset: row.offset,
-            source_section: source_section(scan, row.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn curve_topology_row_records(
-    scan: &ContainerScan,
-    rows: &[crate::curve::CurveTopologyRow],
+pub(super) fn curve_topology_row_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    rows: &'a [crate::curve::CurveTopologyRow],
     id_namespace: &str,
-) -> Vec<CreoCurveTopologyRowRecord> {
-    let curve_id_counts = rows
-        .iter()
-        .fold(BTreeMap::<u32, usize>::new(), |mut counts, row| {
-            *counts.entry(row.id).or_default() += 1;
-            counts
-        });
-    rows.iter()
-        .map(|row| CreoCurveTopologyRowRecord {
-            id: format!(
+) -> Result<Vec<CreoCurveTopologyRowRecord<'a>>, CodecError> {
+    let counts = curve_id_counts(
+        ctx,
+        rows.iter().map(|row| row.id),
+        "creo native curve topology count nodes",
+    )?;
+    let mut records = Vec::new();
+    for row in rows {
+        let id = ctx.format_retained(
+            format_args!(
                 "creo:{id_namespace}:curve_topology#{}",
-                curve_occurrence_identity(row.id, row.offset, curve_id_counts[&row.id])
+                CurveOccurrenceIdentity {
+                    curve_id: row.id,
+                    offset: row.offset,
+                    occurrence_count: counts[&row.id],
+                }
             ),
+            "creo native curve topology record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native curve topology records")?;
+        records.push(CreoCurveTopologyRowRecord {
+            id,
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
@@ -3006,40 +3089,139 @@ pub(super) fn curve_topology_row_records(
             faces: row.stored_face_ids(),
             next_edges: row.next_edges,
             offset: row.offset,
-            source_section: source_section(scan, row.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn tabulated_cylinder_curve_replay_records(
-    scan: &ContainerScan,
-) -> Vec<CreoTabulatedCylinderCurveReplayRecord> {
-    scan.curves
-        .tabulated_cylinder_replays
-        .iter()
-        .map(|record| CreoTabulatedCylinderCurveReplayRecord {
-            id: format!(
-                "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
-                record.surface_id
-            ),
-            body: record.body.clone(),
+pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoTabulatedCylinderCurveReplayRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.tabulated_cylinder_replays {
+        let id = ctx.format_retained(
+            format_args!("creo:visibgeom:tabulated_cylinder_curve_replay#{}", record.surface_id),
+            "creo native tabulated cylinder replay record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native tabulated cylinder replay records")?;
+        records.push(CreoTabulatedCylinderCurveReplayRecord {
+            id,
+            body: &record.body,
             surface_id: record.surface_id,
             curve_id: record.curve_id,
             curve_type: record.curve_type,
             flip: record.flip,
             tangent_condition: record.tangent_condition,
             degree: record.degree,
-            parameter_body: record.parameter_body.clone(),
+            parameter_body: &record.parameter_body,
             control_point_ids: record.control_point_ids,
             successor_reference: record.successor_reference,
-            control_point_bodies: record.control_point_bodies.clone(),
+            control_point_bodies: &record.control_point_bodies,
             control_points: record.control_points,
             terminal_reference: record.terminal_reference,
             offset: record.offset,
             surface_row_offset: record.surface_row_offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod curve_projection_limit_tests {
+    use super::{
+        cross_section_curve_row_records, curve_parameter_records, curve_topology_row_records,
+        tabulated_cylinder_curve_replay_records,
+    };
+    use crate::curve::{
+        dummy_depdb_curve_suffix, CurveParameterOpaqueSpan, CurveParameterRecord,
+        CurveParameterReference, CurveParameterScalar, CurveTopologyRow, DepdbCurveRow,
+    };
+    use crate::surface::TabulatedCylinderCurveReplay;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let scalar = CurveParameterScalar { value: 2.0, raw: vec![0xf9, 0], offset: 1 };
+        let reference = CurveParameterReference { entity_id: 9, offset: 3, length: 2 };
+        let opaque = CurveParameterOpaqueSpan { raw: vec![0xe3], offset: 5 };
+        scan.curves.parameters.push(CurveParameterRecord {
+            curve_id: 8, type_byte: 1, body: vec![0xf9, 0, 0xe3],
+            scalar_tokens: vec![scalar.clone()], references: vec![reference.clone()],
+            opaque_spans: vec![opaque.clone()], reference_geometry: [0, 0],
+            offset: 11, body_offset: 12, suffix_offset: 15,
+        });
+        scan.curves.cross_section_rows.push(DepdbCurveRow {
+            id: 8, type_byte: 1, feature_id: 2, directions: [0, 0],
+            suffix: dummy_depdb_curve_suffix(), body: vec![0xe3],
+            scalar_tokens: vec![scalar], references: vec![reference],
+            opaque_spans: vec![opaque], offset: 17,
+        });
+        scan.curves.topology_rows.push(CurveTopologyRow {
+            id: 8, type_byte: 1, feature_id: 2, directions: [0, 0],
+            faces: [None, None], next_edges: [0, 0], offset: 19,
+        });
+        scan.curves.tabulated_cylinder_replays.push(TabulatedCylinderCurveReplay {
+            body: vec![0xf9, 0xe3], surface_id: 7, curve_id: 8,
+            curve_type: 1, flip: 0, tangent_condition: 0, degree: 3,
+            parameter_body: vec![0xf9], control_point_ids: [1, 2, 3, 4],
+            successor_reference: 0, control_point_bodies: std::array::from_fn(|_| vec![0xe3]),
+            control_points: [None; 4], terminal_reference: 0,
+            offset: 23, surface_row_offset: 21,
+        });
+        scan
+    }
+
+    macro_rules! collection_limit_test {
+        ($name:ident, $project:expr, $limit:expr, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let scan = scan();
+                let arena = DecodeArena::new();
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = $limit;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root is admitted");
+                let error = match ($project)(&ctx, &scan) {
+                    Err(error) => error,
+                    Ok(_) => panic!("native curve projection exceeds the collection limit"),
+                };
+                assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                    if resource.dimension == ResourceDimension::CollectionItems
+                        && resource.operation == $operation), "{error:?}");
+            }
+        };
+    }
+
+    collection_limit_test!(curve_parameter_count_nodes_refuse_limit, |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"), 0, "creo native curve parameter count nodes");
+    collection_limit_test!(curve_parameter_records_refuse_limit, |ctx, scan| curve_parameter_records(ctx, scan, &scan.curves.parameters, "visibgeom"), 1, "creo native curve parameter records");
+    collection_limit_test!(cross_section_curve_count_nodes_refuse_limit, cross_section_curve_row_records, 0, "creo native cross section curve count nodes");
+    collection_limit_test!(cross_section_curve_records_refuse_limit, cross_section_curve_row_records, 1, "creo native cross section curve records");
+    collection_limit_test!(curve_topology_count_nodes_refuse_limit, |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"), 0, "creo native curve topology count nodes");
+    collection_limit_test!(curve_topology_records_refuse_limit, |ctx, scan| curve_topology_row_records(ctx, scan, &scan.curves.topology_rows, "visibgeom"), 1, "creo native curve topology records");
+    collection_limit_test!(tabulated_cylinder_replay_records_refuse_limit, tabulated_cylinder_curve_replay_records, 0, "creo native tabulated cylinder replay records");
+
+    #[test]
+    fn borrowed_curve_projection_preserves_nested_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let parameters = curve_parameter_records(&ctx, &scan, &scan.curves.parameters, "visibgeom")
+            .expect("parameters are admitted");
+        let replay = tabulated_cylinder_curve_replay_records(&ctx, &scan).expect("replay is admitted");
+        let parameter = serde_json::to_value(&parameters[0]).expect("parameter serializes");
+        let replay = serde_json::to_value(&replay[0]).expect("replay serializes");
+        assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
+        assert_eq!(parameter["scalar_tokens"], serde_json::json!([{"value":2.0,"raw":[249,0],"offset":1,"length":2}]));
+        assert_eq!(parameter["skipped_references"], serde_json::json!([9]));
+        assert_eq!(parameter["references"], serde_json::json!([{"entity_id":9,"offset":3,"length":2}]));
+        assert_eq!(parameter["opaque_spans"], serde_json::json!([{"raw":[227],"offset":5,"length":1}]));
+        assert_eq!(replay["control_point_bodies"], serde_json::json!([[227],[227],[227],[227]]));
+    }
 }
 
 pub(super) fn surface_parameter_records(

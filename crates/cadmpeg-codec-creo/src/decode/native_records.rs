@@ -898,28 +898,6 @@ pub(super) struct CreoConeHalfAngleOverride {
     pub(super) offset: usize,
 }
 
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterScalar {
-    pub(super) value: f64,
-    pub(super) raw: Vec<u8>,
-    pub(super) offset: usize,
-    pub(super) length: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterReference {
-    pub(super) entity_id: u32,
-    pub(super) offset: usize,
-    pub(super) length: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterOpaqueSpan {
-    pub(super) raw: Vec<u8>,
-    pub(super) offset: usize,
-    pub(super) length: usize,
-}
-
 fn serialize_angle_parameter<S: serde::Serializer>(
     relation: &crate::curve::Fc05AngleParameterRelation,
     serializer: S,

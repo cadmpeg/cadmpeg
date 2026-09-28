@@ -408,6 +408,11 @@ pub(crate) struct DepdbCurveSuffix {
     face_id: u32,
 }
 
+#[cfg(test)]
+pub(crate) fn dummy_depdb_curve_suffix() -> DepdbCurveSuffix {
+    DepdbCurveSuffix { x1: 0, face_id: 7 }
+}
+
 impl serde::Serialize for DepdbCurveSuffix {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serde::Serialize::serialize(&[0, self.x1, self.face_id, 0], serializer)
