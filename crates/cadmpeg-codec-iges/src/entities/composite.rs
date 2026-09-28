@@ -1958,18 +1958,18 @@ fn project_native_composite(
     reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite native vertex slots")?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None),
-        Point::new(end_point.clone(), end, None),
+        Point::new(crate::decode_resource::clone_optional_identity(ctx, &start_point, "iges composite projection identity copy")?, start, None),
+        Point::new(crate::decode_resource::clone_optional_identity(ctx, &end_point, "iges composite projection identity copy")?, end, None),
     ]);
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
             point: start_point,
             tolerance: None,
         },
         Vertex {
-            id: end_vertex.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
             point: end_point,
             tolerance: None,
         },
@@ -1989,7 +1989,7 @@ fn project_native_composite(
     reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite native curve slots")?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
-        id: curve_id.clone(),
+        id: crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
             segments,
             self_intersect: None,
@@ -1999,18 +1999,18 @@ fn project_native_composite(
     reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite native edge slots")?;
     crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.edges.push(Edge {
-        id: edge_id.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        id: crate::decode_resource::clone_optional_identity(ctx, &edge_id, "iges composite projection identity copy")?,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?)),
+        start: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
+        end: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
         tolerance: None,
     });
     index.add_model_entity(
-        curve_id.clone(),
+        crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?,
         ir.model.curves.len() - 1,
         CompositeEdge {
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            start: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
+            end: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
             param_range: None,
         },
         [(start_vertex, start), (end_vertex, end)],
@@ -2427,18 +2427,18 @@ fn project_with_type_130_policy(
         reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite solved vertex slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None),
-            Point::new(end_point.clone(), end, None),
+            Point::new(crate::decode_resource::clone_optional_identity(ctx, &start_point, "iges composite projection identity copy")?, start, None),
+            Point::new(crate::decode_resource::clone_optional_identity(ctx, &end_point, "iges composite projection identity copy")?, end, None),
         ]);
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
@@ -2447,29 +2447,29 @@ fn project_with_type_130_policy(
         reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite solved curve slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
-            id: curve_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
         reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite solved edge slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: crate::decode_resource::clone_optional_identity(ctx, &edge, "iges composite projection identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
+                Some(crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?),
                 Some([0.0, cursor]),
             )
             .map_err(CodecError::malformed)?,
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            start: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
+            end: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
             tolerance: None,
         });
         index.add_model_entity(
-            curve_id.clone(),
+            crate::decode_resource::clone_optional_identity(ctx, &curve_id, "iges composite projection identity copy")?,
             ir.model.curves.len() - 1,
             CompositeEdge {
-                start: start_vertex.clone(),
-                end: end_vertex.clone(),
+                start: crate::decode_resource::clone_optional_identity(ctx, &start_vertex, "iges composite projection identity copy")?,
+                end: crate::decode_resource::clone_optional_identity(ctx, &end_vertex, "iges composite projection identity copy")?,
                 param_range: Some([0.0, cursor]),
             },
             [(start_vertex, start), (end_vertex, end)],

@@ -214,6 +214,32 @@ fn native_composite_segment_curve_ids_refuse_retained_copy() {
 }
 
 #[test]
+fn composite_projection_identity_copies_refuse_retained_limit() {
+    for bytes in [composite_curve_with_join_gap(0.001_001), composite_curve_file()] {
+        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == "iges composite projection identity copy" {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("composite identity copy succeeded before refusal at cap {cap}"),
+                Err(error) => panic!("unexpected composite identity copy failure: {error}"),
+            }
+        }
+        assert!(found, "composite projection identity copy was not reached");
+    }
+}
+
+#[test]
 fn composite_child_carriers_refuse_nested_collection_admission() {
     let bytes = composite_curve_file();
     for operation in [
