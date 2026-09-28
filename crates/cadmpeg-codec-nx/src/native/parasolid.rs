@@ -3203,90 +3203,85 @@ pub(super) fn parasolid_field_names_records(
 
 /// Resolve complete type-80 field-name lists through type-99 and character records.
 pub(super) fn parasolid_attribute_field_names(
+    ctx: &DecodeContext<'_>,
     definitions: &[ParasolidAttributeDefinition],
     field_names: &[ParasolidFieldNamesRecord],
     strings: &[ParasolidEntity54StringRecord],
     unicode: &[ParasolidEntity62UnicodeRecord],
-) -> Vec<ParasolidAttributeFieldNames> {
+) -> Result<Vec<ParasolidAttributeFieldNames>, CodecError> {
     let mut definitions_by_identity =
-        BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
+        BTreeMap::<(u32, u32), Option<&ParasolidAttributeDefinition>>::new();
+    let mut definitions_guard = ctx.reserve_scoped(0, "NX attribute field definition index")?;
     for definition in definitions {
-        definitions_by_identity
-            .entry((definition.stream_ordinal, u32::from(definition.xmt)))
-            .or_default()
-            .push(definition);
+        insert_unique_value(ctx, &mut definitions_by_identity, &mut definitions_guard,
+            (definition.stream_ordinal, u32::from(definition.xmt)), definition)?;
     }
-    let mut lists = BTreeMap::<(u32, u32), Vec<&ParasolidFieldNamesRecord>>::new();
+    let mut lists = BTreeMap::<(u32, u32), Option<&ParasolidFieldNamesRecord>>::new();
+    let mut lists_guard = ctx.reserve_scoped(0, "NX attribute field list index")?;
     for list in field_names {
-        lists
-            .entry((list.stream_ordinal, u32::from(list.xmt)))
-            .or_default()
-            .push(list);
+        insert_unique_value(ctx, &mut lists, &mut lists_guard,
+            (list.stream_ordinal, u32::from(list.xmt)), list)?;
     }
-    let mut names_by_xmt = BTreeMap::<(u32, u32), Vec<(&str, &str)>>::new();
+    let mut names_by_xmt = BTreeMap::<(u32, u32), Option<(&str, &str)>>::new();
+    let mut names_guard = ctx.reserve_scoped(0, "NX attribute field name index")?;
     for string in strings {
-        names_by_xmt
-            .entry((string.stream_ordinal, u32::from(string.xmt)))
-            .or_default()
-            .push((string.id.as_str(), string.value.as_str()));
+        insert_unique_value(ctx, &mut names_by_xmt, &mut names_guard,
+            (string.stream_ordinal, u32::from(string.xmt)),
+            (string.id.as_str(), string.value.as_str()))?;
     }
     for value in unicode {
-        names_by_xmt
-            .entry((value.stream_ordinal, u32::from(value.xmt)))
-            .or_default()
-            .push((value.id.as_str(), value.value.as_str()));
+        insert_unique_value(ctx, &mut names_by_xmt, &mut names_guard,
+            (value.stream_ordinal, u32::from(value.xmt)),
+            (value.id.as_str(), value.value.as_str()))?;
     }
-    let mut relations = definitions_by_identity
-        .values()
-        .filter_map(|definitions| {
-            let [definition] = definitions.as_slice() else {
-                return None;
+    let mut relations = Vec::new();
+    for definition in definitions_by_identity.values().filter_map(|value| *value) {
+        let Some(field_names_xmt) = definition.field_names_xmt else { continue; };
+        let Some(Some(list)) = lists.get(&(definition.stream_ordinal, u32::from(field_names_xmt))) else {
+            continue;
+        };
+        if list.name_xmts.as_slice().len() != definition.field_codes.len() {
+            continue;
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(list.name_xmts.as_slice().len()), "resolve NX attribute field names")?;
+        if !list.name_xmts.as_slice().iter().all(|xmt| {
+            matches!(names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))), Some(Some(_)))
+        }) {
+            continue;
+        }
+        let mut resolved = Vec::new();
+        for xmt in list.name_xmts.as_slice() {
+            let Some(Some((value_record, name))) = names_by_xmt.get(&(definition.stream_ordinal, u32::from(*xmt))) else {
+                continue;
             };
-            Some(*definition)
-        })
-        .filter_map(|definition| {
-            let [list] = lists
-                .get(&(
-                    definition.stream_ordinal,
-                    u32::from(definition.field_names_xmt?),
-                ))?
-                .as_slice()
-            else {
-                return None;
-            };
-            (list.name_xmts.as_slice().len() == definition.field_codes.len()).then_some(())?;
-            let resolved = list
-                .name_xmts
-                .as_slice()
-                .iter()
-                .map(|xmt| {
-                    let [name] = names_by_xmt
-                        .get(&(definition.stream_ordinal, u32::from(*xmt)))?
-                        .as_slice()
-                    else {
-                        return None;
-                    };
-                    Some(NamedField {
-                        value_record: name.0.to_string(),
-                        name: name.1.to_string(),
-                    })
-                })
-                .collect::<Option<Vec<_>>>()?;
-            Some(ParasolidAttributeFieldNames {
-                id: format!(
-                    "nx:s{}:attribute-field-names#{}",
-                    definition.stream_ordinal,
-                    u32::from(definition.xmt)
-                ),
+            ctx.charge_collection_items(1, "NX attribute field names")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<NamedField>()), "NX attribute field name")?;
+            resolved.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field names", 0, 1))?;
+            resolved.push(NamedField {
+                value_record: entity_51_use_text(ctx, value_record)?,
+                name: entity_51_use_text(ctx, name)?,
+            });
+        }
+        ctx.charge_collection_items(1, "NX attribute field name relations")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidAttributeFieldNames>()), "NX attribute field name relation")?;
+        relations.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX attribute field name relations", 0, 1))?;
+        let ordinal = usize::try_from(definition.stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX attribute field name stream ordinal", 0, 1))?;
+        relations.push(ParasolidAttributeFieldNames {
+                id: parasolid_record_id(ctx, ordinal, "attribute-field-names", u32::from(definition.xmt))?,
                 stream_ordinal: definition.stream_ordinal,
-                attribute_definition: definition.id.clone(),
-                field_names_record: list.id.clone(),
+                attribute_definition: entity_51_use_text(ctx, &definition.id)?,
+                field_names_record: entity_51_use_text(ctx, &list.id)?,
                 fields: resolved,
-            })
-        })
-        .collect::<Vec<_>>();
+            });
+    }
+    let work = relations.len().checked_mul(relations.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX attribute field name relation sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX attribute field name relation sort work")?;
     relations.sort_by(|first, second| first.id.cmp(&second.id));
-    relations
+    Ok(relations)
 }
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
@@ -6183,6 +6178,9 @@ mod tests {
 
     #[test]
     fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 3,
@@ -6234,11 +6232,12 @@ mod tests {
         };
 
         let relations = parasolid_attribute_field_names(
+            &ctx,
             std::slice::from_ref(&definition),
             std::slice::from_ref(&list),
             &strings,
             std::slice::from_ref(&unicode),
-        );
+        ).unwrap();
         assert_eq!(relations.len(), 1);
         assert_eq!(
             relations[0]
@@ -6253,18 +6252,20 @@ mod tests {
         incomplete.name_xmts =
             NameReferences::try_from(incomplete.name_xmts.as_slice()[..2].to_vec()).unwrap();
         assert!(parasolid_attribute_field_names(
+            &ctx,
             std::slice::from_ref(&definition),
             &[incomplete],
             &strings,
             std::slice::from_ref(&unicode),
-        )
+        ).unwrap()
         .is_empty());
         assert!(parasolid_attribute_field_names(
+            &ctx,
             &[definition.clone(), definition.clone()],
             std::slice::from_ref(&list),
             &strings,
             std::slice::from_ref(&unicode),
-        )
+        ).unwrap()
         .is_empty());
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
@@ -6272,6 +6273,7 @@ mod tests {
             ..unicode.clone()
         };
         assert!(parasolid_attribute_field_names(
+            &ctx,
             std::slice::from_ref(&definition),
             &[ParasolidFieldNamesRecord {
                 id: "field-names".into(),
@@ -6288,8 +6290,73 @@ mod tests {
             }],
             &strings,
             &[unicode, ambiguous],
-        )
+        ).unwrap()
         .is_empty());
+    }
+
+    fn attribute_field_names_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(20).unwrap(),
+            next_definition_xmt: None,
+            identifier_xmt: NonNullXmt::try_from(21).unwrap(),
+            identifier_inflated_offset: 10,
+            name: PrintableString::new("CLASS".to_owned()).unwrap(),
+            type_id: NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
+            field_names_xmt: XmtTarget::from_wire(25),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+            field_codes: vec![AttributeField::Integer],
+            inflated_offset: 20,
+        };
+        let list = ParasolidFieldNamesRecord {
+            id: "list".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(25).unwrap(),
+            name_xmts: NameReferences::try_from(vec![NonNullXmt::try_from(28).unwrap()]).unwrap(),
+            byte_len: 8, inflated_offset: 30,
+        };
+        let value = ParasolidEntity54StringRecord {
+            id: "value".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(28).unwrap(),
+            value: PrintableString::new("field".to_owned()).unwrap(),
+            byte_len: 10, inflated_offset: 40,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        parasolid_attribute_field_names(&ctx, &[definition], &[list], &[value], &[])
+            .err().expect("attribute field-name relation limit refusal")
+    }
+
+    #[test]
+    fn attribute_field_names_refuse_collection_limit() {
+        let error = attribute_field_names_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn attribute_field_names_refuse_retained_limit() {
+        let error = attribute_field_names_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn attribute_field_names_refuse_scoped_limit() {
+        let error = attribute_field_names_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn attribute_field_names_refuse_work_limit() {
+        let error = attribute_field_names_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]
