@@ -2650,13 +2650,14 @@ impl<'a> F3dDecodeSession<'a> {
         );
         self.ir.model.spatial_sketch_constraints =
             crate::design::sketch_project::project_spatial_sketch_constraints(
+                Some(self.ctx),
                 &self.native.design_sketch_placements,
                 &self.native.sketch_relations,
                 &self.native.sketch_points,
                 &self.native.sketch_curve_identities,
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
-            );
+            )?;
         let scope_histories = crate::history::bind_scope_histories(
             &self.native.design_parameter_scopes,
             &self.native.design_body_bindings,
