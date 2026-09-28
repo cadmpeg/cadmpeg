@@ -42,41 +42,42 @@ pub(super) fn exact_draft_operation_with_owners(
                     scalar.value_offset,
                 ));
             }
-            let owners = parameter_owners
+            let mut owners = parameter_owners
                 .iter()
                 .filter(|owner| {
                     owner.record_index() == *record_index
                         && owner.scope_record_index() == scope.record_index
                         && scope_stream
                             .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
-                })
-                .collect::<Vec<_>>();
-            let [owner] = owners.as_slice() else {
+                });
+            let owner = owners.next()?;
+            if owners.next().is_some() {
                 return None;
-            };
+            }
             Some((
                 *record_index,
                 owner.local_ordinal(),
                 owner.evaluated_value(),
                 owner.evaluated_value_offset(),
             ))
-        })
-        .collect::<Vec<_>>();
-    lanes.sort_by_key(|(_, ordinal, _, _)| *ordinal);
-    let [(angle_record_index, angle_ordinal, angle, angle_offset), (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset)] =
-        lanes.as_slice()
-    else {
+        });
+    let (Some(mut first), Some(mut second), None) = (lanes.next(), lanes.next(), lanes.next()) else {
         return None;
     };
-    if *angle_ordinal != 0 || *opposite_ordinal != 1 || opposite.get() != 0.0 {
+    if first.1 > second.1 {
+        std::mem::swap(&mut first, &mut second);
+    }
+    let (angle_record_index, angle_ordinal, angle, angle_offset) = first;
+    let (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset) = second;
+    if angle_ordinal != 0 || opposite_ordinal != 1 || opposite.get() != 0.0 {
         return None;
     }
     Some(DesignDraftOperation {
-        angle: cadmpeg_ir::scalar::Angle::from_assigned_real(*angle),
-        angle_record_index: *angle_record_index,
-        angle_offset: *angle_offset,
-        opposite_angle_record_index: *opposite_angle_record_index,
-        opposite_angle_offset: *opposite_offset,
+        angle: cadmpeg_ir::scalar::Angle::from_assigned_real(angle),
+        angle_record_index,
+        angle_offset,
+        opposite_angle_record_index,
+        opposite_angle_offset: opposite_offset,
     })
 }
 
