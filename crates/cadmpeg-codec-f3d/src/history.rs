@@ -1674,16 +1674,24 @@ pub(crate) fn bind_feature_body_selections(
                                 historical_tool_rows.push(row);
                                 continue;
                             }
-                            let Some(body) = unique_external_body_candidate(
+                            let body = match unique_external_body_candidate(
+                                ctx,
                                 operand,
                                 current_history_source,
                                 bodies,
                                 regions,
                                 shells,
-                            ) else {
-                                historical_tool_rows.clear();
-                                direct_tool_rows.clear();
-                                break;
+                            ) {
+                                Ok(Some(body)) => body,
+                                Ok(None) => {
+                                    historical_tool_rows.clear();
+                                    direct_tool_rows.clear();
+                                    break;
+                                }
+                                Err(error) => {
+                                    edit_result = Err(error);
+                                    return;
+                                }
                             };
                             let repeated = direct_tool_rows
                                 .iter()
@@ -2198,49 +2206,57 @@ fn bind_pattern_body_selections(
 }
 
 fn unique_external_body_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     current_history_source: Option<&str>,
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
-) -> Option<cadmpeg_ir::ids::BodyId> {
-    let body_by_region = regions
+) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
+    let body_by_region = history_index(Some(ctx), regions
         .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let body_by_face = shells
+        .map(|region| (&region.id, &region.body)),
+        "index F3D external body regions")?;
+    let body_by_face = history_index(Some(ctx), shells
         .iter()
         .filter_map(|shell| {
             let body = body_by_region.get(&shell.region)?;
             Some(shell.faces().iter().map(move |face| (face, *body)))
         })
         .flatten()
-        .collect::<HashMap<_, _>>();
-    let body_metadata = bodies
+        , "index F3D external body faces")?;
+    let body_metadata = history_index(Some(ctx), bodies
         .iter()
-        .map(|body| (&body.id, body))
-        .collect::<HashMap<_, _>>();
-    let current_prefix = current_history_source.map(|source| format!("f3d:brep/{source}/"));
-    let mut reference_candidates = operand.references().iter().map(|reference| {
-        reference
-            .candidate_faces
-            .iter()
-            .filter_map(|face| body_by_face.get(face).copied())
-            .filter(|body| {
-                current_prefix
-                    .as_ref()
-                    .is_none_or(|prefix| !body.as_str().starts_with(prefix))
-            })
-            .cloned()
-            .collect::<BTreeSet<_>>()
-    });
-    let mut candidates = reference_candidates.next()?;
-    for reference in reference_candidates {
-        if reference.is_empty() {
-            return None;
+        .map(|body| (&body.id, body)),
+        "index F3D external body metadata")?;
+    let current_prefix = current_history_source.map(|source| {
+        crate::container::format_retained(ctx, "retain F3D current history prefix",
+            format_args!("f3d:brep/{source}/"))
+    }).transpose()?;
+    let mut candidates: Option<BTreeSet<cadmpeg_ir::ids::BodyId>> = None;
+    for reference in operand.references() {
+        let mut reference_candidates = BTreeSet::new();
+        for face in &reference.candidate_faces {
+            let Some(body) = body_by_face.get(face).copied() else { continue; };
+            if current_prefix.as_ref().is_some_and(|prefix| body.as_str().starts_with(prefix)) {
+                continue;
+            }
+            if !reference_candidates.contains(body) {
+                ctx.charge_collection_items(1, "collect F3D external body candidates")?;
+                let id = cadmpeg_ir::ids::BodyId::mint(copy_history_string(ctx,
+                    body.as_str(), "copy F3D external body candidate")?)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                reference_candidates.insert(id);
+            }
         }
-        candidates.retain(|body| reference.contains(body));
+        if let Some(candidates) = &mut candidates {
+            if reference_candidates.is_empty() { return Ok(None); }
+            candidates.retain(|body| reference_candidates.contains(body));
+        } else {
+            candidates = Some(reference_candidates);
+        }
     }
+    let Some(mut candidates) = candidates else { return Ok(None); };
     let displayed = candidates
         .iter()
         .filter(|body| {
@@ -2248,15 +2264,20 @@ fn unique_external_body_candidate(
                 .get(body)
                 .is_some_and(|body| body.visible == Some(true))
         })
-        .cloned()
-        .collect::<BTreeSet<_>>();
+        .map(|body| {
+            ctx.charge_collection_items(1, "collect F3D displayed external bodies")?;
+            cadmpeg_ir::ids::BodyId::mint(copy_history_string(ctx, body.as_str(),
+                "copy F3D displayed external body")?)
+                .map_err(cadmpeg_core::CodecError::malformed)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
     if !displayed.is_empty() {
         candidates = displayed;
     }
     if candidates.len() == 1 {
-        candidates.into_iter().next()
+        Ok(candidates.into_iter().next())
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -2526,7 +2547,7 @@ fn direct_body_recipe_candidate(
         }
         return Ok(None);
     }
-    Ok(unique_external_body_candidate(operand, None, bodies, regions, shells))
+    unique_external_body_candidate(ctx, operand, None, bodies, regions, shells)
 }
 
 fn body_recipe_link_candidate(

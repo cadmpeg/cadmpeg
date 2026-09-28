@@ -635,12 +635,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
 
     assert_eq!(
         super::super::unique_external_body_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             Some("current"),
             &bodies,
             &regions,
             &shells,
-        ),
+        ).unwrap(),
         Some(bodies[1].id.clone())
     );
 
@@ -661,12 +662,13 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
         super::super::unique_external_body_candidate(
+            &cadmpeg_test_support::service_decode_context(),
             &operand,
             Some("current"),
             &bodies,
             &regions,
             &shells,
-        ),
+        ).unwrap(),
         None
     );
 }
