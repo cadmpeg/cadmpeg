@@ -1050,7 +1050,7 @@ impl NativeModel {
         let feature_datum_plane_block_uses =
             feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);
         let feature_datum_plane_payloads =
-            feature_datum_plane_payloads(container, &feature_datum_plane_headers);
+            feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs =
             feature_datum_plane_payload_scalar_pairs(container, &feature_datum_plane_payloads);
         let feature_datum_plane_descriptors =
