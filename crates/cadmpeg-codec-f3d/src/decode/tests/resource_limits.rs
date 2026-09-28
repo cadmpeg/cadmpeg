@@ -142,6 +142,44 @@ fn unique_asset_append_refuses_collection_limit() {
 }
 
 #[test]
+fn selected_body_blob_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut index = std::collections::HashMap::new();
+    let error = super::super::index_selected_body_key(&ctx, &mut index, "BREP0.smb", 7)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D selected body blobs"));
+    assert!(index.is_empty());
+}
+
+#[test]
+fn selected_body_key_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 1);
+    let mut index = std::collections::HashMap::new();
+    let error = super::super::index_selected_body_key(&ctx, &mut index, "BREP0.smb", 7)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D selected body keys"));
+    assert!(index.is_empty());
+}
+
+#[test]
+fn selected_body_blob_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut index = std::collections::HashMap::new();
+    let error = super::super::index_selected_body_key(&ctx, &mut index, "BREP0.smb", 7)
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D selected body blob name"));
+    assert!(index.is_empty());
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
