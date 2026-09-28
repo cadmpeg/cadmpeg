@@ -810,11 +810,12 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     };
 
     bind_body_recipe_operand_history_candidates(
+        None,
         &mut operands,
         &[],
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
-    );
+    ).unwrap();
 
     assert_eq!(
         operands[0].references()[0].preceding_candidate_faces,

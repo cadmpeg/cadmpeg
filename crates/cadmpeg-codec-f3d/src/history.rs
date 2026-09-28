@@ -5154,13 +5154,14 @@ fn cyclic_point_subsequence(
 }
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     recipes: &[crate::records::recipes::ConstructionRecipe],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if projection_was_finalized(histories) {
-        return;
+        return Ok(());
     }
     for operand in operands.iter_mut() {
         for reference in operand.reference_bindings_mut() {
@@ -5207,7 +5208,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
                 .collect::<BTreeSet<_>>();
-            let Some(body_slots) = bodies_intersecting(topology, &face_slots) else {
+            let Some(body_slots) = bodies_intersecting(decode, topology, &face_slots)? else {
                 continue;
             };
             *reference.preceding_body_slots = body_slots.into_iter().collect();
@@ -5304,6 +5305,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         operand.resolved_body_state_id = Some(previous.state_id);
         operand.resolved_body_face_slots = faces;
     }
+    Ok(())
 }
 
 fn body_recipe_operand_history_pair<'a>(
@@ -9155,13 +9157,13 @@ fn affected_body_refs(
     }
     let Some(current_topology) = current.topology() else { return Ok(None) };
     let current_changes = changed_family_refs(ctx, &transition.topology, false)?;
-    let Some(mut affected) = bodies_intersecting(current_topology, &current_changes) else {
+    let Some(mut affected) = bodies_intersecting(Some(ctx), current_topology, &current_changes)? else {
         return Ok(None);
     };
     if let Some(previous) = previous {
         let Some(previous_topology) = previous.topology() else { return Ok(None) };
         let deleted = changed_family_refs(ctx, &transition.topology, true)?;
-        let Some(previous_affected) = bodies_intersecting(previous_topology, &deleted) else {
+        let Some(previous_affected) = bodies_intersecting(Some(ctx), previous_topology, &deleted)? else {
             return Ok(None);
         };
         for body in previous_affected {
@@ -9211,93 +9213,188 @@ fn changed_family_refs(
     Ok(changed)
 }
 
+fn charge_history_item(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if let Some(ctx) = decode {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    Ok(())
+}
+
+fn history_reserve_error(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    operation: &'static str,
+) -> cadmpeg_core::CodecError {
+    decode.map_or_else(
+        || cadmpeg_core::CodecError::malformed("F3D historical topology allocation failed"),
+        |ctx| ctx.refuse_codec_limit(operation, 0, 1),
+    )
+}
+
+fn history_index<K: std::hash::Hash + Eq, V>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+    let mut index = HashMap::new();
+    for (key, value) in entries {
+        if !index.contains_key(&key) {
+            charge_history_item(decode, operation)?;
+            index.try_reserve(1).map_err(|_| history_reserve_error(decode, operation))?;
+        }
+        index.insert(key, value);
+    }
+    Ok(index)
+}
+
+fn history_set_insert(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    set: &mut BTreeSet<i64>,
+    value: i64,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !set.contains(&value) {
+        charge_history_item(decode, operation)?;
+    }
+    set.insert(value);
+    Ok(())
+}
+
+fn history_collect<T>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    entries: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut collected = Vec::new();
+    for entry in entries {
+        charge_history_item(decode, operation)?;
+        collected.try_reserve(1).map_err(|_| history_reserve_error(decode, operation))?;
+        collected.push(entry);
+    }
+    Ok(collected)
+}
+
 fn bodies_intersecting(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     topology: &AsmHistoricalTopology,
     changed: &BTreeSet<i64>,
-) -> Option<BTreeSet<i64>> {
-    let body_regions = relation_map(&topology.body_regions);
-    let region_shells = relation_map(&topology.region_shells);
-    let shell_faces = relation_map(&topology.shell_faces);
-    let shell_wire_edges = relation_map(&topology.shell_wire_edges);
-    let shell_free_vertices = relation_map(&topology.shell_free_vertices);
-    let face_loops = relation_map(&topology.face_loops);
-    let loop_coedges = relation_map(&topology.loop_coedges);
-    let coedges = topology
+) -> Result<Option<BTreeSet<i64>>, cadmpeg_core::CodecError> {
+    macro_rules! history_some {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
+    let body_regions = relation_map(decode, &topology.body_regions)?;
+    let region_shells = relation_map(decode, &topology.region_shells)?;
+    let shell_faces = relation_map(decode, &topology.shell_faces)?;
+    let shell_wire_edges = relation_map(decode, &topology.shell_wire_edges)?;
+    let shell_free_vertices = relation_map(decode, &topology.shell_free_vertices)?;
+    let face_loops = relation_map(decode, &topology.face_loops)?;
+    let loop_coedges = relation_map(decode, &topology.loop_coedges)?;
+    let coedges = history_index(decode, topology
         .coedge_topology
         .iter()
-        .map(|coedge| (coedge.coedge, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = topology
+        .map(|coedge| (coedge.coedge, coedge)), "index F3D historical coedges")?;
+    let edges = history_index(decode, topology
         .edge_vertices
         .iter()
-        .map(|edge| (edge.edge, edge))
-        .collect::<HashMap<_, _>>();
+        .map(|edge| (edge.edge, edge)), "index F3D historical edge vertices")?;
     let carrier = |items: &[AsmHistoricalCarrierBinding]| {
-        items
-            .iter()
-            .map(|binding| (binding.entity, binding.carrier))
-            .collect::<HashMap<_, _>>()
+        history_index(decode, items.iter().map(|binding| (binding.entity, binding.carrier)),
+            "index F3D historical carriers")
     };
     let optional_carrier = |items: &[AsmHistoricalOptionalCarrierBinding]| {
-        items
-            .iter()
-            .map(|binding| (binding.entity, binding.carrier))
-            .collect::<HashMap<_, _>>()
+        history_index(decode, items.iter().map(|binding| (binding.entity, binding.carrier)),
+            "index F3D historical optional carriers")
     };
-    let face_surfaces = carrier(&topology.face_surfaces);
-    let edge_curves = optional_carrier(&topology.edge_curves);
-    let coedge_pcurves = optional_carrier(&topology.coedge_pcurves);
-    let vertex_points = carrier(&topology.vertex_points);
+    let face_surfaces = carrier(&topology.face_surfaces)?;
+    let edge_curves = optional_carrier(&topology.edge_curves)?;
+    let coedge_pcurves = optional_carrier(&topology.coedge_pcurves)?;
+    let vertex_points = carrier(&topology.vertex_points)?;
     let mut affected = BTreeSet::new();
     for &body in &topology.bodies {
-        let mut closure = BTreeSet::from([body]);
-        for &region in *body_regions.get(&body)? {
-            closure.insert(region);
-            for &shell in *region_shells.get(&region)? {
-                closure.insert(shell);
-                let mut shell_edges = shell_wire_edges.get(&shell)?.to_vec();
-                let mut shell_vertices = shell_free_vertices.get(&shell)?.to_vec();
-                for &face in *shell_faces.get(&shell)? {
-                    closure.insert(face);
-                    closure.insert(*face_surfaces.get(&face)?);
-                    for &loop_ in *face_loops.get(&face)? {
-                        closure.insert(loop_);
-                        for &coedge in *loop_coedges.get(&loop_)? {
-                            closure.insert(coedge);
-                            let coedge_topology = coedges.get(&coedge)?;
+        let mut closure = BTreeSet::new();
+        history_set_insert(decode, &mut closure, body, "collect F3D historical body closure")?;
+        for &region in *history_some!(body_regions.get(&body)) {
+            history_set_insert(decode, &mut closure, region,
+                "collect F3D historical body closure")?;
+            for &shell in *history_some!(region_shells.get(&region)) {
+                history_set_insert(decode, &mut closure, shell,
+                    "collect F3D historical body closure")?;
+                let mut shell_edges = history_collect(decode,
+                    history_some!(shell_wire_edges.get(&shell)).iter().copied(),
+                    "copy F3D historical shell edges")?;
+                let mut shell_vertices = history_collect(decode,
+                    history_some!(shell_free_vertices.get(&shell)).iter().copied(),
+                    "copy F3D historical shell vertices")?;
+                for &face in *history_some!(shell_faces.get(&shell)) {
+                    history_set_insert(decode, &mut closure, face,
+                        "collect F3D historical body closure")?;
+                    history_set_insert(decode, &mut closure,
+                        *history_some!(face_surfaces.get(&face)),
+                        "collect F3D historical body closure")?;
+                    for &loop_ in *history_some!(face_loops.get(&face)) {
+                        history_set_insert(decode, &mut closure, loop_,
+                            "collect F3D historical body closure")?;
+                        for &coedge in *history_some!(loop_coedges.get(&loop_)) {
+                            history_set_insert(decode, &mut closure, coedge,
+                                "collect F3D historical body closure")?;
+                            let coedge_topology = history_some!(coedges.get(&coedge));
+                            charge_history_item(decode, "collect F3D historical shell edges")?;
+                            shell_edges.try_reserve(1).map_err(|_| history_reserve_error(
+                                decode, "collect F3D historical shell edges"))?;
                             shell_edges.push(coedge_topology.edge);
                             if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
-                                closure.insert(pcurve);
+                                history_set_insert(decode, &mut closure, pcurve,
+                                    "collect F3D historical body closure")?;
                             }
                         }
                     }
                 }
                 for edge in shell_edges {
-                    closure.insert(edge);
-                    let edge_topology = edges.get(&edge)?;
-                    shell_vertices.extend([edge_topology.start_vertex, edge_topology.end_vertex]);
+                    history_set_insert(decode, &mut closure, edge,
+                        "collect F3D historical body closure")?;
+                    let edge_topology = history_some!(edges.get(&edge));
+                    for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
+                        charge_history_item(decode, "collect F3D historical shell vertices")?;
+                        shell_vertices.try_reserve(1).map_err(|_| history_reserve_error(
+                            decode, "collect F3D historical shell vertices"))?;
+                        shell_vertices.push(vertex);
+                    }
                     if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
-                        closure.insert(curve);
+                        history_set_insert(decode, &mut closure, curve,
+                            "collect F3D historical body closure")?;
                     }
                 }
                 for vertex in shell_vertices {
-                    closure.insert(vertex);
-                    closure.insert(*vertex_points.get(&vertex)?);
+                    history_set_insert(decode, &mut closure, vertex,
+                        "collect F3D historical body closure")?;
+                    history_set_insert(decode, &mut closure,
+                        *history_some!(vertex_points.get(&vertex)),
+                        "collect F3D historical body closure")?;
                 }
             }
         }
         if !closure.is_disjoint(changed) {
-            affected.insert(body);
+            history_set_insert(decode, &mut affected, body,
+                "collect F3D affected topology bodies")?;
         }
     }
-    Some(affected)
+    Ok(Some(affected))
 }
 
-fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
-    items
-        .iter()
-        .map(|relation| (relation.owner_ref, relation.member_refs.as_slice()))
-        .collect()
+fn relation_map<'a>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    items: &'a [AsmHistoricalRelation],
+) -> Result<HashMap<i64, &'a [i64]>, cadmpeg_core::CodecError> {
+    history_index(decode,
+        items.iter().map(|relation| (relation.owner_ref, relation.member_refs.as_slice())),
+        "index F3D historical relations")
 }
 
 fn collect_topology_items<T>(

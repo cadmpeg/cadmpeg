@@ -5318,11 +5318,12 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
     );
     crate::history::bind_body_recipe_operand_history_candidates(
+        Some(ctx),
         &mut native.design_body_recipe_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
         &native.asm_histories,
-    );
+    )?;
     crate::design::decode::operands::bind_extrude_selection_identities(
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
