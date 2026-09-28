@@ -660,6 +660,63 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 }
 
 #[test]
+fn relation_program_output_refuses_unadmitted_input_and_output_rows() {
+    let mut native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_formula_relation(0x63, false));
+    let expression_entity = native.entity_records[1].clone();
+    let input_entity = native.entity_records[2].clone();
+    let output_entity = native.entity_records[3].clone();
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        output_entity.entity_id, Some(output_entity.id.clone()),
+                        Some("paramout".to_string()),
+                    ),
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: Some(expression_entity.id.clone()),
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "LENGTH".to_string(),
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        input_entity.entity_id, Some(input_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
+            },
+        ),
+    );
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+                &mut Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped)
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => {}
+            Err(error) => panic!("unexpected relation-program transfer error: {error}"),
+        }
+    }
+    for operation in [
+        "catia_relation_program_dependencies",
+        "catia_relation_program_type_bindings",
+        "catia_relation_program_input_parameters",
+        "catia_relation_program_output_dependencies",
+    ] {
+        assert!(refused.contains(operation), "no low-limit refusal at {operation}");
+    }
+}
+
+#[test]
 fn lead54_relation_program_instance_requires_its_complete_identity_frame() {
     let file = standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2);
     let native = crate::native::CatiaNative::decode(&file);

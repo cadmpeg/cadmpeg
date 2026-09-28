@@ -1440,8 +1440,8 @@ fn relation_program_output_candidate(
         return Ok(None);
     }
 
-    let mut dependencies = Vec::with_capacity(inputs.len());
-    let mut input_parameters = Vec::with_capacity(inputs.len());
+    let mut dependencies = Vec::new();
+    let mut input_parameters = Vec::new();
     let mut expression_bindings = BTreeMap::new();
     let mut type_bindings = BTreeMap::new();
     let mut all_inputs_complete = true;
@@ -1457,21 +1457,25 @@ fn relation_program_output_candidate(
         if dependencies.contains(&candidate.parameter.id) {
             return Ok(None);
         }
-        dependencies.push(candidate.parameter.id.clone());
-        type_bindings.insert(
-            input.parameter.as_str(),
+        let dependency = resource::copy_id(ctx, candidate.parameter.id.as_str(),
+            ParameterId::mint, "catia_relation_program_dependency_id")?;
+        resource::push(ctx, &mut dependencies, dependency,
+            "catia_relation_program_dependencies")?;
+        resource::insert_btree_map(ctx, &mut type_bindings, input.parameter.as_str(),
             static_formula_value(candidate.parameter_type),
-        );
+            "catia_relation_program_type_bindings")?;
         match candidate.parameter.value.as_ref() {
             Some(value) => {
-                expression_bindings.insert(
+                resource::insert_btree_map(ctx, &mut expression_bindings,
                     input.parameter.as_str(),
                     EvaluatedFormulaValue::from_parameter_value_charged(ctx, value)?,
-                );
+                    "catia_relation_program_expression_bindings")?;
             }
             None => all_inputs_complete = false,
         }
-        input_parameters.push((candidate.parameter, candidate.parameter_type));
+        resource::push(ctx, &mut input_parameters,
+            (candidate.parameter, candidate.parameter_type),
+            "catia_relation_program_input_parameters")?;
     }
 
     let type_checked_expression =
@@ -1526,26 +1530,45 @@ fn relation_program_output_candidate(
         return Ok(None);
     }
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
+    let candidate_id = resource::copy_id(ctx, output_id.as_str(), ParameterId::mint,
+        "catia_relation_program_candidate_id")?;
+    let output_name = resource::copy_retained_str(ctx, &output_value.name.value,
+        "catia_relation_program_output_name")?;
+    let output_expression = resource::copy_retained_str(ctx, &expression.expression.value,
+        "catia_relation_program_output_expression")?;
+    let output_native_ref = resource::copy_retained_str(ctx, &output_entity.id,
+        "catia_relation_program_output_native_ref")?;
+    let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    for dependency in &dependencies {
+        if !output_dependencies.contains(dependency) {
+            ctx.charge_collection_items(1, "catia_relation_program_output_dependencies")?;
+            output_dependencies.try_reserve(1).map_err(|_|
+                resource::allocation_failed(output_dependencies.len(), 0, 1,
+                    "catia_relation_program_output_dependencies"))?;
+            output_dependencies.insert(resource::copy_id(ctx, dependency.as_str(),
+                ParameterId::mint, "catia_relation_program_output_dependency_id")?);
+        }
+    }
     let candidate = FormulaParameterCandidate {
         parameter: DesignParameter {
-            id: output_id.clone(),
+            id: candidate_id,
             owner: None,
             ordinal: 0,
-            name: output_value.name.value.clone(),
-            expression: expression.expression.value.clone(),
+            name: output_name,
+            expression: output_expression,
             display: None,
             value: match value {
                 TypedParameterEvaluation::Unset => None,
                 TypedParameterEvaluation::Value(value) => Some(value),
             },
-            dependencies: dependencies.iter().cloned().collect(),
+            dependencies: output_dependencies,
             properties: parameter_properties(
                 ctx,
                 parameter_type.as_str(),
                 Some(output_value.binding.value.as_str()),
             )?,
             pmi: None,
-            native_ref: Some(output_entity.id.clone()),
+            native_ref: Some(output_native_ref),
         },
         parameter_type,
         role: FormulaParameterRole::FormulaOutput { fallback: None },
@@ -1553,8 +1576,10 @@ fn relation_program_output_candidate(
     };
     Ok(Some((
         FormulaProgramCandidate {
-            relation_entity: relation_entity.id.clone(),
-            expression_entity: expression_entity.id.clone(),
+            relation_entity: resource::copy_retained_str(ctx, &relation_entity.id,
+                "catia_relation_program_relation_id")?,
+            expression_entity: resource::copy_retained_str(ctx, &expression_entity.id,
+                "catia_relation_program_expression_id")?,
             output: output_id,
             inputs: dependencies,
             input_parameters,
