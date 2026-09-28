@@ -92,6 +92,45 @@ fn gui_graph_loss_extension_refuses_at_matching_collection_limit() {
     });
 }
 
+fn assert_gui_appearance_loss_limits(collection_operation: &'static str, text_operation: &'static str) {
+    let admit = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        super::super::push_gui_appearance_loss(
+            ctx,
+            &mut Vec::new(),
+            crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch,
+            format_args!("FCStd provider Model reports a mismatched appearance count"),
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd", cadmpeg_ir::stream_name!("GuiDocument.xml"), 1,
+            ),
+            collection_operation,
+            text_operation,
+        )
+    };
+    crate::test_support::assert_collection_refusal_at(&[], collection_operation, admit);
+    crate::test_support::assert_retained_refusal_at(&[], text_operation, admit);
+}
+
+#[test]
+fn gui_primitive_size_loss_refuses_at_matching_limits() {
+    assert_gui_appearance_loss_limits(
+        "FCStd GUI primitive size losses", "FCStd GUI primitive size loss text",
+    );
+}
+
+#[test]
+fn gui_material_count_loss_refuses_at_matching_limits() {
+    assert_gui_appearance_loss_limits(
+        "FCStd GUI material count losses", "FCStd GUI material count loss text",
+    );
+}
+
+#[test]
+fn gui_topology_color_loss_refuses_at_matching_limits() {
+    assert_gui_appearance_loss_limits(
+        "FCStd GUI topology color losses", "FCStd GUI topology color loss text",
+    );
+}
+
 #[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
