@@ -7665,97 +7665,103 @@ pub(super) fn feature_operation_body_members(
 
 /// Resolve wrapped operation members that name known feature-body identities.
 pub(super) fn feature_operation_body_operands(
+    ctx: &DecodeContext<'_>,
     members: &[FeatureOperationBodyMember],
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
-) -> Vec<FeatureOperationBodyOperand> {
-    let input_operations = inputs
-        .iter()
-        .map(|input| input.operation_label.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut stores_by_operation = BTreeMap::<&str, BTreeSet<&str>>::new();
-    for input in inputs {
-        let Some((store, _)) = input.data_block.rsplit_once(":block#") else {
-            continue;
-        };
-        stores_by_operation
-            .entry(input.operation_label.as_str())
-            .or_default()
-            .insert(store);
+) -> Result<Vec<FeatureOperationBodyOperand>, CodecError> {
+    let work = members.len().checked_mul(inputs.len()).and_then(|count| {
+        members.len().checked_mul(references.len())?.checked_mul(inputs.len())?.checked_add(count)
+    }).and_then(|count| members.len().checked_mul(blocks.len())?.checked_add(count))
+      .and_then(|count| members.len().checked_mul(bindings.len())?.checked_add(count))
+      .ok_or_else(|| ctx.refuse_codec_limit("scan NX feature operation body operands", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan NX feature operation body operands")?;
+    let mut operands = Vec::new();
+    for member in members {
+        if member.member.atom.value() == member.body_object_index { continue; }
+        let (has_inputs, member_store) = unique_operation_store(inputs, &member.operation_label);
+        if member_store.is_none() && has_inputs { continue; }
+        let operand_data_block = if let Some(store) = member_store {
+            let length = store.len().checked_add(7 + 10)
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX operand data block id", 0, 1))?;
+            let _candidate = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(length), "format NX operand data block id")?;
+            let mut id = String::new();
+            id.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit("allocate NX operand data block id", 0, 1))?;
+            write!(id, "{store}:block#{}", member.member.atom.value())
+                .map_err(|_| ctx.refuse_codec_limit("write NX operand data block id", 0, 1))?;
+            if blocks.iter().any(|block| block.id == id) {
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id.len()), "retain NX operand data block id")?;
+                Some(id)
+            } else { None }
+        } else { None };
+        if member_store.is_some() && operand_data_block.is_none() { continue; }
+        let same_namespace_reference = references.iter().any(|reference| match member_store {
+            Some(store) => unique_operation_store(inputs, &reference.operation_label).1 == Some(store),
+            None => !unique_operation_store(inputs, &reference.operation_label).0,
+        });
+        let mut segment_body_bindings = Vec::new();
+        if member_store.is_none() {
+            for binding in bindings.iter().filter(|binding| {
+                binding.body_object_index == member.member.atom.value()
+                    || binding.body_alias_object_index == member.member.atom.value()
+            }) {
+                ctx.charge_collection_items(1, "NX operation operand bindings")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()), "retain NX operation operand bindings")?;
+                segment_body_bindings.try_reserve_exact(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX operation operand bindings", 0, 1))?;
+                segment_body_bindings.push(copy_operation_text(ctx, &binding.id, "retain NX operation operand binding id")?);
+            }
+        }
+        if !same_namespace_reference && segment_body_bindings.is_empty() { continue; }
+        ctx.charge_collection_items(1, "NX feature operation body operands")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureOperationBodyOperand>()), "retain NX feature operation body operands")?;
+        operands.try_reserve_exact(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature operation body operands", 0, 1))?;
+        operands.push(FeatureOperationBodyOperand {
+            id: replace_operation_text(ctx, &member.id, "operation-body-member", "operation-body-operand", "retain NX operation body operand id")?,
+            operation_label: copy_operation_text(ctx, &member.operation_label, "retain NX operation body operand label")?,
+            body_object_index: member.body_object_index,
+            body_reference_ordinal: member.body_reference_ordinal,
+            ordinal: member.ordinal,
+            operand: member.member,
+            operand_data_block,
+            segment_body_bindings,
+        });
     }
-    let unique_stores = stores_by_operation
-        .into_iter()
-        .filter_map(|(operation, stores)| {
-            let stores = stores.into_iter().collect::<Vec<_>>();
-            let [store] = stores.as_slice() else {
-                return None;
-            };
-            Some((operation, *store))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let block_ids = blocks
-        .iter()
-        .map(|block| block.id.as_str())
-        .collect::<BTreeSet<_>>();
+    Ok(operands)
+}
 
-    members
-        .iter()
-        .filter_map(|member| {
-            if member.member.atom.value() == member.body_object_index {
-                return None;
+fn unique_operation_store<'a>(inputs: &'a [FeatureInputBlock], operation: &str) -> (bool, Option<&'a str>) {
+    let mut has_inputs = false;
+    let mut store = None;
+    for input in inputs.iter().filter(|input| input.operation_label == operation) {
+        has_inputs = true;
+        if let Some((candidate, _)) = input.data_block.rsplit_once(":block#") {
+            match store {
+                None => store = Some(candidate),
+                Some(existing) if existing != candidate => return (true, None),
+                Some(_) => {}
             }
-            let member_store = unique_stores.get(member.operation_label.as_str()).copied();
-            if member_store.is_none() && input_operations.contains(member.operation_label.as_str())
-            {
-                return None;
-            }
-            let operand_data_block = member_store.and_then(|store| {
-                let id = format!("{store}:block#{}", member.member.atom.value());
-                block_ids.contains(id.as_str()).then_some(id)
-            });
-            let same_namespace_reference = references.iter().any(|reference| match member_store {
-                Some(store) => {
-                    unique_stores
-                        .get(reference.operation_label.as_str())
-                        .copied()
-                        == Some(store)
-                }
-                None => !input_operations.contains(reference.operation_label.as_str()),
-            });
-            let segment_body_bindings = if member_store.is_none() {
-                bindings
-                    .iter()
-                    .filter(|binding| {
-                        binding.body_object_index == member.member.atom.value()
-                            || binding.body_alias_object_index == member.member.atom.value()
-                    })
-                    .map(|binding| binding.id.clone())
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            };
-            if member_store.is_some() && operand_data_block.is_none() {
-                return None;
-            }
-            if !same_namespace_reference && segment_body_bindings.is_empty() {
-                return None;
-            }
-            Some(FeatureOperationBodyOperand {
-                id: member
-                    .id
-                    .replacen("operation-body-member", "operation-body-operand", 1),
-                operation_label: member.operation_label.clone(),
-                body_object_index: member.body_object_index,
-                body_reference_ordinal: member.body_reference_ordinal,
-                ordinal: member.ordinal,
-                operand: member.member,
-                operand_data_block,
-                segment_body_bindings,
-            })
-        })
-        .collect()
+        }
+    }
+    (has_inputs, store)
+}
+
+fn replace_operation_text(ctx: &DecodeContext<'_>, value: &str, old: &str, new: &str, operation: &'static str) -> Result<String, CodecError> {
+    let (prefix, suffix) = if let Some(position) = value.find(old) {
+        (&value[..position], &value[position + old.len()..])
+    } else { (value, "") };
+    let length = prefix.len().checked_add(suffix.len())
+        .and_then(|length| length.checked_add(if prefix.len() == value.len() { 0 } else { new.len() }))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut result = String::new();
+    result.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    result.push_str(prefix);
+    if prefix.len() != value.len() { result.push_str(new); }
+    result.push_str(suffix);
+    Ok(result)
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.

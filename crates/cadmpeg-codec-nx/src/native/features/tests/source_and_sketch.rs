@@ -1200,7 +1200,9 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         stream_role: 0,
         source_offset: 0,
     }];
-    let operands = feature_operation_body_operands(&members, &references, &[], &[], &bindings);
+    let operands = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_operands(ctx, &members, &references, &[], &[], &bindings)
+    }).unwrap();
     assert_eq!(
         operands
             .iter()
@@ -1252,7 +1254,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         block("nx:om-data-blocks-2:block#20", 2),
     ];
     assert!(
-        feature_operation_body_operands(&members, &references, &inputs, &blocks, &bindings,)
+        crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(ctx, &members, &references, &inputs, &blocks, &bindings,)).unwrap()
             .is_empty()
     );
 
@@ -1262,13 +1264,9 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     };
     let mut same_store_inputs = inputs.to_vec();
     same_store_inputs.push(input("same-store", "nx:om-data-blocks-1:block#2"));
-    let same_store = feature_operation_body_operands(
-        &members,
-        &[same_store_reference],
-        &same_store_inputs,
-        &blocks,
-        &bindings,
-    );
+    let same_store = crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
+        ctx, &members, &[same_store_reference], &same_store_inputs, &blocks, &bindings,
+    )).unwrap();
     assert_eq!(same_store.len(), 2);
     assert_eq!(
         same_store[0].operand_data_block.as_deref(),
@@ -1281,33 +1279,124 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     assert!(same_store[0].segment_body_bindings.is_empty());
 
     let distinct_member = member(0, 30);
-    let distinct_member_operand = feature_operation_body_operands(
-        &[distinct_member],
-        &[FeatureBodyReference {
-            operation_label: "same-store".to_string(),
-            ..references[0].clone()
-        }],
-        &same_store_inputs,
-        &blocks,
-        &bindings,
-    );
+    let distinct_member_operand = crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
+        ctx, &[distinct_member], &[FeatureBodyReference {
+            operation_label: "same-store".to_string(), ..references[0].clone()
+        }], &same_store_inputs, &blocks, &bindings,
+    )).unwrap();
     assert_eq!(distinct_member_operand.len(), 1);
     assert_eq!(distinct_member_operand[0].operand.atom.value(), 30);
     assert_eq!(
         distinct_member_operand[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#30")
     );
-    assert!(feature_operation_body_operands(
-        &members,
-        &[FeatureBodyReference {
-            operation_label: "same-store".to_string(),
-            ..references[0].clone()
-        }],
-        &same_store_inputs,
-        &blocks[2..],
-        &bindings,
-    )
+    assert!(crate::test_support::with_decode_context(|ctx| feature_operation_body_operands(
+        ctx, &members, &[FeatureBodyReference {
+            operation_label: "same-store".to_string(), ..references[0].clone()
+        }], &same_store_inputs, &blocks[2..], &bindings,
+    )).unwrap()
     .is_empty());
+}
+
+#[test]
+fn nx_operation_body_operands_refuse_collection_limit() {
+    let member = crate::native::features::FeatureOperationBodyMember {
+        id: "operation-body-member#0".to_string(),
+        operation_label: "operation".to_string(),
+        body_reference_ordinal: 0,
+        body_object_index: 10,
+        ordinal: 0,
+        member: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: 0,
+        },
+    };
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "binding".to_string(),
+        stream_link: "stream".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 20,
+        body_alias_object_index: 30,
+        stream_role: 0,
+        source_offset: 0,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = feature_operation_body_operands(&ctx, &[member], &[], &[], &[], &[binding]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+fn operation_body_operand_store_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let member = crate::native::features::FeatureOperationBodyMember {
+        id: "operation-body-member#0".to_string(),
+        operation_label: "operation".to_string(),
+        body_reference_ordinal: 0,
+        body_object_index: 10,
+        ordinal: 0,
+        member: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: 0,
+        },
+    };
+    let reference = FeatureBodyReference {
+        id: "reference".to_string(),
+        operation_label: "operation".to_string(),
+        ordinal: Some(0),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
+        source_offset: 0,
+    };
+    let input = FeatureInputBlock {
+        id: "input".to_string(),
+        operation_label: "operation".to_string(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(1, &[1]).unwrap(),
+        data_block: "store:block#1".to_string(),
+        source_offset: 0,
+    };
+    let block = crate::native::om::DataBlock {
+        id: "store:block#20".to_string(),
+        section_ordinal: 0,
+        block_ordinal: 20,
+        role: crate::native::om::DataBlockRole::Column,
+        section_offset: 0,
+        byte_len: 1,
+        sha256: crate::native::hex::Sha256Hex::digest(b"hash"),
+        stable_identity: None,
+        source_entry: "entry".to_string(),
+        source_offset: 0,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    feature_operation_body_operands(&ctx, &[member], &[reference], &[input], &[block], &[]).unwrap_err()
+}
+
+#[test]
+fn nx_operation_body_operands_refuse_retained_limit() {
+    let error = operation_body_operand_store_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn nx_operation_body_operands_refuse_scoped_limit() {
+    let error = operation_body_operand_store_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn nx_operation_body_operands_refuse_work_limit() {
+    let error = operation_body_operand_store_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn extrude_32_fixture() -> (

@@ -600,12 +600,13 @@ pub(crate) fn extract_segment_lineage(
     let body_reference_occurrences = feature_body_reference_occurrences(ctx, container)?;
     let members = feature_operation_body_members(ctx, container)?;
     let operands = feature_operation_body_operands(
+        ctx,
         &members,
         &body_reference_occurrences,
         &inputs,
         &blocks,
         &bindings,
-    );
+    )?;
     let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
         &labels,
