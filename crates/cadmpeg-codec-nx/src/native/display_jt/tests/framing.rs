@@ -21,7 +21,7 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
     let service = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &service).unwrap();
     assert_eq!(
-        super::super::inflate_display_jt(Some((&ctx, root)), &compressed)
+        super::super::inflate_display_jt((&ctx, root), &compressed)
             .unwrap()
             .unwrap(),
         expanded
@@ -32,7 +32,7 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
     expansion_policy.limits.max_decompressed_bytes_per_expand = expanded.len() as u64 - 1;
     let (ctx, root) =
         DecodeContext::from_root_bytes(&compressed, &arena, &expansion_policy).unwrap();
-    let error = super::super::inflate_display_jt(Some((&ctx, root)), &compressed).unwrap_err();
+    let error = super::super::inflate_display_jt((&ctx, root), &compressed).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::DecompressedBytes)
@@ -43,7 +43,7 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
     retained_policy.limits.max_retained_bytes = expanded.len() as u64 - 1;
     let (ctx, root) =
         DecodeContext::from_root_bytes(&compressed, &arena, &retained_policy).unwrap();
-    let error = super::super::inflate_display_jt(Some((&ctx, root)), &compressed).unwrap_err();
+    let error = super::super::inflate_display_jt((&ctx, root), &compressed).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -123,7 +123,7 @@ fn assert_compressed_jt_limit(
     };
     let (ctx, root) = DecodeContext::from_root_bytes(&data, &arena, &policy).unwrap();
     let error = super::super::display_jt_compressed_element_sequences(
-        Some((&ctx, root)),
+        (&ctx, root),
         &container,
         std::slice::from_ref(&segment),
     )
@@ -137,7 +137,7 @@ fn assert_compressed_jt_limit(
     let (service, root) =
         DecodeContext::from_root_bytes(&data, &arena, &DecodePolicy::service()).unwrap();
     let (elements, sequences) = super::super::display_jt_compressed_element_sequences(
-        Some((&service, root)),
+        (&service, root),
         &container,
         &[segment],
     )
@@ -346,7 +346,7 @@ fn display_jt_element_index_refuses_before_collection_growth() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::parse_jt_element_sequence(Some(&ctx), &bytes).unwrap_err();
+    let error = super::super::parse_jt_element_sequence(&ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -356,7 +356,7 @@ fn display_jt_element_index_refuses_before_collection_growth() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::super::parse_jt_element_sequence(Some(&service), &bytes)
+        super::super::parse_jt_element_sequence(&service, &bytes)
             .unwrap()
             .unwrap()
             .0
@@ -375,7 +375,7 @@ fn display_jt_element_index_refuses_before_retained_reservation() {
     policy.limits.max_retained_bytes =
         std::mem::size_of::<super::super::ParsedJtElement<'_>>() as u64 - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::parse_jt_element_sequence(Some(&ctx), &bytes).unwrap_err();
+    let error = super::super::parse_jt_element_sequence(&ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -385,7 +385,7 @@ fn display_jt_element_index_refuses_before_retained_reservation() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        super::super::parse_jt_element_sequence(Some(&service), &bytes)
+        super::super::parse_jt_element_sequence(&service, &bytes)
             .unwrap()
             .is_some()
     );
@@ -400,7 +400,7 @@ fn display_jt_element_scan_refuses_before_framing_work() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::parse_jt_element_sequence(Some(&ctx), &bytes).unwrap_err();
+    let error = super::super::parse_jt_element_sequence(&ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
@@ -410,7 +410,7 @@ fn display_jt_element_scan_refuses_before_framing_work() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        super::super::parse_jt_element_sequence(Some(&service), &bytes)
+        super::super::parse_jt_element_sequence(&service, &bytes)
             .unwrap()
             .is_some()
     );

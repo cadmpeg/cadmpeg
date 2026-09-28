@@ -63,77 +63,60 @@ impl DisplayJtGraph {
         ctx: &DecodeContext<'_>,
         wire: DisplayJtGraphWire,
     ) -> Result<Self, NativeConvertError> {
-        Self::from_wire(Some(ctx), wire)
+        let count = |length: usize| u64::try_from(length)
+            .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX));
+        let _documents = reserve_graph_index(ctx, count(wire.documents.len())?, "index DisplayJT graph records")?;
+        let _segments = reserve_graph_index(ctx, count(wire.segments.len())?, "index DisplayJT graph records")?;
+        let _elements = reserve_graph_index(ctx, count(wire.compressed_elements.len())?, "index DisplayJT graph records")?;
+        let _shape_lods = reserve_graph_index(ctx, count(wire.shape_lod_elements.len())?, "index DisplayJT graph records")?;
+        let _sequences = reserve_graph_index(ctx, count(wire.compressed_element_sequences.len())?, "index DisplayJT graph records")?;
+        let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
+            count(document.toc_entries.len())?.checked_add(sum)
+                .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
+        })?;
+        let _toc = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
+        Self::from_wire(wire)
     }
 
     pub(crate) fn from_namespace_with_context(
         ctx: &DecodeContext<'_>,
         namespace: &NativeNamespace,
     ) -> Result<Self, NativeConvertError> {
-        Self::from_namespace(Some(ctx), namespace)
-    }
-
-    fn from_namespace(
-        ctx: Option<&DecodeContext<'_>>,
-        namespace: &NativeNamespace,
-    ) -> Result<Self, NativeConvertError> {
-        Self::from_wire(
+        Self::from_wire_with_context(
             ctx,
             DisplayJtGraphWire {
                 documents: arena_as_charged(ctx, namespace, "display_jt_documents")?,
                 segments: arena_as_charged(ctx, namespace, "display_jt_segments")?,
-                shape_lod_elements: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_shape_lod_elements",
-                )?,
-                compressed_elements: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_compressed_elements",
-                )?,
-                compressed_element_sequences: arena_as_charged(
-                    ctx,
-                    namespace,
-                    "display_jt_compressed_element_sequences",
-                )?,
+                shape_lod_elements: arena_as_charged(ctx, namespace, "display_jt_shape_lod_elements")?,
+                compressed_elements: arena_as_charged(ctx, namespace, "display_jt_compressed_elements")?,
+                compressed_element_sequences: arena_as_charged(ctx, namespace, "display_jt_compressed_element_sequences")?,
             },
         )
     }
 
-    fn from_wire(
-        ctx: Option<&DecodeContext<'_>>,
-        wire: DisplayJtGraphWire,
-    ) -> Result<Self, NativeConvertError> {
-        let (documents, _document_index) =
-            by_id(ctx, &wire.documents, |item| item.id.as_str(), "documents")?;
-        let (segments, _segment_index) =
-            by_id(ctx, &wire.segments, |item| item.id.as_str(), "segments")?;
-        let (elements, _element_index) = by_id(
-            ctx,
-            &wire.compressed_elements,
-            |item| item.id.as_str(),
-            "compressed_elements",
-        )?;
-        by_id(
-            ctx,
-            &wire.shape_lod_elements,
-            |item| item.id.as_str(),
-            "shape_lod_elements",
-        )?;
-        by_id(
-            ctx,
-            &wire.compressed_element_sequences,
-            |item| item.id.as_str(),
-            "compressed_element_sequences",
-        )?;
-        let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
+    #[cfg(test)]
+    fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
+        Self::from_wire(DisplayJtGraphWire {
+            documents: namespace.arena_as("display_jt_documents")?,
+            segments: namespace.arena_as("display_jt_segments")?,
+            shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
+            compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
+            compressed_element_sequences: namespace.arena_as("display_jt_compressed_element_sequences")?,
+        })
+    }
+
+    fn from_wire(wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
+        let documents = by_id(&wire.documents, |item| item.id.as_str(), "documents")?;
+        let segments = by_id(&wire.segments, |item| item.id.as_str(), "segments")?;
+        let elements = by_id(&wire.compressed_elements, |item| item.id.as_str(), "compressed_elements")?;
+        by_id(&wire.shape_lod_elements, |item| item.id.as_str(), "shape_lod_elements")?;
+        by_id(&wire.compressed_element_sequences, |item| item.id.as_str(), "compressed_element_sequences")?;
+        wire.documents.iter().try_fold(0_u64, |sum, document| {
             u64::try_from(document.toc_entries.len())
                 .ok()
                 .and_then(|count| sum.checked_add(count))
                 .ok_or_else(|| invalid(&document.id, "TOC count exceeds u64"))
         })?;
-        let _toc_index = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
         let mut toc_entries = BTreeMap::new();
         for document in &wire.documents {
             for entry in &document.toc_entries {
@@ -245,7 +228,7 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
-        Self::from_wire(None, wire)
+        Self::from_wire(wire)
     }
 }
 
@@ -261,7 +244,7 @@ impl TryFrom<&NativeNamespace> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(namespace: &NativeNamespace) -> Result<Self, Self::Error> {
-        Self::from_namespace(None, namespace)
+        Self::from_namespace(namespace)
     }
 }
 
@@ -288,18 +271,15 @@ fn admit_compressed_owner(
 }
 
 fn reserve_graph_index<'a>(
-    ctx: Option<&'a DecodeContext<'_>>,
+    ctx: &'a DecodeContext<'_>,
     count: u64,
     operation: &'static str,
-) -> Result<Option<ScopedReservation<'a>>, NativeConvertError> {
-    let Some(ctx) = ctx else {
-        return Ok(None);
-    };
+) -> Result<ScopedReservation<'a>, NativeConvertError> {
     ctx.charge_collection_items(count, operation)?;
     let bytes = count
         .checked_mul(128)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    Ok(Some(ctx.reserve_scoped(bytes, operation)?))
+    Ok(ctx.reserve_scoped(bytes, operation)?)
 }
 
 #[derive(Default)]
@@ -321,13 +301,10 @@ impl Write for JsonByteCount {
 }
 
 fn arena_as_charged<T: DeserializeOwned>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     namespace: &NativeNamespace,
     name: &'static str,
 ) -> Result<Vec<T>, NativeConvertError> {
-    let Some(ctx) = ctx else {
-        return namespace.arena_as(name);
-    };
     let records = namespace.arenas().get(name);
     let count = records.map_or(0, Vec::len);
     let count = u64::try_from(count)
@@ -362,16 +339,11 @@ fn arena_as_charged<T: DeserializeOwned>(
     namespace.arena_as(name)
 }
 
-fn by_id<'a, 'ctx, T>(
-    ctx: Option<&'ctx DecodeContext<'_>>,
+fn by_id<'a, T>(
     records: &'a [T],
     id: impl Fn(&'a T) -> &'a str,
     arena: &str,
-) -> Result<(BTreeMap<&'a str, &'a T>, Option<ScopedReservation<'ctx>>), NativeConvertError> {
-    let count = u64::try_from(records.len()).map_err(|_| {
-        NativeConvertError::InvalidCollection("DisplayJT index count exceeds u64".into())
-    })?;
-    let reservation = reserve_graph_index(ctx, count, "index DisplayJT graph records")?;
+) -> Result<BTreeMap<&'a str, &'a T>, NativeConvertError> {
     let mut index = BTreeMap::new();
     for record in records {
         let id = id(record);
@@ -379,7 +351,7 @@ fn by_id<'a, 'ctx, T>(
             return Err(invalid(id, &format!("duplicate identity in {arena}")));
         }
     }
-    Ok((index, reservation))
+    Ok(index)
 }
 
 fn invalid(id: &str, field: &str) -> NativeConvertError {
