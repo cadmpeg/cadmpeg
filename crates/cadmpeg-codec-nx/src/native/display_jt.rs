@@ -2627,16 +2627,19 @@ fn jt9_topology_high_degree_lane_count_inner(
     representation: &[u8],
     expected_vertex_bindings: u64,
 ) -> Result<Option<usize>, CodecError> {
-    let decoded: Option<Result<_, CodecError>> = (|| {
     const PREFIX_PACKET_COUNT: usize = 21;
     let mut prefix_end = 0usize;
     for _ in 0..PREFIX_PACKET_COUNT {
-        let (_, _, byte_len) = propagate_display_refusal!(crate::jt::frame_int32_cdp2(
-            ctx,
-            representation.get(prefix_end..)?,
-            0,
-        ))?;
-        prefix_end = prefix_end.checked_add(byte_len)?;
+        let Some(bytes) = representation.get(prefix_end..) else {
+            return Ok(None);
+        };
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+            return Ok(None);
+        };
+        let Some(end) = prefix_end.checked_add(byte_len) else {
+            return Ok(None);
+        };
+        prefix_end = end;
     }
     let mut match_count = 0usize;
     let mut matched_lane_count = 0usize;
@@ -2646,12 +2649,13 @@ fn jt9_topology_high_degree_lane_count_inner(
         let Some(bytes) = representation.get(cursor..) else {
             break;
         };
-        let Some((_, _, byte_len)) =
-            propagate_display_refusal!(crate::jt::frame_int32_cdp2(ctx, bytes, 0))
-        else {
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
             break;
         };
-        cursor = cursor.checked_add(byte_len)?;
+        let Some(end) = cursor.checked_add(byte_len) else {
+            return Ok(None);
+        };
+        cursor = end;
         let mut candidate_end = cursor;
         let mut split_packets_valid = true;
         for _ in 0..2 {
@@ -2659,13 +2663,14 @@ fn jt9_topology_high_degree_lane_count_inner(
                 split_packets_valid = false;
                 break;
             };
-            let Some((_, _, byte_len)) =
-                propagate_display_refusal!(crate::jt::frame_int32_cdp2(ctx, bytes, 0))
-            else {
+            let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
                 split_packets_valid = false;
                 break;
             };
-            candidate_end = candidate_end.checked_add(byte_len)?;
+            let Some(end) = candidate_end.checked_add(byte_len) else {
+                return Ok(None);
+            };
+            candidate_end = end;
         }
         if !split_packets_valid {
             continue;
@@ -2676,9 +2681,13 @@ fn jt9_topology_high_degree_lane_count_inner(
         let Some(envelope) = representation.get(candidate_end..header_end) else {
             continue;
         };
-        let bindings = View::u64_le_at(envelope, 4)?;
+        let Some(bindings) = View::u64_le_at(envelope, 4) else {
+            return Ok(None);
+        };
         let quantization = &envelope[12..16];
-        let topological_vertex_count = View::u32_le_at(envelope, 16)?;
+        let Some(topological_vertex_count) = View::u32_le_at(envelope, 16) else {
+            return Ok(None);
+        };
         let vertex_attribute_count = if topological_vertex_count == 0 {
             0
         } else {
@@ -2698,11 +2707,12 @@ fn jt9_topology_high_degree_lane_count_inner(
             match_count += 1;
             matched_lane_count = lane_count;
         }
-        lane_count = lane_count.checked_add(1)?;
+        let Some(next_lane_count) = lane_count.checked_add(1) else {
+            return Ok(None);
+        };
+        lane_count = next_lane_count;
     }
-    (match_count == 1).then_some(Ok(matched_lane_count))
-    })();
-    decoded.transpose()
+    Ok((match_count == 1).then_some(matched_lane_count))
 }
 
 fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, Vec<u32>, &[u8])> {
