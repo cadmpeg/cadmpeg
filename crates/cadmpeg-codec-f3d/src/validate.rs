@@ -1100,11 +1100,12 @@ fn validate_loaded(
     );
     let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
     validate_face_group_member_resolution(
+        &ctx,
         &mut findings,
         face_group_members,
         &face_operand_records,
         &native.design_entity_selection_operands,
-    );
+    )?;
     validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings)?;
     validate_parameter_owners(&ctx, &mut findings)?;
@@ -7032,12 +7033,13 @@ fn validate_face_operands<'a>(
 
 /// Report face-group members with no resolved recipe operand.
 fn validate_face_group_member_resolution(
+    ctx: &Ctx<'_, '_>,
     findings: &mut Vec<Finding>,
     face_group_members: HashSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
     entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
-) {
-    let entity_selection_records = entity_selection_operands
+) -> Result<(), CodecError> {
+    let entity_selection_records = ctx.collect_set(entity_selection_operands
         .iter()
         .map(|operand| {
             (
@@ -7046,20 +7048,23 @@ fn validate_face_group_member_resolution(
                 operand.record_index(),
             )
         })
-        .collect::<HashSet<_>>();
+        , "index F3D face group entity selections")?;
     for member in face_group_members {
         if !face_operand_records.contains(&member) && !entity_selection_records.contains(&member) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Extrude face group has an unresolved recipe operand".into(),
-                entity: Some(format!(
-                    "{}:design-face-group-member#{}:{}",
-                    member.0, member.1, member.2
-                )),
-            });
+            let entity = match ctx.decode {
+                Some(decode) => crate::container::format_retained(
+                    decode,
+                    "retain F3D face group member identity",
+                    format_args!("{}:design-face-group-member#{}:{}", member.0, member.1, member.2),
+                )?,
+                None => format!("{}:design-face-group-member#{}:{}", member.0, member.1, member.2),
+            };
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Extrude face group has an unresolved recipe operand",
+                Some(entity))?;
         }
     }
+    Ok(())
 }
 
 /// Validate retained Face source carriers and their persistent identities.
