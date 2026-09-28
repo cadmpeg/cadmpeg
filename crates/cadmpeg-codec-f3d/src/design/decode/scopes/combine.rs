@@ -3,8 +3,8 @@
 
 use super::draft::contains_consecutive_guid_pair;
 use super::parameter_scope::parameter_scope_payload_length;
-use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
+use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -149,15 +149,20 @@ pub(super) fn exact_combine_operation(
                         )));
                     }
                 }
+                let external_identity = match exact_combine_external_body_identity(
+                    ctx,
+                    bytes,
+                    *selection_at,
+                    *selection_end,
+                    scope.record_index,
+                    *selection_record_index,
+                ) {
+                    Ok(identity) => identity,
+                    Err(error) => return Some(Err(error)),
+                };
                 let selection = DesignCombineBodySelection {
                     record_index: *selection_record_index,
-                    external_identity: exact_combine_external_body_identity(
-                        bytes,
-                        *selection_at,
-                        *selection_end,
-                        scope.record_index,
-                        *selection_record_index,
-                    ),
+                    external_identity,
                 };
                 if additional {
                     additional_tools.push(selection);
@@ -197,9 +202,11 @@ pub(super) struct ExternalReferenceIdentity {
 }
 
 pub(super) fn take_external_reference_identity(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     cursor: &mut usize,
-) -> Option<ExternalReferenceIdentity> {
+) -> Result<Option<ExternalReferenceIdentity>, CodecError> {
+    (|| {
     if bytes.get(*cursor) != Some(&1) {
         return None;
     }
@@ -211,21 +218,36 @@ pub(super) fn take_external_reference_identity(
     let segment_at = target_at.checked_add(9)?;
     let segment = View::u32_le_at(bytes, segment_at)?;
     let asset_at = segment_at.checked_add(4)?;
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_at, 1..=256)?;
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, asset_at, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let asset_id = crate::records::mesh::DesignRelaxedGuidText::try_from(asset_id).ok()?;
     if bytes.get(after_asset_id) != Some(&0) {
         return None;
     }
     let link_name_at = after_asset_id.checked_add(1)?;
-    let (link_name, after_link_name) = lp_utf16_bounded(bytes, link_name_at, 1..=256)?;
+    let (link_name, after_link_name) = match lp_utf16_bounded_charged(ctx, bytes, link_name_at, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let (version, end) = match bytes.get(after_link_name)? {
         0 => (None, after_link_name.checked_add(1)?),
         1 => {
             let property_key_at = after_link_name.checked_add(1)?;
-            let (property_key, after_property_key) =
-                lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
+            let (property_key, after_property_key) = match lp_utf16_bounded_charged(ctx, bytes, property_key_at, 1..=256) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let version_urn_at = after_property_key;
-            let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
+            let (version_urn, end) = match lp_utf16_bounded_charged(ctx, bytes, version_urn_at, 1..=256) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let property_key =
                 crate::records::mesh::DesignRelaxedGuidText::try_from(property_key).ok()?;
             (
@@ -245,7 +267,7 @@ pub(super) fn take_external_reference_identity(
         _ => return None,
     };
     *cursor = end;
-    Some(ExternalReferenceIdentity {
+    Some(Ok(ExternalReferenceIdentity {
         target,
         target_offset: u64::try_from(target_at).ok()?,
         segment,
@@ -255,16 +277,19 @@ pub(super) fn take_external_reference_identity(
         link_name,
         link_name_offset: u64::try_from(link_name_at.checked_add(4)?).ok()?,
         version,
-    })
+    }))
+    })().transpose()
 }
 
 fn exact_combine_external_body_identity(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     scope_record_index: u32,
     record_index: u32,
-) -> Option<DesignCombineExternalBodyIdentity> {
+) -> Result<Option<DesignCombineExternalBodyIdentity>, CodecError> {
+    (|| {
     if bytes.get(
         start + combine_external::ZERO_RUN_14..start + combine_external::NESTED_REFERENCE_MARKER,
     )? != [0; 14]
@@ -280,11 +305,17 @@ fn exact_combine_external_body_identity(
     }
     cursor = cursor.checked_add(4)?;
     let selector_asset_at = cursor;
-    let (selector_asset_id, after_selector_asset_id) =
-        lp_utf16_bounded(bytes, selector_asset_at, 1..=256)?;
+    let (selector_asset_id, after_selector_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, selector_asset_at, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_context_at = after_selector_asset_id;
-    let (selector_context_id, after_selector_context_id) =
-        lp_utf16_bounded(bytes, selector_context_at, 1..=256)?;
+    let (selector_context_id, after_selector_context_id) = match lp_utf16_bounded_charged(ctx, bytes, selector_context_at, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_asset_id =
         crate::records::mesh::DesignRelaxedGuidText::try_from(selector_asset_id).ok()?;
     let selector_context_id =
@@ -303,7 +334,11 @@ fn exact_combine_external_body_identity(
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let external = take_external_reference_identity(bytes, &mut cursor)?;
+    let external = match take_external_reference_identity(ctx, bytes, &mut cursor) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if View::u32_le_at(bytes, cursor)? != 9 || View::u16_le_at(bytes, cursor.checked_add(4)?)? != 2
     {
         return None;
@@ -337,6 +372,16 @@ fn exact_combine_external_body_identity(
     if cursor != paired_at {
         return None;
     }
+    let (external_property_key, external_property_key_offset, external_version_urn, external_version_urn_offset) =
+        match external.version {
+            Some(version) => (
+                Some(version.property_key.value),
+                Some(version.property_key.offset),
+                Some(version.version_urn.value),
+                Some(version.version_urn.offset),
+            ),
+            None => (None, None, None, None),
+        };
     DesignCombineExternalBodyIdentity::try_from(DesignCombineExternalBodyIdentityWire {
         selector_asset_id,
         selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
@@ -352,22 +397,10 @@ fn exact_combine_external_body_identity(
         external_asset_id_offset: external.asset_id_offset,
         external_link_name: external.link_name,
         external_link_name_offset: external.link_name_offset,
-        external_property_key: external
-            .version
-            .as_ref()
-            .map(|version| version.property_key.value.clone()),
-        external_property_key_offset: external
-            .version
-            .as_ref()
-            .map(|version| version.property_key.offset),
-        external_version_urn: external
-            .version
-            .as_ref()
-            .map(|version| version.version_urn.value.clone()),
-        external_version_urn_offset: external
-            .version
-            .as_ref()
-            .map(|version| version.version_urn.offset),
+        external_property_key,
+        external_property_key_offset,
+        external_version_urn,
+        external_version_urn_offset,
         tail_values: [first_tail_value, second_tail_value],
         tail_value_offsets: [
             u64::try_from(first_tail_value_at).ok()?,
@@ -375,6 +408,8 @@ fn exact_combine_external_body_identity(
         ],
     })
     .ok()
+    .map(Ok)
+    })().transpose()
 }
 
 #[derive(Clone, Copy)]

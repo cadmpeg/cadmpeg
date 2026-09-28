@@ -116,6 +116,49 @@ fn resolved_joint_origins_refuse_collection_limit() {
 }
 
 #[test]
+fn axial_external_reference_text_refuses_retained_limit() {
+    let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
+    let first_role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    let second_role = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let mut bytes = vec![0; 772];
+    let first_members = append_axial_test_component_operand(
+        &mut bytes, 70, [10, 30], transform, 7_001, first_role, false,
+    );
+    let second_members = append_axial_test_component_operand(
+        &mut bytes, 80, [100, 120], transform, 8_001, second_role, true,
+    );
+    let mut assembly = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:assembly#500", DesignFeatureKind::Assemble, 500,
+    );
+    assembly.try_edit(|draft| {
+        draft.frame_length = 772;
+        draft.reference_members = crate::records::identity::ReferenceRun::unlocated(
+            first_members.into_iter().chain(second_members).chain([90, 91]).collect(),
+        );
+        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+        draft.layout_fixture_references();
+        draft.layout_fixture_tail();
+    }).unwrap();
+    if let DesignScopePayloadMut::Assemble(slot) = assembly.payload_mut() {
+        *slot = Some(axial_test_alignment([transform, transform]));
+    }
+    let mut scopes = vec![
+        assembly,
+        axial_test_component_scope(200, first_role),
+        axial_test_component_scope(300, second_role),
+    ];
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 35;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = bind_axial_assembly_operand_targets(&ctx, &bytes, &records, &mut scopes).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d Design UTF-16 text"));
+}
+
+#[test]
 fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let arena = DecodeArena::new();
     let ctx = axial_binding_context(&arena);
