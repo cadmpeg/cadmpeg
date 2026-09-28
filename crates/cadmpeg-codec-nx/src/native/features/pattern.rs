@@ -1168,12 +1168,19 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(ctx: &cadmpeg_core:
 ) -> Result<Vec<FeatureMultiInstanceOutputLane>, cadmpeg_core::CodecError>
 {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::multi_instance_output_payload_lane(record.payload_view())
-            else {
-                return;
+            if failure.is_some() { return; }
+            let lane = match crate::om::multi_instance_output_payload_lane(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let outputs = match lane.outputs.map_offsets(ctx, |offset| entry_offset + offset as u64) {
+                Ok(outputs) => outputs,
+                Err(error) => { failure = Some(error); return; }
             };
             lanes.push(FeatureMultiInstanceOutputLane {
                 id: format!(
@@ -1182,11 +1189,12 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(ctx: &cadmpeg_core:
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                outputs: lane.outputs.map_offsets(|offset| entry_offset + offset as u64),
+                outputs,
                 source_offset: entry_offset + lane.offset as u64,
             });
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(lanes)
 }
 

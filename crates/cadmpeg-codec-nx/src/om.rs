@@ -1813,24 +1813,27 @@ pub(crate) fn pattern_payload_transform_lane(
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
 pub(crate) fn multi_instance_output_payload_lane(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<MultiInstanceOutputPayloadLane> {
+) -> Result<Option<MultiInstanceOutputPayloadLane>, CodecError> {
     const ENVELOPE: [u8; 10] = [0x3a, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x25, 0x01];
     const ROW_PREFIX: [u8; 7] = [0x26, 0x27, 0x01, 0x02, 0x65, 0x01, 0x02];
     const ROW_ORDINAL_MARKER: u8 = 0x28;
     const REFERENCE_PREFIX: [u8; 2] = [0x00, 0x3b];
 
     if record.name() != "Multi Instance Output" {
-        return None;
+        return Ok(None);
     }
-    let decode = |start: usize| {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX multi-instance output lanes")?;
+    let mut failure = None;
+    let mut decode = |start: usize| {
+        if failure.is_some() { return None; }
         (record.payload().get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
         let declared_count = *record.payload().get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
         let mut instance_count = 0;
-        let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
-        let mut rows = Vec::with_capacity(row_count);
+        let mut rows = Vec::new();
         for expected_row_index in 2..=declared_count {
             (record.payload().get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
             at += ROW_PREFIX.len();
@@ -1846,6 +1849,10 @@ pub(crate) fn multi_instance_output_payload_lane(
             let ordinal = *record.payload().get(at + 1)?;
             instance_count = instance_count.max(ordinal);
             (record.payload().get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            if let Err(error) = reserve_om_retained_item(ctx, &mut rows, "nx multi-instance selector rows") {
+                failure = Some(error);
+                return None;
+            }
             rows.push((selector, ordinal));
             at += 3;
         }
@@ -1857,12 +1864,16 @@ pub(crate) fn multi_instance_output_payload_lane(
         // states how many references the lane carries; `MultiInstanceOutputs`
         // refuses a lane whose reference count does not cover every instance.
         let trailing_instances = 1..instance_count;
-        let mut trailing_references = Vec::with_capacity(trailing_instances.len());
+        let mut trailing_references = Vec::new();
         for _ in trailing_instances {
             let reference_offset = at;
             let object_index =
                 reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
+            if let Err(error) = reserve_om_retained_item(ctx, &mut trailing_references, "nx multi-instance trailing references") {
+                failure = Some(error);
+                return None;
+            }
             trailing_references.push(PayloadObjectReference {
                 offset: record.payload_offset() + reference_offset,
                 token: object_index,
@@ -1870,12 +1881,19 @@ pub(crate) fn multi_instance_output_payload_lane(
             at = end;
         }
         (record.payload().get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        let outputs = match instances::MultiInstanceOutputs::new_charged(ctx, rows, trailing_references) {
+            Ok(Some(outputs)) => outputs,
+            Ok(None) => return None,
+            Err(error) => { failure = Some(error); return None; }
+        };
         Some(MultiInstanceOutputPayloadLane {
             offset: record.payload_offset() + start + 8,
-            outputs: instances::MultiInstanceOutputs::new(rows, trailing_references).ok()?,
+            outputs,
         })
     };
-    unique_candidate((0..=record.payload().len().saturating_sub(ENVELOPE.len())).filter_map(decode))
+    let candidate = unique_candidate((0..=record.payload().len().saturating_sub(ENVELOPE.len())).filter_map(&mut decode));
+    if let Some(error) = failure { return Err(error); }
+    Ok(candidate)
 }
 
 /// Decode the unique exactly counted selector lane in an
