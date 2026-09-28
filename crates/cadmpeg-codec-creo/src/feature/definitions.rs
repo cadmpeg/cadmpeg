@@ -92,14 +92,19 @@ pub(crate) struct FeatureOutline {
     pub(crate) offset: usize,
 }
 
-fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField<Option<f64>>; 6] {
+fn outline_scalars(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<[DecodedField<Option<f64>>; 6], CodecError> {
     let mut cursor = 0;
-    std::array::from_fn(|_| {
+    let mut fields = std::array::from_fn(|_| DecodedField {
+        value: None,
+        body: Vec::new(),
+    });
+    for field in &mut fields {
         if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
-            return DecodedField {
-                value: None,
-                body: Vec::new(),
-            };
+            break;
         }
         let start = cursor;
         let value = if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
@@ -109,11 +114,12 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
             cursor += 1;
             None
         };
-        DecodedField {
+        *field = DecodedField {
             value,
-            body: payload[start..cursor].to_vec(),
-        }
-    })
+            body: ctx.copy_retained(&payload[start..cursor], "creo feature outline scalar body")?,
+        };
+    }
+    Ok(fields)
 }
 
 /// Stored state of a solver scalar token.
@@ -6438,19 +6444,26 @@ fn definitions_in_ranges(
             ),
             (b"transf".as_slice(), FeatureParameterFrameKind::Transform),
         ] {
-            let needle = [label, b"\0\xf9\x04\x03"].concat();
+            let needle_len = label.len() + 4;
             let mut from = start;
             while let Some(relative) = payload[from..end]
-                .windows(needle.len())
-                .position(|window| window == needle)
+                .windows(needle_len)
+                .position(|window| {
+                    window.get(..label.len()) == Some(label)
+                        && window.get(label.len()..) == Some(b"\0\xf9\x04\x03")
+                })
             {
                 let field_offset = from + relative;
-                let body_start = field_offset + needle.len();
+                let body_start = field_offset + needle_len;
                 let body_end = payload[body_start..end]
                     .windows(1)
                     .position(|window| window[0] == psb::token::NAMED_RECORD)
                     .map_or(end, |relative| body_start + relative);
-                let body = payload[body_start..body_end].to_vec();
+                let body = ctx.copy_retained(
+                    &payload[body_start..body_end],
+                    "creo feature parameter frame body",
+                )?;
+                ctx.try_reserve_items(&mut parameter_frames, 1, "creo feature parameter frames")?;
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
                     decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
@@ -6465,9 +6478,11 @@ fn definitions_in_ranges(
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
+                let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], &cache)?;
+                ctx.try_reserve_items(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_scalars: outline_scalars(&payload[scalar_start..end], &cache),
+                    local_scalars,
                     offset: label,
                 });
             }
@@ -6493,9 +6508,11 @@ fn definitions_in_ranges(
                 {
                     continue;
                 }
+                let local_scalars = outline_scalars(ctx, &payload[after_ref + 4..end], &cache)?;
+                ctx.try_reserve_items(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase,
-                    local_scalars: outline_scalars(&payload[after_ref + 4..end], &cache),
+                    local_scalars,
                     offset: label_offset,
                 });
             }
@@ -6658,18 +6675,19 @@ fn definitions_in_ranges(
             }
         });
         let owner_feature_id = owner_override.or_else(|| {
-            let ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
-                .into_iter()
-                .map(|(_, id)| id)
-                .collect::<BTreeSet<_>>();
-            ids.first().copied().filter(|_| ids.len() == 1)
+            let mut ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
+                .map(|(_, id)| id);
+            let first = ids.next()?;
+            ids.all(|id| id == first).then_some(first)
         });
+        let body = ctx.copy_retained(&payload[start..end], "creo feature definition body")?;
+        ctx.try_reserve_items(&mut result, 1, "creo parsed feature definitions")?;
         result.push(FeatureDefinition {
             identity: DefinitionIdentity::Parsed {
                 schema_id: id,
                 owner_feature_id,
             },
-            body: payload[start..end].to_vec(),
+            body,
             parameter_frames,
             outlines,
             variables,
@@ -6687,23 +6705,26 @@ fn definitions_in_ranges(
     Ok(result)
 }
 
-fn contextual_references(
-    payload: &[u8],
+fn contextual_references<'a>(
+    payload: &'a [u8],
     start: usize,
     end: usize,
-    field: &[u8],
-    following_record: &[u8],
-) -> Vec<(usize, u32)> {
-    let needle = [&[psb::token::NAMED_RECORD, 1][..], field, &[0]].concat();
+    field: &'a [u8],
+    following_record: &'a [u8],
+) -> impl Iterator<Item = (usize, u32)> + 'a {
+    let needle_len = 2 + field.len() + 1;
     payload[start..end]
-        .windows(needle.len())
+        .windows(needle_len)
         .enumerate()
-        .filter_map(|(relative, window)| {
-            if window != needle {
+        .filter_map(move |(relative, window)| {
+            if window.get(..2) != Some(&[psb::token::NAMED_RECORD, 1])
+                || window.get(2..2 + field.len()) != Some(field)
+                || window.last() != Some(&0)
+            {
                 return None;
             }
             let record_start = start + relative;
-            let value_start = record_start + needle.len();
+            let value_start = record_start + needle_len;
             let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
             let following_end = after_value.checked_add(3 + following_record.len())?;
             (following_end <= end
@@ -6713,12 +6734,14 @@ fn contextual_references(
                 && payload.get(following_end - 1) == Some(&0))
             .then_some((record_start, value))
         })
-        .collect()
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
+fn definition_starts(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)>, CodecError> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
@@ -6733,33 +6756,44 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             continue;
         }
-        let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
+        let Ok(digits) = std::str::from_utf8(digits) else {
             continue;
         };
+        let Ok(id) = digits.parse::<u32>() else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut starts, 1, "creo feature definition starts")?;
         starts.push((offset, NonZeroU32::new(id), None, false));
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
-    let labeled_starts = starts.clone();
-    for (index, &(start, _, _, _)) in labeled_starts.iter().enumerate() {
-        let end = labeled_starts
-            .get(index + 1)
-            .map_or(payload.len(), |&(offset, _, _, _)| offset);
+    let labeled_count = starts.len();
+    for index in 0..labeled_count {
+        let start = starts[index].0;
+        let end = if index + 1 < labeled_count {
+            starts[index + 1].0
+        } else {
+            payload.len()
+        };
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
+            ctx.try_reserve_items(&mut starts, 1, "creo feature definition starts")?;
             starts.push((offset, NonZeroU32::new(owner), Some(owner), true));
         }
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    starts
+    Ok(starts)
 }
 
-fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
+fn depdb_gsec2d_starts(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)>, CodecError> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
-    payload
+    let candidates = payload
         .windows(GSEC.len())
         .enumerate()
         .filter_map(|(start, window)| {
@@ -6776,10 +6810,15 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option
             if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
                 return None;
             }
-            let id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
+            let id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
             Some((start, NonZeroU32::new(id), None, false))
-        })
-        .collect()
+        });
+    let mut starts = Vec::new();
+    for start in candidates {
+        ctx.try_reserve_items(&mut starts, 1, "creo DEPDB section starts")?;
+        starts.push(start);
+    }
+    Ok(starts)
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
@@ -6788,25 +6827,28 @@ pub(crate) fn definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(payload);
-    let retained_offsets = starts
-        .iter()
-        .map(|(offset, _, _, _)| *offset)
-        .collect::<BTreeSet<_>>();
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let replay_starts = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
+    let mut starts = definition_starts(ctx, payload)?;
+    let mut retained_offsets = BTreeSet::new();
+    for (offset, _, _, _) in &starts {
+        if !retained_offsets.contains(offset) {
+            ctx.charge_collection_items(1, "creo retained definition offset nodes")?;
+            retained_offsets.insert(*offset);
+        }
+    }
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            let id = inherited_definition_id(&starts, offset);
+            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            starts.push((offset, id, None, true));
+        }
+    }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    Ok(definitions_in_ranges(ctx, payload, &starts)?
-        .into_iter()
-        .filter(|definition| retained_offsets.contains(&definition.offset))
-        .collect())
+    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
+    definitions.retain(|definition| retained_offsets.contains(&definition.offset));
+    Ok(definitions)
 }
 
 /// Decode labelled and positional feature definitions embedded directly in a
@@ -6816,24 +6858,30 @@ pub(crate) fn depdb_definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(payload);
-    starts.extend(depdb_gsec2d_starts(payload));
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let replay_starts = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
+    let mut starts = definition_starts(ctx, payload)?;
+    let depdb_starts = depdb_gsec2d_starts(ctx, payload)?;
+    ctx.try_reserve_items(&mut starts, depdb_starts.len(), "creo DEPDB definition starts")?;
+    starts.extend(depdb_starts);
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            let id = inherited_definition_id(&starts, offset);
+            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            starts.push((offset, id, None, true));
+        }
+    }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(ctx, payload, &starts)
 }
 
-fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
+fn s2d_replay_starts(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<usize>, CodecError> {
     const PREFIX: &[u8] = b"\xe3S2D";
-    payload
+    let candidates = payload
         .windows(PREFIX.len())
         .enumerate()
         .filter_map(|(offset, window)| {
@@ -6843,8 +6891,13 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
             let suffix = payload.get(offset + PREFIX.len()..)?;
             let nul = suffix.iter().take(12).position(|byte| *byte == 0)?;
             (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
-        })
-        .collect()
+        });
+    let mut starts = Vec::new();
+    for offset in candidates {
+        ctx.try_reserve_items(&mut starts, 1, "creo S2D replay starts")?;
+        starts.push(offset);
+    }
+    Ok(starts)
 }
 
 fn inherited_definition_id(
@@ -6859,11 +6912,12 @@ fn inherited_definition_id(
 }
 
 fn claimed_s2d_replay_markers(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
     replay_markers: &[usize],
-) -> BTreeSet<usize> {
-    starts
+) -> Result<BTreeSet<usize>, CodecError> {
+    let candidates = starts
         .iter()
         .enumerate()
         .filter(|(_, (_, _, _, positional))| *positional)
@@ -6875,8 +6929,15 @@ fn claimed_s2d_replay_markers(
                 .iter()
                 .copied()
                 .find(|marker| marker >= start && *marker < end)
-        })
-        .collect()
+        });
+    let mut markers = BTreeSet::new();
+    for marker in candidates {
+        if !markers.contains(&marker) {
+            ctx.charge_collection_items(1, "creo claimed S2D marker nodes")?;
+            markers.insert(marker);
+        }
+    }
+    Ok(markers)
 }
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
@@ -6885,25 +6946,26 @@ pub(crate) fn positional_replay_definitions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(payload);
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let pending_offsets = replay_markers
-        .into_iter()
-        .filter(|offset| !claimed_markers.contains(offset))
-        .collect::<BTreeSet<_>>();
-    let replay_starts = pending_offsets
-        .iter()
-        .copied()
-        .map(|offset| (offset, inherited_definition_id(&starts, offset), None, true))
-        .collect::<Vec<_>>();
-    starts.extend(replay_starts);
+    let mut starts = definition_starts(ctx, payload)?;
+    let replay_markers = s2d_replay_starts(ctx, payload)?;
+    let claimed_markers = claimed_s2d_replay_markers(ctx, payload, &starts, &replay_markers)?;
+    let mut pending_offsets = BTreeSet::new();
+    for offset in replay_markers {
+        if !claimed_markers.contains(&offset) {
+            if !pending_offsets.contains(&offset) {
+                ctx.charge_collection_items(1, "creo pending S2D marker nodes")?;
+                pending_offsets.insert(offset);
+            }
+            let id = inherited_definition_id(&starts, offset);
+            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            starts.push((offset, id, None, true));
+        }
+    }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    Ok(definitions_in_ranges(ctx, payload, &starts)?
-        .into_iter()
-        .filter(|definition| pending_offsets.contains(&definition.offset))
-        .collect())
+    let mut definitions = definitions_in_ranges(ctx, payload, &starts)?;
+    definitions.retain(|definition| pending_offsets.contains(&definition.offset));
+    Ok(definitions)
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
@@ -6917,19 +6979,18 @@ pub(crate) fn depdb_section_definition(
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
-    let starts = payload
+    let mut starts = payload
         .windows(GSEC.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == GSEC).then_some(offset))
-        .collect::<Vec<_>>();
+        .filter_map(|(offset, window)| (window == GSEC).then_some(offset));
     let Some((start, section_id, end)) = (|| {
-        let [start] = starts.as_slice() else {
+        let (Some(start), None) = (starts.next(), starts.next()) else {
             return None;
         };
         let name_search_end = start
             .checked_add(NAME_WINDOW)
             .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-        let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
+        let name = find_bytes(payload, NAME, start, name_search_end)? + NAME.len();
         let name_end = payload[name..name_search_end]
             .iter()
             .position(|byte| *byte == 0)?
@@ -6938,10 +6999,10 @@ pub(crate) fn depdb_section_definition(
         if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
             return None;
         }
-        let section_id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-        let end = find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len())
+        let section_id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
+        let end = find_bytes(payload, PREFIX, start + GSEC.len(), payload.len())
             .unwrap_or(payload.len());
-        Some((*start, section_id, end))
+        Some((start, section_id, end))
     })() else {
         return Ok(None);
     };
@@ -7244,6 +7305,166 @@ mod tables_tests;
 
 #[cfg(test)]
 mod tests {
+
+    fn assert_definition_limit(
+        payload: &[u8],
+        operation: &'static str,
+        retained: bool,
+        parse: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+    ) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            if retained {
+                policy.limits.max_retained_bytes = limit;
+            } else {
+                policy.limits.max_collection_items = limit;
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
+            parse(&ctx)
+        };
+        assert!(run(u64::MAX).is_ok(), "service input should parse");
+        let dimension = if retained {
+            ResourceDimension::RetainedBytes
+        } else {
+            ResourceDimension::CollectionItems
+        };
+        let found = (0..128).any(|limit| {
+            matches!(run(limit), Err(CodecError::ResourceLimit(ref refusal))
+                if refusal.dimension == dimension && refusal.operation == operation)
+        });
+        assert!(found, "expected a refusal at {operation}");
+    }
+
+    #[test]
+    fn feature_definition_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0";
+        assert_definition_limit(payload, "creo feature definition starts", false, |ctx| {
+            super::definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn contextual_definition_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            payload, &arena, &policy,
+        )
+        .expect("definition input admitted");
+        assert!(matches!(super::definition_starts(&ctx, payload),
+            Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == "creo feature definition starts"));
+    }
+
+    #[test]
+    fn retained_definition_offset_node_refuses_before_insertion() {
+        let payload = b"feat_defs_1\0";
+        assert_definition_limit(payload, "creo retained definition offset nodes", false, |ctx| {
+            super::definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn replay_marker_vec_refuses_before_growth() {
+        let payload = b"\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo S2D replay starts", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn pending_replay_marker_node_refuses_before_insertion() {
+        let payload = b"\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo pending S2D marker nodes", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_replay_start_vec_refuses_before_growth() {
+        let payload = b"feat_defs_1\0\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo definition replay starts", false, |ctx| {
+            super::definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn claimed_replay_marker_node_refuses_before_insertion() {
+        let payload = b"feat_defs_1\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\xe3S2D0002\0";
+        assert_definition_limit(payload, "creo claimed S2D marker nodes", false, |ctx| {
+            super::positional_replay_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn depdb_section_start_vec_refuses_before_growth() {
+        let payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0";
+        assert_definition_limit(payload, "creo DEPDB section starts", false, |ctx| {
+            super::depdb_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn depdb_definition_start_vec_refuses_before_growth() {
+        let payload = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0";
+        assert_definition_limit(payload, "creo DEPDB definition starts", false, |ctx| {
+            super::depdb_definitions(ctx, payload).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn parsed_definition_vec_refuses_before_growth() {
+        let payload = b"plain body";
+        assert_definition_limit(payload, "creo parsed feature definitions", false, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn definition_body_refuses_before_retained_copy() {
+        let payload = b"plain body";
+        assert_definition_limit(payload, "creo feature definition body", true, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_parameter_frame_vec_refuses_before_growth() {
+        let payload = b"local_sys\0\xf9\x04\x03\xe4";
+        assert_definition_limit(payload, "creo feature parameter frames", false, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_parameter_frame_body_refuses_before_retained_copy() {
+        let payload = b"local_sys\0\xf9\x04\x03\xe4";
+        assert_definition_limit(payload, "creo feature parameter frame body", true, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_outline_vec_refuses_before_growth() {
+        let payload = b"\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03\xe4";
+        assert_definition_limit(payload, "creo feature outlines", false, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
+
+    #[test]
+    fn feature_outline_scalar_refuses_before_retained_copy() {
+        let payload = b"\xe0\x00feat_outl_info\0outline\0\xf9\x02\x03\xe4";
+        assert_definition_limit(payload, "creo feature outline scalar body", true, |ctx| {
+            super::definitions_in_ranges(ctx, payload, &[(0, None, None, false)]).map(|_| ())
+        });
+    }
 
     #[test]
     fn numerical_ranges_trim_line_intersection_is_scale_independent() {
