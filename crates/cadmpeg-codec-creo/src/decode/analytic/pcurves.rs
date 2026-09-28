@@ -58,19 +58,24 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
 }
 
 fn topology_ignored_surface_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     layout: &crate::container::Layout,
     rows: &[crate::surface::SurfaceRow],
-) -> BTreeSet<u32> {
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
     // The interpolation carrier makes a legacy spline surface evaluable, but
     // its trim/intersection join is still unresolved. Keep that surface from
     // vetoing endpoint evidence supplied by a proven adjacent analytic face.
     if !matches!(layout, crate::container::Layout::LegacyAscii(_)) {
-        return BTreeSet::new();
+        return Ok(BTreeSet::new());
     }
-    rows.iter()
-        .filter(|row| row.kind == crate::surface::SurfaceKind::Spline)
-        .map(|row| row.id)
-        .collect()
+    let mut ignored = BTreeSet::new();
+    for row in rows {
+        if row.kind == crate::surface::SurfaceKind::Spline && !ignored.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo ignored spline surface IDs")?;
+            ignored.insert(row.id);
+        }
+    }
+    Ok(ignored)
 }
 
 pub(in crate::decode) fn canonicalized_pcurve_endpoints(
@@ -226,11 +231,15 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
     faces: [u32; 2],
     endpoint_sets: [[[f64; 2]; 2]; 2],
 ) -> Option<[[f64; 3]; 2]> {
-    let mapped = map_pcurve_paths(
-        ir,
-        faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-    );
+    let mapped = crate::decode::with_test_decode_ctx(|ctx| {
+        map_pcurve_paths(
+            ctx,
+            ir,
+            faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service pcurve path mapping");
     pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false).map(|evidence| evidence.points)
 }
 
@@ -709,10 +718,11 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
 }
 
 fn map_pcurve_paths(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     paths: impl IntoIterator<Item = (Option<NonZeroU32>, [[f64; 2]; 2])>,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> MappedPcurvePaths {
+) -> Result<MappedPcurvePaths, cadmpeg_core::CodecError> {
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
         missing_surfaces: 0,
@@ -745,12 +755,13 @@ fn map_pcurve_paths(
             result.unevaluable_paths += 1;
             continue;
         };
+        ctx.try_reserve_items(&mut result.mapped, 1, "creo mapped pcurve paths")?;
         result.mapped.push(MappedPcurvePath {
             face_id,
             endpoints: [first, second],
         });
     }
-    result
+    Ok(result)
 }
 
 fn pcurve_endpoint_evidence_from_mapped(
@@ -858,7 +869,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     PcurveEndpointDiagnostics,
 ), cadmpeg_core::CodecError> {
     let ignored_surface_ids =
-        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(ctx, &scan.framing.layout, &scan.surfaces.rows)?;
     let path_activity = PcurvePathActivity::from_scan(ctx, scan)?;
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
@@ -866,15 +877,21 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                              faces: [Option<NonZeroU32>; 2],
                              paths: Vec<IndexedPcurvePath>,
                              authoritative: bool,
-                             endpoint_carrier_proof: bool| {
+                             endpoint_carrier_proof: bool|
+     -> Result<(), cadmpeg_core::CodecError> {
         let mut mapped_paths = Vec::new();
         let mut carrier_mapped_paths = Vec::new();
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
-            let mapped = map_pcurve_paths(ir, [(face_id, endpoints)], source_carriers);
+            let mapped = map_pcurve_paths(ctx, ir, [(face_id, endpoints)], source_carriers)?;
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
+            ctx.try_reserve_items(
+                &mut mapped_paths,
+                mapped.mapped.len(),
+                "creo selected mapped pcurve paths",
+            )?;
             mapped_paths.extend(mapped.mapped.iter().copied());
             let carrier_status = if endpoint_carrier_proof {
                 pcurve_endpoint_carrier_status(
@@ -899,6 +916,11 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                 PcurveCarrierStatus::Validated => {
                     carrier_proof_available = true;
                     diagnostics.carrier_validated_paths += 1;
+                    ctx.try_reserve_items(
+                        &mut carrier_mapped_paths,
+                        mapped.mapped.len(),
+                        "creo carrier mapped pcurve paths",
+                    )?;
                     carrier_mapped_paths.extend(mapped.mapped);
                 }
                 PcurveCarrierStatus::Rejected => {
@@ -936,7 +958,27 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             Some(evidence) => {
                 diagnostics.accepted_records += 1;
                 diagnostics.complete_records += usize::from(evidence.complete);
-                candidates.entry(curve_id).or_default().push(evidence);
+                match candidates.entry(curve_id) {
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        ctx.try_reserve_items(
+                            entry.get_mut(),
+                            1,
+                            "creo pcurve evidence candidates",
+                        )?;
+                        entry.get_mut().push(evidence);
+                    }
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo pcurve evidence candidate nodes")?;
+                        let mut entries = Vec::new();
+                        ctx.try_reserve_items(
+                            &mut entries,
+                            1,
+                            "creo pcurve evidence candidates",
+                        )?;
+                        entries.push(evidence);
+                        entry.insert(entries);
+                    }
+                }
             }
             None if selected_paths.is_empty() && !carrier_proof_available => {
                 diagnostics.unmapped_records += 1;
@@ -945,11 +987,17 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                 diagnostics.inconsistent_records += 1;
                 if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
                     if let Some(detail) = pcurve_mismatch_detail(curve_id, &selected_paths) {
+                        ctx.try_reserve_items(
+                            &mut diagnostics.mismatch_samples,
+                            1,
+                            "creo pcurve mismatch samples",
+                        )?;
                         diagnostics.mismatch_samples.push(detail);
                     }
                 }
             }
         }
+        Ok(())
     };
     for (curve_id, faces, first, second, prototype) in scan
         .curves
@@ -986,15 +1034,19 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         } else {
             diagnostics.topology_mismatch_records += 1;
         }
-        let paths = faces
+        let mut paths = Vec::new();
+        for path in faces
             .into_iter()
             .zip([first, second])
             .enumerate()
             .filter(|(_, (face_id, _))| {
                 face_id.is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
             })
-            .collect::<Vec<_>>();
-        process_paths(curve_id, faces, paths, false, false);
+        {
+            ctx.try_reserve_items(&mut paths, 1, "creo pcurve candidate paths")?;
+            paths.push(path);
+        }
+        process_paths(curve_id, faces, paths, false, false)?;
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
@@ -1020,7 +1072,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         };
         let Some(endpoint_sets) = endpoint_sets else {
             diagnostics.two_chart_unmapped_records += 1;
-            process_paths(pcurve.curve_id, faces, Vec::new(), true, false);
+            process_paths(pcurve.curve_id, faces, Vec::new(), true, false)?;
             continue;
         };
         if endpoint_sets.complete() {
@@ -1039,7 +1091,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         } else {
             diagnostics.topology_mismatch_records += 1;
         }
-        let paths = faces
+        let mut paths = Vec::new();
+        for path in faces
             .into_iter()
             .zip(endpoint_sets.paths())
             .enumerate()
@@ -1048,14 +1101,17 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                     .is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
                     .then_some((index, (face_id, endpoints?)))
             })
-            .collect::<Vec<_>>();
+        {
+            ctx.try_reserve_items(&mut paths, 1, "creo pcurve candidate paths")?;
+            paths.push(path);
+        }
         process_paths(
             pcurve.curve_id,
             faces,
             paths,
             endpoint_sets.complete(),
             surface_mismatch,
-        );
+        )?;
     }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
         ctx,
@@ -1077,11 +1133,12 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             pcurve.face_0_endpoints,
             pcurve.face_0_endpoints,
         );
-        let paths = faces[0]
-            .is_none_or(|id| !ignored_surface_ids.contains(&id.get()))
-            .then_some(vec![(0, (faces[0], face_0_endpoints))])
-            .unwrap_or_default();
-        process_paths(pcurve.curve_id, faces, paths, true, false);
+        let mut paths = Vec::new();
+        if faces[0].is_none_or(|id| !ignored_surface_ids.contains(&id.get())) {
+            ctx.try_reserve_items(&mut paths, 1, "creo pcurve candidate paths")?;
+            paths.push((0, (faces[0], face_0_endpoints)));
+        }
+        process_paths(pcurve.curve_id, faces, paths, true, false)?;
     }
     let mut evidence = BTreeMap::new();
     for (curve_id, candidates) in candidates {
@@ -1100,6 +1157,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                         .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
                 })
         }) {
+            ctx.charge_collection_items(1, "creo pcurve endpoint evidence nodes")?;
             evidence.insert(
                 curve_id,
                 PcurveEndpointEvidence {
@@ -1123,10 +1181,12 @@ fn pcurve_edge_endpoints(
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<BTreeMap<u32, [[f64; 3]; 2]>, cadmpeg_core::CodecError> {
-    Ok(pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)?
-        .into_iter()
-        .map(|(curve_id, evidence)| (curve_id, evidence.points))
-        .collect())
+    let mut endpoints = BTreeMap::new();
+    for (curve_id, evidence) in pcurve_edge_endpoint_evidence(ctx, scan, ir, source_carriers)? {
+        ctx.charge_collection_items(1, "creo pcurve endpoint map nodes")?;
+        endpoints.insert(curve_id, evidence.points);
+    }
+    Ok(endpoints)
 }
 
 /// Keep the surface frame, with the reference reversed when `sign` is
@@ -1384,7 +1444,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let reconciled_endpoints = pcurve_edge_endpoints(ctx, scan, ir, source_carriers)?;
     let ignored_surface_ids =
-        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(ctx, &scan.framing.layout, &scan.surfaces.rows)?;
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     {
@@ -2048,10 +2108,238 @@ mod tests {
         ];
 
         assert_eq!(
-            topology_ignored_surface_ids(&crate::test_support::legacy_layout(), &rows),
+            crate::decode::with_test_decode_ctx(|ctx| topology_ignored_surface_ids(ctx, &crate::test_support::legacy_layout(), &rows)).expect("service spline filter"),
             BTreeSet::from([7]),
         );
-        assert!(topology_ignored_surface_ids(&crate::container::Layout::Nd, &rows).is_empty());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| topology_ignored_surface_ids(ctx, &crate::container::Layout::Nd, &rows)).expect("service spline filter").is_empty());
+    }
+
+    fn one_plane_pcurve_fixture() -> (crate::container::ContainerScan<'static>, CadIr) {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [std::num::NonZeroU32::new(10), None],
+            face_0_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            face_1_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            offset: 0,
+        });
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#10".to_string())
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        });
+        (scan, ir)
+    }
+
+    fn pcurve_evidence_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+        let (scan, ir) = one_plane_pcurve_fixture();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        pcurve_edge_endpoint_evidence_with_carriers(
+            &ctx,
+            &scan,
+            &ir,
+            &BTreeMap::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("pcurve evidence collection exceeds limit")
+    }
+
+    fn assert_pcurve_collection_refusal(error: cadmpeg_core::CodecError, operation: &str) {
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == operation));
+    }
+
+    #[test]
+    fn legacy_spline_filter_refuses_ignored_surface_node() {
+        let row = crate::surface::SurfaceRow {
+            id: 7,
+            kind: crate::surface::SurfaceKind::Spline,
+            feature_id: 0,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        let error = topology_ignored_surface_ids(
+            &ctx, &crate::test_support::legacy_layout(), &[row],
+        )
+        .expect_err("spline set exceeds limit");
+        assert_pcurve_collection_refusal(error, "creo ignored spline surface IDs");
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_candidate_path_vector() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(0), "creo pcurve candidate paths",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_mapped_path_vector() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(2), "creo mapped pcurve paths",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_selected_path_vector() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(3), "creo selected mapped pcurve paths",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_candidate_node() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(4), "creo pcurve evidence candidate nodes",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_candidate_member() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(5), "creo pcurve evidence candidates",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_endpoint_node() {
+        assert_pcurve_collection_refusal(
+            pcurve_evidence_limit_error(6), "creo pcurve endpoint evidence nodes",
+        );
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_carrier_mapped_path_vector() {
+        let (mut scan, mut ir) = one_plane_pcurve_fixture();
+        scan.curves.pcurves[0].faces[1] = std::num::NonZeroU32::new(11);
+        scan.curves.pcurves[0].face_0_endpoints = [[1.0, 0.0], [3.0, 0.0]];
+        scan.curves.pcurves[0].face_1_endpoints = [[1.0, 0.0], [3.0, 0.0]];
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        });
+        let carriers = BTreeMap::from([
+            (10, CarrierEquation::Plane(PlaneEquation {
+                origin: [0.0, 0.0, 0.0], normal: [0.0, 0.0, 1.0],
+            })),
+            (11, CarrierEquation::Plane(PlaneEquation {
+                origin: [0.0, 0.0, 0.0], normal: [0.0, 1.0, 0.0],
+            })),
+        ]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        let error = pcurve_edge_endpoint_evidence_with_carriers(
+            &ctx, &scan, &ir, &carriers,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("carrier path vector exceeds limit");
+        assert_pcurve_collection_refusal(error, "creo carrier mapped pcurve paths");
+    }
+
+    #[test]
+    fn pcurve_evidence_refuses_mismatch_sample_vector() {
+        let (mut scan, mut ir) = one_plane_pcurve_fixture();
+        scan.curves.pcurves[0].faces[1] = std::num::NonZeroU32::new(11);
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId::mint("creo:visibgeom:surface#11".to_string())
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        let error = pcurve_edge_endpoint_evidence_with_carriers(
+            &ctx, &scan, &ir, &BTreeMap::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("mismatch sample exceeds limit");
+        assert_pcurve_collection_refusal(error, "creo pcurve mismatch samples");
+    }
+
+    #[test]
+    fn pcurve_endpoints_refuse_result_node() {
+        let (scan, ir) = one_plane_pcurve_fixture();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 10;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        )
+        .expect("empty root");
+        let error = super::pcurve_edge_endpoints(
+            &ctx, &scan, &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("endpoint map exceeds limit");
+        assert_pcurve_collection_refusal(error, "creo pcurve endpoint map nodes");
+    }
+
+    #[test]
+    fn pcurve_evidence_preserves_one_plane_path_at_service_limit() {
+        let (scan, ir) = one_plane_pcurve_fixture();
+        let (evidence, diagnostics) = crate::decode::with_test_decode_ctx(|ctx| {
+            pcurve_edge_endpoint_evidence_with_carriers(
+                ctx,
+                &scan,
+                &ir,
+                &BTreeMap::new(),
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            )
+        })
+        .expect("service pcurve evidence");
+        assert_eq!(evidence.get(&7).map(|entry| entry.points),
+            Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]]));
+        assert_eq!(diagnostics.accepted_records, 1);
     }
 
     #[test]
@@ -2120,11 +2408,12 @@ mod tests {
             source_object: None,
         });
 
-        let mapped = super::map_pcurve_paths(
+        let mapped = crate::decode::with_test_decode_ctx(|ctx| super::map_pcurve_paths(
+            ctx,
             &ir,
             [(std::num::NonZeroU32::new(7), [[0.0, 0.0], [1.0, 0.0]])],
             &source_carriers,
-        );
+        )).expect("service pcurve paths");
         assert_eq!(mapped.missing_surfaces, 0);
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
@@ -2811,14 +3100,15 @@ mod tests {
     fn a_pcurve_path_with_an_overflowing_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(overflowing_plane_surface(7));
-        let mapped = super::map_pcurve_paths(
+        let mapped = crate::decode::with_test_decode_ctx(|ctx| super::map_pcurve_paths(
+            ctx,
             &ir,
             [(
                 std::num::NonZeroU32::new(7),
                 [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
             )],
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve paths");
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
         assert!(mapped.mapped[0].endpoints[0][0].is_nan());
@@ -2992,14 +3282,15 @@ mod tests {
     fn a_pcurve_path_with_an_overflowing_placed_endpoint_is_mapped() {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(overflowing_placed_plane_surface(7));
-        let mapped = super::map_pcurve_paths(
+        let mapped = crate::decode::with_test_decode_ctx(|ctx| super::map_pcurve_paths(
+            ctx,
             &ir,
             [(
                 std::num::NonZeroU32::new(7),
                 [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
             )],
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        )).expect("service pcurve paths");
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
         assert_eq!(mapped.mapped[0].endpoints[0], [f64::INFINITY, 0.0, 0.0]);
