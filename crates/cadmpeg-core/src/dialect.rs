@@ -30,11 +30,21 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
+use crate::decode::DecodeContext;
+use crate::CodecError;
+
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::text::NonBlankString;
+
+fn copy_dialect_text(ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+    let mut text = String::new();
+    ctx.reserve_retained_string(&mut text, source.len(), "copy dialect text")?;
+    text.push_str(source);
+    Ok(text)
+}
 
 /// A registry dialect id, for example `"rhino:archive-80"`.
 ///
@@ -410,6 +420,17 @@ impl<'de> Deserialize<'de> for DialectLayers {
 }
 
 impl DialectLayers {
+    /// Copy every layer through the caller's decode budget.
+    pub fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let primary = self.primary.clone_charged(ctx)?;
+        let mut extra = Vec::new();
+        ctx.reserve_collection_vec(&mut extra, self.extra.len(), "copy dialect layers")?;
+        for layer in &self.extra {
+            extra.push(layer.clone_charged(ctx)?);
+        }
+        Ok(Self { primary, extra })
+    }
+
     /// Constructs dialect layers with one primary and no extra layers.
     #[must_use]
     pub fn of(primary: DialectMatch) -> Self {
@@ -554,6 +575,42 @@ impl<T: FormatIdentityPayload> FormatIdentity<T> {
 }
 
 impl DialectMatch {
+    fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let dialect = DialectId {
+            value: match &self.dialect.value {
+                Cow::Borrowed(value) => Cow::Borrowed(*value),
+                Cow::Owned(value) => Cow::Owned(copy_dialect_text(ctx, value)?),
+            },
+            namespace_len: self.dialect.namespace_len,
+        };
+        let mut declared = BTreeMap::new();
+        for (key, value) in &self.declared {
+            ctx.charge_collection_items(1, "copy dialect declaration")?;
+            let copied_key = NonBlankString::new(copy_dialect_text(ctx, key.as_str())?)
+                .ok_or_else(|| CodecError::malformed("invalid dialect declaration key"))?;
+            declared.insert(copied_key, copy_dialect_text(ctx, value)?);
+        }
+        let instance = self
+            .instance
+            .as_ref()
+            .map(|value| copy_dialect_text(ctx, value))
+            .transpose()?;
+        let admission = match &self.admission {
+            Admission::Admitted => Admission::Admitted,
+            Admission::Unverified { using } => Admission::Unverified {
+                using: Grammar(copy_dialect_text(ctx, &using.0)?),
+            },
+            Admission::Residual => Admission::Residual,
+            Admission::Refused => Admission::Refused,
+        };
+        Ok(Self {
+            dialect,
+            declared,
+            instance,
+            admission,
+        })
+    }
+
     fn with_admission(dialect: DialectId, admission: Admission) -> Self {
         Self {
             dialect,
@@ -672,6 +729,36 @@ mod tests {
 
     fn layer(format: &str) -> DialectMatch {
         DialectMatch::admitted(DialectId::parse(format!("{format}:known")).unwrap())
+    }
+
+    #[test]
+    fn charged_layer_copy_preserves_declarations_and_refuses_retained_limit() {
+        use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let primary = DialectMatch::admitted(crate::dialect_id!("sldprt:unknown"))
+            .with_declared(std::collections::BTreeMap::from([(
+                crate::nonblank_literal!("sw_version"),
+                "12000".to_string(),
+            )]));
+        let extra = DialectMatch::residual(crate::dialect_id!("parasolid:unknown"))
+            .with_instance("body-1");
+        let layers = DialectLayers::of(primary).with(extra).unwrap();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(layers.clone_charged(&ctx).unwrap(), layers);
+
+        let limited_arena = DecodeArena::new();
+        let mut limited = DecodePolicy::service();
+        limited.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &limited_arena, &limited).unwrap();
+        let error = layers.clone_charged(&ctx).unwrap_err();
+        assert!(matches!(
+            error,
+            crate::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "copy dialect text"
+        ));
     }
 
     #[test]
