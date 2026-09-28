@@ -11,7 +11,6 @@ use std::fmt;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::identity_key;
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey,
     LoopId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId,
@@ -41,20 +40,17 @@ pub(crate) fn directory_lookup_key<'a>(
 }
 
 /// A decoded number an identity key may be spelled with.
-///
-/// A decimal spelling is an identity key by construction, so the conversion
-/// answers [`IdentityKey`] and no minter has a failing branch.
 pub(crate) trait Ordinal: Copy {
-    /// The decimal spelling of this number, as an identity key.
-    fn key(self) -> IdentityKey;
+    /// The number retained without allocating its decimal spelling.
+    fn piece(self) -> Piece;
 
     /// This number read as a Directory sequence, if it is one.
     fn sequence(self) -> Option<u32>;
 }
 
 impl Ordinal for u32 {
-    fn key(self) -> IdentityKey {
-        IdentityKey::from(self)
+    fn piece(self) -> Piece {
+        Piece::Unsigned(u64::from(self))
     }
 
     fn sequence(self) -> Option<u32> {
@@ -63,8 +59,8 @@ impl Ordinal for u32 {
 }
 
 impl Ordinal for usize {
-    fn key(self) -> IdentityKey {
-        IdentityKey::from(self)
+    fn piece(self) -> Piece {
+        Piece::Index(self)
     }
 
     fn sequence(self) -> Option<u32> {
@@ -73,8 +69,8 @@ impl Ordinal for usize {
 }
 
 impl Ordinal for i64 {
-    fn key(self) -> IdentityKey {
-        IdentityKey::from(self)
+    fn piece(self) -> Piece {
+        Piece::Signed(self)
     }
 
     fn sequence(self) -> Option<u32> {
@@ -99,24 +95,79 @@ pub(crate) enum Word {
 }
 
 impl Word {
-    /// This word as an identity key.
-    ///
-    /// Every arm is a literal the `identity_key!` macro admits during const
-    /// evaluation, so a word that breaks the key grammar fails `cargo check`.
-    fn key(self) -> IdentityKey {
+    /// The fixed spelling of this word.
+    const fn text(self) -> &'static str {
         match self {
-            Self::Body => identity_key!("body"),
-            Self::BoundedPlane => identity_key!("bounded-plane"),
-            Self::End => identity_key!("end"),
-            Self::Face => identity_key!("face"),
-            Self::FreeGeometry => identity_key!("free-geometry"),
-            Self::ImplicitOuter => identity_key!("implicit-outer"),
-            Self::LegacySingleParent => identity_key!("legacy-single-parent"),
-            Self::PlacedDirectrix => identity_key!("placed-directrix"),
-            Self::PlacedGeneratrix => identity_key!("placed-generatrix"),
-            Self::PlacedSource => identity_key!("placed-source"),
-            Self::Start => identity_key!("start"),
+            Self::Body => "body",
+            Self::BoundedPlane => "bounded-plane",
+            Self::End => "end",
+            Self::Face => "face",
+            Self::FreeGeometry => "free-geometry",
+            Self::ImplicitOuter => "implicit-outer",
+            Self::LegacySingleParent => "legacy-single-parent",
+            Self::PlacedDirectrix => "placed-directrix",
+            Self::PlacedGeneratrix => "placed-generatrix",
+            Self::PlacedSource => "placed-source",
+            Self::Start => "start",
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Piece {
+    Text(&'static str),
+    Unsigned(u64),
+    Index(usize),
+    Signed(i64),
+}
+
+impl fmt::Display for Piece {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Text(text) => formatter.write_str(text),
+            Self::Unsigned(value) => value.fmt(formatter),
+            Self::Index(value) => value.fmt(formatter),
+            Self::Signed(value) => value.fmt(formatter),
+        }
+    }
+}
+
+const INLINE_PIECES: usize = 16;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum StemPieces {
+    Inline { items: [Piece; INLINE_PIECES], len: usize },
+    Overflow(Vec<Piece>),
+}
+
+impl StemPieces {
+    fn new(first: Piece) -> Self {
+        let mut items = [Piece::Text(""); INLINE_PIECES];
+        items[0] = first;
+        Self::Inline { items, len: 1 }
+    }
+
+    fn push(&mut self, piece: Piece) {
+        match self {
+            Self::Inline { items, len } if *len < INLINE_PIECES => {
+                items[*len] = piece;
+                *len += 1;
+            }
+            Self::Inline { items, len } => {
+                let mut overflow = Vec::from(&items[..*len]);
+                overflow.push(piece);
+                *self = Self::Overflow(overflow);
+            }
+            Self::Overflow(items) => items.push(piece),
+        }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Piece> {
+        let slice: &[Piece] = match self {
+            Self::Inline { items, len } => &items[..*len],
+            Self::Overflow(items) => items,
+        };
+        slice.iter()
     }
 }
 
@@ -127,23 +178,22 @@ impl Word {
 /// came from asks the stem instead of parsing the minted text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Stem {
-    key: IdentityKey,
+    pieces: StemPieces,
     origin: Option<u32>,
 }
 
 impl Stem {
     /// The key of one Directory entry: `D{sequence}`.
     pub(crate) fn directory(sequence: impl Ordinal) -> Self {
-        Self {
-            key: identity_key!("D").then(sequence.key()),
-            origin: sequence.sequence(),
-        }
+        let mut stem = Self { pieces: StemPieces::new(Piece::Text("D")), origin: sequence.sequence() };
+        stem.pieces.push(sequence.piece());
+        stem
     }
 
     /// A key that is one fixed word.
     pub(crate) fn word(word: Word) -> Self {
         Self {
-            key: word.key(),
+            pieces: StemPieces::new(Piece::Text(word.text())),
             origin: None,
         }
     }
@@ -153,16 +203,16 @@ impl Stem {
     /// The key is rooted at the word, not at the sequence, so it has no origin:
     /// such a record is a derivation of the entry, not its whole neutral form.
     pub(crate) fn word_directory(word: Word, sequence: impl Ordinal) -> Self {
-        Self {
-            key: word.key().dash(identity_key!("D").then(sequence.key())),
-            origin: None,
-        }
+        let mut stem = Self::word(word);
+        stem.pieces.push(Piece::Text("-D"));
+        stem.pieces.push(sequence.piece());
+        stem
     }
 
     /// A key that is one decoded number.
     pub(crate) fn number(value: impl Ordinal) -> Self {
         Self {
-            key: value.key(),
+            pieces: StemPieces::new(value.piece()),
             origin: None,
         }
     }
@@ -174,43 +224,39 @@ impl Stem {
 
     /// This stem's identity key.
     fn key(&self) -> IdentityKey {
-        self.key.clone()
+        IdentityKey::encode_key_text(&self.to_string())
     }
 
     /// A child keyed by a Directory sequence: `{self}:D{sequence}`.
     pub(crate) fn child(&self, sequence: impl Ordinal) -> Self {
-        self.derive(
-            self.key
-                .clone()
-                .colon(identity_key!("D").then(sequence.key())),
-        )
+        self.derive(Piece::Text(":D"), sequence.piece())
     }
 
     /// A child keyed by an ordinal: `{self}:{index}`.
     pub(crate) fn slot(&self, index: impl Ordinal) -> Self {
-        self.derive(self.key.clone().colon(index.key()))
+        self.derive(Piece::Text(":"), index.piece())
     }
 
     /// A named part of this key: `{self}:{word}`.
     pub(crate) fn part(&self, word: Word) -> Self {
-        self.derive(self.key.clone().colon(word.key()))
+        self.derive(Piece::Text(":"), Piece::Text(word.text()))
     }
 
     /// A named derivation of this key: `{self}-{word}`.
     pub(crate) fn tail(&self, word: Word) -> Self {
-        self.derive(self.key.clone().dash(word.key()))
+        self.derive(Piece::Text("-"), Piece::Text(word.text()))
     }
 
     /// A numbered derivation of this key: `{self}-{index}`.
     pub(crate) fn tail_index(&self, index: impl Ordinal) -> Self {
-        self.derive(self.key.clone().dash(index.key()))
+        self.derive(Piece::Text("-"), index.piece())
     }
 
-    fn derive(&self, key: IdentityKey) -> Self {
-        Self {
-            key,
-            origin: self.origin,
-        }
+    fn derive(&self, separator: Piece, value: Piece) -> Self {
+        let mut result = self.clone();
+        result.pieces.push(separator);
+        result.pieces.push(value);
+        result
     }
 }
 
@@ -232,7 +278,10 @@ impl<'borrow, 'arena> MintContext<'borrow, 'arena> for Option<&'borrow DecodeCon
 
 impl fmt::Display for Stem {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.key.as_str())
+        for piece in self.pieces.iter() {
+            piece.fmt(formatter)?;
+        }
+        Ok(())
     }
 }
 
@@ -410,7 +459,7 @@ minter!(
 
 #[cfg(test)]
 mod tests {
-    use super::{directory_lookup_key, Stem};
+    use super::{directory_lookup_key, Stem, StemPieces, Word};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -456,5 +505,22 @@ mod tests {
         check!(appearance_color, appearance_color_admitted);
         check!(appearance_standard, appearance_standard_admitted);
         check!(appearance_binding, appearance_binding_admitted);
+    }
+
+    #[test]
+    fn decoded_stem_derivations_use_inline_parts_without_changing_keys() {
+        let stem = Stem::directory(u32::MAX)
+            .child(u32::MAX)
+            .slot(usize::MAX)
+            .slot(usize::MAX)
+            .tail(Word::End);
+        assert!(matches!(stem.pieces, StemPieces::Inline { .. }));
+        assert_eq!(stem.origin(), Some(u32::MAX));
+        assert_eq!(
+            stem.to_string(),
+            format!("D4294967295:D4294967295:{0}:{0}-end", usize::MAX)
+        );
+        assert_eq!(Stem::word_directory(Word::Face, 1_u32).to_string(), "face-D1");
+        assert_eq!(Stem::number(-1_i64).to_string(), "-1");
     }
 }
