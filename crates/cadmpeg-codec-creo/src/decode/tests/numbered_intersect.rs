@@ -32,7 +32,6 @@ use crate::decode::surfaces::fc05_model_frame;
 use crate::decode::sweep::nurbs::{
     placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix, signed_unit_chart,
 };
-use crate::decode::sweep::planes::feature_outline_planes;
 use crate::decode::sweep::surfaces::{
     extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
@@ -67,6 +66,16 @@ fn service_feature_plane_equations(
         crate::decode::sweep::planes::feature_plane_equations(
             ctx, scan, ir, source_carriers, feature_id,
         )
+    })
+    .expect("service resources")
+}
+
+fn service_feature_outline_planes(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<Vec<crate::decode::sweep::planes::FeatureOutlinePlane>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sweep::planes::feature_outline_planes(ctx, scan, feature_id)
     })
     .expect("service resources")
 }
@@ -413,17 +422,17 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         .outlines
         .extend([plane(31, 0.0), plane(32, 5.0)]);
 
-    assert!(feature_outline_planes(&scan, 911).is_none());
+    assert!(service_feature_outline_planes(&scan, 911).is_none());
 
     scan.planes.outlines.push(plane(33, 10.0));
     assert_eq!(
-        feature_outline_planes(&scan, 911).map(|planes| planes.len()),
+        service_feature_outline_planes(&scan, 911).map(|planes| planes.len()),
         Some(3)
     );
-    assert!(hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")).is_none());
+    assert!(hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes")).is_none());
 
     scan.planes.outlines.push(plane(33, 10.0));
-    assert!(feature_outline_planes(&scan, 911).is_none());
+    assert!(service_feature_outline_planes(&scan, 911).is_none());
 }
 
 #[test]
@@ -451,14 +460,14 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         .extend([plane(902, 0.0), plane(701, 6.5)]);
 
     assert_eq!(
-        feature_outline_planes(&scan, 911),
+        service_feature_outline_planes(&scan, 911),
         Some(vec![
             (902, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
             (701, [0.0, 0.0, 6.5], [0.0, 0.0, 1.0]),
         ])
     );
     assert_eq!(
-        hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")),
+        hole_placement(service_feature_outline_planes(&scan, 911).expect("complete planes")),
         Some((
             902,
             [0.0, 0.0, 1.0],

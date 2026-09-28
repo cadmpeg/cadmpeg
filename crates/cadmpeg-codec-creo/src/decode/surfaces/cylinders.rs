@@ -375,7 +375,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
-        let cylinders = if let Some(hole) = simple_hole_geometry(scan, feature_id) {
+        let cylinders = if let Some(hole) = simple_hole_geometry(ctx, scan, feature_id)? {
             hole.cylinder_rows
                 .into_iter()
                 .map(|row| (row, hole.geometry))

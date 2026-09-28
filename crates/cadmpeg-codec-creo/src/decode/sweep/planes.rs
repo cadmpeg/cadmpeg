@@ -162,18 +162,25 @@ pub(in super::super) fn feature_outline_plane(
 /// unambiguous placed equations. Partial collections cannot establish ordered
 /// caps.
 pub(in super::super) fn feature_outline_planes(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<Vec<FeatureOutlinePlane>> {
-    scan.surfaces
+) -> Result<Option<Vec<FeatureOutlinePlane>>, CodecError> {
+    let mut planes = Vec::new();
+    for row in scan.surfaces
         .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
-        .map(|row| row.id)
-        .map(|id| feature_outline_plane(scan, feature_id, id))
-        .collect()
+    {
+        let Some(plane) = feature_outline_plane(scan, feature_id, row.id) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut planes, 1, "creo feature outline planes")?;
+        planes.push(plane);
+    }
+    Ok(Some(planes))
 }
 
 pub(in super::super) fn generated_arc_cylinder_extent(
