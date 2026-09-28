@@ -266,6 +266,21 @@ pub(super) fn sketch_entity_id(
     ))
 }
 
+pub(super) fn sketch_entity_id_admitted(
+    ctx: &DecodeContext<'_>,
+    sketch: &SketchId,
+    suffix: impl std::fmt::Display,
+) -> Result<Option<SketchEntityId>, CodecError> {
+    let text = ctx.format_retained(
+        format_args!(
+            "creo:featdefs:sketch_entity#{}:{suffix}",
+            sketch_identity_scope(sketch),
+        ),
+        "creo sketch entity identity",
+    )?;
+    Ok(SketchEntityId::try_from(text).ok())
+}
+
 pub(super) fn sketch_constraint_id(
     sketch: &SketchId,
     suffix: impl std::fmt::Display,

@@ -10,7 +10,7 @@ use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::units::FinitePoint2;
 
-use super::super::sketch_ids::sketch_entity_id;
+use super::super::sketch_ids::sketch_entity_id_admitted;
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
 use crate::decode::sketch_transfer::identity::{
@@ -869,7 +869,7 @@ pub(in crate::decode) fn saved_profile_chains(
         if !is_full_circle_geometry(geometry) {
             continue;
         }
-        let Some(entity) = sketch_entity_id(sketch, external_id) else {
+        let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
             continue;
         };
         let uses = crate::decode::collect_items(
@@ -938,7 +938,7 @@ pub(in crate::decode) fn saved_profile_chains(
             }
             ctx.charge_collection_items(1, "creo saved profile visited nodes")?;
             used.insert(row);
-            let Some(entity) = sketch_entity_id(sketch, rows[row].0) else {
+            let Some(entity) = sketch_entity_id_admitted(ctx, sketch, rows[row].0)? else {
                 continue;
             };
             ctx.try_reserve_items(&mut uses, 1, "creo saved profile uses")?;
