@@ -11,8 +11,8 @@ use crate::records::configuration::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use serde::de::{IgnoredAny, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, Visitor};
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -60,108 +60,164 @@ fn configuration_scalar_text(
     }
 }
 
-#[derive(Default)]
-struct OrderedVariantNames(Vec<String>);
+#[derive(Deserialize)]
+struct ConfigurationMemberOrder<'a> {
+    #[serde(default, borrow)]
+    configurations: Option<&'a serde_json::value::RawValue>,
+}
 
-impl<'de> Deserialize<'de> for OrderedVariantNames {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+struct OrderedVariantNamesSeed<'a, 'b> {
+    ctx: Option<&'a DecodeContext<'b>>,
+    refusal: &'a mut Option<CodecError>,
+}
+
+impl<'de> DeserializeSeed<'de> for OrderedVariantNamesSeed<'_, '_> {
+    type Value = Vec<String>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
-        D: Deserializer<'de>,
+        D: serde::Deserializer<'de>,
     {
-        struct OrderedVariantNamesVisitor;
-
-        impl<'de> Visitor<'de> for OrderedVariantNamesVisitor {
-            type Value = OrderedVariantNames;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("a configuration-variant object")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-            where
-                M: MapAccess<'de>,
-            {
-                let mut names = Vec::new();
-                let mut unique = HashSet::new();
-                while let Some(name) = map.next_key::<String>()? {
-                    if !unique.insert(name.clone()) {
-                        return Err(serde::de::Error::custom(format!(
-                            "duplicate configuration variant {name:?}"
-                        )));
-                    }
-                    map.next_value::<IgnoredAny>()?;
-                    names.push(name);
-                }
-                Ok(OrderedVariantNames(names))
-            }
-        }
-
-        deserializer.deserialize_map(OrderedVariantNamesVisitor)
+        deserializer.deserialize_map(self)
     }
 }
 
-#[derive(Deserialize)]
-struct ConfigurationMemberOrder {
-    #[serde(default)]
-    configurations: OrderedVariantNames,
+impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
+    type Value = Vec<String>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a configuration-variant object")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut names = Vec::new();
+        let mut unique = HashSet::new();
+        while let Some(name) = map.next_key::<String>()? {
+            if unique.contains(&name) {
+                return Err(serde::de::Error::custom(format!(
+                    "duplicate configuration variant {name:?}"
+                )));
+            }
+            if let Some(ctx) = self.ctx {
+                let charge = (|| -> Result<String, CodecError> {
+                    let copy = copy_configuration_text(Some(ctx), &name,
+                        "f3d configuration variant unique name")?;
+                    ctx.charge_collection_items(1, "f3d configuration variant name index")?;
+                    unique.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d configuration variant name index allocation", 0, 1)
+                    })?;
+                    ctx.charge_collection_items(1, "f3d configuration variant order")?;
+                    names.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d configuration variant order allocation", 0, 1)
+                    })?;
+                    Ok(copy)
+                })();
+                let copy = match charge {
+                    Ok(copy) => copy,
+                    Err(error) => {
+                        *self.refusal = Some(error);
+                        return Err(serde::de::Error::custom("configuration variant resource limit"));
+                    }
+                };
+                unique.insert(copy);
+            } else {
+                unique.insert(name.clone());
+            }
+            map.next_value::<IgnoredAny>()?;
+            names.push(name);
+        }
+        Ok(names)
+    }
 }
 
 fn parse_configuration_variant_order(
+    ctx: Option<&DecodeContext<'_>>,
     entry_name: &str,
     bytes: &[u8],
 ) -> Result<Vec<String>, CodecError> {
-    serde_json::from_slice::<ConfigurationMemberOrder>(bytes)
-        .map(|order| order.configurations.0)
-        .map_err(|error| {
-            CodecError::malformed(format_args!(
-                "invalid F3D configuration variant order {entry_name}: {error}"
-            ))
-        })
+    let _reservation = ctx.map(|ctx| {
+        ctx.reserve_scoped(u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d configuration order JSON", 0, 1)
+        })?, "f3d configuration order JSON")
+    }).transpose()?;
+    let invalid = |error| CodecError::malformed(format_args!(
+        "invalid F3D configuration variant order {entry_name}: {error}"
+    ));
+    let order: ConfigurationMemberOrder<'_> = serde_json::from_slice(bytes).map_err(invalid)?;
+    let Some(raw) = order.configurations else { return Ok(Vec::new()); };
+    let mut refusal = None;
+    let mut deserializer = serde_json::Deserializer::from_str(raw.get());
+    let result = OrderedVariantNamesSeed { ctx, refusal: &mut refusal }
+        .deserialize(&mut deserializer);
+    match result {
+        Ok(names) => Ok(names),
+        Err(error) => Err(refusal.unwrap_or_else(|| invalid(error))),
+    }
 }
 
 /// Decode every JSON design-configuration table and rule entry.
 pub(crate) fn decode_configurations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
-    let configurations = scan
-        .entries
-        .iter()
+    let mut configurations = Vec::new();
+    for entry in scan.entries.iter()
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
-        .map(|entry| {
-            let bytes = scan.entry_bytes(&entry.name)?;
-            let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "invalid F3D configuration JSON {}: {error}",
-                    entry.name
-                ))
-            })?;
-            let serde_json::Value::Object(payload) = payload else {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D configuration JSON must be an object: {}",
-                    entry.name
-                )));
-            };
-            let kind = if entry.name.ends_with(".dsgcfgrule") {
-                DesignConfigurationKind::Rule
-            } else {
-                DesignConfigurationKind::Table
-            };
-            let variant_order = if kind == DesignConfigurationKind::Table {
-                parse_configuration_variant_order(&entry.name, bytes)?
-            } else {
-                Vec::new()
-            };
-            DesignConfiguration::try_new(entry.name.clone(), kind, variant_order, payload)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let _reservation = ctx.reserve_scoped(u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d configuration JSON", 0, 1)
+        })?, "f3d configuration JSON")?;
+        ctx.charge_retained(u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d configuration JSON payload", 0, 1)
+        })?, "f3d configuration JSON payload")?;
+        let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "invalid F3D configuration JSON {}: {error}",
+                entry.name
+            ))
+        })?;
+        let serde_json::Value::Object(payload) = payload else {
+            return Err(CodecError::malformed(format_args!(
+                "F3D configuration JSON must be an object: {}",
+                entry.name
+            )));
+        };
+        let kind = if entry.name.ends_with(".dsgcfgrule") {
+            DesignConfigurationKind::Rule
+        } else {
+            DesignConfigurationKind::Table
+        };
+        let variant_order = if kind == DesignConfigurationKind::Table {
+            parse_configuration_variant_order(Some(ctx), &entry.name, bytes)?
+        } else {
+            Vec::new()
+        };
+        let entry_name = copy_configuration_text(Some(ctx), &entry.name,
+            "f3d configuration entry name")?;
+        let configuration = DesignConfiguration::try_new(entry_name, kind, variant_order, payload)?;
+        ctx.charge_collection_items(1, "f3d configuration record")?;
+        configurations.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d configuration record allocation", 0, 1)
+        })?;
+        configurations.push(configuration);
+    }
     let mut names = HashSet::new();
     for configuration in &configurations {
-        if !names.insert(configuration.entry_name().as_str()) {
+        if names.contains(configuration.entry_name().as_str()) {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D configuration identity: {}",
                 configuration.entry_name()
             )));
         }
+        ctx.charge_collection_items(1, "f3d configuration identity index")?;
+        names.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d configuration identity index allocation", 0, 1)
+        })?;
+        names.insert(configuration.entry_name().as_str());
     }
     Ok(configurations)
 }
@@ -420,7 +476,7 @@ mod tests {
     fn configuration_variants_follow_serialized_member_order() {
         let bytes = br#"{"configurations":{"Small":{},"Medium":{},"Large":{}},"active":"Medium"}"#;
         let payload: serde_json::Value = serde_json::from_slice(bytes).unwrap();
-        let variant_order = parse_configuration_variant_order("table.dsgcfg", bytes).unwrap();
+        let variant_order = parse_configuration_variant_order(None, "table.dsgcfg", bytes).unwrap();
         assert_eq!(variant_order, ["Small", "Medium", "Large"]);
 
         let table = DesignConfiguration::try_new(
@@ -441,11 +497,11 @@ mod tests {
         assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
         let encoded = encode_configuration_payload(&table).unwrap();
         assert_eq!(
-            parse_configuration_variant_order("table.dsgcfg", &encoded).unwrap(),
+            parse_configuration_variant_order(None, "table.dsgcfg", &encoded).unwrap(),
             ["Small", "Medium", "Large"]
         );
 
-        assert!(parse_configuration_variant_order(
+        assert!(parse_configuration_variant_order(None,
             "table.dsgcfg",
             br#"{"configurations":{"Small":{},"Small":{}}}"#,
         )
@@ -809,6 +865,32 @@ mod tests {
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
             ));
+        }
+    }
+
+    #[test]
+    fn configuration_variant_order_refuses_each_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let bytes = br#"{"configurations":{"Small":{},"Large":{}}}"#;
+        for (collection_limit, retained_limit, materialized_limit, dimension, operation) in [
+            (0, 100, 100, ResourceDimension::CollectionItems, "f3d configuration variant name index"),
+            (1, 100, 100, ResourceDimension::CollectionItems, "f3d configuration variant order"),
+            (100, 0, 100, ResourceDimension::RetainedBytes, "f3d configuration variant unique name"),
+            (100, 100, 0, ResourceDimension::MaterializedBytes, "f3d configuration order JSON"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = collection_limit;
+            policy.limits.max_retained_bytes = retained_limit;
+            policy.limits.max_materialized_bytes = materialized_limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == dimension && failure.operation == operation
+            ), "operation {operation}");
         }
     }
 }
