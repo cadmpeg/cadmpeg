@@ -9,6 +9,7 @@
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
@@ -364,71 +365,140 @@ impl Brep {
     }
 }
 
-fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> {
-    let candidates = out
-        .faces
-        .iter()
-        .filter(|face| face.shell.as_str() == native_shell_id)
-        .map(|face| face.id.clone())
-        .collect::<Vec<_>>();
-    let candidate_ids = candidates
-        .iter()
-        .map(cadmpeg_ir::ids::FaceId::as_str)
-        .collect::<HashSet<_>>();
-    let loop_faces = out
-        .loops
-        .iter()
-        .filter(|loop_| candidate_ids.contains(loop_.face.as_str()))
-        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
-        .collect::<HashMap<_, _>>();
+fn reserve_graph_map_key<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    map: &mut HashMap<K, V>,
+    key: &K,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !map.contains_key(key) {
+        ctx.charge_collection_items(1, operation)?;
+        map.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    Ok(())
+}
+
+fn reserve_graph_set_key<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    set: &mut HashSet<T>,
+    key: &T,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !set.contains(key) {
+        ctx.charge_collection_items(1, operation)?;
+        set.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    Ok(())
+}
+
+fn shell_face_components(
+    ctx: &DecodeContext<'_>,
+    out: &Brep,
+    native_shell_id: &str,
+) -> Result<Vec<Vec<FaceId>>, cadmpeg_core::CodecError> {
+    let mut candidates = Vec::new();
+    for face in &out.faces {
+        ctx.charge_work(1, "select Parasolid shell faces")?;
+        if face.shell.as_str() == native_shell_id {
+            ctx.reserve_collection_vec(&mut candidates, 1, "select Parasolid shell faces")?;
+            candidates.push(&face.id);
+        }
+    }
+    let mut candidate_ids = HashSet::new();
+    for face in &candidates {
+        let key = face.as_str();
+        reserve_graph_set_key(ctx, &mut candidate_ids, &key, "index Parasolid shell faces")?;
+        candidate_ids.insert(key);
+    }
+    let mut loop_faces = HashMap::new();
+    for loop_ in &out.loops {
+        ctx.charge_work(1, "index Parasolid shell loops")?;
+        if candidate_ids.contains(loop_.face.as_str()) {
+            let key = loop_.id.as_str();
+            reserve_graph_map_key(ctx, &mut loop_faces, &key, "index Parasolid shell loops")?;
+            loop_faces.insert(key, loop_.face.as_str());
+        }
+    }
     let mut faces_by_edge = HashMap::<&str, HashSet<&str>>::new();
     for coedge in &out.coedges {
+        ctx.charge_work(1, "index Parasolid shell edges")?;
         if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
-            faces_by_edge
-                .entry(coedge.edge.as_str())
-                .or_default()
-                .insert(*face);
+            let key = coedge.edge.as_str();
+            reserve_graph_map_key(ctx, &mut faces_by_edge, &key, "index Parasolid shell edges")?;
+            let edge_faces = faces_by_edge.entry(key).or_default();
+            reserve_graph_set_key(ctx, edge_faces, face, "index Parasolid edge faces")?;
+            edge_faces.insert(*face);
         }
     }
     let mut neighbors = HashMap::<&str, HashSet<&str>>::new();
     for edge_faces in faces_by_edge.values() {
         for &face in edge_faces {
-            neighbors
-                .entry(face)
-                .or_default()
-                .extend(edge_faces.iter().copied().filter(|other| *other != face));
+            reserve_graph_map_key(ctx, &mut neighbors, &face, "index Parasolid face neighbors")?;
+            let adjacent = neighbors.entry(face).or_default();
+            for &other in edge_faces {
+                ctx.charge_work(1, "index Parasolid face neighbors")?;
+                if other != face {
+                    reserve_graph_set_key(ctx, adjacent, &other, "index Parasolid face neighbors")?;
+                    adjacent.insert(other);
+                }
+            }
         }
     }
 
     // The walk moves over borrowed keys, so the face each key names is looked
     // up rather than rebuilt from its text.
-    let faces_by_key = candidates
-        .iter()
-        .map(|face| (face.as_str(), face))
-        .collect::<HashMap<_, _>>();
+    let mut faces_by_key = HashMap::new();
+    for face in &candidates {
+        let key = face.as_str();
+        reserve_graph_map_key(ctx, &mut faces_by_key, &key, "index Parasolid face identities")?;
+        faces_by_key.insert(key, *face);
+    }
     let mut assigned = HashSet::new();
     let mut components = Vec::new();
     for face in &candidates {
+        let key = face.as_str();
+        reserve_graph_set_key(ctx, &mut assigned, &key, "walk Parasolid shell components")?;
         if !assigned.insert(face.as_str()) {
             continue;
         }
         let mut component = Vec::new();
-        let mut pending = vec![face.as_str()];
+        let mut pending = Vec::new();
+        ctx.reserve_collection_vec(&mut pending, 1, "walk Parasolid shell components")?;
+        pending.push(face.as_str());
         while let Some(current) = pending.pop() {
             let Some(face) = faces_by_key.get(current) else {
                 continue;
             };
-            component.push((*face).clone());
+            let mut id = String::new();
+            ctx.reserve_retained_string(
+                &mut id,
+                face.as_str().len(),
+                "copy Parasolid face identity",
+            )?;
+            id.push_str(face.as_str());
+            let id = FaceId::mint(id).map_err(|error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "Parasolid face identity is invalid: {error}"
+                ))
+            })?;
+            ctx.reserve_collection_vec(&mut component, 1, "walk Parasolid shell components")?;
+            component.push(id);
             for &neighbor in neighbors.get(current).into_iter().flatten() {
+                ctx.charge_work(1, "walk Parasolid shell components")?;
+                reserve_graph_set_key(ctx, &mut assigned, &neighbor, "walk Parasolid shell components")?;
                 if assigned.insert(neighbor) {
+                    ctx.reserve_collection_vec(&mut pending, 1, "walk Parasolid shell components")?;
                     pending.push(neighbor);
                 }
             }
         }
         component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        ctx.reserve_collection_vec(&mut components, 1, "group Parasolid shell components")?;
         components.push(component);
     }
-    components
+    Ok(components)
 }
 
 #[derive(Debug, Clone)]
@@ -2378,7 +2448,7 @@ fn decode_graph(
             let native_shell_id = ShellId::compose(&shell_namespace(), group);
             annotate_group(region_id.as_str(), None);
             let mut region_shells = Vec::new();
-            for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
+            for (component, faces) in shell_face_components(ctx, &out, native_shell_id.as_str())?
                 .into_iter()
                 .enumerate()
             {
@@ -2428,7 +2498,7 @@ fn decode_graph(
                 let mut region_shells = Vec::new();
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
-                    for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
+                    for (component, faces) in shell_face_components(ctx, &out, native_shell_id.as_str())?
                         .into_iter()
                         .enumerate()
                     {
@@ -6277,6 +6347,52 @@ fn emit_curve(
 
 #[cfg(test)]
 mod tests {
+    fn one_face_shell() -> super::Brep {
+        use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
+        use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
+
+        super::Brep {
+            faces: vec![Face {
+                id: FaceId::mint("test:model:face#1").expect("face id"),
+                shell: ShellId::mint("test:model:shell#1").expect("shell id"),
+                surface: SurfaceId::mint("test:model:surface#1").expect("surface id"),
+                sense: Sense::Forward,
+                loops: FaceLoops::unspecified(Vec::new()),
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn shell_components_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(
+            super::shell_face_components(&ctx, &one_face_shell(), "test:model:shell#1"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn shell_components_refuse_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(
+            super::shell_face_components(&ctx, &one_face_shell(), "test:model:shell#1"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
 
     #[test]
     fn numerical_followup_inverse_ambiguity_is_independent_of_parameter_units() {
