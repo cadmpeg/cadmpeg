@@ -16,6 +16,17 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
+
+fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if !bounds.contains(&length) {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    bytes.get(start..end)?.iter().all(u8::is_ascii_graphic).then_some(end)
+}
 
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
 const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
@@ -44,7 +55,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
         return None;
     }
     let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in scope.reference_members().values() {
         let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
             continue;
@@ -53,40 +64,39 @@ pub(in crate::design::decode) fn exact_hole_construction(
             continue;
         }
         for (start, paired_at) in records.frames(*record_index) {
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            let Some((_, after_tag)) =
+                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
-            if class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                || after_tag != start + 7
+            if after_tag != start + 7
                 || View::u32_le_at(bytes, after_tag) != Some(*record_index)
             {
                 continue;
             }
-            let Some((_name, payload_at)) =
-                lp_ascii_filtered(bytes, after_tag + 8, 0..=256, u8::is_ascii_graphic)
+            let Some(payload_at) =
+                graphic_ascii_end(bytes, after_tag + 8, 0..=256)
             else {
                 continue;
             };
-            if let Some(candidate) = hole_construction_frame_at(
+            if let Some(next) = hole_construction_frame_at(
                 bytes,
                 start,
                 paired_at,
                 payload_at,
                 *record_index,
                 *version,
-                face_selection.clone(),
             ) {
-                candidates.push(candidate);
+                if candidate.replace(next).is_some() {
+                    return None;
+                }
             }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate.map(|mut candidate| {
+        candidate.face_selection = face_selection;
+        candidate
+    })
 }
 
 fn exact_hole_face_selection(
@@ -95,7 +105,7 @@ fn exact_hole_face_selection(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignHoleFaceSelection> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in scope.reference_members().values() {
         if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
         {
@@ -103,7 +113,7 @@ fn exact_hole_face_selection(
         }
         for (start, _paired_at) in records.frames(*record_index) {
             let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
@@ -132,7 +142,7 @@ fn exact_hole_face_selection(
             else {
                 continue;
             };
-            candidates.push(DesignHoleFaceSelection {
+            let next = DesignHoleFaceSelection {
                 record_index: frame.record_index,
                 byte_offset: frame.byte_offset,
                 class_tag,
@@ -148,13 +158,13 @@ fn exact_hole_face_selection(
                 historical_face_candidates: Vec::new(),
                 next_record_index: frame.next_record_index,
                 next_byte_offset: frame.next_byte_offset,
-            });
+            };
+            if candidate.replace(next).is_some() {
+                return None;
+            }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate
 }
 
 fn hole_construction_frame_at(
@@ -164,7 +174,6 @@ fn hole_construction_frame_at(
     payload_at: usize,
     point_record_index: u32,
     version: u32,
-    face_selection: Option<DesignHoleFaceSelection>,
 ) -> Option<DesignHoleConstruction> {
     let body = bytes.get(..paired_at)?;
     let mut cursor = payload_prologue(body, payload_at, paired_at)?;
@@ -243,7 +252,7 @@ fn hole_construction_frame_at(
         reference_type_offset: u64::try_from(reference_type_at).ok()?,
         tangent_point_data,
         input_records,
-        face_selection,
+        face_selection: None,
     })
 }
 
