@@ -31,7 +31,7 @@ use super::native_records::{
     CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
     CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
     CreoCurveParameterOpaqueSpan, CreoCurveParameterReference, CreoCurveParameterScalar,
-    CreoFeatureFieldValue, CreoFeatureOperationState, CreoFeatureOutline,
+    CreoFeatureFieldValue, CreoFeatureOperationState, CreoOperationNameRecord, CreoFeatureOutline,
     CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoPlaneEnvelope, CreoPositionalConeFrame,
     CreoPositionalCylinderFrame, CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment,
     CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
@@ -2215,33 +2215,52 @@ pub(super) fn surface_parameter_records(
         .collect()
 }
 
-pub(super) fn feature_operation_state_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureOperationState> {
-    let current_offsets = scan
-        .features
-        .operations
-        .iter()
-        .map(|state| (state.feature_id, state.offset))
-        .collect::<BTreeMap<_, _>>();
+pub(super) fn feature_operation_state_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoFeatureOperationState<'a>>, CodecError> {
+    let mut current_offsets = BTreeMap::new();
+    for state in &scan.features.operations {
+        if !current_offsets.contains_key(&state.feature_id) {
+            ctx.charge_collection_items(1, "creo native feature current-offset nodes")?;
+        }
+        current_offsets.insert(state.feature_id, state.offset);
+    }
     let mut ordinals = BTreeMap::<u32, usize>::new();
-    scan.features
-        .operation_states
-        .iter()
-        .map(|state| {
-            let state_ordinal = *ordinals.entry(state.feature_id).or_default();
-            ordinals.insert(state.feature_id, state_ordinal + 1);
-            CreoFeatureOperationState {
-                id: format!(
-                    "creo:mdlstatus:feature_state#{}:{state_ordinal}",
-                    state.feature_id
-                ),
+    let mut records = Vec::new();
+    for state in &scan.features.operation_states {
+        let state_ordinal = ordinals.get(&state.feature_id).copied().unwrap_or_default();
+        if !ordinals.contains_key(&state.feature_id) {
+            ctx.charge_collection_items(1, "creo native feature ordinal nodes")?;
+        }
+        let next_ordinal = state_ordinal.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit("creo native feature state ordinal", u64::MAX, u64::MAX)
+        })?;
+        ordinals.insert(state.feature_id, next_ordinal);
+        let name = CreoOperationNameRecord {
+            display_name_stored: state.name.display_name_stored(),
+            stored_name: state.name.stored_name_bytes()
+                .map(|bytes| ctx.copy_retained_lossy_utf8(bytes, "creo native feature state name"))
+                .transpose()?,
+            stored_name_bytes: state.name.stored_name_bytes(),
+            identifier_keyword: state.name.identifier_keyword(),
+            stored_name_prefix: state.name.stored_name_prefix()
+                .map(|prefix| ctx.format_retained(char::from(prefix), "creo native feature state prefix"))
+                .transpose()?,
+        };
+        let id = ctx.format_retained(
+            format_args!("creo:mdlstatus:feature_state#{}:{state_ordinal}", state.feature_id),
+            "creo native feature state IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native feature state records")?;
+        records.push(CreoFeatureOperationState {
+                id,
                 feature_id: state.feature_id,
                 state_ordinal,
                 current: !state.display_state_conflict
                     && current_offsets.get(&state.feature_id) == Some(&state.offset),
-                family: state.kind.as_str().to_string(),
-                name: state.name.clone(),
+                family: state.kind.as_str(),
+                name,
                 recipe: state
                     .recipe
                     .candidate()
@@ -2252,9 +2271,9 @@ pub(super) fn feature_operation_state_records(
                 parent_feature_id: state.parent_feature_id(),
                 offset: state.offset,
                 state_offset: state.state_offset,
-            }
-        })
-        .collect()
+            });
+    }
+    Ok(records)
 }
 
 pub(super) fn feature_reference_name_records(
@@ -2940,7 +2959,7 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 
 #[cfg(test)]
 mod tests {
-    use super::{feature_reference_name_records, feature_row_records};
+    use super::{feature_operation_state_records, feature_reference_name_records, feature_row_records};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
 
@@ -2968,6 +2987,116 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is admitted");
         feature_reference_name_records(&ctx, &scan)
+    }
+
+    fn operation_state_scan() -> crate::container::ContainerScan<'static> {
+        use crate::feature::operations::{FeatureOperation, IdKeyword, OperationKind, OperationName, RecipeResolution, RecipeState};
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.features.operations.push(FeatureOperation {
+            feature_id: 40,
+            kind: OperationKind::Native,
+            name: OperationName::Derived,
+            recipe: RecipeResolution::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+        scan.features.operation_states.push(FeatureOperation {
+            feature_id: 40,
+            kind: OperationKind::Native,
+            name: OperationName::Stored {
+                bytes: b"A\xff".to_vec(),
+                keyword: IdKeyword::Id,
+                prefix: Some(b'~'),
+            },
+            recipe: RecipeState::None,
+            display_state_conflict: false,
+            depdb: None,
+            offset: 0,
+            state_offset: 0,
+        });
+        scan
+    }
+
+    fn operation_state_records_with_limits(
+        max_retained_bytes: u64,
+        max_collection_items: u64,
+    ) -> Result<Vec<serde_json::Value>, cadmpeg_core::CodecError> {
+        let scan = operation_state_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let records = feature_operation_state_records(&ctx, &scan)?;
+        Ok(records.iter().map(|record| serde_json::to_value(record).expect("record JSON")).collect())
+    }
+
+    #[test]
+    fn native_feature_current_offset_refuses_node_limit() {
+        let error = operation_state_records_with_limits(u64::MAX, 0)
+            .expect_err("one current offset needs a BTreeMap node");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native feature current-offset nodes"));
+    }
+
+    #[test]
+    fn native_feature_state_ordinal_refuses_node_limit() {
+        let error = operation_state_records_with_limits(u64::MAX, 1)
+            .expect_err("one state ordinal needs a BTreeMap node");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native feature ordinal nodes"));
+    }
+
+    #[test]
+    fn native_feature_state_name_refuses_replacement_limit() {
+        let error = operation_state_records_with_limits(3, 3)
+            .expect_err("one invalid name needs four replacement bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature state name"));
+    }
+
+    #[test]
+    fn native_feature_state_prefix_refuses_retained_limit() {
+        let error = operation_state_records_with_limits(4, 3)
+            .expect_err("the source prefix needs another retained byte");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature state prefix"));
+    }
+
+    #[test]
+    fn native_feature_state_id_refuses_retained_limit() {
+        let id_len = "creo:mdlstatus:feature_state#40:0".len() as u64;
+        let error = operation_state_records_with_limits(5 + id_len - 1, 3)
+            .expect_err("the state ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature state IDs"));
+    }
+
+    #[test]
+    fn native_feature_state_row_refuses_collection_limit() {
+        let error = operation_state_records_with_limits(u64::MAX, 2)
+            .expect_err("one native state needs an output Vec row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native feature state records"));
+        let records = operation_state_records_with_limits(u64::MAX, 3)
+            .expect("the service-profile state is admitted");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["id"], "creo:mdlstatus:feature_state#40:0");
+        assert_eq!(records[0]["stored_name"], "A\u{fffd}");
+        assert_eq!(records[0]["stored_name_bytes"], serde_json::json!([65, 255]));
+        assert_eq!(records[0]["stored_name_prefix"], "~");
+        assert_eq!(records[0]["identifier_keyword"], "id");
+        assert_eq!(records[0]["family"], "Native Feature");
+        assert_eq!(records[0]["current"], true);
     }
 
     #[test]
