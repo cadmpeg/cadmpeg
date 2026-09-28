@@ -293,9 +293,12 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
         emitted_face_count: 1,
         ..BrepTransferDiagnostics::default()
     };
-    for face_id in 10..16 {
-        diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
-    }
+    crate::decode::with_test_decode_ctx(|ctx| {
+        for face_id in 10..16 {
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, face_id)
+                .expect("service rejection admitted");
+        }
+    });
 
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingLoops);
     let samples = samples.collect::<Vec<_>>();
@@ -325,22 +328,89 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(coverage["brep_rejected_face_missing_loops_count"], 6);
 }
 
+#[test]
+fn brep_face_rejection_diagnostics_refuse_collection_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    let error = diagnostics
+        .reject_face(&ctx, FaceAdmissionRejection::MissingLoops, 17)
+        .expect_err("rejection diagnostic refused");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep face rejection diagnostics"));
+    assert!(diagnostics.face_rejection_diagnostics.is_empty());
+}
+
+fn rejection_detail_limit_error(limit: u64) -> CodecError {
+    let half_edge = crate::topology::HalfEdgeId {
+        curve_id: 4,
+        side: crate::topology::Side::Zero,
+    };
+    let loop_record = crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(17),
+        half_edges: vec![half_edge],
+    };
+    let binding = crate::topology::HalfEdgeVertexIncidence {
+        half_edge,
+        start_vertex_id: 9,
+        end_vertex_id: None,
+    };
+    let incidence = BTreeMap::from([(half_edge, &binding)]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    FaceAdmissionDetail::unresolved_boundary(
+        &ctx,
+        17,
+        &[&loop_record],
+        &BTreeMap::new(),
+        &incidence,
+    )
+    .expect_err("rejection detail refused")
+}
+
+#[test]
+fn brep_rejection_boundary_samples_refuse_collection_limit() {
+    let error = rejection_detail_limit_error(0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep rejection boundary samples"));
+}
+
+#[test]
+fn brep_rejection_vertex_samples_refuse_collection_limit() {
+    let error = rejection_detail_limit_error(1);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep rejection vertex samples"));
+}
+
 fn rejection_record_limit_error(
     collection_limit: Option<u64>,
     retained_limit: Option<u64>,
 ) -> CodecError {
     let mut diagnostics = BrepTransferDiagnostics::default();
-    diagnostics.reject_face_with_detail(
-        FaceAdmissionRejection::UnresolvedBoundaryVertices,
-        FaceAdmissionDetail {
-            face_id: 17,
-            boundary_half_edges: vec![crate::topology::HalfEdgeId {
-                curve_id: 4,
-                side: crate::topology::Side::Zero,
-            }],
-            vertex_ids: vec![9],
-        },
-    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.reject_face_with_detail(
+            ctx,
+            FaceAdmissionRejection::UnresolvedBoundaryVertices,
+            FaceAdmissionDetail {
+                face_id: 17,
+                boundary_half_edges: vec![crate::topology::HalfEdgeId {
+                    curve_id: 4,
+                    side: crate::topology::Side::Zero,
+                }],
+                vertex_ids: vec![9],
+            },
+        )
+    })
+    .expect("service rejection admitted");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     if let Some(limit) = collection_limit {
@@ -391,17 +461,21 @@ fn brep_rejection_record_rows_refuse_collection_limit() {
 #[test]
 fn brep_rejection_record_preserves_nested_operands_under_service_profile() {
     let mut diagnostics = BrepTransferDiagnostics::default();
-    diagnostics.reject_face_with_detail(
-        FaceAdmissionRejection::UnresolvedBoundaryVertices,
-        FaceAdmissionDetail {
-            face_id: 17,
-            boundary_half_edges: vec![crate::topology::HalfEdgeId {
-                curve_id: 4,
-                side: crate::topology::Side::Zero,
-            }],
-            vertex_ids: vec![9],
-        },
-    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.reject_face_with_detail(
+            ctx,
+            FaceAdmissionRejection::UnresolvedBoundaryVertices,
+            FaceAdmissionDetail {
+                face_id: 17,
+                boundary_half_edges: vec![crate::topology::HalfEdgeId {
+                    curve_id: 4,
+                    side: crate::topology::Side::Zero,
+                }],
+                vertex_ids: vec![9],
+            },
+        )
+    })
+    .expect("service rejection admitted");
     let records = crate::decode::with_test_decode_ctx(|ctx| {
         diagnostics.face_admission_rejection_records(ctx)
     })
@@ -416,7 +490,10 @@ fn brep_rejection_record_preserves_nested_operands_under_service_profile() {
 #[test]
 fn face_admission_diagnostics_report_missing_surface_carrier() {
     let mut diagnostics = BrepTransferDiagnostics::default();
-    diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingSurfaceCarrier, 42)
+    })
+    .expect("service rejection admitted");
 
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingSurfaceCarrier);
     let samples = samples.collect::<Vec<_>>();
@@ -502,19 +579,26 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
         (resolved, &resolved_binding),
         (unresolved, &unresolved_binding),
     ]);
-    let detail = FaceAdmissionDetail::unresolved_boundary(
-        5,
-        &[&loop_record],
-        &BTreeMap::from([(10, [1, 2])]),
-        &incidence,
-    );
+    let detail = crate::decode::with_test_decode_ctx(|ctx| {
+        FaceAdmissionDetail::unresolved_boundary(
+            ctx,
+            5,
+            &[&loop_record],
+            &BTreeMap::from([(10, [1, 2])]),
+            &incidence,
+        )
+    })
+    .expect("service rejection detail admitted");
 
     assert_eq!(detail.face_id, 5);
     assert_eq!(detail.boundary_half_edges, vec![unresolved]);
     assert_eq!(detail.vertex_ids, vec![3, 4]);
 
     let mut diagnostics = BrepTransferDiagnostics::default();
-    diagnostics.reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail);
+    crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.reject_face_with_detail(ctx, FaceAdmissionRejection::UnresolvedBoundaryVertices, detail)
+    })
+    .expect("service rejection admitted");
     let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
     let samples = samples.collect::<Vec<_>>();
     assert_eq!(count, 1);
