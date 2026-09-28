@@ -456,18 +456,24 @@ pub(super) fn try_decode_freeform_surfaces(
         let typed_class_21_pcurve_count =
             crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
                 .len();
-        let typed_parameter_incidences =
+        let typed_parameter_incidences = match
             crate::families::b5::graph::typed_parameter_incidences_from_records(
-                &census_object_records,
-            );
+                ctx, &census_object_records,
+            ) {
+                Ok(records) => records,
+                Err(error) => return Some(Err(error)),
+            };
         let typed_parameter_incidence_member_count = typed_parameter_incidences
             .values()
             .map(|incidence| incidence.lanes.len())
             .sum();
-        let typed_vertex_incidence_rosters =
+        let typed_vertex_incidence_rosters = match
             crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
-                &census_object_records,
-            );
+                ctx, &census_object_records,
+            ) {
+                Ok(records) => records,
+                Err(error) => return Some(Err(error)),
+            };
         let typed_vertex_incidence_roster_member_count =
             typed_vertex_incidence_rosters.values().map(Vec::len).sum();
         let mut fallback_surfaces = if b5_graph.is_none() {
