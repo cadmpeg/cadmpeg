@@ -1536,6 +1536,10 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 
 #[test]
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -1550,6 +1554,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             Point2::new(-4.0, 4.0),
         ])),
         holes: vec![PlanarHole::polygon(
+            &ctx,
             vec![
                 Point2::new(-2.0, -2.0),
                 Point2::new(2.0, -2.0),
@@ -1558,6 +1563,7 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
             ],
             EPS_DISPLAY_QUANTIZATION,
         )
+        .unwrap()
         .unwrap()],
         boundary_tolerance: 0.0,
     };
@@ -1791,6 +1797,10 @@ fn decode_rejects_nonfinite_display_list_values() {
 #[test]
 fn planar_boundary_accepts_bounded_ellipse_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1811,6 +1821,7 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
         .unwrap(),
     ));
     let (samples, boundary_tolerance) = planar_boundary_samples(
+        &ctx,
         &curve,
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
@@ -1819,7 +1830,7 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
         EPS_DISPLAY_QUANTIZATION,
         SAMPLE_TOLERANCE,
     )
-    .unwrap();
+    .unwrap().unwrap();
 
     assert!(samples.len() > 1);
     assert!(boundary_tolerance <= SAMPLE_TOLERANCE);
@@ -1830,6 +1841,10 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
 #[test]
 fn planar_boundary_accepts_bounded_circle_arcs() {
     const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1849,6 +1864,7 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
         .unwrap(),
     ));
     let (samples, boundary_tolerance) = planar_boundary_samples(
+        &ctx,
         &curve,
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
@@ -1857,7 +1873,7 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
         EPS_DISPLAY_QUANTIZATION,
         SAMPLE_TOLERANCE,
     )
-    .unwrap();
+    .unwrap().unwrap();
 
     assert!(samples.len() > 1);
     assert!(boundary_tolerance <= SAMPLE_TOLERANCE);

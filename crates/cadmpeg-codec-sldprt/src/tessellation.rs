@@ -1380,12 +1380,16 @@ enum PlanarHole {
 }
 
 impl PlanarHole {
-    fn polygon(boundary: Vec<Point2>, tolerance: f64) -> Option<Self> {
-        let triangles = triangulate_polygon(&boundary, tolerance)?;
-        Some(Self::Polygon {
+    fn polygon(
+        ctx: &DecodeContext<'_>,
+        boundary: Vec<Point2>,
+        tolerance: f64,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        let triangles = require_some!(triangulate_polygon(ctx, &boundary, tolerance)?);
+        Ok(Some(Self::Polygon {
             boundary,
             triangles,
-        })
+        }))
     }
 }
 
@@ -1632,6 +1636,7 @@ fn closed_planar_circle(
 }
 
 fn planar_boundary_samples(
+    ctx: &DecodeContext<'_>,
     curve: &CurveGeometry,
     start: Point3,
     end: Point3,
@@ -1639,10 +1644,10 @@ fn planar_boundary_samples(
     frame: PlaneFrame,
     tolerance: f64,
     sampling_tolerance: f64,
-) -> Option<(Vec<Point2>, f64)> {
+) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
-            Some((vec![frame.project(start)], 0.0))
+            Ok(Some((vec![frame.project(start)], 0.0)))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
@@ -1651,9 +1656,9 @@ fn planar_boundary_samples(
             let radius = circle_curve.radius().get();
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || radius <= tolerance
-                || analytic_surface_residual(surface.solved()?, center)? > tolerance
+                || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
             {
-                return None;
+                return Ok(None);
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
@@ -1664,7 +1669,8 @@ fn planar_boundary_samples(
                 radius,
                 radius,
                 endpoint_tolerance,
-            )?;
+            );
+            let start_parameter = require_some!(start_parameter);
             let end_parameter = ellipse_parameter(
                 end,
                 center,
@@ -1673,8 +1679,9 @@ fn planar_boundary_samples(
                 radius,
                 radius,
                 endpoint_tolerance,
-            )?;
-            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            );
+            let end_parameter = require_some!(end_parameter);
+            let span = require_some!(shortest_arc_span(start_parameter, end_parameter));
             PlanarArc {
                 center,
                 first_direction: reference,
@@ -1683,6 +1690,7 @@ fn planar_boundary_samples(
                 second_radius: radius,
             }
             .samples(
+                ctx,
                 start_parameter,
                 span,
                 surface,
@@ -1701,9 +1709,9 @@ fn planar_boundary_samples(
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || major_radius <= tolerance
                 || minor_radius <= tolerance
-                || analytic_surface_residual(surface.solved()?, center)? > tolerance
+                || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
             {
-                return None;
+                return Ok(None);
             }
             let endpoint_tolerance = tolerance.max(sampling_tolerance);
             let start_parameter = ellipse_parameter(
@@ -1714,7 +1722,8 @@ fn planar_boundary_samples(
                 major_radius,
                 minor_radius,
                 endpoint_tolerance,
-            )?;
+            );
+            let start_parameter = require_some!(start_parameter);
             let end_parameter = ellipse_parameter(
                 end,
                 center,
@@ -1723,8 +1732,9 @@ fn planar_boundary_samples(
                 major_radius,
                 minor_radius,
                 endpoint_tolerance,
-            )?;
-            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            );
+            let end_parameter = require_some!(end_parameter);
+            let span = require_some!(shortest_arc_span(start_parameter, end_parameter));
             PlanarArc {
                 center,
                 first_direction: major_direction,
@@ -1733,6 +1743,7 @@ fn planar_boundary_samples(
                 second_radius: minor_radius,
             }
             .samples(
+                ctx,
                 start_parameter,
                 span,
                 surface,
@@ -1741,7 +1752,7 @@ fn planar_boundary_samples(
                 sampling_tolerance,
             )
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -1757,37 +1768,35 @@ struct PlanarArc {
 impl PlanarArc {
     fn samples(
         self,
+        ctx: &DecodeContext<'_>,
         start_parameter: f64,
         span: f64,
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
         tolerance: f64,
         sampling_tolerance: f64,
-    ) -> Option<(Vec<Point2>, f64)> {
+    ) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
         let radius = self.first_radius.max(self.second_radius);
         let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance);
-        let points = (0..segments)
-            .map(|index| {
-                let parameter =
-                    start_parameter + span * f64::from(index as u32) / f64::from(segments as u32);
-                let point = self
-                    .center
-                    .translated(self.first_direction, self.first_radius * parameter.cos())
-                    .translated(self.second_direction, self.second_radius * parameter.sin());
-                (point, frame.project(point))
-            })
-            .collect::<Vec<_>>();
-        let solved_surface = surface.solved()?;
-        if points.iter().any(|(point, _)| {
-            analytic_surface_residual(solved_surface, *point)
+        let solved_surface = require_some!(surface.solved());
+        let mut points = Vec::new();
+        for index in 0..segments {
+            ctx.charge_work(1, "sample SLDPRT planar trim arc")?;
+            let parameter =
+                start_parameter + span * f64::from(index as u32) / f64::from(segments as u32);
+            let point = self
+                .center
+                .translated(self.first_direction, self.first_radius * parameter.cos())
+                .translated(self.second_direction, self.second_radius * parameter.sin());
+            if analytic_surface_residual(solved_surface, point)
                 .is_none_or(|residual| residual > tolerance)
-        }) {
-            return None;
+            {
+                return Ok(None);
+            }
+            ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT planar trim arc samples")?;
+            points.push(frame.project(point));
         }
-        Some((
-            points.into_iter().map(|(_, projected)| projected).collect(),
-            boundary_tolerance,
-        ))
+        Ok(Some((points, boundary_tolerance)))
     }
 }
 
@@ -1845,6 +1854,7 @@ fn planar_arc_segments(span: f64, radius: f64, tolerance: f64) -> (usize, f64) {
 
 #[allow(clippy::too_many_arguments)]
 fn planar_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
@@ -1853,9 +1863,9 @@ fn planar_trim(
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface.solved()?)?;
-    let tolerance = FaceEvaluationTolerance::of(face)?.get();
+) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let frame = require_some!(plane_frame(require_some!(surface.solved())));
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let coordinate_scale = points
         .values()
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
@@ -1868,92 +1878,103 @@ fn planar_trim(
     let mut circles = Vec::new();
     let mut boundary_tolerance = 0.0_f64;
     for loop_id in &face.loops {
-        let loop_ = *loops.get(loop_id)?;
+        ctx.charge_work(1, "scan SLDPRT planar trim loop")?;
+        let loop_ = *require_some!(loops.get(loop_id));
         if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some()
         {
-            return None;
+            return Ok(None);
         }
         if loop_.coedges().len() == 1 {
-            circles.push(closed_planar_circle(
+            let circle = require_some!(closed_planar_circle(
                 loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
-            )?);
+            ));
+            ctx.reserve_collection_vec(&mut circles, 1, "collect SLDPRT planar trim circles")?;
+            circles.push(circle);
             continue;
         }
 
-        let mut polygon = Vec::with_capacity(loop_.coedges().len());
+        let mut polygon = Vec::new();
         let mut first_start = None;
         let mut previous_end = None;
         for coedge_id in loop_.coedges() {
-            let coedge = *coedges.get(coedge_id)?;
-            let edge = *edges.get(&coedge.edge)?;
+            ctx.charge_work(1, "scan SLDPRT planar trim coedge")?;
+            let coedge = *require_some!(coedges.get(coedge_id));
+            let edge = *require_some!(edges.get(&coedge.edge));
             if coedge.owner_loop != loop_.id {
-                return None;
+                return Ok(None);
             }
             let (start, end) = match coedge.sense {
                 Sense::Forward => (&edge.start, &edge.end),
                 Sense::Reversed => (&edge.end, &edge.start),
             };
-            let start = *points.get(&vertices.get(start)?.point)?;
-            let end = *points.get(&vertices.get(end)?.point)?;
-            if analytic_surface_residual(surface.solved()?, start)? > tolerance
-                || analytic_surface_residual(surface.solved()?, end)? > tolerance
+            let start = *require_some!(points.get(&require_some!(vertices.get(start)).point));
+            let end = *require_some!(points.get(&require_some!(vertices.get(end)).point));
+            if require_some!(analytic_surface_residual(require_some!(surface.solved()), start)) > tolerance
+                || require_some!(analytic_surface_residual(require_some!(surface.solved()), end)) > tolerance
                 || previous_end.is_some_and(|previous: Point3| previous.distance(start) > tolerance)
             {
-                return None;
+                return Ok(None);
             }
-            let (samples, sample_tolerance) = planar_boundary_samples(
-                curves.get(edge.curve()?)?,
+            let (samples, sample_tolerance) = require_some!(planar_boundary_samples(
+                ctx,
+                require_some!(curves.get(require_some!(edge.curve()))),
                 start,
                 end,
                 surface,
                 frame,
                 tolerance,
                 sampling_tolerance,
-            )?;
+            )?);
+            ctx.reserve_collection_vec(&mut polygon, samples.len(), "collect SLDPRT planar trim polygon")?;
             polygon.extend(samples);
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
             previous_end = Some(end);
         }
-        if previous_end?.distance(first_start?) > tolerance {
-            return None;
+        if require_some!(previous_end).distance(require_some!(first_start)) > tolerance {
+            return Ok(None);
         }
+        ctx.reserve_collection_vec(&mut polygons, 1, "collect SLDPRT planar trim polygons")?;
         polygons.push(polygon);
     }
     let (outer, holes) = if polygons.is_empty() {
         if circles.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let (outer, holes) = circular_outer_and_holes(&circles, tolerance)?;
-        (
-            PlanarOuter::Circle(outer),
-            holes.into_iter().map(PlanarHole::Circle).collect(),
-        )
+        let (outer, holes) = require_some!(circular_outer_and_holes(ctx, &circles, tolerance)?);
+        let mut planar_holes = Vec::new();
+        for hole in holes {
+            ctx.reserve_collection_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
+            planar_holes.push(PlanarHole::Circle(hole));
+        }
+        (PlanarOuter::Circle(outer), planar_holes)
     } else {
-        let outer_candidates = polygons
-            .iter()
-            .enumerate()
-            .filter(|(index, outer)| {
-                polygons
+        let mut outer_index = None;
+        for (index, outer) in polygons.iter().enumerate() {
+            ctx.charge_work(1, "test SLDPRT planar trim outer")?;
+            if polygons
+                .iter()
+                .enumerate()
+                .filter(|(inner_index, _)| index != *inner_index)
+                .all(|(_, inner)| polygon_inside_polygon(inner, outer, sampling_tolerance))
+                && circles
                     .iter()
-                    .enumerate()
-                    .filter(|(inner_index, _)| index != inner_index)
-                    .all(|(_, inner)| polygon_inside_polygon(inner, outer, sampling_tolerance))
-                    && circles
-                        .iter()
-                        .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
-            })
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
-        let [outer_index] = outer_candidates.as_slice() else {
-            return None;
-        };
-        let outer_polygon = &polygons[*outer_index];
-        let polygon_holes = polygons
-            .iter()
-            .enumerate()
-            .filter_map(|(index, polygon)| (index != *outer_index).then_some(polygon))
-            .collect::<Vec<_>>();
+                    .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
+            {
+                if outer_index.replace(index).is_some() {
+                    return Ok(None);
+                }
+            }
+        }
+        let outer_index = require_some!(outer_index);
+        let outer_polygon = &polygons[outer_index];
+        let mut polygon_holes = Vec::new();
+        for (index, polygon) in polygons.iter().enumerate() {
+            if index != outer_index {
+                ctx.reserve_collection_vec(&mut polygon_holes, 1, "collect SLDPRT planar polygon holes")?;
+                polygon_holes.push(polygon);
+            }
+        }
         if polygon_holes
             .iter()
             .any(|hole| !polygon_inside_polygon(hole, outer_polygon, sampling_tolerance))
@@ -1974,30 +1995,37 @@ fn planar_trim(
                 })
             })
         {
-            return None;
+            return Ok(None);
         }
-        let mut holes = circles
-            .into_iter()
-            .map(PlanarHole::Circle)
-            .collect::<Vec<_>>();
-        holes.extend(
-            polygon_holes
-                .into_iter()
-                .map(|polygon| PlanarHole::polygon(polygon.clone(), sampling_tolerance))
-                .collect::<Option<Vec<_>>>()?,
-        );
-        (PlanarOuter::Polygon(outer_polygon.clone()), holes)
+        let mut holes = Vec::new();
+        for circle in circles {
+            ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
+            holes.push(PlanarHole::Circle(circle));
+        }
+        for polygon in polygon_holes {
+            let mut boundary = Vec::new();
+            ctx.reserve_collection_vec(&mut boundary, polygon.len(), "copy SLDPRT planar hole boundary")?;
+            boundary.extend_from_slice(polygon);
+            let hole = require_some!(PlanarHole::polygon(ctx, boundary, sampling_tolerance)?);
+            ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
+            holes.push(hole);
+        }
+        let mut outer = Vec::new();
+        ctx.reserve_collection_vec(&mut outer, outer_polygon.len(), "copy SLDPRT planar outer boundary")?;
+        outer.extend_from_slice(outer_polygon);
+        (PlanarOuter::Polygon(outer), holes)
     };
-    Some(PlanarTrim {
+    Ok(Some(PlanarTrim {
         frame,
         outer: Some(outer),
         holes,
         boundary_tolerance,
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn planar_hole_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
@@ -2006,34 +2034,37 @@ fn planar_hole_trim(
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<PlanarTrim> {
-    let frame = plane_frame(surface.solved()?)?;
-    let tolerance = FaceEvaluationTolerance::of(face)?.get();
-    let face_loops = face
-        .loops
-        .iter()
-        .map(|loop_id| loops.get(loop_id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    if !face_loops.iter().any(|loop_| loop_.coedges().len() > 1) {
-        return None;
+) -> Result<Option<PlanarTrim>, cadmpeg_core::CodecError> {
+    let frame = require_some!(plane_frame(require_some!(surface.solved())));
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
+    let mut has_polygon_loop = false;
+    for loop_id in &face.loops {
+        ctx.charge_work(1, "scan SLDPRT planar hole loop")?;
+        let loop_ = require_some!(loops.get(loop_id));
+        has_polygon_loop |= loop_.coedges().len() > 1;
     }
-    let holes = face_loops
-        .iter()
-        .filter(|loop_| {
-            loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
-        })
-        .filter_map(|loop_| {
-            closed_planar_circle(
+    if !has_polygon_loop {
+        return Ok(None);
+    }
+    let mut holes = Vec::new();
+    for loop_id in &face.loops {
+        ctx.charge_work(1, "test SLDPRT planar hole loop")?;
+        let loop_ = require_some!(loops.get(loop_id));
+        if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none() {
+            if let Some(circle) = closed_planar_circle(
                 loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
-            )
-        })
-        .collect::<Vec<_>>();
-    (!holes.is_empty()).then_some(PlanarTrim {
+            ) {
+                ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar hole trim")?;
+                holes.push(PlanarHole::Circle(circle));
+            }
+        }
+    }
+    Ok((!holes.is_empty()).then_some(PlanarTrim {
         frame,
         outer: None,
-        holes: holes.into_iter().map(PlanarHole::Circle).collect(),
+        holes,
         boundary_tolerance: 0.0,
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2377,15 +2408,14 @@ fn analytic_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Result<Option<AnalyticTrim>, cadmpeg_core::CodecError> {
     match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Ok(planar_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
-        )
-        .or_else(|| {
-            planar_hole_trim(
-                face, surface, loops, coedges, edges, vertices, points, curves,
-            )
-        })
-        .map(AnalyticTrim::Planar)),
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+            let trim = planar_trim(ctx, face, surface, loops, coedges, edges, vertices, points, curves)?;
+            let trim = match trim {
+                Some(trim) => Some(trim),
+                None => planar_hole_trim(ctx, face, surface, loops, coedges, edges, vertices, points, curves)?,
+            };
+            Ok(trim.map(AnalyticTrim::Planar))
+        }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => cylindrical_trim(
             ctx, face, surface, loops, coedges, edges, vertices, points, curves,
         )
@@ -2465,14 +2495,21 @@ fn simple_polygon_area_twice(
     Some(area)
 }
 
-fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
+fn triangulate_polygon(
+    ctx: &DecodeContext<'_>,
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Result<Option<Vec<[Point2; 3]>>, cadmpeg_core::CodecError> {
     // The area admits only a polygon of finite vertices.
-    let orientation = simple_polygon_area_twice(polygon, tolerance)?
+    let orientation = require_some!(simple_polygon_area_twice(polygon, tolerance))
         .get()
         .signum();
-    let mut remaining = (0..polygon.len()).collect::<Vec<_>>();
-    let mut triangles = Vec::with_capacity(polygon.len() - 2);
+    let mut remaining = Vec::new();
+    ctx.reserve_collection_vec(&mut remaining, polygon.len(), "collect SLDPRT planar polygon vertices")?;
+    remaining.extend(0..polygon.len());
+    let mut triangles = Vec::new();
     while remaining.len() > 3 {
+        ctx.charge_work(1, "triangulate SLDPRT planar polygon")?;
         let ear_position = (0..remaining.len()).find(|position| {
             let previous_position = (position + remaining.len() - 1) % remaining.len();
             let next_position = (position + 1) % remaining.len();
@@ -2513,9 +2550,10 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
                     && polygon_strictly_contains(&triangle, polygon[*index], tolerance)
             })
         });
-        let position = ear_position?;
+        let position = require_some!(ear_position);
         let previous_position = (position + remaining.len() - 1) % remaining.len();
         let next_position = (position + 1) % remaining.len();
+        ctx.reserve_collection_vec(&mut triangles, 1, "collect SLDPRT planar polygon triangles")?;
         triangles.push([
             polygon[remaining[previous_position]],
             polygon[remaining[position]],
@@ -2523,20 +2561,19 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
         ]);
         remaining.remove(position);
     }
-    let final_triangle = remaining
-        .into_iter()
-        .map(|index| polygon[index])
-        .collect::<Vec<_>>();
-    let [first, second, third] = final_triangle.as_slice() else {
-        return None;
+    let [first, second, third] = remaining.as_slice() else {
+        return Ok(None);
     };
-    let scale = point_distance(*first, *second)
-        .max(point_distance(*second, *third))
-        .max(point_distance(*third, *first));
-    (signed_area_twice(*first, *second, *third).abs() > tolerance * scale).then(|| {
-        triangles.push([*first, *second, *third]);
-        triangles
-    })
+    let [first, second, third] = [polygon[*first], polygon[*second], polygon[*third]];
+    let scale = point_distance(first, second)
+        .max(point_distance(second, third))
+        .max(point_distance(third, first));
+    if !(signed_area_twice(first, second, third).abs() > tolerance * scale) {
+        return Ok(None);
+    }
+    ctx.reserve_collection_vec(&mut triangles, 1, "collect SLDPRT planar polygon triangles")?;
+    triangles.push([first, second, third]);
+    Ok(Some(triangles))
 }
 
 fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
@@ -2700,34 +2737,37 @@ fn circle_inside_circle(outer: CircularHole, inner: CircularHole, tolerance: f64
 }
 
 fn circular_outer_and_holes(
+    ctx: &DecodeContext<'_>,
     circles: &[CircularHole],
     tolerance: f64,
-) -> Option<(CircularHole, Vec<CircularHole>)> {
-    let enclosing = circles
-        .iter()
-        .enumerate()
-        .filter(|(index, outer)| {
-            circles.iter().enumerate().all(|(inner_index, inner)| {
-                index == &inner_index || circle_inside_circle(**outer, *inner, tolerance)
-            })
-        })
-        .collect::<Vec<_>>();
-    let [(outer_index, outer)] = enclosing.as_slice() else {
-        return None;
-    };
-    let holes = circles
-        .iter()
-        .enumerate()
-        .filter_map(|(index, hole)| (index != *outer_index).then_some(*hole))
-        .collect::<Vec<_>>();
+) -> Result<Option<(CircularHole, Vec<CircularHole>)>, cadmpeg_core::CodecError> {
+    let mut outer_index = None;
+    for (index, outer) in circles.iter().enumerate() {
+        ctx.charge_work(1, "test SLDPRT circular trim outer")?;
+        if circles.iter().enumerate().all(|(inner_index, inner)| {
+            index == inner_index || circle_inside_circle(*outer, *inner, tolerance)
+        }) {
+            if outer_index.replace(index).is_some() {
+                return Ok(None);
+            }
+        }
+    }
+    let Some(outer_index) = outer_index else { return Ok(None); };
+    let mut holes = Vec::new();
+    for (index, hole) in circles.iter().enumerate() {
+        if index != outer_index {
+            ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT circular trim holes")?;
+            holes.push(*hole);
+        }
+    }
     if holes.iter().enumerate().any(|(index, left)| {
         holes[index + 1..].iter().any(|right| {
             point_distance(left.center, right.center) < left.radius + right.radius - tolerance
         })
     }) {
-        return None;
+        return Ok(None);
     }
-    Some((**outer, holes))
+    Ok(Some((circles[outer_index], holes)))
 }
 
 fn chordal_hole_constraint(
