@@ -429,7 +429,7 @@ pub(super) fn emit_geometry_arenas(
     )?;
     let face_components = face_component_records(ctx, scan)?;
     store_arena(ctx, ir, "face_components", &face_components)?;
-    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
+    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records(ctx)?;
     store_arena(
         ctx,
         ir,
