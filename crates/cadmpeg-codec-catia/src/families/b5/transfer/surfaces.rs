@@ -689,25 +689,26 @@ pub(super) fn emit_surfaces(
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<HashMap<u32, SurfaceId>, cadmpeg_core::CodecError> {
     let surface_plan: BTreeMap<u32, SurfacePlan> = std::mem::take(&mut plan.surface_plan);
-    let surface_ids = surface_plan
-        .keys()
-        .map(|object_id| {
-            (
-                *object_id,
-                SurfaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "b5", "surface"),
-                    object_id,
-                ),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let face_surfaces = graph
-        .faces
-        .iter()
-        .map(|face| face.surface)
-        .collect::<HashSet<_>>();
+    let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "surface");
+    let mut surface_ids = HashMap::new();
+    for object_id in surface_plan.keys().copied() {
+        let index = usize::try_from(object_id).map_err(|_|
+            admission.context().refuse_codec_limit(
+                "catia_b5_emitted_surface_id", u64::MAX, u64::MAX))?;
+        let id = crate::resource::compose_index_id(admission.context(), &namespace,
+            index, SurfaceId::mint, "catia_b5_emitted_surface_id")?;
+        crate::resource::insert_map(admission.context(), &mut surface_ids, object_id, id,
+            "catia_b5_emitted_surface_ids")?;
+    }
+    let mut face_surfaces = HashSet::new();
+    for face in &graph.faces {
+        crate::resource::insert_set(admission.context(), &mut face_surfaces, face.surface,
+            "catia_b5_face_surface_ids")?;
+    }
     for (object_id, plan) in surface_plan {
-        let id = surface_ids[&object_id].clone();
+        let id = crate::resource::copy_id(admission.context(),
+            surface_ids[&object_id].as_str(), SurfaceId::mint,
+            "catia_b5_emitted_surface_ref")?;
         let revolution_cache = matches!(
             plan.procedure.as_ref(),
             Some(SurfaceProcedure::Revolution(_))
@@ -748,9 +749,11 @@ pub(super) fn emit_surfaces(
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        let model_id = crate::resource::copy_id(admission.context(), id.as_str(),
+            SurfaceId::mint, "catia_b5_model_surface_id")?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_b5_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: id.clone(),
+            id: model_id,
             geometry: plan.geometry,
             source_object: Some(cgm_source("surface", object_id)),
         });
@@ -833,7 +836,9 @@ pub(super) fn emit_surfaces(
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "rolling-ball"),
                     object_id,
                 );
-                let carrier_tag = format!("result_carrier:{carrier_object_id:08x}");
+                let carrier_tag = crate::resource::format_retained(admission.context(),
+                    format_args!("result_carrier:{carrier_object_id:08x}"),
+                    "catia_b5_rolling_ball_carrier_tag")?;
                 annotate(
                     annotations,
                     &procedural_id,
@@ -877,12 +882,14 @@ pub(super) fn emit_surfaces(
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_b5_emit_procedural_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            surface.clone(),
+            crate::resource::copy_id(admission.context(), surface.as_str(),
+                SurfaceId::mint, "catia_b5_offset_surface_id")?,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
-                        support.clone(),
+                        crate::resource::copy_id(admission.context(), support.as_str(),
+                            SurfaceId::mint, "catia_b5_offset_support_id")?,
                         offset.distance,
                         None,
                         None,
