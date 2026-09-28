@@ -362,9 +362,6 @@ fn arena_as_charged<T: DeserializeOwned>(
     name: &'static str,
 ) -> Result<Vec<T>, NativeConvertError> {
     let records = namespace.arenas().get(name);
-    let count = records.map_or(0, Vec::len);
-    let count = u64::try_from(count)
-        .map_err(|_| ctx.refuse_codec_limit("decode DisplayJT native records", 0, u64::MAX))?;
     let mut json_size = JsonByteCount::default();
     if let Some(records) = records {
         for record in records {
@@ -372,27 +369,7 @@ fn arena_as_charged<T: DeserializeOwned>(
         }
     }
     ctx.charge_work(json_size.0, "decode DisplayJT native records")?;
-    ctx.charge_collection_items(count, "decode DisplayJT native records")?;
-    let slot_bytes = count
-        .checked_mul(
-            u64::try_from(std::mem::size_of::<T>()).map_err(|_| {
-                ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX)
-            })?,
-        )
-        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
-    let copied_bytes = json_size
-        .0
-        .checked_mul(2)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
-    let retained = slot_bytes
-        .checked_add(copied_bytes)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT native records", 0, u64::MAX))?;
-    ctx.charge_retained(retained, "retain DisplayJT native records")?;
-    let temporary = json_size.0.checked_mul(4).ok_or_else(|| {
-        ctx.refuse_codec_limit("materialize DisplayJT native records", 0, u64::MAX)
-    })?;
-    let _reservation = ctx.reserve_scoped(temporary, "materialize DisplayJT native records")?;
-    namespace.arena_as(name)
+    namespace.arena_as_charged(ctx, name)
 }
 
 fn by_id<'a, T>(

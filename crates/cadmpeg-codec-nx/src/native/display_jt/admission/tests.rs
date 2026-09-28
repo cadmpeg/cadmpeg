@@ -134,6 +134,30 @@ fn graph_index_refuses_work_limit() {
 }
 
 #[test]
+fn graph_native_reader_refuses_collection_limit() {
+    let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
+    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn graph_native_reader_refuses_retained_limit() {
+    let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
+    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
 fn display_jt_native_validation_propagates_resource_limit() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
