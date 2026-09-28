@@ -8448,13 +8448,12 @@ fn validate_history_graphs(
             None => history::graph_is_coherent(history),
         };
         if !coherent {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ASM history graph is not a coherent doubly linked state chain"
-                    .into(),
-                entity: Some(history.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion ASM history graph is not a coherent doubly linked state chain",
+                Some(ctx.copy_entity(&history.id)?),
+            )?;
         }
     }
     Ok(())
