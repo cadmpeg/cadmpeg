@@ -6,6 +6,45 @@ fn context<'a>(arena: &'a DecodeArena, max_collection_items: u64) -> DecodeConte
     DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
 }
 
+#[test]
+fn related_record_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D related record indices"));
+}
+
+#[test]
+fn related_record_stream_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::collect_related_indices(&ctx, [("f3d:Design", 1)]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D related record stream"));
+}
+
+#[test]
+fn existing_record_header_index_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_record_headers.push(crate::records::decal::DesignRecordHeader {
+        id: "f3d:Design:design-record-header#1".into(),
+        record_index: 1,
+        class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned()).unwrap(),
+        byte_offset: 1,
+    });
+    let limited = context(&arena, 0);
+    let error = super::super::append_related_record_headers(&limited, &scan, &mut native, &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D existing record headers"));
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]
