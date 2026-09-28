@@ -37,6 +37,37 @@ fn value_block_payload_refuses_retained_and_collection_limits() {
 }
 
 #[test]
+fn value_tokenizer_refuses_field_and_retained_byte_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let inline = [0x8e, 0xe8, 0x84, b'A'];
+    let cases = [
+        (&[0x81][..], ResourceDimension::CollectionItems, "catia_value_fields"),
+        (&inline[..], ResourceDimension::RetainedBytes, "catia_value_field_bytes"),
+    ];
+    for (payload, dimension, operation) in cases {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        if dimension == ResourceDimension::CollectionItems {
+            policy.limits.max_collection_items = 0;
+        } else {
+            policy.limits.max_retained_bytes = 0;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+            .expect("token fixture fits the input limit");
+        let error = super::tokenize_charged(&ctx, payload)
+            .expect_err("one token exceeds the selected limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == dimension && limit.operation == operation));
+        let charged = crate::test_support::with_service_context(|ctx| {
+            super::tokenize_charged(ctx, payload)
+        }).expect("service budget admits the token");
+        assert_eq!(charged, tokenize(payload));
+    }
+}
+
+#[test]
 fn typed_payloads_hide_embedded_schema_marker_bytes() {
     let payload = [
         0x32, 5, 0, 0, 0, 0x87, 0xe6, 0, 0, 0, 0, 0, 0x32, 0, 0, 0x8e, 0xea, 0x84, 0x32, 1, 2,
