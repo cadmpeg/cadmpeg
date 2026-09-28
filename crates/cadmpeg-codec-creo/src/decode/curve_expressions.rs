@@ -26,12 +26,18 @@ use crate::container::ContainerScan;
 use super::coverage::source_section;
 use super::native::annotate;
 
-pub(super) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
-    format!(
-        "creo:depdb:curve_expression#{}-{}-{}",
-        if record.backup { "backup" } else { "active" },
-        record.entity_id,
-        record.offset
+pub(super) fn curve_expression_record_id(
+    ctx: &DecodeContext<'_>,
+    record: &crate::curve::CurveExpressionRecord,
+) -> Result<String, CodecError> {
+    ctx.format_retained(
+        format_args!(
+            "creo:depdb:curve_expression#{}-{}-{}",
+            if record.backup { "backup" } else { "active" },
+            record.entity_id,
+            record.offset
+        ),
+        "creo curve expression record id",
     )
 }
 
@@ -797,7 +803,7 @@ pub(super) fn transfer_curve_expression_features(
                     .map_err(CodecError::malformed)?,
                     properties: BTreeMap::new(),
                     pmi: None,
-                    native_ref: Some(curve_expression_record_id(record)),
+                    native_ref: Some(curve_expression_record_id(ctx, record)?),
                 },
             )?;
             transferred_parameter_count += 1;
@@ -885,21 +891,25 @@ pub(super) fn transfer_curve_expression_features(
                 ProceduralCurve::new(procedural_id, procedural_definition),
             )?;
         }
-        let axis_definition = neutral_helix.or_else(|| {
-            let helix = helix?;
-            Some(IrFeatureDefinition::Operation(
-                IrFeatureOperation::HelixNativeAxis {
-                    axis_native_ref: cadmpeg_core::text::NonBlankString::new(
-                        curve_expression_record_id(record),
-                    )?,
-                    axial_rise: Length::new(helix.height)?,
-                    pitch: Length::new(helix.height / helix.revolutions.get())?,
-                    revolutions: helix.revolutions,
-                    start_angle: helix.start_angle,
-                    clockwise: helix.clockwise,
-                },
-            ))
-        });
+        let axis_definition = if let Some(definition) = neutral_helix {
+            Some(definition)
+        } else if let Some(helix) = helix {
+            let axis_id = curve_expression_record_id(ctx, record)?;
+            (|| {
+                Some(IrFeatureDefinition::Operation(
+                    IrFeatureOperation::HelixNativeAxis {
+                        axis_native_ref: cadmpeg_core::text::NonBlankString::new(axis_id)?,
+                        axial_rise: Length::new(helix.height)?,
+                        pitch: Length::new(helix.height / helix.revolutions.get())?,
+                        revolutions: helix.revolutions,
+                        start_angle: helix.start_angle,
+                        clockwise: helix.clockwise,
+                    },
+                ))
+            })()
+        } else {
+            None
+        };
         let definition = if let Some(definition) = axis_definition {
             definition
         } else {
@@ -936,7 +946,7 @@ pub(super) fn transfer_curve_expression_features(
                 })?,
 
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
-                native_ref: Some(curve_expression_record_id(record)),
+                native_ref: Some(curve_expression_record_id(ctx, record)?),
             },
         )?;
     }

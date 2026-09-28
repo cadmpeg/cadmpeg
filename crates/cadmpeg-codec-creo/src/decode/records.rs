@@ -93,16 +93,16 @@ pub(super) struct CreoFeatureDefinitionRecord<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionRecord {
+pub(super) struct CreoCurveExpressionRecord<'a> {
     pub(super) id: String,
     entity_id: u32,
     backup: bool,
-    local_system: Option<CreoCurveExpressionLocalSystem>,
-    lines: Vec<CreoCurveExpressionLine>,
-    assignments: Vec<CreoCurveExpressionAssignment>,
-    solve_blocks: Vec<CreoCurveExpressionSolveBlock>,
+    local_system: Option<CreoCurveExpressionLocalSystem<'a>>,
+    lines: Vec<CreoCurveExpressionLine<'a>>,
+    assignments: Vec<CreoCurveExpressionAssignment<'a>>,
+    solve_blocks: Vec<CreoCurveExpressionSolveBlock<'a>>,
     unresolved_solve_control: bool,
-    prohibited_constructs: Vec<String>,
+    prohibited_constructs: &'a [String],
 }
 
 #[derive(Debug, Serialize)]
@@ -3613,89 +3613,178 @@ mod pcurve_endpoint_projection_limit_tests {
     }
 }
 
-pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionRecord> {
-    scan.curves
-        .expressions
-        .iter()
-        .map(|record| CreoCurveExpressionRecord {
-            id: curve_expression_record_id(record),
+fn curve_expression_assignment_projection(
+    assignment: &crate::curve::CurveExpressionAssignment,
+) -> CreoCurveExpressionAssignment<'_> {
+    CreoCurveExpressionAssignment {
+        target: &assignment.target,
+        expression: &assignment.expression,
+        dependencies: &assignment.dependencies,
+        value: assignment.value.as_ref(),
+        activation: assignment.activation.token(),
+        offset: assignment.offset,
+    }
+}
+
+pub(super) fn curve_expression_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoCurveExpressionRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.expressions {
+        let id = curve_expression_record_id(ctx, record)?;
+        let mut lines = Vec::new();
+        for line in &record.lines {
+            ctx.try_reserve_items(&mut lines, 1, "creo native curve expression lines")?;
+            lines.push(CreoCurveExpressionLine { text: &line.text, offset: line.offset });
+        }
+        let mut assignments = Vec::new();
+        for assignment in &record.assignments {
+            ctx.try_reserve_items(&mut assignments, 1, "creo native curve expression assignments")?;
+            assignments.push(curve_expression_assignment_projection(assignment));
+        }
+        let mut solve_blocks = Vec::new();
+        for block in &record.solve_blocks {
+            let mut equations = Vec::new();
+            for equation in &block.equations {
+                ctx.try_reserve_items(&mut equations, 1, "creo native curve expression equations")?;
+                equations.push(CreoCurveExpressionEquation {
+                    left: &equation.left,
+                    right: &equation.right,
+                    dependencies: &equation.dependencies,
+                    offset: equation.offset,
+                });
+            }
+            let mut block_assignments = Vec::new();
+            for assignment in &block.assignments {
+                ctx.try_reserve_items(&mut block_assignments, 1, "creo native curve expression block assignments")?;
+                block_assignments.push(curve_expression_assignment_projection(assignment));
+            }
+            ctx.try_reserve_items(&mut solve_blocks, 1, "creo native curve expression solve blocks")?;
+            solve_blocks.push(CreoCurveExpressionSolveBlock {
+                equations,
+                assignments: block_assignments,
+                variables: &block.unknowns,
+                solutions: &block.unknowns,
+                offset: block.offset,
+                for_offset: block.for_offset,
+            });
+        }
+        ctx.try_reserve_items(&mut records, 1, "creo native curve expression records")?;
+        records.push(CreoCurveExpressionRecord {
+            id,
             entity_id: record.entity_id,
             backup: record.backup,
-            local_system: record.local_system.as_ref().map(|frame| {
-                CreoCurveExpressionLocalSystem {
-                    dimensions: frame.dimensions,
-                    count: frame.count,
-                    body: frame.body.clone(),
-                    explicit_slots: frame
-                        .explicit_slots
-                        .map(cadmpeg_ir::units::FiniteVector::get),
-                    offset: frame.offset,
-                }
+            local_system: record.local_system.as_ref().map(|frame| CreoCurveExpressionLocalSystem {
+                dimensions: frame.dimensions,
+                count: frame.count,
+                body: &frame.body,
+                explicit_slots: frame.explicit_slots.map(cadmpeg_ir::units::FiniteVector::get),
+                offset: frame.offset,
             }),
-            lines: record
-                .lines
-                .iter()
-                .map(|line| CreoCurveExpressionLine {
-                    text: line.text.clone(),
-                    offset: line.offset,
-                })
-                .collect(),
-            assignments: record
-                .assignments
-                .iter()
-                .map(|assignment| CreoCurveExpressionAssignment {
-                    target: assignment.target.clone(),
-                    expression: assignment.expression.clone(),
-                    dependencies: assignment.dependencies.clone(),
-                    value: assignment.value.clone(),
-                    activation: assignment.activation.token(),
-                    offset: assignment.offset,
-                })
-                .collect(),
-            solve_blocks: record
-                .solve_blocks
-                .iter()
-                .map(|block| CreoCurveExpressionSolveBlock {
-                    equations: block
-                        .equations
-                        .iter()
-                        .map(|equation| CreoCurveExpressionEquation {
-                            left: equation.left.clone(),
-                            right: equation.right.clone(),
-                            dependencies: equation.dependencies.clone(),
-                            offset: equation.offset,
-                        })
-                        .collect(),
-                    assignments: block
-                        .assignments
-                        .iter()
-                        .map(|assignment| CreoCurveExpressionAssignment {
-                            target: assignment.target.clone(),
-                            expression: assignment.expression.clone(),
-                            dependencies: assignment.dependencies.clone(),
-                            value: assignment.value.clone(),
-                            activation: assignment.activation.token(),
-                            offset: assignment.offset,
-                        })
-                        .collect(),
-                    variables: block
-                        .unknowns
-                        .iter()
-                        .map(|unknown| unknown.name.clone())
-                        .collect(),
-                    solutions: block
-                        .unknowns
-                        .iter()
-                        .map(|unknown| unknown.solution.clone())
-                        .collect(),
-                    offset: block.offset,
-                    for_offset: block.for_offset,
-                })
-                .collect(),
+            lines,
+            assignments,
+            solve_blocks,
             unresolved_solve_control: record.unresolved_solve_control,
-            prohibited_constructs: record.prohibited_constructs.clone(),
-        })
-        .collect()
+            prohibited_constructs: &record.prohibited_constructs,
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod curve_expression_projection_limit_tests {
+    use super::curve_expression_records;
+    use crate::curve::{
+        CurveExpressionActivation, CurveExpressionAssignment, CurveExpressionEquation,
+        CurveExpressionLine, CurveExpressionLocalSystem, CurveExpressionRecord,
+        CurveExpressionSolveBlock, CurveExpressionTarget, CurveExpressionValue, SolveUnknown,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let assignment = CurveExpressionAssignment {
+            target: CurveExpressionTarget::Parameter { name: "p".into(), declared_unit: None },
+            expression: "2".into(), dependencies: vec!["q".into()],
+            value: Some(CurveExpressionValue::Number(2.0)),
+            activation: CurveExpressionActivation::Active, offset: 6,
+        };
+        scan.curves.expressions.push(CurveExpressionRecord {
+            entity_id: 7, backup: false,
+            local_system: Some(CurveExpressionLocalSystem {
+                dimensions: 4, count: 3, body: vec![0xf9], explicit_slots: None, offset: 4,
+            }),
+            lines: vec![CurveExpressionLine { text: "p=2".into(), offset: 5 }],
+            assignments: vec![assignment.clone()],
+            solve_blocks: vec![CurveExpressionSolveBlock {
+                equations: vec![CurveExpressionEquation {
+                    left: "p".into(), right: "q".into(), dependencies: vec!["q".into()], offset: 7,
+                }],
+                assignments: vec![assignment],
+                unknowns: vec![SolveUnknown { name: "q".into(), solution: Some(CurveExpressionValue::Number(2.0)) }],
+                offset: 8, for_offset: 9,
+            }],
+            unresolved_solve_control: false, prohibited_constructs: vec!["bad".into()],
+            offset: 3, expression_offset: 5,
+        });
+        scan
+    }
+
+    #[test]
+    fn curve_expression_id_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match curve_expression_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("native ID exceeds retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo curve expression record id"), "{error:?}");
+    }
+
+    #[test]
+    fn curve_expression_nested_rows_refuse_collection_limit() {
+        let scan = scan();
+        for (limit, operation) in [
+            (0, "creo native curve expression lines"),
+            (1, "creo native curve expression assignments"),
+            (2, "creo native curve expression equations"),
+            (3, "creo native curve expression block assignments"),
+            (4, "creo native curve expression solve blocks"),
+            (5, "creo native curve expression records"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+            let error = match curve_expression_records(&ctx, &scan) {
+                Err(error) => error, Ok(_) => panic!("one more projection row exceeds the collection limit"),
+            };
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == operation), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn borrowed_curve_expression_preserves_nested_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records = curve_expression_records(&ctx, &scan).expect("expression is admitted");
+        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        assert_eq!(value["local_system"]["body"], serde_json::json!([249]));
+        assert_eq!(value["lines"][0]["text"], "p=2");
+        assert_eq!(value["assignments"][0]["target"]["kind"], "parameter");
+        assert_eq!(value["solve_blocks"][0]["variables"], serde_json::json!(["q"]));
+        assert_eq!(value["solve_blocks"][0]["solutions"], serde_json::json!([2.0]));
+        assert_eq!(value["prohibited_constructs"], serde_json::json!(["bad"]));
+    }
 }
 
 pub(super) fn sketch_records(
