@@ -136,49 +136,43 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     let poles = nurbs.poles();
     let tolerance = point_tolerance(poles.iter())?
         .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
-    let signed_distances = poles
+    let signed_distance = |point: &Point3| {
+        dot(
+            normal,
+            [
+                point.x - plane.origin[0],
+                point.y - plane.origin[1],
+                point.z - plane.origin[2],
+            ],
+        )
+    };
+    poles
         .iter()
-        .map(|point| {
-            dot(
-                normal,
-                [
-                    point.x - plane.origin[0],
-                    point.y - plane.origin[1],
-                    point.z - plane.origin[2],
-                ],
-            )
-        })
-        .collect::<Vec<_>>();
-    signed_distances
-        .iter()
-        .all(|distance| distance.is_finite())
+        .all(|point| signed_distance(point).is_finite())
         .then_some(())?;
-    let candidates = boundaries
+    let mut candidates = boundaries
         .into_iter()
         .filter(|boundary| {
             !boundary.transverse_periodic
                 && boundary
                     .control_indices
                     .iter()
-                    .all(|index| signed_distances[*index].abs() <= tolerance)
+                    .all(|index| signed_distance(&poles[*index]).abs() <= tolerance)
                 && {
-                    let outside = signed_distances
+                    let outside = || poles
                         .iter()
                         .enumerate()
                         .filter(|(index, _)| !boundary.control_indices.contains(index))
-                        .map(|(_, distance)| *distance)
-                        .collect::<Vec<_>>();
-                    !outside.is_empty()
-                        && (outside.iter().all(|distance| *distance > tolerance)
-                            || outside.iter().all(|distance| *distance < -tolerance))
+                        .map(|(_, point)| signed_distance(point));
+                    outside().next().is_some()
+                        && (outside().all(|distance| distance > tolerance)
+                            || outside().all(|distance| distance < -tolerance))
                 }
-        })
-        .collect::<Vec<_>>();
-    let [boundary] = candidates.as_slice() else {
-        return None;
-    };
+        });
+    let boundary = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        boundary.curve.clone(),
+        boundary.curve,
     )))
 }
 
@@ -186,11 +180,10 @@ fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
     (left - right).abs() <= tolerance
 }
 
-fn normalized_knot_vector(knots: &[f64]) -> Option<Vec<f64>> {
+fn normalized_knot_bounds(knots: &[f64]) -> Option<(f64, f64)> {
     let (&minimum, &maximum) = knots.first().zip(knots.last())?;
     let span = maximum - minimum;
-    (span.is_finite() && span > 0.0)
-        .then(|| knots.iter().map(|knot| (knot - minimum) / span).collect())
+    (span.is_finite() && span > 0.0).then_some((minimum, span))
 }
 
 fn nurbs_curves_match(
@@ -209,37 +202,56 @@ fn nurbs_curves_match(
     }
     let left_points = left.control_points();
     let right_control_points = right.control_points();
-    let right_points = if reversed {
-        right_control_points.iter().rev().collect::<Vec<_>>()
-    } else {
-        right_control_points.iter().collect()
-    };
-    if !left_points.iter().zip(right_points).all(|(left, right)| {
+    let points_match = |left: &FinitePoint3, right: &FinitePoint3| {
         dot(
             [left.x - right.x, left.y - right.y, left.z - right.z],
             [left.x - right.x, left.y - right.y, left.z - right.z],
         )
         .sqrt()
             <= point_tolerance
-    }) {
+    };
+    let points_match = if reversed {
+        left_points
+            .iter()
+            .zip(right_control_points.iter().rev())
+            .all(|(left, right)| points_match(left, right))
+    } else {
+        left_points
+            .iter()
+            .zip(right_control_points.iter())
+            .all(|(left, right)| points_match(left, right))
+    };
+    if !points_match {
         return false;
     }
-    let Some(left_knots) = normalized_knot_vector(left.knots()) else {
+    let Some((left_minimum, left_span)) = normalized_knot_bounds(left.knots()) else {
         return false;
     };
-    let Some(right_knots) = normalized_knot_vector(right.knots()) else {
+    let Some((right_minimum, right_span)) = normalized_knot_bounds(right.knots()) else {
         return false;
+    };
+    let normalized = |left: &f64, right: &f64| {
+        (
+            (*left - left_minimum) / left_span,
+            (*right - right_minimum) / right_span,
+        )
     };
     let knots_match = if reversed {
-        left_knots
+        left.knots()
             .iter()
-            .zip(right_knots.iter().rev())
-            .all(|(left, right)| scalar_near(*left, 1.0 - right, EPS_WEIGHT_SYMMETRY))
+            .zip(right.knots().iter().rev())
+            .all(|(left, right)| {
+                let (left, right) = normalized(left, right);
+                scalar_near(left, 1.0 - right, EPS_WEIGHT_SYMMETRY)
+            })
     } else {
-        left_knots
+        left.knots()
             .iter()
-            .zip(&right_knots)
-            .all(|(left, right)| scalar_near(*left, *right, EPS_WEIGHT_SYMMETRY))
+            .zip(right.knots().iter())
+            .all(|(left, right)| {
+                let (left, right) = normalized(left, right);
+                scalar_near(left, right, EPS_WEIGHT_SYMMETRY)
+            })
     };
     if !knots_match {
         return false;
@@ -247,27 +259,37 @@ fn nurbs_curves_match(
     match (left.pole_rows().weights(), right.pole_rows().weights()) {
         (None, None) => true,
         (Some(left), Some(right)) => {
-            let right = if reversed {
-                right.iter().rev().collect::<Vec<_>>()
+            let right_first = if reversed {
+                right.last()
             } else {
-                right.iter().collect()
+                right.first()
             };
             let Some(scale) = left
                 .first()
-                .zip(right.first())
-                .map(|(left, right)| left / **right)
+                .zip(right_first)
+                .map(|(left, right)| left / *right)
             else {
                 return false;
             };
             scale.is_finite()
                 && scale > 0.0
-                && left.iter().zip(right).all(|(left, right)| {
+                && if reversed {
+                    left.iter().zip(right.iter().rev()).all(|(left, right)| {
+                        scalar_near(
+                            *left,
+                            scale * right,
+                            EPS_PARAMETER_AGREEMENT * left.abs().max((scale * right).abs()).max(1.0),
+                        )
+                    })
+                } else {
+                    left.iter().zip(right.iter()).all(|(left, right)| {
                     scalar_near(
                         *left,
                         scale * right,
                         EPS_PARAMETER_AGREEMENT * left.abs().max((scale * right).abs()).max(1.0),
                     )
-                })
+                    })
+                }
         }
         _ => false,
     }
@@ -298,25 +320,26 @@ fn generator_separates_control_nets(
     let second_axis = cross(generator, first_axis);
     let first_poles = first.poles();
     let second_poles = second.poles();
-    let first_outside = first_poles
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !first_boundary.control_indices.contains(index))
-        .map(|(_, point)| point)
-        .collect::<Vec<_>>();
-    let second_outside = second_poles
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !second_boundary.control_indices.contains(index))
-        .map(|(_, point)| point)
-        .collect::<Vec<_>>();
-    if first_outside.is_empty() || second_outside.is_empty() {
+    let first_outside = || {
+        first_poles
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !first_boundary.control_indices.contains(index))
+            .map(|(_, point)| point)
+    };
+    let second_outside = || {
+        second_poles
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !second_boundary.control_indices.contains(index))
+            .map(|(_, point)| point)
+    };
+    if first_outside().next().is_none() || second_outside().next().is_none() {
         return false;
     }
     let offset = |point: &Point3| [point.x - origin.x, point.y - origin.y, point.z - origin.z];
-    let mut boundary_angles = first_outside
-        .iter()
-        .chain(&second_outside)
+    let mut boundary_angles = first_outside()
+        .chain(second_outside())
         .flat_map(|point| {
             let offset = offset(point);
             let angle = dot(second_axis, offset).atan2(dot(first_axis, offset));
@@ -342,24 +365,10 @@ fn generator_separates_control_nets(
             angle.cos() * first_axis[1] + angle.sin() * second_axis[1],
             angle.cos() * first_axis[2] + angle.sin() * second_axis[2],
         ];
-        let first_distances = first_outside
-            .iter()
-            .map(|point| dot(normal, offset(point)))
-            .collect::<Vec<_>>();
-        let second_distances = second_outside
-            .iter()
-            .map(|point| dot(normal, offset(point)))
-            .collect::<Vec<_>>();
-        (first_distances.iter().all(|distance| *distance > tolerance)
-            && second_distances
-                .iter()
-                .all(|distance| *distance < -tolerance))
-            || (first_distances
-                .iter()
-                .all(|distance| *distance < -tolerance)
-                && second_distances
-                    .iter()
-                    .all(|distance| *distance > tolerance))
+        (first_outside().all(|point| dot(normal, offset(point)) > tolerance)
+            && second_outside().all(|point| dot(normal, offset(point)) < -tolerance))
+            || (first_outside().all(|point| dot(normal, offset(point)) < -tolerance)
+                && second_outside().all(|point| dot(normal, offset(point)) > tolerance))
     })
 }
 
@@ -375,9 +384,11 @@ pub(in super::super) fn shared_extrusion_generator_curve(
     let first_poles = first.poles();
     let second_poles = second.poles();
     let tolerance = point_tolerance(first_poles.iter().chain(second_poles.iter()))?;
-    let candidates = first_boundaries
+    let selected_index = {
+        let mut candidates = first_boundaries
         .iter()
-        .flat_map(|first_boundary| {
+        .enumerate()
+        .flat_map(|(index, first_boundary)| {
             second_boundaries
                 .iter()
                 .filter(|second_boundary| {
@@ -401,14 +412,15 @@ pub(in super::super) fn shared_extrusion_generator_curve(
                             second_boundary,
                         )
                 })
-                .map(|_| first_boundary.curve.clone())
-        })
-        .collect::<Vec<_>>();
-    let [curve] = candidates.as_slice() else {
-        return None;
+                .map(move |_| index)
+        });
+        let index = candidates.next()?;
+        candidates.next().is_none().then_some(())?;
+        index
     };
+    let curve = first_boundaries.into_iter().nth(selected_index)?.curve;
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-        curve.clone(),
+        curve,
     )))
 }
 
@@ -574,18 +586,18 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             && !nurbs.u_periodic()
             && !nurbs.v_periodic())
         .then_some(())?;
-        let u_knots = normalized_knot_vector(nurbs.u_knots())?;
-        let v_knots = normalized_knot_vector(nurbs.v_knots())?;
-        (u_knots.len() == 8
-            && u_knots
+        let (u_minimum, u_span) = normalized_knot_bounds(nurbs.u_knots())?;
+        let (v_minimum, v_span) = normalized_knot_bounds(nurbs.v_knots())?;
+        (nurbs.u_knots().len() == 8
+            && nurbs.u_knots()
                 .iter()
                 .zip([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
-                .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT))
-            && v_knots.len() == 4
-            && v_knots
+                .all(|(actual, expected)| scalar_near((*actual - u_minimum) / u_span, expected, EPS_ENDPOINT_AGREEMENT))
+            && nurbs.v_knots().len() == 4
+            && nurbs.v_knots()
                 .iter()
                 .zip([0.0, 0.0, 1.0, 1.0])
-                .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT)))
+                .all(|(actual, expected)| scalar_near((*actual - v_minimum) / v_span, expected, EPS_ENDPOINT_AGREEMENT)))
         .then_some(())?;
         let poles = nurbs.poles();
         let weights = match nurbs.pole_grid().weights() {
