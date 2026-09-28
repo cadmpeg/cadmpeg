@@ -737,6 +737,7 @@ pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
 /// malformed lane. Returning an error keeps the marker from disappearing
 /// through an iterator's `filter_map`.
 pub(super) fn admit_sketch_input_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     parent: &str,
 ) -> Result<Vec<SketchInputEntity>, cadmpeg_core::CodecError> {
@@ -744,12 +745,13 @@ pub(super) fn admit_sketch_input_entities(
     (0..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
         .filter(|offset| sketch_marker_at(payload, *offset))
         .enumerate()
-        .map(|(ordinal, offset)| {
-            let code = marker_native_code(payload, offset).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SolidWorks feature-input marker at byte {offset} has no native code"
-                ))
-            })?;
+        .try_fold(Vec::new(), |mut entities, (ordinal, offset)| {
+            let Some(code) = marker_native_code(payload, offset) else {
+                return Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("SolidWorks feature-input marker at byte {offset} has no native code"),
+                    "report SLDPRT marker native code",
+                )?));
+            };
             let linked_point = linked_profile_point(payload, offset);
             let legacy_alternate_profile_point =
                 legacy_geometry_locus_alternate_profile_point_coordinates(payload, offset);
@@ -884,34 +886,63 @@ pub(super) fn admit_sketch_input_entities(
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
-            let ordinal = u32::try_from(ordinal).map_err(|_| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"
-                ))
+            let ordinal = match u32::try_from(ordinal) {
+                Ok(ordinal) => ordinal,
+                Err(_) => {
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"),
+                        "report SLDPRT marker count",
+                    )?));
+                }
+            };
+            let id = ctx.format_retained(
+                format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
+                "retain SLDPRT sketch marker identity",
+            )?;
+            let mut parent_copy = String::new();
+            ctx.reserve_retained_string(
+                &mut parent_copy,
+                parent.len(),
+                "retain SLDPRT sketch marker parent",
+            )?;
+            parent_copy.push_str(parent);
+            let offset_u64 = u64::try_from(offset).map_err(|_| {
+                ctx.refuse_codec_limit("address SLDPRT sketch marker", u64::MAX - 1, u64::MAX)
             })?;
-            let mut entity = SketchInputEntity::try_new(
-                format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
-                parent.to_string(),
+            let mut entity = match SketchInputEntity::try_new(
+                id,
+                parent_copy,
                 ordinal,
-                offset as u64,
+                offset_u64,
                 kind,
                 payload,
-            )
-            .map_err(|error| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"
-                ))
-            })?;
+            ) {
+                Ok(entity) => entity,
+                Err(error) => {
+                    return Err(CodecError::Malformed(ctx.format_retained(
+                        format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"),
+                        "report SLDPRT marker construction",
+                    )?));
+                }
+            };
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
-            Ok(entity)
+            ctx.reserve_collection_vec(&mut entities, 1, "collect SLDPRT sketch markers")?;
+            entities.push(entity);
+            Ok(entities)
         })
-        .collect()
 }
 
 #[cfg(test)]
 pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity> {
-    admit_sketch_input_entities(payload, parent).expect("synthetic sketch marker payload")
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("synthetic sketch marker payload fits service policy");
+    admit_sketch_input_entities(&ctx, payload, parent).expect("synthetic sketch marker payload")
 }
 
 fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32) -> bool {

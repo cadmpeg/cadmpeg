@@ -90,7 +90,7 @@ fn feature_input_lane(
     let scalars = named_scalars_charged(ctx, payload, &parent, &names)?;
     let relation_bindings = relation_bindings_charged(ctx, &parent, &classes, &scalars)?;
     let references = reference_cells_charged(ctx, &scalars, &classes)?;
-    let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
+    let sketch_entities = admit_sketch_input_entities(ctx, payload, &parent)?;
     for entity in &sketch_entities {
         let signature = usize::try_from(entity.offset())
             .ok()

@@ -17,6 +17,7 @@ use crate::records::{
     SketchInputKind, SketchRelationKind,
 };
 use crate::resolved_features::markers::additional_linked_profile_point_coordinates;
+use crate::resolved_features::markers::admit_sketch_input_entities;
 use crate::resolved_features::markers::compact_legacy_profile_vertex;
 use crate::resolved_features::markers::linked_profile_point;
 use crate::resolved_features::markers::marker_coordinates;
@@ -57,6 +58,26 @@ fn current_compact_spatial_point_marker(
         marker[start..start + 8].copy_from_slice(&value.to_le_bytes());
     }
     marker
+}
+
+#[test]
+fn sketch_marker_identity_refuses_retained_limit() {
+    let payload = current_compact_spatial_point_marker(
+        1,
+        [0x04, 0x00, 0x02, 0x00],
+        [0.125, -0.25, 0.375],
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("marker payload fits root policy");
+    let Err(CodecError::ResourceLimit(limit)) =
+        admit_sketch_input_entities(&ctx, &payload, "lane")
+    else {
+        panic!("sketch marker identity must use retained budget");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
 #[test]
