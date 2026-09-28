@@ -499,14 +499,15 @@ pub(in crate::decode) fn saved_section_arc(
 pub(in crate::decode) fn saved_section_segment_point_coordinates(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<Vec<(u32, [f64; 2])>> {
+) -> Option<[Option<(u32, [f64; 2])>; 3]> {
     match segment.kind {
         crate::feature::definitions::FeatureSegmentKind::Line(_) => {
             let geometry = saved_section_line_geometry(definition, segment)?;
             let [start, end] = saved_geometry_endpoints(&geometry)?;
-            Some(vec![
-                (segment.point_ids()[0], start),
-                (segment.point_ids()[1], end),
+            Some([
+                Some((segment.point_ids()[0], start)),
+                Some((segment.point_ids()[1], end)),
+                None,
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Arc(_) => {
@@ -517,10 +518,10 @@ pub(in crate::decode) fn saved_section_segment_point_coordinates(
             else {
                 return None;
             };
-            Some(vec![
-                (segment.point_ids()[0], [first_u, first_v]),
-                (segment.point_ids()[1], [second_u, second_v]),
-                (segment.center_id?, [center.u, center.v]),
+            Some([
+                Some((segment.point_ids()[0], [first_u, first_v])),
+                Some((segment.point_ids()[1], [second_u, second_v])),
+                Some((segment.center_id?, [center.u, center.v])),
             ])
         }
         crate::feature::definitions::FeatureSegmentKind::Point(_) => None,
