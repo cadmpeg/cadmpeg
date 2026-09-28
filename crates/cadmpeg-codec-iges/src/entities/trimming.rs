@@ -2418,47 +2418,41 @@ pub(super) fn project(
                     end: end_vertex,
                     tolerance: Some(checked_sewing_tolerance),
                 });
-                let pcurve_uses = match item
-                    .pcurves
-                    .into_iter()
-                    .enumerate()
-                    .map(|(pcurve_index, (geometry, parameter_range))| {
-                        let id = crate::ids::pcurve(
-                            &stem
-                                .slot(boundary_index)
-                                .slot(segment_index)
-                                .slot(pcurve_index),
-                        );
-                        if implicit_outer_domain {
-                            implicit_boundary_pcurves.push(id.clone());
-                        }
-                        candidate.model_mut().pcurves.push(Pcurve {
-                            id: id.clone(),
-                            geometry,
-                            metadata: PcurveMetadata::general(
-                                None,
-                                Some(
-                                    cadmpeg_ir::units::FiniteVector::new(parameter_range)
-                                        .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)?,
-                                ),
-                                None,
-                            ),
-                        });
-                        Ok(PcurveUse {
-                            pcurve: id,
-                            isoparametric: None,
-                            parameter_range: None,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, &'static str>>()
-                {
-                    Ok(uses) => uses,
-                    Err(error) => {
-                        super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error))?;
-                        valid = false;
-                        break;
+                if item.pcurves.iter().any(|(_, range)|
+                    cadmpeg_ir::units::FiniteVector::new(*range).is_none()
+                ) {
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry,
+                        format_args!("{}", PcurveMetadata::NON_FINITE_PARAMETER_RANGE))?;
+                    valid = false;
+                    break;
+                }
+                let mut pcurve_uses = reserve_vec(ctx, item.pcurves.len(), "iges trimming coedge pcurve uses")?;
+                for (pcurve_index, (geometry, parameter_range)) in item.pcurves.into_iter().enumerate() {
+                    let id = crate::ids::pcurve(
+                        &stem.slot(boundary_index).slot(segment_index).slot(pcurve_index),
+                    );
+                    if implicit_outer_domain {
+                        reserve_vec_growth(ctx, &mut implicit_boundary_pcurves, 1, "iges implicit boundary pcurve IDs")?;
+                        implicit_boundary_pcurves.push(copy_optional_identity(
+                            Some(ctx), id.as_str(), "iges implicit boundary pcurve ID text",
+                        )?);
                     }
-                };
+                    reserve_vec_growth(ctx, &mut candidate.model_mut().pcurves, 1, "iges trimming pcurve slots")?;
+                    candidate.model_mut().pcurves.push(Pcurve {
+                        id: copy_optional_identity(Some(ctx), id.as_str(), "iges trimming pcurve ID copy")?,
+                        geometry,
+                        metadata: PcurveMetadata::general(
+                            None,
+                            cadmpeg_ir::units::FiniteVector::new(parameter_range),
+                            None,
+                        ),
+                    });
+                    pcurve_uses.push(PcurveUse {
+                        pcurve: id,
+                        isoparametric: None,
+                        parameter_range: None,
+                    });
+                }
                 let coedge_id = coedge_ids[segment_index].clone();
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.clone(),
