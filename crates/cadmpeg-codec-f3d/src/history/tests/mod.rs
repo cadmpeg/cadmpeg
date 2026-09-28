@@ -7,6 +7,7 @@ mod budgets;
 mod component_spaces;
 mod draft;
 mod edge_operands;
+mod feature_outputs;
 mod face_boundaries;
 mod hole;
 mod mirror;

@@ -1234,7 +1234,10 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         ),
         native_ref: Some("native:scope".into()),
     };
-    super::super::bind_base_feature_output_selection(&mut feature);
+    super::super::bind_base_feature_output_selection(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut feature,
+    ).unwrap();
     assert!(matches!(
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
