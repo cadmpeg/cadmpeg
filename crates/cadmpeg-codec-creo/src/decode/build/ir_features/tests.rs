@@ -229,6 +229,100 @@ fn native_row_feature_refuses_kind_retained_limit() {
 }
 
 #[test]
+fn stored_operation_feature_name_refuses_retained_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.operations.push(crate::feature::operations::FeatureOperation {
+        feature_id: 40,
+        kind: crate::feature::operations::OperationKind::Native,
+        name: crate::feature::operations::OperationName::Stored {
+            bytes: b"~Native Feature id 40".to_vec(),
+            keyword: crate::feature::operations::IdKeyword::Id,
+            prefix: Some(b'~'),
+        },
+        recipe: crate::feature::operations::RecipeResolution::None,
+        display_state_conflict: false,
+        depdb: None,
+        offset: 0,
+        state_offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 56;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = emit_model_features(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("the prefix property, kind and stripped name need 57 bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo stored Feature name"), "{error:?}");
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        emit_model_features(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service-profile stored name");
+    assert_eq!(ir.model.features[0].name.as_deref(), Some("Native Feature id 40"));
+}
+
+#[test]
+fn recipe_source_tag_refuses_retained_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.operations.push(crate::feature::operations::FeatureOperation {
+        feature_id: 40,
+        kind: crate::feature::operations::OperationKind::Extrude,
+        name: crate::feature::operations::OperationName::Derived,
+        recipe: crate::feature::operations::RecipeResolution::Resolved(
+            crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        ),
+        display_state_conflict: false,
+        depdb: None,
+        offset: 0,
+        state_offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 27;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = emit_model_features(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("recipe property and source tag need 28 retained bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo Feature source tag"), "{error:?}");
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        emit_model_features(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service-profile recipe tag");
+    assert_eq!(ir.model.features[0].source_tag.as_deref(), Some("protextrude"));
+}
+
+#[test]
 fn row_feature_ids_preserve_first_source_order() {
     let rows = [
         crate::feature::rows::FeatureRow {

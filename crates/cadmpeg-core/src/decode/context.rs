@@ -281,6 +281,61 @@ impl<'a> DecodeContext<'a> {
         Ok(text)
     }
 
+    /// Copies source bytes as UTF-8 with replacement characters after charging
+    /// the exact length of the retained text.
+    pub fn copy_retained_lossy_utf8(
+        &self,
+        value: &[u8],
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        let mut remaining = value;
+        let mut length = 0usize;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    length = length.checked_add(valid.len()).ok_or_else(|| {
+                        self.refuse_codec_limit(operation, u64::MAX, u64::MAX)
+                    })?;
+                    break;
+                }
+                Err(error) => {
+                    length = length
+                        .checked_add(error.valid_up_to())
+                        .and_then(|length| length.checked_add('\u{FFFD}'.len_utf8()))
+                        .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                    let Some(invalid_len) = error.error_len() else {
+                        break;
+                    };
+                    remaining = &remaining[error.valid_up_to() + invalid_len..];
+                }
+            }
+        }
+        let mut text = String::new();
+        self.try_reserve_retained_text(&mut text, length, operation)?;
+        let mut remaining = value;
+        loop {
+            match std::str::from_utf8(remaining) {
+                Ok(valid) => {
+                    text.push_str(valid);
+                    break;
+                }
+                Err(error) => {
+                    let valid_len = error.valid_up_to();
+                    text.push_str(
+                        std::str::from_utf8(&remaining[..valid_len])
+                            .map_err(|_| CodecError::malformed("valid UTF-8 prefix changed"))?,
+                    );
+                    text.push('\u{FFFD}');
+                    let Some(invalid_len) = error.error_len() else {
+                        break;
+                    };
+                    remaining = &remaining[valid_len + invalid_len..];
+                }
+            }
+        }
+        Ok(text)
+    }
+
     /// Formats session-retained text after charging its exact UTF-8 byte size.
     ///
     /// The first formatting pass counts bytes without allocating. The second
