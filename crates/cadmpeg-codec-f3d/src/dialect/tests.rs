@@ -180,7 +180,8 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
         Some(cadmpeg_core::dialect_id!("f3d:manifest-3-2-0-0"))
     );
 
-    let loss = dialect_loss(&matched).expect("the recovery is charged");
+    let loss = with_context(|ctx| dialect_loss(ctx, &matched).unwrap())
+        .expect("the recovery is charged");
     assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
     assert!(loss.message.contains("3-3-0-0"));
     assert!(loss.message.contains("f3d:manifest-3-2-0-0"));
@@ -194,7 +195,8 @@ fn a_residual_match_charges_without_inventing_a_substituted_grammar() {
             "unframed".to_owned(),
         )]));
 
-    let loss = dialect_loss(&matched).expect("a residual read is a recovery");
+    let loss = with_context(|ctx| dialect_loss(ctx, &matched).unwrap())
+        .expect("a residual read is a recovery");
     assert_eq!(loss.code, F3dLossCode::SourceDialectUnverified.kind());
     assert!(loss.message.contains("residual parser path"));
     assert!(!loss.message.contains("f3d:manifest-3-2-0-0"));
@@ -228,7 +230,7 @@ fn the_identity_rows_are_admitted_and_charge_nothing() {
         classify_f3z(&["Part.f3d"]),
     ] {
         assert_eq!(matched.admission(), &Admission::Admitted);
-        assert!(dialect_loss(&matched).is_none());
+        with_context(|ctx| assert!(dialect_loss(ctx, &matched).unwrap().is_none()));
     }
 }
 
@@ -262,7 +264,65 @@ fn a_carrier_collision_instance_is_not_presented_as_an_xref() {
     )]))
     .with_instance("FusionAssetName[Active]/Breps.BlobParts/Body1.sat");
 
-    let loss = kernel_dialect_loss(&matched).expect("unknown kernel grammar is unverified");
+    let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
+        .expect("unknown kernel grammar is unverified");
     assert!(!loss.message.contains("xref"));
     assert!(loss.message.contains("kernel carrier"));
+}
+
+#[test]
+fn dialect_recovery_loss_refuses_collection_limit() {
+    let layers = cadmpeg_core::dialect::DialectLayers::of(classify_document("3-3-0-0"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::dialect_losses(&limited, &layers).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D dialect recovery losses"));
+}
+
+#[test]
+fn kernel_recovery_text_refuses_retained_limit() {
+    let matched = DialectMatch::unverified(
+        cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
+        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = kernel_dialect_loss(&limited, &matched).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D dialect recovery loss"));
+}
+
+#[test]
+fn kernel_recovery_text_matches_shared_dialect_message() {
+    let matched = DialectMatch::unverified(
+        cadmpeg_asm::dialect::ACIS_TEXT_ACIS,
+        cadmpeg_core::dialect::Grammar::of(&cadmpeg_asm::dialect::ACIS_SAVE_FORMAT_218),
+    )
+    .with_declared(BTreeMap::from([
+        (
+            cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_CARRIER),
+            "Body.sat".to_owned(),
+        ),
+        (
+            cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
+            "218".to_owned(),
+        ),
+        (
+            cadmpeg_core::nonblank_const!(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
+            "0".to_owned(),
+        ),
+    ]));
+    let loss = with_context(|ctx| kernel_dialect_loss(ctx, &matched).unwrap())
+        .expect("unverified kernel loss");
+    let expected = cadmpeg_asm::dialect::unverified_message(
+        "the kernel carrier Body.sat", &matched,
+    ).expect("shared kernel message");
+    assert_eq!(loss.message, expected);
 }

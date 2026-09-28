@@ -61,7 +61,7 @@ pub(crate) fn classify_document(
     let dialects = match scope {
         ReportScope::Standalone => {
             let (dialects, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
-            losses.extend(crate::dialect::dialect_losses(&dialects));
+            losses.extend(crate::dialect::dialect_losses(ctx, &dialects)?);
             body.losses.splice(0..0, losses);
             dialects
         }
@@ -82,7 +82,7 @@ pub(crate) fn build_inspection_summary(
     let (layers, classification_losses) = crate::dialect::classify_layers(ctx, scan)?;
     let losses = classification_losses
         .into_iter()
-        .chain(crate::dialect::dialect_losses(&layers))
+        .chain(crate::dialect::dialect_losses(ctx, &layers)?)
         .collect::<Vec<_>>();
     let mut summary = crate::container::summarize(ctx, scan, layers)?;
     summary.losses = losses;

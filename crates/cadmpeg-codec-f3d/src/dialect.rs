@@ -39,6 +39,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::loss::F3dLossCode;
 use crate::manifest::TOP_LEVEL_MANIFEST_VERSION;
@@ -287,19 +288,82 @@ pub(crate) fn classify_layers(
 }
 
 /// Dialect-derived losses implied by a report's final classified layers.
-pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
-    let mut losses = layers
+pub(crate) fn dialect_losses(
+    ctx: &DecodeContext<'_>,
+    layers: &DialectLayers,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for matched in layers.iter().filter(|matched| matched.format() == FORMAT) {
+        if let Some(loss) = dialect_loss(ctx, matched)? {
+            push_recovery_loss(ctx, &mut losses, loss)?;
+        }
+    }
+    for matched in layers
         .iter()
-        .filter(|matched| matched.format() == FORMAT)
-        .filter_map(dialect_loss)
-        .collect::<Vec<_>>();
-    losses.extend(
-        layers
-            .iter()
-            .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
-            .filter_map(kernel_dialect_loss),
-    );
-    losses
+        .filter(|matched| matched.format() == cadmpeg_asm::dialect::FORMAT)
+    {
+        if let Some(loss) = kernel_dialect_loss(ctx, matched)? {
+            push_recovery_loss(ctx, &mut losses, loss)?;
+        }
+    }
+    Ok(losses)
+}
+
+fn push_recovery_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    loss: LossNote,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "collect F3D dialect recovery losses";
+    ctx.charge_collection_items(1, OPERATION)?;
+    losses.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+    losses.push(loss);
+    Ok(())
+}
+
+fn archive_loss_text(
+    ctx: &DecodeContext<'_>,
+    matched: &DialectMatch,
+    body: impl fmt::Display,
+) -> Result<String, CodecError> {
+    let operation = "retain F3D dialect recovery loss";
+    match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
+        Some(member) => crate::container::format_retained(
+            ctx, operation, format_args!("archive member {member}: {body}"),
+        ),
+        None => crate::container::format_retained(ctx, operation, format_args!("{body}")),
+    }
+}
+
+struct ManifestRecovery<'a>(&'a DialectMatch);
+
+impl fmt::Display for ManifestRecovery<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let matched = self.0;
+        let version = matched
+            .declared()
+            .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
+            .map_or("(none)", String::as_str);
+        write!(
+            formatter,
+            "the top-level manifest declares version {version:?}, which no dialect row of \
+             this codec names, so no declared identity was verified. The document is read on "
+        )?;
+        match matched.admission() {
+            Admission::Unverified { using } => {
+                write!(formatter, "{}:{}", matched.format(), using.as_str())?;
+            }
+            Admission::Residual => formatter.write_str(
+                "the residual parser path, which names no declared grammar"
+            )?,
+            Admission::Admitted | Admission::Refused => return Err(fmt::Error),
+        }
+        formatter.write_str(
+            ": every field after the version was parsed with that layout. The layout \
+             fitting is consistency, not a declaration."
+        )
+    }
 }
 
 /// The dialect-unverified loss for a classified layer.
@@ -307,62 +371,83 @@ pub(crate) fn dialect_losses(layers: &DialectLayers) -> Vec<LossNote> {
 /// Returns a loss exactly for an unverified or residual admission. This reads
 /// the admission rather than reclassifying, so the note and reported state
 /// come from one value.
-fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
-    let strategy = match matched.admission() {
-        Admission::Admitted | Admission::Refused => return None,
-        Admission::Unverified { using } => {
-            format!("{}:{}", matched.format(), using.as_str())
+fn dialect_loss(
+    ctx: &DecodeContext<'_>,
+    matched: &DialectMatch,
+) -> Result<Option<LossNote>, CodecError> {
+    if matches!(matched.admission(), Admission::Admitted | Admission::Refused) {
+        return Ok(None);
+    }
+    let message = archive_loss_text(ctx, matched, ManifestRecovery(matched))?;
+    Ok(Some(F3dLossCode::SourceDialectUnverified.note(message)))
+}
+
+struct KernelRecovery<'a> {
+    matched: &'a DialectMatch,
+    carrier: &'a str,
+}
+
+impl fmt::Display for KernelRecovery<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let matched = self.matched;
+        write!(formatter, "the kernel carrier {} declares ", self.carrier)?;
+        match (
+            matched.declared().get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MAJOR),
+            matched.declared().get(cadmpeg_asm::dialect::DECLARED_SAVE_FORMAT_MINOR),
+        ) {
+            (Some(major), Some(minor)) => write!(formatter, "save format {major}.{minor}")?,
+            (Some(major), None) => write!(formatter, "save format major {major}")?,
+            (None, _) => formatter.write_str("no save format")?,
         }
-        Admission::Residual => "the residual parser path, which names no declared grammar".into(),
-    };
-    let version = matched
-        .declared()
-        .get(DECLARED_TOP_LEVEL_MANIFEST_VERSION)
-        .map_or("(none)", String::as_str);
-    let message = format!(
-        "the top-level manifest declares version {version:?}, which no dialect row of \
-                 this codec names, so no declared identity was verified. The document is read on \
-                 {strategy}: every field after the version was parsed with that layout. The layout \
-                 fitting is consistency, not a declaration."
-    );
-    let message = archive_member_message(matched, &message);
-    Some(F3dLossCode::SourceDialectUnverified.note(message))
+        match matched.admission() {
+            Admission::Unverified { using } => write!(
+                formatter,
+                ", which no verified Spatial ACIS band declares; its records were read with the grammar `{}:{}` declares, and what they decoded is reported as it decoded",
+                matched.format(),
+                using.as_str(),
+            ),
+            Admission::Residual => formatter.write_str(
+                "; its recovery names no declared save-band grammar as a substitute"
+            ),
+            Admission::Admitted | Admission::Refused => Err(fmt::Error),
+        }
+    }
 }
 
 /// The recovery loss a kernel layer charges, if it recovered.
-fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+fn kernel_dialect_loss(
+    ctx: &DecodeContext<'_>,
+    matched: &DialectMatch,
+) -> Result<Option<LossNote>, CodecError> {
     match matched.admission() {
         Admission::Refused => {
             let carrier = matched
                 .declared()
                 .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
                 .map_or("an unnamed carrier", String::as_str);
-            let message = format!(
-                "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
-                 source bytes remain available"
-            );
-            let message = archive_member_message(matched, &message);
-            return Some(F3dLossCode::KernelCarrierUnparseable.note(message));
+            let message = archive_loss_text(
+                ctx,
+                matched,
+                format_args!(
+                    "kernel carrier {carrier} could not be framed for dialect inspection; its retained \
+                     source bytes remain available"
+                ),
+            )?;
+            return Ok(Some(F3dLossCode::KernelCarrierUnparseable.note(message)));
         }
         Admission::Admitted | Admission::Unverified { .. } | Admission::Residual => {}
+    }
+    if matched.format() != cadmpeg_asm::dialect::FORMAT
+        || matches!(matched.admission(), Admission::Admitted)
+    {
+        return Ok(None);
     }
     let carrier = matched
         .declared()
         .get(cadmpeg_asm::dialect::DECLARED_CARRIER)
         .map_or("an unnamed carrier", String::as_str);
-    let message = cadmpeg_asm::dialect::unverified_message(
-        &format!("the kernel carrier {carrier}"),
-        matched,
-    )?;
-    let message = archive_member_message(matched, &message);
-    Some(F3dLossCode::KernelDialectUnverified.note(message))
-}
-
-fn archive_member_message(matched: &DialectMatch, message: &str) -> String {
-    match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
-        Some(member) => format!("archive member {member}: {message}"),
-        None => message.to_owned(),
-    }
+    let message = archive_loss_text(ctx, matched, KernelRecovery { matched, carrier })?;
+    Ok(Some(F3dLossCode::KernelDialectUnverified.note(message)))
 }
 
 #[cfg(test)]
