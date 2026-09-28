@@ -113,6 +113,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .unwrap();
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
+        None,
         &f3d_native(&retained).design_configurations,
     )
     .expect("edited configuration order");
