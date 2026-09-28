@@ -28,7 +28,7 @@ pub(super) fn merge_archive(
     report: &mut cadmpeg_ir::codec::DecodeBody,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
-    let table = xref_table_from_ir(ir)?;
+    let table = xref_table_from_ir(ctx, ir)?;
     MergeSession {
         ctx,
         scan,
@@ -67,14 +67,36 @@ pub(super) fn make_sibling_ordinals_unique(
     Ok(())
 }
 
-fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
+fn xref_table_from_ir(
+    ctx: &DecodeContext<'_>,
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<XrefTable, CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(XrefTable::default());
     };
-    let invalid = |error| CodecError::malformed(format_args!("invalid F3D native data: {error}"));
+    fn load_arena<T: DeserializeOwned>(
+        ctx: &DecodeContext<'_>,
+        namespace: &cadmpeg_ir::NativeNamespace,
+        name: &str,
+    ) -> Result<Vec<T>, CodecError> {
+        match namespace.arena_as_charged(ctx, name) {
+            Ok(records) => Ok(records),
+            Err(error) => match CodecError::from(error) {
+                error @ CodecError::ResourceLimit(_) => Err(error),
+                CodecError::Malformed(message) => Err(CodecError::Malformed(
+                    crate::container::format_retained(
+                        ctx,
+                        "report invalid F3D native data",
+                        format_args!("invalid F3D native data: {message}"),
+                    )?,
+                )),
+                error => Err(error),
+            },
+        }
+    }
     Ok(XrefTable {
-        designs: namespace.arena_as("xref_designs").map_err(invalid)?,
-        references: namespace.arena_as("xref_references").map_err(invalid)?,
+        designs: load_arena(ctx, namespace, "xref_designs")?,
+        references: load_arena(ctx, namespace, "xref_references")?,
         placement_failures: Vec::new(),
         placement_overrides: Vec::new(),
     })
@@ -157,7 +179,7 @@ impl MergeSession<'_, '_> {
                     continue;
                 }
             };
-            let child_table = xref_table_from_ir(&component.ir)?;
+            let child_table = xref_table_from_ir(self.ctx, &component.ir)?;
             let cadmpeg_ir::codec::Decoded {
                 ir: mut component_ir,
                 body: mut component_report,
@@ -622,8 +644,39 @@ mod tests {
     mod fidelity;
     mod occurrence;
 
-    use super::{apply_occurrence_transform, compose_transforms};
+    use super::{apply_occurrence_transform, compose_transforms, xref_table_from_ir};
     use cadmpeg_ir::document::Model;
+
+    #[test]
+    fn f3z_xref_native_reload_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
+        let normal = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &normal_policy,
+        ).unwrap().0;
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.native.namespace_mut("f3d").set_arena(
+            &normal,
+            "xref_designs",
+            &[crate::records::xref::XrefDesign {
+                id: "f3d:xref:design#0".into(),
+                ordinal: 0,
+                file_version: 1,
+                target_file_name: "part.f3d".into(),
+                display_name: "Part".into(),
+                lineage_urn: "lineage".into(),
+                version_urn: "version".into(),
+            }],
+        ).unwrap();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap().0;
+        let error = xref_table_from_ir(&limited, &ir).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load typed native record"));
+    }
 
     #[test]
     fn occurrence_translation_overflow_is_rejected() {
