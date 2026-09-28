@@ -94,18 +94,22 @@ pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
     if ir.model.features.iter().any(|feature| {
         feature
             .suppressed
-            .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
+            .is_none_or(|suppressed| {
+                configuration
+                    .suppressed_features()
+                    .any(|id| id == &feature.id)
+                    != suppressed
+            })
     }) {
         return true;
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
         return true;
     };
-    let mut required_features = if ir.model.features.is_empty() {
+    let required_features = if ir.model.features.is_empty() {
         BTreeMap::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
@@ -113,18 +117,18 @@ pub(crate) fn active_configuration_state_is_incomplete(
         };
         active_features
     };
-    required_features.extend(
-        ir.model
-            .features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| feature.suppressed == Some(true))
-            .map(|(index, feature)| (feature.id.clone(), index)),
-    );
-    if configuration.feature_states.len() != required_features.len() {
+    let mut suppressed_only = ir
+        .model
+        .features
+        .iter()
+        .enumerate()
+        .filter(|(_, feature)| {
+            feature.suppressed == Some(true) && !required_features.contains_key(&feature.id)
+        });
+    if configuration.feature_states.len() != required_features.len() + suppressed_only.clone().count() {
         return true;
     }
-    if required_features.iter().any(|(id, &index)| {
+    let state_is_incomplete = |id: &cadmpeg_ir::features::FeatureId, index: usize| {
         let feature = &ir.model.features[index];
         let Some(state) = configuration.feature_states.get(id) else {
             return true;
@@ -133,7 +137,10 @@ pub(crate) fn active_configuration_state_is_incomplete(
             || state.dependencies != feature.dependencies
             || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
             || &state.definition != feature.evaluation.definition()
-    }) {
+    };
+    if required_features.iter().any(|(id, &index)| state_is_incomplete(id, index))
+        || suppressed_only.any(|(index, feature)| state_is_incomplete(&feature.id, index))
+    {
         return true;
     }
 
