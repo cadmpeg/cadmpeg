@@ -845,14 +845,20 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(ctx: &cadmpeg_co
 ) -> Result<Vec<FeatureDraftConstructionFixedLane>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let mut failure = None;
+    let lanes = payloads
         .iter()
         .flat_map(|payload| {
+            if failure.is_some() { return Vec::new(); }
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_fixed_lanes(joined.bytes())
+            let rows = match crate::om::draft_construction_fixed_lanes(ctx, joined.bytes()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return Vec::new(); }
+            };
+            rows
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
@@ -869,7 +875,8 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(ctx: &cadmpeg_co
                 })
                 .collect::<Vec<_>>()
         })
-        .collect())
+        .collect();
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
@@ -879,14 +886,20 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(ctx: &cadmpeg
 ) -> Result<Vec<FeatureDraftConstructionBinary32Lane>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let mut failure = None;
+    let lanes = payloads
         .iter()
         .flat_map(|payload| {
+            if failure.is_some() { return Vec::new(); }
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_binary32_lanes(joined.bytes())
+            let rows = match crate::om::draft_construction_binary32_lanes(ctx, joined.bytes()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return Vec::new(); }
+            };
+            rows
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
@@ -903,7 +916,8 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(ctx: &cadmpeg
                 })
                 .collect::<Vec<_>>()
         })
-        .collect())
+        .collect();
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Decode canonical printable strings from reconstructed draft graph payloads.

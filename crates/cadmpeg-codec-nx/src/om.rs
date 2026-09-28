@@ -2539,64 +2539,64 @@ pub(crate) fn datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>, bytes: &[u
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
 pub(crate) fn draft_construction_fixed_lanes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
-    bytes
-        .windows(Q155LaneFrame::DISCRIMINATOR.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            (window == Q155LaneFrame::DISCRIMINATOR).then_some(())?;
-            let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
-            let mut values = Vec::new();
-            while let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) {
-                let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
-                values.push((
-                    Q155Atom {
-                        marker,
-                        scalar: Q155::from_raw(raw),
-                    },
-                    (),
-                ));
-                at += 8;
-            }
-            if bytes.get(at) != Some(&0x00) {
-                return None;
-            }
-            FramedScalarRun::new(Q155LaneFrame, offset as u64, NonEmpty::new(values)?).ok()
-        })
-        .collect()
+) -> Result<Vec<FramedScalarRun<Q155LaneFrame, ()>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX draft fixed lanes")?;
+    let mut lanes = Vec::new();
+    for (offset, window) in bytes.windows(Q155LaneFrame::DISCRIMINATOR.len()).enumerate() {
+        if window != Q155LaneFrame::DISCRIMINATOR { continue; }
+        let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
+        let mut values = Vec::new();
+        let complete = loop {
+            ctx.charge_work(1, "scan NX draft fixed atoms")?;
+            let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) else { break bytes.get(at) == Some(&0x00); };
+            let Some(raw) = bytes.get(at + 1..at + 8).and_then(|raw| raw.try_into().ok()) else { break false; };
+            reserve_om_retained_item(ctx, &mut values, "NX draft fixed atoms")?;
+            values.push((Q155Atom { marker, scalar: Q155::from_raw(raw) }, ()));
+            at += 8;
+        };
+        if !complete { continue; }
+        let Some(values) = NonEmpty::from_vec(values) else { continue; };
+        let Ok(lane) = FramedScalarRun::new(Q155LaneFrame, cadmpeg_core::decode::u64_from_index(offset), values) else { continue; };
+        reserve_om_retained_item(ctx, &mut lanes, "NX draft fixed lanes")?;
+        lanes.push(lane);
+    }
+    Ok(lanes)
 }
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
 pub(crate) fn draft_construction_binary32_lanes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
-    let mut lanes = [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03]
-        .into_iter()
-        .flat_map(|branch| {
-            let discriminator = branch.discriminator();
-            bytes
-                .windows(discriminator.len())
-                .enumerate()
-                .filter_map(move |(offset, window)| {
-                    (window == discriminator).then_some(())?;
-                    let mut at = offset + discriminator.len();
-                    let mut values = Vec::new();
-                    while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
-                        let scalar = ShiftedBinary32::read(bytes.get(at..at + 4)?)?;
-                        values.push((scalar, ()));
-                        at += 4;
-                    }
-                    if bytes.get(at) != Some(&0x00) {
-                        return None;
-                    }
-                    FramedScalarRun::new(branch, offset as u64, NonEmpty::new(values)?).ok()
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+) -> Result<Vec<FramedScalarRun<DraftBinary32Branch, ()>>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(bytes.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX draft binary32 lanes", 0, cadmpeg_core::decode::u64_from_index(bytes.len())))?;
+    ctx.charge_work(work, "scan NX draft binary32 lanes")?;
+    let mut lanes = Vec::new();
+    for branch in [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03] {
+        let discriminator = branch.discriminator();
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator { continue; }
+            let mut at = offset + discriminator.len();
+            let mut values = Vec::new();
+            let complete = loop {
+                ctx.charge_work(1, "scan NX draft binary32 atoms")?;
+                if !matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) { break bytes.get(at) == Some(&0x00); }
+                let Some(scalar) = bytes.get(at..at + 4).and_then(ShiftedBinary32::read) else { break false; };
+                reserve_om_retained_item(ctx, &mut values, "NX draft binary32 atoms")?;
+                values.push((scalar, ()));
+                at += 4;
+            };
+            if !complete { continue; }
+            let Some(values) = NonEmpty::from_vec(values) else { continue; };
+            let Ok(lane) = FramedScalarRun::new(branch, cadmpeg_core::decode::u64_from_index(offset), values) else { continue; };
+            reserve_om_retained_item(ctx, &mut lanes, "NX draft binary32 lanes")?;
+            lanes.push(lane);
+        }
+    }
     lanes.sort_by_key(FramedScalarRun::offset);
-    lanes
+    Ok(lanes)
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.

@@ -1100,14 +1100,20 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(ctx: &cadmpeg_
 ) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let mut failure = None;
+    let lanes = payloads
         .iter()
         .flat_map(|payload| {
+            if failure.is_some() { return Vec::new(); }
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_fixed_lanes(joined.bytes())
+            let rows = match crate::om::draft_construction_fixed_lanes(ctx, joined.bytes()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return Vec::new(); }
+            };
+            rows
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
@@ -1124,7 +1130,8 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(ctx: &cadmpeg_
                 })
                 .collect()
         })
-        .collect())
+        .collect();
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Decode exact counted transform lanes from bounded pattern payloads.
