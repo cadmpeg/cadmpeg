@@ -1093,18 +1093,12 @@ fn attach_standalone_wires(
                 "catia_freeform_wire_plans",
             )?;
     }
-    let body_id = BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-body"),
-        cadmpeg_ir::identity_key!("0"),
-    );
-    let region_id = RegionId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-region"),
-        cadmpeg_ir::identity_key!("0"),
-    );
-    let shell_id = ShellId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-shell"),
-        cadmpeg_ir::identity_key!("0"),
-    );
+    let body_id = crate::resource::copy_id(admission.context(),
+        "catia:freeform:wire-body#0", BodyId::mint, "catia_freeform_wire_body_id")?;
+    let region_id = crate::resource::copy_id(admission.context(),
+        "catia:freeform:wire-region#0", RegionId::mint, "catia_freeform_wire_region_id")?;
+    let shell_id = crate::resource::copy_id(admission.context(),
+        "catia:freeform:wire-shell#0", ShellId::mint, "catia_freeform_wire_shell_id")?;
     let mut edge_ids = Vec::new();
     for (index, ..) in &plans {
             let id = crate::resource::compose_index_id(
@@ -1116,16 +1110,20 @@ fn attach_standalone_wires(
                 admission.context(), &mut edge_ids, id, "catia_freeform_wire_shell_edges",
             )?;
     }
+    let shell_owner_id = crate::resource::copy_id(admission.context(),
+        shell_id.as_str(), ShellId::mint, "catia_freeform_wire_region_shell_id")?;
+    let shell_region_id = crate::resource::copy_id(admission.context(),
+        region_id.as_str(), RegionId::mint, "catia_freeform_wire_shell_region_id")?;
     let Ok(shell) = Shell::new(
-        shell_id.clone(),
-        region_id.clone(),
+        shell_id,
+        shell_region_id,
         Vec::new(),
         edge_ids,
         Vec::new(),
     ) else {
         return Ok(false);
     };
-    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_owner_id.as_str()] {
         annotate(
             admission.context(),
             annotations,
@@ -1137,29 +1135,24 @@ fn attach_standalone_wires(
     }
     for (index, carrier, pos, start, end) in plans {
         let point_ids = [
-            PointId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-point"),
-                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":start")),
-            ),
-            PointId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-point"),
-                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":end")),
-            ),
+            PointId::mint(crate::resource::format_retained(admission.context(),
+                format_args!("catia:freeform:wire-point#{index}:start"),
+                "catia_freeform_wire_point_id")?).map_err(cadmpeg_core::CodecError::malformed)?,
+            PointId::mint(crate::resource::format_retained(admission.context(),
+                format_args!("catia:freeform:wire-point#{index}:end"),
+                "catia_freeform_wire_point_id")?).map_err(cadmpeg_core::CodecError::malformed)?,
         ];
         let vertex_ids = [
-            VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-vertex"),
-                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":start")),
-            ),
-            VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-vertex"),
-                cadmpeg_ir::ids::IdentityKey::from(index).then(cadmpeg_ir::identity_key!(":end")),
-            ),
+            VertexId::mint(crate::resource::format_retained(admission.context(),
+                format_args!("catia:freeform:wire-vertex#{index}:start"),
+                "catia_freeform_wire_vertex_id")?).map_err(cadmpeg_core::CodecError::malformed)?,
+            VertexId::mint(crate::resource::format_retained(admission.context(),
+                format_args!("catia:freeform:wire-vertex#{index}:end"),
+                "catia_freeform_wire_vertex_id")?).map_err(cadmpeg_core::CodecError::malformed)?,
         ];
-        let edge_id = EdgeId::compose(
+        let edge_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-edge"),
-            index,
-        );
+            index, EdgeId::mint, "catia_freeform_wire_edge_id")?;
         for id in [
             point_ids[0].as_str(),
             point_ids[1].as_str(),
@@ -1178,48 +1171,74 @@ fn attach_standalone_wires(
         }
         admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
         admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
+        let vertex_point_ids = [
+            crate::resource::copy_id(admission.context(), point_ids[0].as_str(),
+                PointId::mint, "catia_freeform_wire_vertex_point_id")?,
+            crate::resource::copy_id(admission.context(), point_ids[1].as_str(),
+                PointId::mint, "catia_freeform_wire_vertex_point_id")?,
+        ];
+        let [start_point_id, end_point_id] = point_ids;
         ir.model.points.extend([
-            Point::new(point_ids[1].clone(), end, None),
-            Point::new(point_ids[0].clone(), start, None),
+            Point::new(end_point_id, end, None),
+            Point::new(start_point_id, start, None),
         ]);
+        let edge_vertex_ids = [
+            crate::resource::copy_id(admission.context(), vertex_ids[0].as_str(),
+                VertexId::mint, "catia_freeform_wire_edge_vertex_id")?,
+            crate::resource::copy_id(admission.context(), vertex_ids[1].as_str(),
+                VertexId::mint, "catia_freeform_wire_edge_vertex_id")?,
+        ];
+        let [start_vertex_id, end_vertex_id] = vertex_ids;
+        let [start_vertex_point_id, end_vertex_point_id] = vertex_point_ids;
         admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
         admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
         ir.model.vertices.extend([
             Vertex {
-                id: vertex_ids[1].clone(),
-                point: point_ids[1].clone(),
+                id: end_vertex_id,
+                point: end_vertex_point_id,
                 tolerance: None,
             },
             Vertex {
-                id: vertex_ids[0].clone(),
-                point: point_ids[0].clone(),
+                id: start_vertex_id,
+                point: start_vertex_point_id,
                 tolerance: None,
             },
         ]);
+        let [start_edge_vertex_id, end_edge_vertex_id] = edge_vertex_ids;
         admission.reserve_entity(&mut ir.model.edges, "catia_family_emit_edges")?;
         ir.model.edges.push(Edge {
-            id: edge_id.clone(),
+            id: edge_id,
             carrier,
-            start: vertex_ids[0].clone(),
-            end: vertex_ids[1].clone(),
+            start: start_edge_vertex_id,
+            end: end_edge_vertex_id,
             tolerance: None,
         });
     }
     admission.reserve_entity(&mut ir.model.bodies, "catia_family_emit_bodies")?;
+    let region_body_id = crate::resource::copy_id(admission.context(),
+        body_id.as_str(), BodyId::mint, "catia_freeform_wire_region_body_id")?;
+    let body_region_id = crate::resource::copy_id(admission.context(),
+        region_id.as_str(), RegionId::mint, "catia_freeform_wire_body_region_id")?;
+    let mut body_regions = Vec::new();
+    crate::resource::push(admission.context(), &mut body_regions, body_region_id,
+        "catia_freeform_wire_body_regions")?;
     ir.model.bodies.push(Body {
-        id: body_id.clone(),
+        id: body_id,
         kind: BodyKind::Wire,
-        regions: vec![region_id.clone()],
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     admission.reserve_entity(&mut ir.model.regions, "catia_family_emit_regions")?;
+    let mut region_shells = Vec::new();
+    crate::resource::push(admission.context(), &mut region_shells, shell_owner_id,
+        "catia_freeform_wire_region_shells")?;
     ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
+        id: region_id,
+        body: region_body_id,
+        shells: region_shells,
     });
     admission.reserve_entity(&mut ir.model.shells, "catia_family_emit_shells")?;
     ir.model.shells.push(shell);
@@ -4135,6 +4154,34 @@ mod tests {
         assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_freeform_wire_plans"));
         assert_eq!(ir.model, before);
+    }
+
+    #[test]
+    fn standalone_wire_owner_id_refuses_before_retained_copy() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                ).expect("valid linear NURBS"),
+            )),
+            source_object: None,
+        });
+        let wires = [(curve_id.clone(), [0.0, 1.0], 0)];
+        let limit = curve_id.as_str().len() as u64;
+        let limited = crate::test_support::with_retained_limit(limit, |ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            attach_standalone_wires(&mut ir, &mut AnnotationBuilder::new(), &wires, &mut admission)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_freeform_wire_body_id"));
+        assert!(ir.model.bodies.is_empty());
     }
 
     #[test]
