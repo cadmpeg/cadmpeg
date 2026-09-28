@@ -3925,10 +3925,16 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&header.id) else {
             continue;
         };
-        headers_by_identity
-            .entry((stream, header.record_index))
-            .and_modify(|header| *header = None)
-            .or_insert(Some(header));
+        let key = (stream, header.record_index);
+        if let Some(existing) = headers_by_identity.get_mut(&key) {
+            *existing = None;
+        } else {
+            ctx.charge_collection_items(1, "f3d body recipe header index")?;
+            headers_by_identity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body recipe header index allocation", 0, 1)
+            })?;
+            headers_by_identity.insert(key, Some(header));
+        }
     }
     let mut body_recipes_by_stream = HashMap::<_, Vec<&ConstructionRecipe>>::new();
     for recipe in recipes
@@ -3938,10 +3944,19 @@ pub(crate) fn decode_body_recipe_operands(
         let Some(stream) = native_stream(&recipe.id) else {
             continue;
         };
-        body_recipes_by_stream
-            .entry(stream)
-            .or_default()
-            .push(recipe);
+        if !body_recipes_by_stream.contains_key(stream) {
+            ctx.charge_collection_items(1, "f3d body recipe stream index")?;
+            body_recipes_by_stream.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body recipe stream index allocation", 0, 1)
+            })?;
+            body_recipes_by_stream.insert(stream, Vec::new());
+        }
+        let Some(stream_recipes) = body_recipes_by_stream.get_mut(stream) else { continue; };
+        ctx.charge_collection_items(1, "f3d body recipe stream entries")?;
+        stream_recipes.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d body recipe stream entry allocation", 0, 1)
+        })?;
+        stream_recipes.push(recipe);
     }
     for stream_recipes in body_recipes_by_stream.values_mut() {
         stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
@@ -3986,12 +4001,10 @@ pub(crate) fn decode_body_recipe_operands(
             ) else {
                 continue;
             };
-            if let Some(mut operand) =
+            if let Some(operand) =
                 parse_body_recipe_operand_with_index(ctx, bytes, records, group, ordinal, header, recipe).transpose()?
             {
-                operand.id =
-                    ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
-                out.push(operand);
+                push_body_recipe_operand(ctx, &mut out, operand, &entry.name, header.byte_offset)?;
             }
         }
     }
@@ -4053,7 +4066,7 @@ pub(crate) fn decode_body_recipe_operands(
             let owner = DesignOperandOwner::ScopeReference {
                 scope_reference_ordinal,
             };
-            if let Some(mut operand) = parse_body_recipe_operand_frame_with_index(
+            if let Some(operand) = parse_body_recipe_operand_frame_with_index(
                 ctx,
                 bytes,
                 records,
@@ -4062,19 +4075,47 @@ pub(crate) fn decode_body_recipe_operands(
                 header,
                 recipe,
             ).transpose()? {
-                operand.id =
-                    ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
-                out.push(operand);
+                push_body_recipe_operand(ctx, &mut out, operand, &entry.name, header.byte_offset)?;
             }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    let mut owner_counts = HashMap::new();
+    let mut owner_counts = HashMap::<String, u32>::new();
     for operand in &out {
-        *owner_counts.entry(operand.id.clone()).or_insert(0_u32) += 1;
+        if let Some(count) = owner_counts.get_mut(&operand.id) {
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("f3d body recipe owner count", 0, 1)
+            })?;
+        } else {
+            ctx.charge_collection_items(1, "f3d body recipe owner keys")?;
+            owner_counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d body recipe owner allocation", 0, 1)
+            })?;
+            let id = copy_ascii_retained(ctx, &operand.id, "f3d body recipe owner ID")?;
+            owner_counts.insert(id, 1_u32);
+        }
     }
     out.retain(|operand| owner_counts.get(&operand.id) == Some(&1));
     Ok(out)
+}
+
+fn push_body_recipe_operand(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignBodyRecipeOperand>,
+    mut operand: DesignBodyRecipeOperand,
+    stream: &str,
+    offset: u64,
+) -> Result<(), CodecError> {
+    operand.id = design_record_id_charged(
+        ctx, stream, ":design-body-recipe-operand#", offset,
+        "f3d body recipe operand ID", "f3d body recipe operand ID allocation",
+    )?;
+    ctx.charge_collection_items(1, "f3d body recipe operand output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d body recipe operand output allocation", 0, 1)
+    })?;
+    out.push(operand);
+    Ok(())
 }
 
 /// Select the sole body recipe in the structural interval after the `N+3`
