@@ -33,6 +33,7 @@ mod edge_identity_limits;
 mod timeline_limits;
 mod parameter_scope_limits;
 mod parameter_scope_collection_limits;
+mod path_feature_limits;
 mod body_recipe_limits;
 mod edge_operand_limits;
 mod edge_treatment_vertex_limits;

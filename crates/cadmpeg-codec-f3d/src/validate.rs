@@ -1086,7 +1086,7 @@ fn validate_loaded(
     validate_parameter_scopes(&ctx, &mut findings)?;
     validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings)?;
-    validate_path_feature_operand_roles(&ctx, &mut findings);
+    validate_path_feature_operand_roles(&ctx, &mut findings)?;
     validate_extrude_parameter_operands(&ctx, &mut findings);
     let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings)?;
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records)?;
@@ -4701,28 +4701,22 @@ pub(crate) fn loft_operand_roles_are_valid(
     if body_count != expected_body_count {
         return false;
     }
-    let operands = groups
-        .iter()
-        .filter(|(role, _)| *role != BODY)
-        .collect::<Vec<_>>();
-    let section_count = operands
-        .iter()
+    let operands = || groups.iter().filter(|(role, _)| *role != BODY);
+    let section_count = operands()
         .filter(|(role, _)| matches!(*role, SECTION | FACE_SECTION))
         .count();
-    let guide_count = operands.iter().filter(|(role, _)| *role == GUIDE).count();
-    let centerline_count = operands
-        .iter()
+    let guide_count = operands().filter(|(role, _)| *role == GUIDE).count();
+    let centerline_count = operands()
         .filter(|(role, _)| *role == CENTERLINE)
         .count();
 
     if section_count >= 2 {
-        let roles_are_known = operands
-            .iter()
+        let roles_are_known = operands()
             .all(|(role, _)| matches!(*role, SECTION | FACE_SECTION | GUIDE | CENTERLINE));
         return roles_are_known
             && centerline_count <= 1
             && !(guide_count > 0 && centerline_count > 0)
-            && operands.len() == section_count + guide_count + centerline_count;
+            && operands().count() == section_count + guide_count + centerline_count;
     }
 
     if operation != records::feature::extrude::DesignExtrudeOperation::NewBody {
@@ -4730,36 +4724,37 @@ pub(crate) fn loft_operand_roles_are_valid(
     }
 
     if section_count == 1
-        && operands
-            .iter()
-            .all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE))
+        && operands().all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE))
     {
-        let point_ordinals = operands
-            .iter()
+        let mut point_ordinals = operands()
             .enumerate()
             .filter(|(_, (role, member_count))| *role == GUIDE && *member_count == 1)
-            .map(|(ordinal, _)| ordinal)
-            .collect::<Vec<_>>();
-        return point_ordinals.len() == 1
-            && (point_ordinals[0] == 0 || point_ordinals[0] + 1 == operands.len())
-            && operands
-                .iter()
+            .map(|(ordinal, _)| ordinal);
+        let Some(point_ordinal) = point_ordinals.next() else {
+            return false;
+        };
+        return point_ordinals.next().is_none()
+            && (point_ordinal == 0 || point_ordinal + 1 == operands().count())
+            && operands()
                 .enumerate()
                 .all(|(ordinal, (role, member_count))| {
-                    ordinal == point_ordinals[0] || *role != GUIDE || *member_count != 1
+                    ordinal == point_ordinal || *role != GUIDE || *member_count != 1
                 });
     }
 
-    if section_count == 0 && operands.len() >= 2 {
-        let all_sections = operands.iter().all(|(role, _)| *role == SECTION);
-        let all_guides = operands.iter().all(|(role, _)| *role == GUIDE);
+    if section_count == 0 && operands().count() >= 2 {
+        let all_sections = operands().all(|(role, _)| *role == SECTION);
+        let all_guides = operands().all(|(role, _)| *role == GUIDE);
         return all_sections || all_guides;
     }
 
     false
 }
 
-fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_path_feature_operand_roles(
+    ctx: &Ctx,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
     let native = ctx.native;
     for scope in native
         .design_parameter_scopes
@@ -4767,19 +4762,18 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
         .filter(|scope| scope.has_path_construction())
     {
         let native_stream = design_stream(&scope.id);
-        let groups = native
-            .design_construction_operand_groups
-            .iter()
-            .filter(|group| {
+        let groups = ctx.collect_vec(
+            native.design_construction_operand_groups.iter().filter(|group| {
                 design_stream(&group.id) == native_stream
                     && group.scope_record_index == scope.record_index
-            })
-            .collect::<Vec<_>>();
+            }),
+            "collect F3D path-feature operand groups",
+        )?;
         let role_count = |role| groups.iter().filter(|group| group.role() == role).count();
-        let group_roles = groups
-            .iter()
-            .map(|group| (group.role(), group.members().len()))
-            .collect::<Vec<_>>();
+        let group_roles = ctx.collect_vec(
+            groups.iter().map(|group| (group.role(), group.members().len())),
+            "collect F3D path-feature operand roles",
+        )?;
         let valid = match &scope.payload() {
             records::feature::scope::DesignScopePayload::Revolve(Some(
                 crate::records::feature::path_features::DesignRevolveConstruction {
@@ -4827,12 +4821,8 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let profile_count = role_count(DesignOperandRole::PROFILE);
                 let guide_surface_count = role_count(DesignOperandRole::FACES);
                 let guide_profile_frame = scope.sweep_profile().is_some_and(|profile| {
-                    let profile_groups = groups
-                        .iter()
-                        .filter(|group| group.role() == DesignOperandRole::PROFILE)
-                        .collect::<Vec<_>>();
-                    profile_groups
-                        .iter()
+                    let profile_groups = || groups.iter().filter(|group| group.role() == DesignOperandRole::PROFILE);
+                    profile_groups()
                         .filter(|group| {
                             group
                                 .members()
@@ -4842,8 +4832,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         })
                         .count()
                         == 1
-                        && profile_groups
-                            .iter()
+                        && profile_groups()
                             .filter(|group| {
                                 !group
                                     .members()
@@ -4905,15 +4894,15 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             _ => false,
         };
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design path-feature operand roles conflict with its construction"
-                    .into(),
-                entity: Some(scope.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design path-feature operand roles conflict with its construction",
+                Some(ctx.copy_entity(&scope.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate Extrude profile, operation, start, and extent operand agreement.
