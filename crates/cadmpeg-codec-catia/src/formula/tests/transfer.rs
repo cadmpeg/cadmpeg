@@ -1021,6 +1021,39 @@ fn formula_unscoped_entity_index_refuses_before_empty_transfer() {
 }
 
 #[test]
+fn formula_finalization_refuses_each_collection_boundary() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4, false, &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH", Some(33.0), "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut refused = std::collections::HashSet::new();
+    for cap in 0..=512 {
+        let result = crate::test_support::with_collection_limit(cap, |ctx| {
+            crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+                &mut cadmpeg_ir::Annotations::default(),
+                &crate::decode::ModelingGraphScope::Unscoped)
+        });
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
+            Ok(_) => {}
+            Err(error) => panic!("unexpected formula transfer error: {error}"),
+        }
+    }
+    for operation in [
+        "catia_formula_derivable_parameters",
+        "catia_formula_consumed_entities",
+        "catia_formula_ordered_parameters",
+        "catia_formula_annotations",
+        "catia_formula_neutral_parameters",
+    ] {
+        assert!(refused.contains(operation), "no low-limit refusal at {operation}");
+    }
+}
+
+#[test]
 fn formula_candidate_entity_limit_refuses_before_first_candidate() {
     let bytes = standard_catpart_with_typed_formula_inputs(
         4,

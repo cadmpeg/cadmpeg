@@ -422,7 +422,7 @@ pub(crate) fn transfer_parameters(
             (false, _) | (true, None) => true,
         }
     });
-    let invalid_outputs = programs
+    let invalid_outputs = resource::collect_set(ctx, programs
         .iter()
         .filter(|program| {
             program.input_parameters.iter().any(|input| {
@@ -431,8 +431,8 @@ pub(crate) fn transfer_parameters(
                 })
             })
         })
-        .map(|program| program.output.clone())
-        .collect::<HashSet<_>>();
+        .map(|program| &program.output),
+        "catia_formula_invalid_outputs")?;
     for output in invalid_outputs {
         let Some(candidate) = candidates.get_mut(&output) else {
             continue;
@@ -445,7 +445,7 @@ pub(crate) fn transfer_parameters(
         }
     }
     loop {
-        let invalid = candidates
+        let invalid = resource::try_collect_vec(ctx, candidates
             .iter()
             .filter(|(_, parameter)| {
                 parameter
@@ -454,8 +454,9 @@ pub(crate) fn transfer_parameters(
                     .iter()
                     .any(|dependency| !candidates.contains_key(dependency))
             })
-            .map(|(id, _)| id.clone())
-            .collect::<Vec<_>>();
+            .map(|(id, _)| resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+                "catia_formula_invalid_dependency_id")),
+            "catia_formula_invalid_dependencies")?;
         if invalid.is_empty() {
             break;
         }
@@ -473,7 +474,12 @@ pub(crate) fn transfer_parameters(
                 .iter()
                 .all(|dependency| derivable.contains(dependency))
             {
-                derivable.insert(id.clone());
+                if !derivable.contains(id) {
+                    let id = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+                        "catia_formula_derivable_id")?;
+                    resource::insert_btree_set(ctx, &mut derivable, id,
+                        "catia_formula_derivable_parameters")?;
+                }
             }
         }
         if derivable.len() == previous_len {
@@ -491,10 +497,10 @@ pub(crate) fn transfer_parameters(
             })
         })
         .count();
-    let mut consumed_entity_records = candidates
+    let mut consumed_entity_records = resource::collect_string_set(ctx, candidates
         .values()
-        .filter_map(|candidate| candidate.parameter.native_ref.clone())
-        .collect::<HashSet<_>>();
+        .filter_map(|candidate| candidate.parameter.native_ref.as_deref()),
+        "catia_formula_consumed_entities")?;
     for program in programs {
         if candidates
             .get(&program.output)
@@ -504,11 +510,13 @@ pub(crate) fn transfer_parameters(
                 .iter()
                 .all(|input| candidates.contains_key(input))
         {
-            consumed_entity_records.insert(program.relation_entity);
-            consumed_entity_records.insert(program.expression_entity);
+            resource::insert_set(ctx, &mut consumed_entity_records, program.relation_entity,
+                "catia_formula_consumed_entities")?;
+            resource::insert_set(ctx, &mut consumed_entity_records, program.expression_entity,
+                "catia_formula_consumed_entities")?;
         }
     }
-    let consumed_object_records = consumed_entity_records
+    let consumed_object_records = resource::collect_string_set(ctx, consumed_entity_records
         .iter()
         .filter_map(|entity| {
             let entity = entities.get(entity.as_str())?;
@@ -516,23 +524,18 @@ pub(crate) fn transfer_parameters(
             (entity.formula_relation().is_some()
                 || object.subtype() == crate::object_graph::PayloadSubtype::Empty
                     && object.references.is_empty())
-            .then(|| object.id.clone())
-        })
-        .collect();
+            .then_some(object.id.as_str())
+        }), "catia_formula_consumed_objects")?;
     let transferred = candidates.len();
-    let mut parameters = candidates.into_values().collect::<Vec<_>>();
+    let mut parameters = resource::collect_vec(ctx, candidates.into_values(),
+        "catia_formula_ordered_parameters")?;
     parameters.sort_by_key(|candidate| candidate.source_order);
-    let Some(parameters) = parameters
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, mut candidate)| {
-            candidate.parameter.ordinal = u32::try_from(ordinal).ok()?;
-            Some(candidate)
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(FormulaTransfer::default());
-    };
+    for (ordinal, candidate) in parameters.iter_mut().enumerate() {
+        let Some(ordinal) = u32::try_from(ordinal).ok() else {
+            return Ok(FormulaTransfer::default());
+        };
+        candidate.parameter.ordinal = ordinal;
+    }
     let definition_chain_parameter_count = parameters
         .iter()
         .filter(|candidate| {
@@ -546,19 +549,18 @@ pub(crate) fn transfer_parameters(
         .count();
     let mut annotation_builder = AnnotationBuilder::resume(std::mem::take(annotations));
     for candidate in &parameters {
-        annotation_builder
-            .derived(candidate.parameter.id.as_str(), "properties")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        resource::derived_annotation(ctx, &mut annotation_builder,
+            candidate.parameter.id.as_str(), "properties", "catia_formula_annotations")?;
         if !candidate.role.is_formula_output() && candidate.parameter.dependencies.is_empty() {
-            annotation_builder
-                .derived(candidate.parameter.id.as_str(), "expression")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            resource::derived_annotation(ctx, &mut annotation_builder,
+                candidate.parameter.id.as_str(), "expression", "catia_formula_annotations")?;
         }
     }
     *annotations = annotation_builder.build();
-    ir.model
-        .parameters
-        .extend(parameters.into_iter().map(|candidate| candidate.parameter));
+    for candidate in parameters {
+        resource::push(ctx, &mut ir.model.parameters, candidate.parameter,
+            "catia_formula_neutral_parameters")?;
+    }
     Ok(FormulaTransfer {
         typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
         definition_chain_parameter_count,
