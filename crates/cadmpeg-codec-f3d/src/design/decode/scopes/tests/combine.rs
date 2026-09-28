@@ -11,6 +11,105 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+#[test]
+fn combine_tools_refuse_collection_limit() {
+    fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, *b"283", record_index);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&24u32.to_le_bytes());
+        bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+        bytes.extend_from_slice(&23u32.to_le_bytes());
+        bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&7u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, *b"259", record_index);
+    }
+    fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, *b"283", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, *b"259", record_index);
+    }
+    let references = [91u32, 92, 93, 94, 95, 96];
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"382", 90);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(0);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.resize(64, 0);
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&17u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Combine");
+    let mut tail = [0; 78];
+    tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+    tail[31..35].copy_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    indexed_header(&mut bytes, *b"259", 90);
+    for (ordinal, pair) in references.chunks_exact(2).enumerate() {
+        if ordinal == 2 {
+            target_record(&mut bytes, pair[0], pair[1]);
+        } else {
+            operation_record(&mut bytes, pair[0], pair[1]);
+        }
+        indexed_header(&mut bytes, *b"389", pair[1]);
+        lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000001");
+        lp_utf16(&mut bytes, "10000000-0000-0000-0000-000000000001");
+        indexed_header(&mut bytes, *b"306", pair[1]);
+    }
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 90,
+        class_tag: crate::records::references::DesignClassTag::try_from("382".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        &records,
+        header.record_index,
+        &header.class_tag,
+        header.byte_offset,
+    )
+    .unwrap()
+    .expect("Combine scope");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_combine_operation(&ctx, &bytes, &records, &scope);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Combine additional tools"
+    ));
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let operation = exact_combine_operation(&ctx, &bytes, &records, &scope)
+        .unwrap()
+        .expect("two admitted Combine tools");
+    assert_eq!(operation.tools.first.record_index, 92);
+    assert_eq!(operation.tools.additional[0].record_index, 94);
+}
 
 #[test]
 fn combine_scope_projects_ordered_target_tools_and_retention() {
@@ -98,7 +197,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         header.byte_offset,
     ).unwrap()
     .expect("Combine scope");
-    let operation = exact_combine_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+    let operation = exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        .unwrap()
         .expect("Combine construction");
     assert_eq!(
         operation,
@@ -175,10 +275,12 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         })
         .unwrap();
     let compact = exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
     )
+    .unwrap()
     .expect("compact Combine construction");
     assert_eq!(compact.operation, cadmpeg_ir::features::BooleanKind::Join);
     assert_eq!(compact.operation_offset, 21);
@@ -197,10 +299,12 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let mut malformed_compact_tail = compact_bytes;
     malformed_compact_tail[45] = 1;
     assert!(exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
         &malformed_compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
         &compact_scope,
     )
+    .unwrap()
     .is_none());
 }
 
@@ -322,7 +426,8 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_combine_operation(&bytes, &records, &scope)
+    let operation = exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope)
+        .unwrap()
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
@@ -366,23 +471,27 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_combine_operation(&bytes, &records, &malformed_scope).is_none());
+    assert!(exact_combine_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &malformed_scope).unwrap().is_none());
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
         &malformed_reference,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
         &scope,
     )
+    .unwrap()
     .is_none());
 
     let mut malformed_external_asset = bytes;
     malformed_external_asset[usize::try_from(identity.external_asset_id_offset()).unwrap()] = b'g';
     let operation = exact_combine_operation(
+        &cadmpeg_test_support::service_decode_context(),
         &malformed_external_asset,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
         &scope,
     )
+    .unwrap()
     .expect("operation remains exact when only the optional external identity is malformed");
     assert!(operation.tools.first.external_identity.is_none());
 }

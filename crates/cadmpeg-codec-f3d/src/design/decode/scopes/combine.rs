@@ -20,13 +20,16 @@ use crate::records::feature::combine::DesignCombineExternalBodyIdentityWire;
 use crate::records::feature::combine::DesignCombineForm;
 use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_combine_operation(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignCombineOperation> {
+) -> Result<Option<DesignCombineOperation>, CodecError> {
+    (|| {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
         || scope.reference_members().len() < 4
         || !scope.reference_members().len().is_multiple_of(2)
@@ -106,7 +109,8 @@ pub(super) fn exact_combine_operation(
         _ => return None,
     };
     let mut target = None;
-    let mut tools = Vec::with_capacity(scope.reference_members().len() / 2);
+    let mut first_tool = None;
+    let mut additional_tools = Vec::new();
     for (operation_record_index, selection_record_index) in scope
         .reference_members()
         .values()
@@ -132,25 +136,44 @@ pub(super) fn exact_combine_operation(
                     return None;
                 }
             }
-            CombineOperandRole::Tool => tools.push(DesignCombineBodySelection {
-                record_index: *selection_record_index,
-                external_identity: exact_combine_external_body_identity(
-                    bytes,
-                    *selection_at,
-                    *selection_end,
-                    scope.record_index,
-                    *selection_record_index,
-                ),
-            }),
+            CombineOperandRole::Tool => {
+                let additional = first_tool.is_some();
+                if additional {
+                    if let Err(error) = ctx.charge_collection_items(1, "f3d Combine additional tools") {
+                        return Some(Err(error));
+                    }
+                    if additional_tools.try_reserve(1).is_err() {
+                        return Some(Err(ctx.refuse_codec_limit(
+                            "f3d Combine additional tools allocation",
+                            0,
+                            1,
+                        )));
+                    }
+                }
+                let selection = DesignCombineBodySelection {
+                    record_index: *selection_record_index,
+                    external_identity: exact_combine_external_body_identity(
+                        bytes,
+                        *selection_at,
+                        *selection_end,
+                        scope.record_index,
+                        *selection_record_index,
+                    ),
+                };
+                if additional {
+                    additional_tools.push(selection);
+                } else {
+                    first_tool = Some(selection);
+                }
+            }
         }
     }
     let target = target?;
-    let mut tools = tools.into_iter();
     let tools = combine::DesignCombineTools {
-        first: tools.next()?,
-        additional: tools.collect(),
+        first: first_tool?,
+        additional: additional_tools,
     };
-    Some(DesignCombineOperation {
+    Some(Ok(DesignCombineOperation {
         form,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
@@ -158,7 +181,8 @@ pub(super) fn exact_combine_operation(
         keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
         target_record_index: target,
         tools,
-    })
+    }))
+    })().transpose()
 }
 
 pub(super) struct ExternalReferenceIdentity {
