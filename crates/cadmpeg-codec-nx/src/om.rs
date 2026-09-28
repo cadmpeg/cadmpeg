@@ -3184,7 +3184,8 @@ fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
 }
 
 /// Decode every exact common frame in one bounded operation payload.
-pub(crate) fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
+pub(crate) fn operation_common_frames(ctx: &DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Vec<CommonFrame<usize>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX common frames")?;
     let decode = |start: usize, marker| {
         if marker == [1, 1, 1] && record.name() != "DELETE" {
             return None;
@@ -3204,24 +3205,27 @@ pub(crate) fn operation_common_frames(record: OperationPayload<'_>) -> Vec<Commo
     let mut frames = Vec::new();
     for start in 0..record.payload().len() {
         if let Some(frame) = decode(start, [1, 3, 2]) {
+            reserve_om_retained_item(ctx, &mut frames, "nx common frames")?;
             frames.push(frame);
         }
         if let Some(frame) = decode(start, [1, 1, 1]) {
+            reserve_om_retained_item(ctx, &mut frames, "nx common frames")?;
             frames.push(frame);
         }
     }
     frames.sort_by_key(CommonFrame::<usize>::offset);
-    frames
+    Ok(frames)
 }
 
 /// Decode the unique terminal common-frame suffix and its exact immediate common frame.
 pub(crate) fn operation_terminal_frame(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<OperationTerminalFrame> {
-    let terminator = record.payload().len().checked_sub(1)?;
-    (record.payload().get(terminator) == Some(&0)).then_some(())?;
-    let common_frames = operation_common_frames(record);
-    unique_candidate(
+) -> Result<Option<OperationTerminalFrame>, CodecError> {
+    let Some(terminator) = record.payload().len().checked_sub(1) else { return Ok(None); };
+    if record.payload().get(terminator) != Some(&0) { return Ok(None); }
+    let common_frames = operation_common_frames(ctx, record)?;
+    Ok(unique_candidate(
         (terminator.saturating_sub(9)..terminator).filter_map(|start| {
             let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
             (start + suffix.byte_len() == record.payload().len()).then_some(())?;
@@ -3239,7 +3243,7 @@ pub(crate) fn operation_terminal_frame(
                 frame,
             })
         }),
-    )
+    ))
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.

@@ -4248,15 +4248,19 @@ pub(super) fn feature_operation_common_frames(ctx: &cadmpeg_core::decode::Decode
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut frames = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let decoded = match crate::om::operation_common_frames(ctx, record.payload_view()) {
+                Ok(decoded) => decoded,
+                Err(error) => { failure = Some(error); return; }
+            };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, frame) in crate::om::operation_common_frames(record.payload_view())
-                .into_iter()
-                .enumerate()
+            for (ordinal, frame) in decoded.into_iter().enumerate()
             {
                 let Some(offset) = entry_offset.checked_add(frame.offset() as u64) else {
                     continue;
@@ -4280,6 +4284,7 @@ pub(super) fn feature_operation_common_frames(ctx: &cadmpeg_core::decode::Decode
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(frames)
 }
 
@@ -4291,11 +4296,15 @@ pub(super) fn feature_operation_terminal_frames(ctx: &cadmpeg_core::decode::Deco
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut frames = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(frame) = crate::om::operation_terminal_frame(record.payload_view()) else {
-                return;
+            if failure.is_some() { return; }
+            let frame = match crate::om::operation_terminal_frame(ctx, record.payload_view()) {
+                Ok(Some(frame)) => frame,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
             };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
@@ -4327,6 +4336,7 @@ pub(super) fn feature_operation_terminal_frames(ctx: &cadmpeg_core::decode::Deco
             });
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(frames)
 }
 
