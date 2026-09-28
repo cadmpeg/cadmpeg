@@ -503,6 +503,9 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
 #[test]
 fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let group = DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -580,8 +583,22 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let next_at = bytes.len();
     indexed_header(&mut bytes, *b"311", 104);
 
-    let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
-        .expect("nested entity-selection frame");
+    for limit in [35, 71] {
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_retained_bytes = limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &limited_arena, &limited_policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_entity_selection_operand(&limited_ctx, &bytes, &group, 0, &record),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"
+        ));
+    }
+    let operand = parse_entity_selection_operand(&ctx, &bytes, &group, 0, &record)
+        .expect("nested entity-selection frame").unwrap();
     assert_eq!(operand.primary_identity, 1331);
     assert_eq!(
         operand
@@ -601,8 +618,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     compact.extend_from_slice(&1331u64.to_le_bytes());
     let compact_next_at = compact.len();
     indexed_header(&mut compact, *b"311", 109);
-    let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
-        .expect("compact nested entity-selection frame");
+    let compact_operand = parse_entity_selection_operand(&ctx, &compact, &group, 0, &record)
+        .expect("compact nested entity-selection frame").unwrap();
     assert_eq!(compact_operand.primary_identity, 1331);
     assert_eq!(
         compact_operand
@@ -625,8 +642,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     curve_identity.extend_from_slice(&183u64.to_le_bytes());
     let curve_next_at = curve_identity.len();
     indexed_header(&mut curve_identity, *b"311", 104);
-    let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
-        .expect("expanded Sketch-curve entity-selection frame");
+    let curve_operand = parse_entity_selection_operand(&ctx, &curve_identity, &group, 0, &record)
+        .expect("expanded Sketch-curve entity-selection frame").unwrap();
     assert_eq!(curve_operand.primary_identity, 1331);
     assert_eq!(
         curve_operand
@@ -667,8 +684,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         ..record
     };
     let class_338_operand =
-        parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
-            .expect("class-338 Sketch-curve entity-selection frame");
+        parse_entity_selection_operand(&ctx, &class_338_curve_identity, &group, 0, &class_338_record)
+            .expect("class-338 Sketch-curve entity-selection frame").unwrap();
     assert_eq!(class_338_operand.primary_identity, 949);
     assert_eq!(
         class_338_operand
@@ -701,8 +718,51 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let mut invalid_class_338 = class_338_curve_identity.clone();
     invalid_class_338[identity_at + 20] = 0;
     assert!(
-        parse_entity_selection_operand(&invalid_class_338, &group, 0, &class_338_record).is_none()
+        parse_entity_selection_operand(&ctx, &invalid_class_338, &group, 0, &class_338_record).is_none()
     );
+
+    let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let archive = crate::test_support::zip_test::f3d_with_configuration(
+        &crate::test_support::smbh_header_test::synthetic_smbh(),
+        stream_name,
+        &bytes,
+    );
+    let mut group = group;
+    group.id = crate::ids::native_scoped_id(stream_name, "operand-group", 90);
+    let header = DesignRecordHeader {
+        id: crate::ids::native_scoped_id(stream_name, "record", 100),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned()).unwrap(),
+        record_index: 100,
+    };
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::operands::decode_entity_selection_operands(
+                &ctx, scan, std::slice::from_ref(&group), std::slice::from_ref(&header),
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && failure.operation == "f3d entity selection operand output"
+        ));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        let id_len = crate::ids::native_scope(stream_name).len()
+            + ":design-entity-selection-operand#".len() + 1;
+        policy.limits.max_retained_bytes = u64::try_from(72 + id_len - 1).unwrap();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            crate::design::decode::operands::decode_entity_selection_operands(
+                &ctx, scan, std::slice::from_ref(&group), std::slice::from_ref(&header),
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d entity selection operand ID"
+        ));
+    });
 }
 
 #[test]

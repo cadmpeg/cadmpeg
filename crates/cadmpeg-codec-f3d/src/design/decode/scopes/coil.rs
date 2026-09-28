@@ -226,13 +226,18 @@ pub(super) fn exact_coil_placement(
     {
         return None;
     }
-    let persistent_selection = parse_entity_selection_frame(
+    let persistent_frame = match parse_entity_selection_frame(
+        ctx,
         bytes,
         selection_record_index,
         u64::try_from(selection_start).ok()?,
         &selection_class_tag,
-    )
-    .and_then(|selection| {
+    ) {
+        Some(Ok(frame)) => Some(frame),
+        Some(Err(error)) => return Some(Err(error)),
+        None => None,
+    };
+    let persistent_selection = persistent_frame.and_then(|selection| {
         Some(DesignCoilSelection::Persistent {
             asset_id: selection.asset_id.try_into().ok()?,
             context_id: selection.context_id.try_into().ok()?,
@@ -439,7 +444,10 @@ fn exact_coil_face_selection(
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilSelection>, CodecError> {
     (|| {
-    let prefix = parse_entity_selection_prefix(bytes, selection_start, selection_record_index)?;
+    let prefix = match parse_entity_selection_prefix(ctx, bytes, selection_start, selection_record_index)? {
+        Ok(prefix) => prefix,
+        Err(error) => return Some(Err(error)),
+    };
     let id = match copy_coil_text(ctx, &scope.id, "f3d Coil selection header ID") {
         Ok(id) => id,
         Err(error) => return Some(Err(error)),

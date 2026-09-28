@@ -441,7 +441,10 @@ fn exact_legacy_as_built_face_selection(
                 &header,
                 recipes,
             )?;
-            let prefix = parse_entity_selection_prefix(bytes, byte_offset, record_index)?;
+            let prefix = match parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)? {
+                Ok(prefix) => prefix,
+                Err(error) => return Some(Err(error)),
+            };
             let next_byte_offset = operand.next_byte_offset();
             Some(Ok(DesignAssemblyLegacySelection {
                 record_index,
