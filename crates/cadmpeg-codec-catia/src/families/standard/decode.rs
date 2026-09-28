@@ -3498,14 +3498,198 @@ pub(super) enum StandardRollingBallSource {
     E5D8,
 }
 
-#[derive(Clone, PartialEq)]
 enum StandardSurfaceEvidence {
     Geometry(SurfaceGeometry),
     Procedure(StandardSurfaceProcedure),
     Both(SurfaceGeometry, StandardSurfaceProcedure),
 }
 
+#[derive(Clone, Copy)]
+enum StandardSupportLocation {
+    Offset(usize),
+    ExtrusionSide(usize, usize),
+}
+
+enum StandardSupportRef<'a> {
+    Offset(&'a crate::families::b5::transfer::ResolvedOffsetSupport),
+    Geometry(&'a SurfaceGeometry),
+}
+
+impl StandardSupportRef<'_> {
+    fn equivalent(&self, other: &Self) -> bool {
+        use crate::families::b5::transfer::ResolvedOffsetSupport;
+        match (self, other) {
+            (Self::Offset(left), Self::Offset(right)) => *left == *right,
+            (Self::Geometry(left), Self::Geometry(right)) => *left == *right,
+            (Self::Offset(ResolvedOffsetSupport::Geometry(left)), Self::Geometry(right))
+            | (Self::Geometry(right), Self::Offset(ResolvedOffsetSupport::Geometry(left))) => {
+                left == *right
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Default)]
+struct StandardEvidenceStore {
+    evidence: Vec<Option<StandardSurfaceEvidence>>,
+    surfaces: HashMap<u32, Vec<usize>>,
+    supports: HashMap<u32, Option<StandardSupportLocation>>,
+}
+
+impl StandardEvidenceStore {
+    fn support_at(&self, location: StandardSupportLocation) -> Option<StandardSupportRef<'_>> {
+        let index = match location {
+            StandardSupportLocation::Offset(index)
+            | StandardSupportLocation::ExtrusionSide(index, _) => index,
+        };
+        let procedure = self.evidence.get(index)?.as_ref()?.procedure_ref()?;
+        match (location, procedure) {
+            (StandardSupportLocation::Offset(_), StandardSurfaceProcedure::Offset { support, .. }) => {
+                Some(StandardSupportRef::Offset(support))
+            }
+            (StandardSupportLocation::ExtrusionSide(_, side),
+                StandardSurfaceProcedure::Extrusion(extrusion)) => {
+                extrusion.supports().nth(side).map(|support| StandardSupportRef::Geometry(&support.surface))
+            }
+            _ => None,
+        }
+    }
+
+    fn merge_support(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        object_id: u32,
+        incoming: StandardSupportLocation,
+    ) -> Result<(), CodecError> {
+        match self.supports.get(&object_id).copied() {
+            Some(None) => {}
+            Some(Some(stored)) => {
+                let same = self.support_at(stored).zip(self.support_at(incoming))
+                    .is_some_and(|(left, right)| left.equivalent(&right));
+                if !same {
+                    self.supports.insert(object_id, None);
+                }
+            }
+            None => {
+                crate::resource::insert_map(ctx, &mut self.supports, object_id, Some(incoming),
+                    "catia_standard_support_candidates")?;
+            }
+        }
+        Ok(())
+    }
+
+    fn add(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        tag: u32,
+        evidence: StandardSurfaceEvidence,
+    ) -> Result<(), CodecError> {
+        let index = self.evidence.len();
+        crate::resource::push(ctx, &mut self.evidence, Some(evidence),
+            "catia_standard_evidence_records")?;
+        let mut support_locations = [None, None];
+        match self.evidence[index].as_ref().and_then(StandardSurfaceEvidence::procedure_ref) {
+            Some(StandardSurfaceProcedure::Offset { support_object_id, .. }) => {
+                support_locations[0] = Some((*support_object_id, StandardSupportLocation::Offset(index)));
+            }
+            Some(StandardSurfaceProcedure::Extrusion(extrusion)) => {
+                for (side, support) in extrusion.supports().enumerate() {
+                    support_locations[side] = Some((support.surface_object_id,
+                        StandardSupportLocation::ExtrusionSide(index, side)));
+                }
+            }
+            _ => {}
+        }
+        for (object_id, location) in support_locations.into_iter().flatten() {
+            self.merge_support(ctx, object_id, location)?;
+        }
+        crate::resource::admit_map_entry(ctx, &mut self.surfaces, &tag,
+            "catia_standard_surface_candidates")?;
+        crate::resource::push(ctx, self.surfaces.entry(tag).or_default(), index,
+            "catia_standard_surface_candidate_evidence")
+    }
+
+    fn procedure_is_supported(&self, procedure: &StandardSurfaceProcedure) -> bool {
+        match procedure {
+            StandardSurfaceProcedure::Offset { support_object_id, support, .. } => {
+                self.supports.get(support_object_id).copied().flatten()
+                    .and_then(|location| self.support_at(location))
+                    .is_some_and(|candidate| candidate.equivalent(&StandardSupportRef::Offset(support)))
+            }
+            StandardSurfaceProcedure::Extrusion(extrusion) => extrusion.supports().all(|side| {
+                self.supports.get(&side.surface_object_id).copied().flatten()
+                    .and_then(|location| self.support_at(location))
+                    .is_some_and(|candidate| candidate.equivalent(&StandardSupportRef::Geometry(&side.surface)))
+            }),
+            StandardSurfaceProcedure::RollingBall { .. }
+            | StandardSurfaceProcedure::Revolution(_) => true,
+        }
+    }
+
+    fn into_outputs(
+        mut self,
+        ctx: &DecodeContext<'_>,
+        conflicting_population_ids: &HashSet<u32>,
+    ) -> Result<(HashMap<u32, SurfaceGeometry>, HashMap<u32, StandardSurfaceProcedure>), CodecError> {
+        self.supports.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
+        let mut valid_procedure = ctx.alloc_filled(self.evidence.len(), false,
+            "catia_standard_procedure_validity")?;
+        for (index, evidence) in self.evidence.iter().enumerate() {
+            if let Some(procedure) = evidence.as_ref().and_then(StandardSurfaceEvidence::procedure_ref) {
+                valid_procedure[index] = self.procedure_is_supported(procedure);
+            }
+        }
+        let mut surface_geometries = HashMap::new();
+        let mut procedural_surfaces = HashMap::new();
+        for (tag, indexes) in self.surfaces {
+            if conflicting_population_ids.contains(&tag) { continue; }
+            let mut geometry = None;
+            let mut procedure = None;
+            let mut procedure_valid = false;
+            let mut conflict = false;
+            for index in indexes {
+                let Some(incoming) = self.evidence.get_mut(index).and_then(Option::take) else {
+                    continue;
+                };
+                let (incoming_geometry, incoming_procedure) = incoming.into_parts();
+                let had_procedure = procedure.is_some();
+                let has_incoming_procedure = incoming_procedure.is_some();
+                let EvidencePart::Merged(merged_geometry) =
+                    merge_standard_evidence_part(geometry.take(), incoming_geometry)
+                else { conflict = true; break; };
+                geometry = merged_geometry;
+                let EvidencePart::Merged(merged_procedure) =
+                    merge_standard_evidence_part(procedure.take(), incoming_procedure)
+                else { conflict = true; break; };
+                procedure = merged_procedure;
+                if !had_procedure && has_incoming_procedure {
+                    procedure_valid = valid_procedure[index];
+                }
+            }
+            if conflict { continue; }
+            if let Some(geometry) = geometry {
+                crate::resource::insert_map(ctx, &mut surface_geometries, tag, geometry,
+                    "catia_standard_surface_geometries")?;
+            }
+            if let Some(procedure) = procedure.filter(|_| procedure_valid) {
+                crate::resource::insert_map(ctx, &mut procedural_surfaces, tag, procedure,
+                    "catia_standard_procedural_surfaces")?;
+            }
+        }
+        Ok((surface_geometries, procedural_surfaces))
+    }
+}
+
 impl StandardSurfaceEvidence {
+    fn into_parts(self) -> (Option<SurfaceGeometry>, Option<StandardSurfaceProcedure>) {
+        match self {
+            Self::Geometry(geometry) => (Some(geometry), None),
+            Self::Procedure(procedure) => (None, Some(procedure)),
+            Self::Both(geometry, procedure) => (Some(geometry), Some(procedure)),
+        }
+    }
+
     fn from_parts(
         geometry: Option<SurfaceGeometry>,
         procedure: Option<StandardSurfaceProcedure>,
@@ -3518,6 +3702,7 @@ impl StandardSurfaceEvidence {
         }
     }
 
+    #[cfg(test)]
     fn geometry_ref(&self) -> Option<&SurfaceGeometry> {
         match self {
             Self::Geometry(geometry) | Self::Both(geometry, _) => Some(geometry),
@@ -3591,34 +3776,35 @@ pub(super) fn standard_object_evidence_from_streams(
     edge_tags: &HashSet<u32>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
-    let mut surface_candidates = HashMap::<u32, Option<StandardSurfaceEvidence>>::new();
-    let mut support_candidates =
-        HashMap::<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>::new();
+    let mut evidence_store = StandardEvidenceStore::default();
     let mut edge_face_candidates = HashMap::<u32, Option<HashSet<u32>>>::new();
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
-    let streams = streams.into_iter().collect::<Vec<_>>();
-    for stream in &streams {
-        let records = crate::wire::records::consolidated_records(stream);
+    let mut populations = Vec::new();
+    for stream in streams {
+        let records = crate::wire::records::consolidated_records(&stream);
         merge_standard_limit_curves_from_records(
             ctx,
             &mut limit_curves,
-            stream,
+            &stream,
             &records,
             refusal,
         )?;
+        for population in crate::families::b5::graph::object_stream_populations(&stream) {
+            crate::resource::push(ctx, &mut populations, population,
+                "catia_standard_object_populations")?;
+        }
     }
-    let populations = streams
-        .iter()
-        .flat_map(|stream| crate::families::b5::graph::object_stream_populations(stream))
-        .collect::<Vec<_>>();
     let mut population_objects = HashMap::<u32, Option<Vec<u8>>>::new();
     let mut seen_population_ids = HashSet::new();
     let mut repeated_population_ids = HashSet::new();
     for population in &populations {
         let mut objects = HashMap::<u32, Option<Vec<u8>>>::new();
         for frame in crate::families::b5::graph::object_stream_frames(population) {
-            let bytes = population[frame.start..frame.end].to_vec();
+            let bytes = crate::resource::copy_retained_slice(ctx,
+                &population[frame.start..frame.end], "catia_standard_population_object_bytes")?;
+            crate::resource::admit_map_entry(ctx, &mut objects, &frame.object_id,
+                "catia_standard_population_objects")?;
             objects
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -3629,9 +3815,13 @@ pub(super) fn standard_object_evidence_from_streams(
                 .or_insert(Some(bytes));
         }
         for (object_id, bytes) in objects {
-            if !seen_population_ids.insert(object_id) {
-                repeated_population_ids.insert(object_id);
+            if !crate::resource::insert_set(ctx, &mut seen_population_ids, object_id,
+                "catia_standard_seen_population_ids")? {
+                crate::resource::insert_set(ctx, &mut repeated_population_ids, object_id,
+                    "catia_standard_repeated_population_ids")?;
             }
+            crate::resource::admit_map_entry(ctx, &mut population_objects, &object_id,
+                "catia_standard_population_objects_by_id")?;
             population_objects
                 .entry(object_id)
                 .and_modify(|stored| {
@@ -3646,15 +3836,19 @@ pub(super) fn standard_object_evidence_from_streams(
                 .or_insert(bytes);
         }
     }
-    let conflicting_population_ids = population_objects
-        .into_iter()
-        .filter_map(|(object_id, bytes)| bytes.is_none().then_some(object_id))
-        .collect::<HashSet<_>>();
+    let mut conflicting_population_ids = HashSet::new();
+    for (object_id, bytes) in population_objects {
+        if bytes.is_none() {
+            crate::resource::insert_set(ctx, &mut conflicting_population_ids, object_id,
+                "catia_standard_conflicting_population_ids")?;
+        }
+    }
     for stream in populations {
         let frames = crate::families::b5::graph::object_stream_frames(&stream);
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
-        let surface_bindings = tags
+        let mut surface_bindings = Vec::new();
+        for binding in tags
             .iter()
             .map(|&tag| (tag, tag))
             .chain(
@@ -3663,11 +3857,15 @@ pub(super) fn standard_object_evidence_from_streams(
                     .filter(|(face_id, _)| tags.contains(face_id))
                     .copied(),
             )
-            .collect::<Vec<_>>();
-        let requested_surfaces = surface_bindings
-            .iter()
-            .map(|(_, surface_id)| *surface_id)
-            .collect::<HashSet<_>>();
+        {
+            crate::resource::push(ctx, &mut surface_bindings, binding,
+                "catia_standard_surface_bindings")?;
+        }
+        let mut requested_surfaces = HashSet::new();
+        for &(_, surface_id) in &surface_bindings {
+            crate::resource::insert_set(ctx, &mut requested_surfaces, surface_id,
+                "catia_standard_requested_surfaces")?;
+        }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
             &stream,
             &requested_surfaces,
@@ -3717,35 +3915,35 @@ pub(super) fn standard_object_evidence_from_streams(
             let Some(evidence) = evidence else {
                 continue;
             };
-            merge_standard_procedure_supports(&mut support_candidates, &evidence);
-            merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
+            evidence_store.add(ctx, object_id, evidence)?;
         }
         if let Some(graph) = targeted_graph.as_ref() {
             for &(object_id, surface_id) in &surface_bindings {
-                if surface_candidates.contains_key(&object_id) {
+                if evidence_store.surfaces.contains_key(&object_id) {
                     continue;
                 }
                 let Some(evidence) = standard_surface_evidence(ctx, graph, surface_id, refusal)?
                 else {
                     continue;
                 };
-                merge_standard_procedure_supports(&mut support_candidates, &evidence);
-                merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
+                evidence_store.add(ctx, object_id, evidence)?;
             }
         }
         let edge_pcurves = crate::families::b5::graph::edge_support_pcurve_references_from_frames(
             &stream, edge_tags, &frames,
         );
-        let requested_pcurves = edge_pcurves
-            .values()
-            .flatten()
-            .copied()
-            .collect::<HashSet<_>>();
+        let mut requested_pcurves = HashSet::new();
+        for &pcurve_id in edge_pcurves.values().flatten() {
+            crate::resource::insert_set(ctx, &mut requested_pcurves, pcurve_id,
+                "catia_standard_requested_pcurves")?;
+        }
         let mut pcurves = HashMap::<u32, Option<crate::families::a5a8::records::A8Pcurve>>::new();
         for pcurve in crate::families::a5a8::records::object_stream_pcurves(&stream)
             .into_iter()
             .filter(|pcurve| requested_pcurves.contains(&pcurve.object_id))
         {
+            crate::resource::admit_map_entry(ctx, &mut pcurves, &pcurve.object_id,
+                "catia_standard_pcurve_candidates")?;
             pcurves
                 .entry(pcurve.object_id)
                 .and_modify(|stored| {
@@ -3759,11 +3957,11 @@ pub(super) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(pcurve));
         }
-        let surface_ids = pcurves
-            .values()
-            .filter_map(Option::as_ref)
-            .map(|pcurve| pcurve.support_id)
-            .collect::<HashSet<_>>();
+        let mut surface_ids = HashSet::new();
+        for pcurve in pcurves.values().filter_map(Option::as_ref) {
+            crate::resource::insert_set(ctx, &mut surface_ids, pcurve.support_id,
+                "catia_standard_pcurve_surface_ids")?;
+        }
         let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
             &stream,
             &surface_ids,
@@ -3799,6 +3997,8 @@ pub(super) fn standard_object_evidence_from_streams(
                 pcurves: [first.geometry, second.geometry],
                 parameter_range: first.parameter_range,
             };
+            crate::resource::admit_map_entry(ctx, &mut edge_support_candidates, &edge,
+                "catia_standard_edge_support_candidates")?;
             edge_support_candidates
                 .entry(edge)
                 .and_modify(|stored| {
@@ -3811,6 +4011,8 @@ pub(super) fn standard_object_evidence_from_streams(
         let stream_edge_faces =
             crate::families::b5::graph::edge_face_references_from_frames(&stream, &frames);
         for (edge, owners) in stream_edge_faces {
+            crate::resource::admit_map_entry(ctx, &mut edge_face_candidates, &edge,
+                "catia_standard_edge_face_candidates")?;
             edge_face_candidates
                 .entry(edge)
                 .and_modify(|stored| {
@@ -3830,8 +4032,7 @@ pub(super) fn standard_object_evidence_from_streams(
             else {
                 continue;
             };
-            merge_standard_procedure_supports(&mut support_candidates, &evidence);
-            merge_standard_surface_evidence(&mut surface_candidates, surface_id, evidence);
+            evidence_store.add(ctx, surface_id, evidence)?;
         }
         for &(face_id, surface_id) in face_surfaces
             .iter()
@@ -3839,12 +4040,11 @@ pub(super) fn standard_object_evidence_from_streams(
         {
             let evidence = standard_surface_evidence(ctx, &graph, surface_id, refusal)?;
             let Some(evidence) = evidence else { continue };
-            merge_standard_procedure_supports(&mut support_candidates, &evidence);
-            merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
+            evidence_store.add(ctx, face_id, evidence)?;
         }
     }
-    surface_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
-    support_candidates.retain(|object_id, _| !conflicting_population_ids.contains(object_id));
+    let (surface_geometries, procedural_surfaces) =
+        evidence_store.into_outputs(ctx, &conflicting_population_ids)?;
     edge_face_candidates.retain(|edge, owners| {
         !repeated_population_ids.contains(edge)
             && owners
@@ -3860,52 +4060,25 @@ pub(super) fn standard_object_evidence_from_streams(
                     .all(|surface| !repeated_population_ids.contains(surface))
             })
     });
+    let mut edge_owner_faces = HashMap::new();
+    for (edge, owners) in edge_face_candidates {
+        if let Some(owners) = owners {
+            crate::resource::insert_map(ctx, &mut edge_owner_faces, edge, owners,
+                "catia_standard_edge_owner_faces")?;
+        }
+    }
+    let mut edge_supports = HashMap::new();
+    for (edge, support) in edge_support_candidates {
+        if let Some(support) = support {
+            crate::resource::insert_map(ctx, &mut edge_supports, edge, support,
+                "catia_standard_edge_supports")?;
+        }
+    }
     Ok(StandardObjectEvidence {
-        surface_geometries: surface_candidates
-            .iter()
-            .filter_map(|(&tag, evidence)| Some((tag, evidence.as_ref()?.geometry_ref()?.clone())))
-            .collect(),
-        procedural_surfaces: surface_candidates
-            .into_iter()
-            .filter_map(|(tag, evidence)| {
-                let procedure = evidence?.procedure_ref()?.clone();
-                let valid = match &procedure {
-                    StandardSurfaceProcedure::Offset {
-                        support_object_id,
-                        support,
-                        ..
-                    } => {
-                        support_candidates
-                            .get(support_object_id)
-                            .and_then(Option::as_ref)
-                            == Some(support)
-                    }
-                    StandardSurfaceProcedure::RollingBall { .. } => true,
-                    StandardSurfaceProcedure::Extrusion(extrusion) => {
-                        extrusion.supports().into_iter().all(|side| {
-                            support_candidates
-                                .get(&side.surface_object_id)
-                                .and_then(Option::as_ref)
-                                == Some(
-                                    &crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                                        side.surface.clone(),
-                                    ),
-                                )
-                        })
-                    }
-                    StandardSurfaceProcedure::Revolution(_) => true,
-                };
-                valid.then_some((tag, procedure))
-            })
-            .collect(),
-        edge_owner_faces: edge_face_candidates
-            .into_iter()
-            .filter_map(|(edge, owners)| Some((edge, owners?)))
-            .collect(),
-        edge_supports: edge_support_candidates
-            .into_iter()
-            .filter_map(|(edge, support)| Some((edge, support?)))
-            .collect(),
+        surface_geometries,
+        procedural_surfaces,
+        edge_owner_faces,
+        edge_supports,
         limit_curves,
     })
 }
@@ -3950,41 +4123,6 @@ fn standard_surface_evidence(
     Ok(StandardSurfaceEvidence::from_parts(geometry, procedure))
 }
 
-fn merge_standard_surface_evidence(
-    candidates: &mut HashMap<u32, Option<StandardSurfaceEvidence>>,
-    tag: u32,
-    evidence: StandardSurfaceEvidence,
-) {
-    let incoming = evidence.clone();
-    candidates
-        .entry(tag)
-        .and_modify(|stored| {
-            let Some(stored_evidence) = stored.take() else {
-                return;
-            };
-            let (stored_geometry, stored_procedure) = (
-                stored_evidence.geometry_ref().cloned(),
-                stored_evidence.procedure_ref().cloned(),
-            );
-            let (incoming_geometry, incoming_procedure) = (
-                incoming.geometry_ref().cloned(),
-                incoming.procedure_ref().cloned(),
-            );
-            let EvidencePart::Merged(geometry) =
-                merge_standard_evidence_part(stored_geometry, incoming_geometry)
-            else {
-                return;
-            };
-            let EvidencePart::Merged(procedure) =
-                merge_standard_evidence_part(stored_procedure, incoming_procedure)
-            else {
-                return;
-            };
-            *stored = StandardSurfaceEvidence::from_parts(geometry, procedure);
-        })
-        .or_insert(Some(evidence));
-}
-
 enum EvidencePart<T> {
     Conflict,
     Merged(Option<T>),
@@ -3998,47 +4136,6 @@ fn merge_standard_evidence_part<T: PartialEq>(
         (Some(stored), Some(incoming)) if stored != incoming => EvidencePart::Conflict,
         (Some(stored), _) => EvidencePart::Merged(Some(stored)),
         (None, incoming) => EvidencePart::Merged(incoming),
-    }
-}
-
-fn merge_standard_procedure_supports(
-    candidates: &mut HashMap<u32, Option<crate::families::b5::transfer::ResolvedOffsetSupport>>,
-    evidence: &StandardSurfaceEvidence,
-) {
-    let Some(procedure) = evidence.procedure_ref() else {
-        return;
-    };
-    match procedure {
-        StandardSurfaceProcedure::Offset {
-            support_object_id,
-            support,
-            ..
-        } => {
-            candidates
-                .entry(*support_object_id)
-                .and_modify(|stored| {
-                    if stored.as_ref().is_some_and(|stored| stored != support) {
-                        *stored = None;
-                    }
-                })
-                .or_insert_with(|| Some(support.clone()));
-        }
-        StandardSurfaceProcedure::Extrusion(extrusion) => {
-            for side in extrusion.supports() {
-                let support = crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                    side.surface.clone(),
-                );
-                candidates
-                    .entry(side.surface_object_id)
-                    .and_modify(|stored| {
-                        if stored.as_ref().is_some_and(|stored| stored != &support) {
-                            *stored = None;
-                        }
-                    })
-                    .or_insert(Some(support));
-            }
-        }
-        StandardSurfaceProcedure::RollingBall { .. } | StandardSurfaceProcedure::Revolution(_) => {}
     }
 }
 
