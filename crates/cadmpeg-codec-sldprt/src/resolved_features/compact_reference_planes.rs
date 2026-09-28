@@ -1,9 +1,7 @@
 //! Compact reference plane record index.
 
-use super::reference_geometry::reference_plane_frame_key;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashSet;
 
 const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9: f64 = 1e-9;
 const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9: f64 = 1e-9;
@@ -125,10 +123,9 @@ impl CompactReferencePlaneIndex {
 }
 
 fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Option<u32> {
-    let matches = sources.into_iter().collect::<HashSet<_>>();
-    let mut matches = matches.into_iter();
-    let source = matches.next()?;
-    matches.next().is_none().then_some(source)
+    let mut sources = sources.into_iter();
+    let source = sources.next()?;
+    sources.all(|candidate| candidate == source).then_some(source)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -254,14 +251,9 @@ fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
                 normal,
                 u_axis,
             ))
-        })
-        .collect::<Vec<_>>();
-    frames.sort_by_key(reference_plane_frame_key);
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+        });
+    let frame = frames.next()?;
+    frames.all(|candidate| candidate == frame).then_some(frame)
 }
 
 pub(super) fn compact_profile_component_plane_frame(
