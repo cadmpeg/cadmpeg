@@ -690,15 +690,15 @@ pub(super) struct CreoCurveExpressionEquation {
     pub(super) offset: usize,
 }
 
-#[derive(Serialize)]
-pub(super) struct CreoFeatureOperationState {
+#[derive(Debug, Serialize)]
+pub(super) struct CreoFeatureOperationState<'a> {
     pub(super) id: String,
     pub(super) feature_id: u32,
     pub(super) state_ordinal: usize,
     pub(super) current: bool,
-    pub(super) family: String,
-    #[serde(flatten, serialize_with = "serialize_operation_name")]
-    pub(super) name: crate::feature::operations::OperationName,
+    pub(super) family: &'a str,
+    #[serde(flatten)]
+    pub(super) name: CreoOperationNameRecord<'a>,
     pub(super) recipe: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) recipe_conflict: Option<bool>,
@@ -710,23 +710,13 @@ pub(super) struct CreoFeatureOperationState {
     pub(super) state_offset: usize,
 }
 
-fn serialize_operation_name<S: serde::Serializer>(
-    name: &crate::feature::operations::OperationName,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
-    let mut map = serializer.serialize_map(Some(5))?;
-    map.serialize_entry("display_name_stored", &name.display_name_stored())?;
-    map.serialize_entry("stored_name", &name.stored_name())?;
-    map.serialize_entry("stored_name_bytes", &name.stored_name_bytes())?;
-    map.serialize_entry("identifier_keyword", &name.identifier_keyword())?;
-    map.serialize_entry(
-        "stored_name_prefix",
-        &name
-            .stored_name_prefix()
-            .map(|prefix| char::from(prefix).to_string()),
-    )?;
-    map.end()
+#[derive(Debug, Serialize)]
+pub(super) struct CreoOperationNameRecord<'a> {
+    pub(super) display_name_stored: bool,
+    pub(super) stored_name: Option<String>,
+    pub(super) stored_name_bytes: Option<&'a [u8]>,
+    pub(super) identifier_keyword: Option<&'a str>,
+    pub(super) stored_name_prefix: Option<String>,
 }
 
 #[derive(Serialize)]

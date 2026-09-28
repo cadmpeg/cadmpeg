@@ -808,7 +808,7 @@ pub(super) fn emit_geometry_arenas(
         );
     }
     store_arena(ctx, ir, "curve_expressions", &curve_expressions)?;
-    let feature_operation_states = feature_operation_state_records(scan);
+    let feature_operation_states = feature_operation_state_records(ctx, scan)?;
     emit_arena(
         ctx,
         ir,
