@@ -7327,8 +7327,7 @@ pub(super) fn feature_surface_construction_references(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
-    Ok(
-        resolved_feature_payload_references(ctx, container, |record, base| {
+    let references = resolved_feature_payload_references(ctx, container, |record, base| {
             crate::om::surface_envelope::surface_feature_payload_references(record)
                 .and_then(|field| field.relocate(base))
                 .map(|field| field.references().into_iter().collect())
@@ -7337,27 +7336,31 @@ pub(super) fn feature_surface_construction_references(
                         .and_then(|field| field.relocate(base))
                         .map(|field| field.references().into_iter().collect())
                 })
-        })?
-        .into_iter()
-        .map(|reference| {
-            let operation_label = format!(
-                "nx:feature-history:operation-label#{}-{:010}",
-                reference.section_key, reference.operation_ordinal
-            );
-            FeatureSurfaceConstructionReference {
-                id: format!(
-                    "nx:feature-history:surface-construction-reference#{}-{:010}-{:010}",
-                    reference.section_key, reference.operation_ordinal, reference.ordinal
-                ),
+        })?;
+    let mut output = Vec::new();
+    for reference in references {
+        let operation_label = format_feature_history_id(
+            ctx, "operation-label", &reference.section_key, reference.operation_ordinal, None,
+        )?;
+        let id = format_feature_history_id(
+            ctx, "surface-construction-reference", &reference.section_key,
+            reference.operation_ordinal, Some(reference.ordinal),
+        )?;
+        ctx.charge_collection_items(1, "NX surface construction references")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSurfaceConstructionReference>()), "NX surface construction reference")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX surface construction references", 0, 1))?;
+        output.push(FeatureSurfaceConstructionReference {
+                id,
                 operation_label,
-                ordinal: reference.ordinal as u32,
+                ordinal: u32::try_from(reference.ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX surface construction reference ordinal", 0, 1))?,
                 token: reference.token,
                 data_block: reference.data_block,
                 source_offset: reference.source_offset,
-            }
-        })
-        .collect(),
-    )
+        });
+    }
+    Ok(output)
 }
 
 /// Decode the exact leading construction envelope in each `THRU_CURVE` payload.
