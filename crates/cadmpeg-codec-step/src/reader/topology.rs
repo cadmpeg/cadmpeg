@@ -1457,15 +1457,17 @@ fn build_wire_set(
             color: None,
             visible: None,
         },
+        ctx,
     );
     let mut built = match staged {
         Ok(built) => built,
-        Err(error) => {
+        Err(StageError::Draft(error)) => {
             push_topology_vec(losses,
                 StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
                 ctx, "step_topology_losses")?;
             return Ok(None);
         }
+        Err(StageError::Resource(error)) => return Err(error),
     };
     insert_topology_set(&mut built.shell_sources, set_id, ctx, "step_wire_shell_sources")?;
     Ok(Some(built))
@@ -1744,15 +1746,17 @@ fn build_shell_wire_set(
             color: None,
             visible: None,
         },
+        ctx,
     );
     let mut built = match staged {
         Ok(built) => built,
-        Err(error) => {
+        Err(StageError::Draft(error)) => {
             push_topology_vec(losses,
                 StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")),
                 ctx, "step_topology_losses")?;
             return Ok(None);
         }
+        Err(StageError::Resource(error)) => return Err(error),
     };
     insert_topology_set(&mut built.shell_sources, shell_id, ctx, "step_wire_shell_sources")?;
     Ok(Some(built))
@@ -1895,15 +1899,17 @@ fn build_geometric_set(
             color: None,
             visible: None,
         },
+        ctx,
     );
     match staged {
         Ok(built) => Ok(Some(built)),
-        Err(error) => {
+        Err(StageError::Draft(error)) => {
             push_topology_vec(losses, StepLossCode::DecodeWarning.note(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}: {error}"
             )), ctx, "step_topology_losses")?;
             Ok(None)
         }
+        Err(StageError::Resource(error)) => Err(error),
     }
 }
 
@@ -2343,6 +2349,24 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &mut CommitSession<'
 #[cfg(test)]
 pub(crate) mod tests;
 
+#[derive(Debug)]
+enum StageError {
+    Draft(DraftError),
+    Resource(CodecError),
+}
+
+impl From<DraftError> for StageError {
+    fn from(error: DraftError) -> Self {
+        Self::Draft(error)
+    }
+}
+
+impl From<CodecError> for StageError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn staged_topology(
     typed: HashSet<u64>,
@@ -2355,34 +2379,48 @@ fn staged_topology(
     shells: Vec<Shell>,
     region: Region,
     body: Body,
-) -> Result<Built, cadmpeg_ir::draft::DraftError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Built, StageError> {
     let mut draft = ModelDraft::new();
     for vertex in vertices {
+        ctx.charge_collection_items(1, "step_staged_vertices")?;
         draft.insert(vertex)?;
     }
     for edge in edges {
+        ctx.charge_collection_items(1, "step_staged_edges")?;
         draft.insert(edge)?;
     }
     for coedge in coedges {
+        ctx.charge_collection_items(1, "step_staged_coedges")?;
         draft.insert(coedge)?;
     }
     for loop_ in loops {
+        ctx.charge_collection_items(1, "step_staged_loops")?;
         draft.insert(loop_)?;
     }
     for face in faces {
+        ctx.charge_collection_items(1, "step_staged_faces")?;
         draft.insert(face)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
-        if surface_ids.insert(surface.id.as_str().to_owned()) {
+        if !surface_ids.contains(surface.id.as_str()) {
+            ctx.charge_collection_items(1, "step_staged_surface_ids")?;
+            let id = ctx.copy_retained(surface.id.as_str().as_bytes(), "step_staged_surface_ids")?;
+            let id = String::from_utf8(id).map_err(CodecError::malformed)?;
+            surface_ids.insert(id);
+            ctx.charge_collection_items(1, "step_staged_surfaces")?;
             draft.insert(surface)?;
         }
     }
     for shell in shells {
+        ctx.charge_collection_items(1, "step_staged_shells")?;
         draft.insert(shell)?;
     }
+    ctx.charge_collection_items(1, "step_staged_regions")?;
     draft.insert(region)?;
     let body_id = body.id.clone();
+    ctx.charge_collection_items(1, "step_staged_bodies")?;
     draft.insert(body)?;
     Ok(Built {
         typed,
@@ -3542,16 +3580,16 @@ fn build_one(
             }
         }
     }
-    let mut built = require_carrier(
-        staged_topology(
-            typed, vertices, edges, coedges, loops, faces, surfaces, shells, region, body,
-        )
-        .ok(),
-        failure,
-        id,
-        CarrierKind::TopologyDraft,
-    )
-    .ok_or(BuildError::Absent)?;
+    let mut built = match staged_topology(
+        typed, vertices, edges, coedges, loops, faces, surfaces, shells, region, body, ctx,
+    ) {
+        Ok(built) => built,
+        Err(StageError::Draft(_)) => {
+            note_failure(failure, id, CarrierKind::TopologyDraft);
+            return Err(BuildError::Absent);
+        }
+        Err(StageError::Resource(error)) => return Err(BuildError::Resource(error)),
+    };
     built.pcurve_admissions = admissions;
     for &shell_reference in shell_steps {
         let shell_step = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {

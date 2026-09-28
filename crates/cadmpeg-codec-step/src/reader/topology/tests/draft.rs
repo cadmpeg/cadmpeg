@@ -1,6 +1,6 @@
 use cadmpeg_ir::geometry::CurveGeometry;
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
@@ -673,6 +673,10 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
 
 #[test]
 fn shared_surface_carrier_is_staged_once() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
+        .expect("empty root fits policy");
     let surface = Surface {
         id: SurfaceId::mint("step:data:surface#shared").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -710,6 +714,7 @@ fn shared_surface_carrier_is_staged_once() {
             color: None,
             visible: None,
         },
+        &ctx,
     )
     .expect("duplicate references to one source surface must stage");
 
