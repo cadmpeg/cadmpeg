@@ -1785,6 +1785,10 @@ fn decode_sketch_texts_from_stream(
             record_index,
             frame.start,
         ) {
+            ctx.charge_collection_items(1, "f3d sketch text records")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch text records allocation", 0, 1)
+            })?;
             out.push(text);
         }
     }
