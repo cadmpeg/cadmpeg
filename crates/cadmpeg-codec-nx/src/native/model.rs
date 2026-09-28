@@ -1104,7 +1104,7 @@ impl NativeModel {
         let feature_draft_construction_references =
             feature_draft_construction_references(container);
         let feature_draft_construction_index_lanes =
-            feature_draft_construction_index_lanes(container);
+            feature_draft_construction_index_lanes(ctx, container)?;
         let feature_draft_construction_payloads =
             feature_draft_construction_payloads(container, &feature_draft_construction_index_lanes);
         let feature_draft_construction_graph_payloads = feature_draft_construction_graph_payloads(
