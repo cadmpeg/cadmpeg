@@ -1150,18 +1150,15 @@ pub(super) fn resolved_hem_edge_group(
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return Ok(selection);
     };
-    let matching_operands = operands
-        .iter()
-        .filter(|operand| {
+    let mut matching_operands = operands.iter().filter(|operand| {
             native_stream(&operand.id) == native_stream(&group.id)
                 && operand.scope_record_index == group.scope_record_index
                 && operand.record_index() == *member
-        })
-        .collect::<Vec<_>>();
-    let [operand] = matching_operands.as_slice() else {
+        });
+    let Some(operand) = matching_operands.next().filter(|_| matching_operands.next().is_none()) else {
         return Ok(selection);
     };
-    let Some(edge) = hem_transition_edge_slot(operand) else {
+    let Some(edge) = hem_transition_edge_slot(operand, ctx)? else {
         return Ok(selection);
     };
     let feature_key = feature_id.key();
@@ -1171,9 +1168,9 @@ pub(super) fn resolved_hem_edge_group(
             &ids::history_input_prefix(&feature_key, previous_state_id),
             edge,
         )],
-        group.id.clone(),
+        copy_edge_text(ctx, &group.id, "f3d hem historical group id")?,
     )
-    .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())))
+    .unwrap_or_else(|_| selection))
 }
 
 /// Return the one historical edge a single-member Hem operand identifies.
@@ -1184,14 +1181,13 @@ pub(super) fn resolved_hem_edge_group(
 pub(super) fn resolved_hem_edge_slot(
     operand: &DesignEdgeOperand,
     previous_state_id: Option<i64>,
-) -> Option<i64> {
-    let mut direct = operand.resolved_edge_slot.into_iter().collect::<Vec<_>>();
-    direct.sort_unstable();
-    direct.dedup();
-    if let [edge] = direct.as_slice() {
-        return Some(*edge);
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<i64>, CodecError> {
+    if let Some(edge) = operand.resolved_edge_slot {
+        return Ok(Some(edge));
     }
-    previous_state_id.and_then(|_| hem_transition_edge_slot(operand))
+    if previous_state_id.is_none() { return Ok(None); }
+    hem_transition_edge_slot(operand, ctx)
 }
 
 /// Check recipe evidence before an exact edge-treatment transition chain
@@ -1249,14 +1245,15 @@ fn transition_chain_is_supported_by_recipe<'a>(
     all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge))
 }
 
-fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
+fn hem_transition_edge_slot(
+    operand: &DesignEdgeOperand,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<i64>, CodecError> {
     let reference_contexts = operand.recipe_reference_contexts.as_slice();
-    let empty_contexts = reference_contexts
-        .iter()
-        .filter(|context| context.changed_reference_edge_slots.is_empty())
-        .collect::<Vec<_>>();
-    let [empty_context] = empty_contexts.as_slice() else {
-        return None;
+    let mut empty_contexts = reference_contexts.iter()
+        .filter(|context| context.changed_reference_edge_slots.is_empty());
+    let Some(empty_context) = empty_contexts.next().filter(|_| empty_contexts.next().is_none()) else {
+        return Ok(None);
     };
     if !empty_context.result_faces.is_empty()
         || !empty_context.preceding_faces.is_empty()
@@ -1267,21 +1264,27 @@ fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
                     || context.preceding_support_face_slots.is_empty())
         })
     {
-        return None;
+        return Ok(None);
     }
     unique_hem_transition_edge_candidate(
         &operand.changed_boundary_edge_slots,
         reference_contexts
             .iter()
             .map(|context| context.changed_reference_edge_slots.as_slice()),
+        ctx,
     )
 }
 
 fn unique_hem_transition_edge_candidate<'a>(
     changed_boundary_edges: &[i64],
-    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> Option<i64> {
-    let reference_edge_sets = reference_edge_sets.into_iter().collect::<Vec<_>>();
+    reference_edge_sets_input: impl IntoIterator<Item = &'a [i64]>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<i64>, CodecError> {
+    let mut reference_edge_sets: Vec<&'a [i64]> = Vec::new();
+    for edges in reference_edge_sets_input {
+        push_edge_item(ctx, &mut reference_edge_sets, edges,
+            "f3d hem reference edge set")?;
+    }
     if reference_edge_sets.is_empty()
         || reference_edge_sets
             .iter()
@@ -1289,12 +1292,12 @@ fn unique_hem_transition_edge_candidate<'a>(
             .count()
             != 1
     {
-        return None;
+        return Ok(None);
     }
-    let mut support_edges = reference_edge_sets
-        .iter()
-        .flat_map(|edges| edges.iter().copied())
-        .collect::<Vec<_>>();
+    let mut support_edges = Vec::new();
+    for edge in reference_edge_sets.iter().flat_map(|edges| edges.iter().copied()) {
+        push_edge_item(ctx, &mut support_edges, edge, "f3d hem support edge")?;
+    }
     support_edges.sort_unstable();
     support_edges.dedup();
     if support_edges.is_empty()
@@ -1302,18 +1305,18 @@ fn unique_hem_transition_edge_candidate<'a>(
             .iter()
             .any(|edge| !changed_boundary_edges.contains(edge))
     {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = changed_boundary_edges
-        .iter()
-        .copied()
-        .filter(|edge| !support_edges.contains(edge))
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for edge in changed_boundary_edges.iter().copied()
+        .filter(|edge| !support_edges.contains(edge)) {
+        push_edge_item(ctx, &mut candidates, edge, "f3d hem candidate edge")?;
+    }
     candidates.sort_unstable();
     candidates.dedup();
     match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => None,
+        [edge] => Ok(Some(*edge)),
+        _ => Ok(None),
     }
 }
 
