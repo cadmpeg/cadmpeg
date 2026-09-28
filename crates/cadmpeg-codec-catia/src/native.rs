@@ -9252,10 +9252,10 @@ impl CatiaNative {
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let outer_directory = container::parse_outer_stream_directory(ctx, bytes)?;
-        let outer_container_declarations =
-            outer_directory.as_ref().map_or_else(Vec::new, |outer| {
-                container::outer_container_declarations(bytes, outer)
-            });
+        let outer_container_declarations = match outer_directory.as_ref() {
+            Some(outer) => container::outer_container_declarations(ctx, bytes, outer)?,
+            None => Vec::new(),
+        };
         let parsed_finjpl = container::finjpl_segments(ctx, &container::BodyExtent::whole(bytes))?;
         let mut finjpl_segments = Vec::new();
         for (index, segment) in parsed_finjpl.into_iter().enumerate() {

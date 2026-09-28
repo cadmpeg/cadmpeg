@@ -15,7 +15,7 @@
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 
@@ -565,18 +565,12 @@ fn select_e5_record_stream(
     if tied { None } else { best.map(|(_, _, range)| range) }
 }
 
-fn coherent_e5_record_count(data: &[u8]) -> usize {
-    e5_record_spans(data).len()
-}
-
-/// Return the longest declared-stride E5 walk in a bounded byte region.
+/// Count the longest declared-stride E5 walk in a bounded byte region.
 ///
 /// A stream may place the unframed `05 08 01` coordinate roster between E5
-/// records. No other gap is part of the walk: accepting arbitrary bytes here
-/// would turn an incidental marker into a record and could select the wrong
-/// family before the route decoder sees the data.
-fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
-    let mut best = Vec::new();
+/// records. No other gap is part of the walk.
+fn coherent_e5_record_count(data: &[u8]) -> usize {
+    let mut best = 0;
     let mut search = 0;
     while search < data.len() {
         let Some(relative) = data[search..]
@@ -586,11 +580,9 @@ fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
             break;
         };
         let start = search + relative;
-        let (walk, consumed) = e5_record_walk(data, start);
-        if walk.len() > best.len() {
-            best = walk;
-        }
-        search = consumed.max(start.saturating_add(1));
+        let (count, consumed) = e5_record_walk_count(data, start);
+        best = best.max(count);
+        search = consumed.max(start + 1);
     }
     best
 }
@@ -598,7 +590,7 @@ fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
 /// Return every valid `E5 0D 03` frame in a bounded stream region.
 ///
 /// The complete E5 carrier stream may interleave these frames with other
-/// framed E5 records. Route selection still uses [`e5_record_spans`] because
+/// framed E5 records. Route selection still uses [`coherent_e5_record_count`] because
 /// it needs a contiguous declared-stride walk; carrier decoders need the
 /// complete frame inventory instead.
 pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
@@ -612,7 +604,7 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
             .position(|bytes| bytes == E5_MARKER)?;
         let start = search + relative;
         let Some(end) = e5_record_end(data, start) else {
-            search = start.saturating_add(1);
+            search = start + 1;
             continue;
         };
         search = end;
@@ -620,12 +612,12 @@ pub(crate) fn all_e5_record_spans(data: &[u8]) -> impl Iterator<Item = Range<usi
     })
 }
 
-fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {
-    let mut walk = Vec::new();
+fn e5_record_walk_count(data: &[u8], start: usize) -> (usize, usize) {
+    let mut count = 0;
     let mut position = start;
     let mut consumed = start;
     while let Some(end) = e5_record_end(data, position) {
-        walk.push(position..end);
+        count += 1;
         position = end;
         consumed = end;
 
@@ -641,7 +633,7 @@ fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {
         }
         position = next;
     }
-    (walk, consumed)
+    (count, consumed)
 }
 
 fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
@@ -785,9 +777,12 @@ pub(crate) struct ContainerScan<'a> {
 /// source. The nested directory itself and all directory headers stay outside
 /// the inventory. Records can establish ordered relationships across extents
 /// of one descriptor, but never across descriptors.
-pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<SourceExtent>> {
+pub(crate) fn consolidated_record_sources(
+    ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>,
+) -> Result<Vec<Vec<SourceExtent>>, CodecError> {
     let mut sources = Vec::new();
-    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir| {
+    let add_directory = |sources: &mut Vec<Vec<SourceExtent>>, directory: &InnerDir|
+        -> Result<(), CodecError> {
         for descriptor in &directory.descriptors {
             let mut source = Vec::new();
             for extent in &descriptor.extents {
@@ -801,17 +796,19 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<S
                 // source. The scanner reads every byte of an extent it accepts,
                 // so it never receives a shortened one.
                 if let Some(extent) = SourceExtent::within(&scan.data, start, end) {
-                    source.push(extent);
+                    crate::resource::push(ctx, &mut source, extent,
+                        "catia_record_source_extents")?;
                 }
             }
             if !source.is_empty() && !sources.contains(&source) {
-                sources.push(source);
+                crate::resource::push(ctx, sources, source, "catia_record_sources")?;
             }
         }
+        Ok(())
     };
 
     if let Some(outer) = scan.outer.as_ref() {
-        add_directory(&mut sources, outer);
+        add_directory(&mut sources, outer)?;
     } else {
         let outer_end = scan
             .inner
@@ -823,31 +820,36 @@ pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<S
             .then(|| SourceExtent::within(&scan.data, outer_hdr::FILL_FF, outer_end))
             .flatten();
         if let Some(preamble) = preamble {
-            sources.push(vec![preamble]);
+            let mut source = Vec::new();
+            crate::resource::push(ctx, &mut source, preamble, "catia_record_source_extents")?;
+            crate::resource::push(ctx, &mut sources, source, "catia_record_sources")?;
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
-        add_directory(&mut sources, inner);
+        add_directory(&mut sources, inner)?;
     }
 
     let whole = (sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF)
         .then(|| SourceExtent::within(&scan.data, outer_hdr::FILL_FF, scan.data.len()))
         .flatten();
     if let Some(whole) = whole {
-        sources.push(vec![whole]);
+        let mut source = Vec::new();
+        crate::resource::push(ctx, &mut source, whole, "catia_record_source_extents")?;
+        crate::resource::push(ctx, &mut sources, source, "catia_record_sources")?;
     }
-    sources
+    Ok(sources)
 }
 
 /// Flatten the descriptor-scoped source inventory without changing logical
 /// source or extent order.
 #[cfg(test)]
-pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
-    consolidated_record_sources(scan)
+pub(crate) fn consolidated_record_ranges(
+    ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>,
+) -> Result<Vec<Range<usize>>, CodecError> {
+    crate::resource::collect_vec(ctx, consolidated_record_sources(ctx, scan)?
         .into_iter()
         .flatten()
-        .map(|extent| extent.range())
-        .collect()
+        .map(|extent| extent.range()), "catia_record_ranges")
 }
 
 /// Reconstruct each catalogued logical stream as an independent record source.
@@ -855,23 +857,26 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
 /// Records cannot establish adjacency or one object-id namespace across two
 /// descriptors. A container without a parsed directory has one unnamed source:
 /// its bounded outer preamble.
-pub(crate) fn logical_record_streams(scan: &ContainerScan<'_>) -> Vec<Vec<u8>> {
-    let mut streams = [scan.outer.as_ref(), scan.inner.as_ref()]
-        .into_iter()
-        .flatten()
-        .flat_map(|directory| {
-            directory.descriptors.iter().filter_map(|descriptor| {
-                let stream = reconstruct_logical_stream(&scan.data, descriptor, directory.inner);
-                (!stream.is_empty()).then_some(stream)
-            })
-        })
-        .collect::<Vec<_>>();
-    if streams.is_empty() {
-        if let Some(range) = outer_preamble_range(&scan.data) {
-            streams.push(scan.data[range].to_vec());
+pub(crate) fn logical_record_streams(
+    ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>,
+) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut streams = Vec::new();
+    for directory in [scan.outer.as_ref(), scan.inner.as_ref()].into_iter().flatten() {
+        for descriptor in &directory.descriptors {
+            let stream = reconstruct_logical_stream(ctx, &scan.data, descriptor, directory.inner)?;
+            if !stream.is_empty() {
+                crate::resource::push(ctx, &mut streams, stream, "catia_logical_record_streams")?;
+            }
         }
     }
-    streams
+    if streams.is_empty() {
+        if let Some(range) = outer_preamble_range(&scan.data) {
+            let stream = crate::resource::copy_retained_slice(ctx, &scan.data[range],
+                "catia_outer_preamble_stream")?;
+            crate::resource::push(ctx, &mut streams, stream, "catia_logical_record_streams")?;
+        }
+    }
+    Ok(streams)
 }
 
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
@@ -881,7 +886,9 @@ pub(crate) fn looks_like_catia(prefix: &[u8]) -> bool {
 }
 
 /// Return maximal contiguous stride-8 FBB groups in source order.
-pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
+pub(crate) fn fbb_run_ranges(
+    ctx: &DecodeContext<'_>, body: &[u8],
+) -> Result<Vec<Range<usize>>, CodecError> {
     let mut ranges = Vec::new();
     let mut position = 0;
     while position + fbb_row::LEN <= body.len() {
@@ -890,12 +897,12 @@ pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
             while position + fbb_row::LEN <= body.len() && is_fbb_row(&body[position..]) {
                 position += fbb_row::LEN;
             }
-            ranges.push(start..position);
+            crate::resource::push(ctx, &mut ranges, start..position, "catia_fbb_run_ranges")?;
         } else {
             position += 1;
         }
     }
-    ranges
+    Ok(ranges)
 }
 
 /// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
@@ -1198,7 +1205,9 @@ fn descriptor_name(
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
-fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
+fn reconstruct_logical_stream(
+    ctx: &DecodeContext<'_>, data: &[u8], descriptor: &Descriptor, inner: usize,
+) -> Result<Vec<u8>, CodecError> {
     let Some(logical_length) =
         descriptor
             .extents
@@ -1211,40 +1220,41 @@ fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize
                     .flatten()
             })
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut out = Vec::with_capacity(logical_length);
+    let bytes = u64::try_from(logical_length).map_err(|_| {
+        ctx.refuse_codec_limit("catia_logical_stream_bytes", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_retained(bytes, "catia_logical_stream_bytes")?;
+    let mut out = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut out, logical_length, "catia_logical_stream_bytes")?;
     for extent in &descriptor.extents {
         let start = inner + extent.phys_off as usize;
         let end = start + extent.phys_len as usize;
         out.extend_from_slice(&data[start..end]);
     }
-    out
+    Ok(out)
 }
 
 /// Decode model-container declarations whose UUIDs select named outer streams.
 #[must_use]
 pub(crate) fn outer_container_declarations(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     outer: &InnerDir,
-) -> Vec<OuterContainerDeclaration> {
+) -> Result<Vec<OuterContainerDeclaration>, CodecError> {
     let mut data_descriptors = outer
         .descriptors
         .iter()
         .filter(|descriptor| descriptor.name == "Data");
     let Some(data_descriptor) = data_descriptors.next() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if data_descriptors.next().is_some() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let stream_names = outer
-        .descriptors
-        .iter()
-        .map(|descriptor| descriptor.name.as_str())
-        .collect::<HashSet<_>>();
-    let logical = reconstruct_logical_stream(data, data_descriptor, outer.inner);
-    parse_outer_container_declarations(&logical, &stream_names)
+    let logical = reconstruct_logical_stream(ctx, data, data_descriptor, outer.inner)?;
+    parse_outer_container_declarations(ctx, &logical, &outer.descriptors)
 }
 
 /// Select the unique declared outer container whose physical extent contains
@@ -1279,16 +1289,16 @@ pub(crate) fn outer_container_for_extent<'a>(
 }
 
 fn parse_outer_container_declarations(
-    data: &[u8],
-    stream_names: &HashSet<&str>,
-) -> Vec<OuterContainerDeclaration> {
+    ctx: &DecodeContext<'_>, data: &[u8], descriptors: &[Descriptor],
+) -> Result<Vec<OuterContainerDeclaration>, CodecError> {
     const HEADER: &[u8] = b"\x01\x00\x03\x00";
     const PREFIX: &[u8] = b"\x01\x00\x6c\x00\x02\x00\x00\x00";
     const CLASS_BLOCK: &[u8] = b"\x02\x00\x81\x20";
     const TERMINAL: &[u8] = b"\x03\x00\xf7\x00\x03\x00\x00\x00";
 
     let mut declarations = Vec::new();
-    for start in 0..data.len().saturating_sub(64) {
+    if data.len() < 64 { return Ok(declarations); }
+    for start in 0..data.len() - 64 {
         if data.get(start + 8..start + 12) != Some(HEADER)
             || data.get(start + 16..start + 24) != Some(PREFIX)
             || data.get(start + 32..start + 36) != Some(CLASS_BLOCK)
@@ -1314,11 +1324,13 @@ fn parse_outer_container_declarations(
         else {
             continue;
         };
-        let canonical_stream_name = format!("{first:x}_{middle:08x}_{last:x}");
-        let prefixed_stream_name = format!("_{canonical_stream_name}");
+        let canonical_stream_name = crate::resource::format_retained(ctx,
+            format_args!("{first:x}_{middle:08x}_{last:x}"), "catia_container_stream_name")?;
+        let prefixed_stream_name = crate::resource::format_retained(ctx,
+            format_args!("_{canonical_stream_name}"), "catia_container_stream_name")?;
         let stream_name = match (
-            stream_names.contains(canonical_stream_name.as_str()),
-            stream_names.contains(prefixed_stream_name.as_str()),
+            descriptors.iter().any(|descriptor| descriptor.name == canonical_stream_name),
+            descriptors.iter().any(|descriptor| descriptor.name == prefixed_stream_name),
         ) {
             (true, false) => canonical_stream_name,
             (false, true) => prefixed_stream_name,
@@ -1327,25 +1339,28 @@ fn parse_outer_container_declarations(
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
             continue;
         };
-        declarations.push(OuterContainerDeclaration {
+        let class_name = crate::resource::copy_retained_str(ctx, class_name,
+            "catia_container_class_name")?;
+        let base_class = crate::resource::copy_retained_str(ctx, base_class,
+            "catia_container_base_class")?;
+        crate::resource::push(ctx, &mut declarations, OuterContainerDeclaration {
             data_offset: start,
             ordinal,
             class_name,
             base_class,
             stream_name,
-        });
+        }, "catia_container_declarations")?;
     }
-    let mut selected_streams = HashSet::new();
-    if declarations
-        .iter()
-        .any(|declaration| !selected_streams.insert(declaration.stream_name.as_str()))
-    {
-        return Vec::new();
+    let selected_streams = crate::resource::collect_set(ctx,
+        declarations.iter().map(|declaration| declaration.stream_name.as_str()),
+        "catia_container_selected_streams")?;
+    if selected_streams.len() != declarations.len() {
+        return Ok(Vec::new());
     }
-    declarations
+    Ok(declarations)
 }
 
-fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
+fn declaration_class_pair(data: &[u8]) -> Option<(&str, &str)> {
     let first_end = data.iter().position(|byte| *byte == 0)?;
     let second_start = first_end.checked_add(1)?;
     let second_end = second_start.checked_add(
@@ -1362,10 +1377,7 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
     {
         return None;
     }
-    Some((
-        std::str::from_utf8(first).ok()?.to_owned(),
-        std::str::from_utf8(second).ok()?.to_owned(),
-    ))
+    Some((std::str::from_utf8(first).ok()?, std::str::from_utf8(second).ok()?))
 }
 
 /// Reconstruct the logical BREP buffer: the uniquely largest canonical
@@ -1373,28 +1385,34 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
 /// ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
 /// catalogues the BREP body carries both canonical streams; the contiguous-body
 /// exception has neither and returns `None`.
-fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    let mut out = main_data_stream(data, dir)?;
-    let surf = unique_largest_descriptor(
+fn brep_stream(
+    ctx: &DecodeContext<'_>, data: &[u8], dir: &InnerDir,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let Some(mut out) = main_data_stream(ctx, data, dir)? else { return Ok(None) };
+    let Some(surf) = unique_largest_descriptor(
         dir.descriptors
             .iter()
             .filter(|descriptor| descriptor.name == "SurfacicReps"),
-    )?;
-    out.extend(reconstruct_logical_stream(data, surf, dir.inner));
-    Some(out)
+    ) else { return Ok(None) };
+    let surface = reconstruct_logical_stream(ctx, data, surf, dir.inner)?;
+    crate::resource::extend_retained_bytes(ctx, &mut out, &surface,
+        "catia_brep_surface_bytes")?;
+    Ok(Some(out))
 }
 
 /// Reconstruct the unique canonical `MainDataStream`, which owns the FBB
 /// topology spine. The surface stream is deliberately excluded: its numeric
 /// payload may contain byte sequences that resemble FBB rows but cannot assign
 /// topology faces.
-fn main_data_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    let main = unique_largest_descriptor(
+fn main_data_stream(
+    ctx: &DecodeContext<'_>, data: &[u8], dir: &InnerDir,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let Some(main) = unique_largest_descriptor(
         dir.descriptors
             .iter()
             .filter(|descriptor| descriptor.name == "MainDataStream"),
-    )?;
-    Some(reconstruct_logical_stream(data, main, dir.inner))
+    ) else { return Ok(None) };
+    Ok(Some(reconstruct_logical_stream(ctx, data, main, dir.inner)?))
 }
 
 fn unique_largest_descriptor<'a>(
@@ -1492,8 +1510,14 @@ pub(crate) fn scan_bytes<'a>(
 
     let outer = parse_outer_stream_directory(ctx, &data)?;
     let inner = parse_stream_directory(ctx, &data)?;
-    let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
-    let main_data_stream = inner.as_ref().and_then(|dir| main_data_stream(&data, dir));
+    let brep = match inner.as_ref() {
+        Some(dir) => brep_stream(ctx, &data, dir)?,
+        None => None,
+    };
+    let main_data_stream = match inner.as_ref() {
+        Some(dir) => main_data_stream(ctx, &data, dir)?,
+        None => None,
+    };
     let outer_body = outer_body_range(&data);
     let finjpl_segments = match outer_body.as_ref() {
         Some(body) => finjpl_segments(ctx, body)?,
@@ -1502,9 +1526,10 @@ pub(crate) fn scan_bytes<'a>(
     let previews = preview_images_in_segments(ctx, &data, &finjpl_segments)?;
     let last_save_version = last_save_version_in_segments(ctx, &data, &finjpl_segments)?;
     let external_references = external_references_in_segments(ctx, &data, &finjpl_segments)?;
-    let outer_container_declarations = outer.as_ref().map_or_else(Vec::new, |directory| {
-        outer_container_declarations(&data, directory)
-    });
+    let outer_container_declarations = match outer.as_ref() {
+        Some(directory) => outer_container_declarations(ctx, &data, directory)?,
+        None => Vec::new(),
+    };
 
     let a9_records = match outer_preamble_range(&data) {
         Some(range) => {
@@ -1523,7 +1548,7 @@ pub(crate) fn scan_bytes<'a>(
         ..Default::default()
     };
     if let Some(b) = main_data_stream.as_deref() {
-        let fbb_ranges = fbb_run_ranges(b);
+        let fbb_ranges = fbb_run_ranges(ctx, b)?;
         census.fbb_runs = fbb_ranges.len();
         census.fbb_face_rows = fbb_ranges
             .iter()

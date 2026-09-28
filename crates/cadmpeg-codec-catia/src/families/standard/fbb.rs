@@ -154,7 +154,7 @@ pub(super) fn standard_face_frame_vectors(
     bytes: &[u8],
     expected_face_count: usize,
 ) -> Result<Vec<Option<FiniteVector<3>>>, CodecError> {
-    let runs = crate::container::fbb_run_ranges(bytes);
+    let runs = crate::container::fbb_run_ranges(ctx, bytes)?;
     if runs.len() > 1 {
         let mut combined = Vec::new();
         let mut complete = true;
@@ -895,7 +895,7 @@ pub(super) fn standard_fbb_groups(
     bytes: &[u8],
 ) -> Result<Vec<FbbFaceRun>, CodecError> {
     let mut groups = Vec::new();
-    for range in crate::container::fbb_run_ranges(bytes) {
+    for range in crate::container::fbb_run_ranges(ctx, bytes)? {
         if let Some(group) =
             parse_standard_group(ctx, bytes, range.start, range.len() / fbb_row::LEN)?
         {
@@ -985,7 +985,7 @@ pub(super) fn fbb_population_layouts(
     bytes: &[u8],
 ) -> Result<Vec<FbbPopulationLayout>, CodecError> {
     let mut layouts = Vec::new();
-    for range in crate::container::fbb_run_ranges(bytes) {
+    for range in crate::container::fbb_run_ranges(ctx, bytes)? {
         let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {
             continue;
         };
@@ -1068,7 +1068,7 @@ pub(crate) fn selected_standard_run(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<FbbFaceRun>, CodecError> {
-    let ranges = crate::container::fbb_run_ranges(bytes);
+    let ranges = crate::container::fbb_run_ranges(ctx, bytes)?;
     if let [range] = ranges.as_slice() {
         // A single marker run has no competing population to disambiguate.
         return Ok(FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN));
