@@ -5303,32 +5303,35 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
 
 /// Decode atomically resolved datum-plane descriptor blocks.
 pub(super) fn feature_datum_plane_descriptors(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     headers: &[FeatureDatumPlaneHeader],
-) -> Vec<FeatureDatumPlaneDescriptor> {
+) -> Result<Vec<FeatureDatumPlaneDescriptor>, CodecError> {
     let blocks = offset_data_block_bytes(container);
-    headers
-        .iter()
-        .flat_map(|header| {
-            header
-                .resolved_data_blocks(DatumPlaneBlockLane::Descriptor)
-                .enumerate()
-                .filter_map(|(ordinal, data_block)| {
-                    let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
-                    let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
-                    Some(FeatureDatumPlaneDescriptor {
-                        id: format!("{}-descriptor-{ordinal:010}", header.id),
-                        operation_label: header.operation_label.clone(),
-                        datum_plane_header: header.id.clone(),
-                        ordinal: ordinal as u32,
-                        data_block: data_block.clone(),
-                        descriptor,
-                        source_offset,
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+    let mut descriptors = Vec::new();
+    for header in headers {
+        for (ordinal, data_block) in header
+            .resolved_data_blocks(DatumPlaneBlockLane::Descriptor)
+            .enumerate()
+        {
+            let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
+                continue;
+            };
+            let Some(descriptor) = crate::om::datum_plane_descriptor_block(ctx, bytes)? else {
+                continue;
+            };
+            descriptors.push(FeatureDatumPlaneDescriptor {
+                id: format!("{}-descriptor-{ordinal:010}", header.id),
+                operation_label: header.operation_label.clone(),
+                datum_plane_header: header.id.clone(),
+                ordinal: ordinal as u32,
+                data_block: data_block.clone(),
+                descriptor,
+                source_offset,
+            });
+        }
+    }
+    Ok(descriptors)
 }
 
 /// Join resolved datum-plane blocks to operation inputs addressing the same block.

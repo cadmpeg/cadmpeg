@@ -2268,9 +2268,10 @@ fn operation_body_reference_lane_values<T>(
 
 /// Decode one complete datum-plane descriptor block.
 pub(crate) fn datum_plane_descriptor_block(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Option<plane_descriptor::PlaneDescriptor> {
-    plane_descriptor::PlaneDescriptor::read(bytes)
+) -> Result<Option<plane_descriptor::PlaneDescriptor>, CodecError> {
+    plane_descriptor::PlaneDescriptor::read_charged(ctx, bytes)
 }
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch

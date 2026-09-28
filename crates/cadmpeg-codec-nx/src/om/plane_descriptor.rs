@@ -2,6 +2,8 @@
 //! Exact forty-byte datum-plane descriptors.
 
 use super::compact::CompactIndexAtom;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlaneDescriptor {
@@ -11,7 +13,7 @@ pub(crate) struct PlaneDescriptor {
 }
 
 impl PlaneDescriptor {
-    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+    fn parse(bytes: &[u8]) -> Option<(&[u8], CompactIndexAtom, &[u8])> {
         if bytes.len() != 40 {
             return None;
         }
@@ -37,11 +39,27 @@ impl PlaneDescriptor {
         if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
             return None;
         }
+        Some((identity, schema, label))
+    }
+
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        let (identity, schema, label) = Self::parse(bytes)?;
         Some(Self {
             identity: identity.iter().copied().map(char::from).collect(),
             schema,
             label: label.iter().copied().map(char::from).collect(),
         })
+    }
+
+    pub(crate) fn read_charged(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<Self>, CodecError> {
+        let Some((identity, schema, label)) = Self::parse(bytes) else { return Ok(None); };
+        let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
+        let label = ctx.copy_retained(label, "NX datum plane descriptor label")?;
+        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label)) else { return Ok(None); };
+        Ok(Some(Self { identity, schema, label }))
     }
 
     // This conversion consumes the input carrier at the typed construction boundary.
