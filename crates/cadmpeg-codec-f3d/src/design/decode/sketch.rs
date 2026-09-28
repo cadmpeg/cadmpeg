@@ -822,7 +822,7 @@ pub(crate) fn decode_lost_edge_references(
                 continue;
             };
             let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
+                lp_ascii_filtered_view(bytes, header_offset, 0..=2000, u8::is_ascii_graphic)
             else {
                 continue;
             };
@@ -837,7 +837,7 @@ pub(crate) fn decode_lost_edge_references(
             };
             let next_byte_offset = offset + marker.len();
             let Some((next_class_tag, after_next_tag)) =
-                lp_ascii_filtered(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
+                lp_ascii_filtered_view(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)
             else {
                 continue;
             };
@@ -850,9 +850,9 @@ pub(crate) fn decode_lost_edge_references(
             let Ok(reference) = LostEdgeReference::new(
                 ids::native_lost_edge_reference_id(&entry.name, header_offset),
                 header_offset as u64,
-                class_tag,
+                class_tag.to_owned(),
                 record_index,
-                next_class_tag,
+                next_class_tag.to_owned(),
                 next_record_index,
             ) else {
                 continue;
