@@ -1461,7 +1461,7 @@ pub(super) fn try_decode_geometry(
             .filter_map(|body| body_node_ids.get(body))
             .map(BTreeSet::len)
             .sum::<usize>();
-        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+        apply_preselected_active_body_selection(ctx, &mut ir, selected, source, Some(selected_hits))?
     } else {
         select_active_body(ctx, &mut ir, &body_node_ids, rmfastload_ids)?
     };
@@ -1944,29 +1944,30 @@ pub(super) fn rmfastload_stream_indices(
 }
 
 fn apply_preselected_active_body_selection(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     selected: &BTreeSet<BodyId>,
     selector: &str,
     selected_hits: Option<usize>,
-) -> bool {
+) -> Result<bool, CodecError> {
     if selected.is_empty() {
-        return false;
+        return Ok(false);
     }
-    let emitted = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut emitted = BTreeSet::new();
+    for body in &ir.model.bodies {
+        insert_retained_id(ctx, &mut emitted, body.id.as_str(), "nx emitted body selection")?;
+    }
     if !selected.is_subset(&emitted) {
-        return false;
+        return Ok(false);
     }
-    prune_inactive_topology(ir, selected);
+    prune_inactive_topology(ctx, ir, selected)?;
     if let Some(source) = &mut ir.source {
-        source.attributes.insert(
+        insert_body_selection_attribute(
+            ctx,
+            &mut source.attributes,
             cadmpeg_core::nonblank_literal!("active_body_selector"),
-            selector.to_string(),
-        );
+            selector,
+        )?;
         let (hit_attribute, count_attribute) = match selector {
             "rmfastload_object_id_membership" => (
                 Some(cadmpeg_core::nonblank_literal!("rmfastload_hits")),
@@ -1979,15 +1980,23 @@ fn apply_preselected_active_body_selection(
             _ => (None, cadmpeg_core::nonblank_literal!("active_body_count")),
         };
         if let (Some(attribute), Some(selected_hits)) = (hit_attribute, selected_hits) {
-            source
-                .attributes
-                .insert(attribute, selected_hits.to_string());
+            insert_body_selection_attribute(ctx, &mut source.attributes, attribute, selected_hits)?;
         }
-        source
-            .attributes
-            .insert(count_attribute, selected.len().to_string());
+        insert_body_selection_attribute(ctx, &mut source.attributes, count_attribute, selected.len())?;
     }
-    true
+    Ok(true)
+}
+
+fn insert_body_selection_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: cadmpeg_core::text::NonBlankString,
+    value: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    let value = render_retained_text(ctx, value, "nx body selection attribute")?;
+    ctx.charge_collection_items(1, "nx body selection attributes")?;
+    attributes.insert(key, value);
+    Ok(())
 }
 
 pub(super) fn select_active_body(
@@ -2008,12 +2017,13 @@ pub(super) fn select_active_body(
         .filter_map(|body| body_node_ids.get(body))
         .map(BTreeSet::len)
         .sum::<usize>();
-    Ok(apply_preselected_active_body_selection(
+    apply_preselected_active_body_selection(
+        ctx,
         ir,
         &selected,
         "rmfastload_object_id_membership",
         Some(selected_hits),
-    ))
+    )
 }
 
 fn select_terminal_feature_bodies(
@@ -2045,103 +2055,97 @@ fn select_terminal_feature_bodies(
     else {
         return Ok(false);
     };
-    Ok(apply_preselected_active_body_selection(
+    apply_preselected_active_body_selection(
+        ctx,
         ir,
         &selected,
         "terminal_feature_body_lineage",
         None,
-    ))
+    )
 }
 
-fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {
+fn prune_inactive_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    selected: &BTreeSet<BodyId>,
+) -> Result<(), CodecError> {
     ir.model.bodies.retain(|body| selected.contains(&body.id));
     ir.model
         .regions
         .retain(|region| selected.contains(&region.body));
-    let regions: BTreeSet<_> = ir
-        .model
-        .regions
-        .iter()
-        .map(|region| region.id.clone())
-        .collect();
+    let mut regions: BTreeSet<RegionId> = BTreeSet::new();
+    for region in &ir.model.regions {
+        insert_retained_id(ctx, &mut regions, region.id.as_str(), "nx active regions")?;
+    }
     ir.model
         .shells
         .retain(|shell| regions.contains(&shell.region));
-    let shells: BTreeSet<_> = ir
-        .model
-        .shells
-        .iter()
-        .map(|shell| shell.id.clone())
-        .collect();
+    let mut shells: BTreeSet<ShellId> = BTreeSet::new();
+    for shell in &ir.model.shells {
+        insert_retained_id(ctx, &mut shells, shell.id.as_str(), "nx active shells")?;
+    }
     ir.model.faces.retain(|face| shells.contains(&face.shell));
-    let faces: BTreeSet<_> = ir.model.faces.iter().map(|face| face.id.clone()).collect();
+    let mut faces: BTreeSet<FaceId> = BTreeSet::new();
+    for face in &ir.model.faces {
+        insert_retained_id(ctx, &mut faces, face.id.as_str(), "nx active faces")?;
+    }
     ir.model.loops.retain(|loop_| faces.contains(&loop_.face));
-    let loops: BTreeSet<_> = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| loop_.id.clone())
-        .collect();
+    let mut loops: BTreeSet<LoopId> = BTreeSet::new();
+    for loop_ in &ir.model.loops {
+        insert_retained_id(ctx, &mut loops, loop_.id.as_str(), "nx active loops")?;
+    }
     ir.model
         .coedges
         .retain(|coedge| loops.contains(&coedge.owner_loop));
-    let edges: BTreeSet<_> = ir
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| coedge.edge.clone())
-        .chain(
-            ir.model
-                .shells
-                .iter()
-                .flat_map(|shell| shell.wire_edges().iter().cloned()),
-        )
-        .collect();
+    let mut edges: BTreeSet<EdgeId> = BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        insert_retained_id(ctx, &mut edges, coedge.edge.as_str(), "nx active edges")?;
+    }
+    for shell in &ir.model.shells {
+        for edge in shell.wire_edges() {
+            insert_retained_id(ctx, &mut edges, edge.as_str(), "nx active edges")?;
+        }
+    }
     ir.model.edges.retain(|edge| edges.contains(&edge.id));
-    let vertices: BTreeSet<_> = ir
-        .model
-        .edges
-        .iter()
-        .flat_map(|edge| [edge.start.clone(), edge.end.clone()])
-        .chain(
-            ir.model
-                .shells
-                .iter()
-                .flat_map(|shell| shell.free_vertices().iter().cloned()),
-        )
-        .collect();
+    let mut vertices: BTreeSet<VertexId> = BTreeSet::new();
+    for edge in &ir.model.edges {
+        insert_retained_id(ctx, &mut vertices, edge.start.as_str(), "nx active vertices")?;
+        insert_retained_id(ctx, &mut vertices, edge.end.as_str(), "nx active vertices")?;
+    }
+    for shell in &ir.model.shells {
+        for vertex in shell.free_vertices() {
+            insert_retained_id(ctx, &mut vertices, vertex.as_str(), "nx active vertices")?;
+        }
+    }
     ir.model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    let points: BTreeSet<_> = ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.point.clone())
-        .collect();
+    let mut points: BTreeSet<PointId> = BTreeSet::new();
+    for vertex in &ir.model.vertices {
+        insert_retained_id(ctx, &mut points, vertex.point.as_str(), "nx active points")?;
+    }
     ir.model.points.retain(|point| points.contains(&point.id));
-    prune_inactive_geometry(ir);
+    prune_inactive_geometry(ctx, ir)?;
+    Ok(())
 }
 
-fn prune_inactive_geometry(ir: &mut CadIr) {
-    let mut surfaces: BTreeSet<_> = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| face.surface.clone())
-        .collect();
-    let mut curves: BTreeSet<_> = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().cloned())
-        .collect();
-    let pcurves: BTreeSet<_> = ir
-        .model
-        .coedges
-        .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|pcurve| pcurve.pcurve.clone()))
-        .collect();
+fn prune_inactive_geometry(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+    let mut surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
+    for face in &ir.model.faces {
+        insert_retained_id(ctx, &mut surfaces, face.surface.as_str(), "nx active surfaces")?;
+    }
+    let mut curves: BTreeSet<CurveId> = BTreeSet::new();
+    for edge in &ir.model.edges {
+        if let Some(curve) = edge.curve() {
+            insert_retained_id(ctx, &mut curves, curve.as_str(), "nx active curves")?;
+        }
+    }
+    let mut pcurves: BTreeSet<PcurveId> = BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        for pcurve in &coedge.pcurves {
+            insert_retained_id(ctx, &mut pcurves, pcurve.pcurve.as_str(), "nx active pcurves")?;
+        }
+    }
 
     loop {
         let old_surface_count = surfaces.len();
@@ -2156,21 +2160,18 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     let support = definition_payload.support();
-                    {
-                        surfaces.insert(support.clone());
-                    }
+                    insert_retained_id(ctx, &mut surfaces, support.as_str(), "nx active surfaces")?;
                 }
                 ProceduralSurfaceDefinition::Blend(definition_payload) => {
                     let supports = definition_payload.supports();
                     let spine = definition_payload.spine();
 
-                    surfaces.extend(
-                        supports
-                            .iter()
-                            .flatten()
-                            .map(|support| support.surface.clone()),
-                    );
-                    curves.extend(spine.iter().cloned());
+                    for support in supports.iter().flatten() {
+                        insert_retained_id(ctx, &mut surfaces, support.surface.as_str(), "nx active surfaces")?;
+                    }
+                    if let Some(spine) = spine {
+                        insert_retained_id(ctx, &mut curves, spine.as_str(), "nx active curves")?;
+                    }
                 }
                 _ => {}
             }
@@ -2184,20 +2185,19 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    surfaces.extend(
-                        context
-                            .sides()
-                            .iter()
-                            .filter_map(|side| side.surface.clone()),
-                    );
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            insert_retained_id(ctx, &mut surfaces, surface.as_str(), "nx active surfaces")?;
+                        }
+                    }
                 }
-                ProceduralCurveDefinition::SurfaceCurve { family } => surfaces.extend(
-                    family
-                        .context()
-                        .sides()
-                        .iter()
-                        .filter_map(|side| side.surface.clone()),
-                ),
+                ProceduralCurveDefinition::SurfaceCurve { family } => {
+                    for side in family.context().sides() {
+                        if let Some(surface) = &side.surface {
+                            insert_retained_id(ctx, &mut surfaces, surface.as_str(), "nx active surfaces")?;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -2206,20 +2206,22 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
         }
     }
 
-    let surface_constructions = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| surfaces.contains(&surface.id))
-        .filter_map(|surface| surface.geometry.procedural_construction().cloned())
-        .collect::<BTreeSet<_>>();
-    let curve_constructions = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| curves.contains(&curve.id))
-        .filter_map(|curve| curve.geometry.procedural_construction().cloned())
-        .collect::<BTreeSet<_>>();
+    let mut surface_constructions: BTreeSet<ProceduralSurfaceId> = BTreeSet::new();
+    for surface in &ir.model.surfaces {
+        if surfaces.contains(&surface.id) {
+            if let Some(construction) = surface.geometry.procedural_construction() {
+                insert_retained_id(ctx, &mut surface_constructions, construction.as_str(), "nx active surface constructions")?;
+            }
+        }
+    }
+    let mut curve_constructions: BTreeSet<ProceduralCurveId> = BTreeSet::new();
+    for curve in &ir.model.curves {
+        if curves.contains(&curve.id) {
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                insert_retained_id(ctx, &mut curve_constructions, construction.as_str(), "nx active curve constructions")?;
+            }
+        }
+    }
     ir.model
         .procedural_surfaces
         .retain(|procedural| surface_constructions.contains(&procedural.id));
@@ -2233,6 +2235,7 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
     ir.model
         .pcurves
         .retain(|pcurve| pcurves.contains(&pcurve.id));
+    Ok(())
 }
 
 fn finalize_point_topology(
