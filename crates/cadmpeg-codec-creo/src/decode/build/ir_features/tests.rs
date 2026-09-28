@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 
 use super::{
     admit_new_feature_id, merge_feature_dependencies, merge_feature_source_properties, ordered_row_feature_ids,
-    refresh_feature_outputs,
+    refresh_feature_outputs, emit_model_features,
 };
 
 fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {
@@ -133,6 +133,99 @@ fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
     })
     .expect("service profile admits one new member");
     assert_eq!(target.as_slice(), &[first, second]);
+}
+
+#[test]
+fn native_operation_feature_refuses_kind_retained_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.operations.push(crate::feature::operations::FeatureOperation {
+        feature_id: 40,
+        kind: crate::feature::operations::OperationKind::Native,
+        name: crate::feature::operations::OperationName::Derived,
+        recipe: crate::feature::operations::RecipeResolution::None,
+        display_state_conflict: false,
+        depdb: None,
+        offset: 0,
+        state_offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let error = emit_model_features(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("native kind needs retained text");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo native Feature kind"), "{error:?}");
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        emit_model_features(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service-profile native Feature");
+    let [feature] = ir.model.features.as_slice() else {
+        panic!("one native Feature expected");
+    };
+    assert!(matches!(feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, parameters }
+        ) if kind.as_str() == "Native Feature" && parameters.is_empty()));
+}
+
+#[test]
+fn native_row_feature_refuses_kind_retained_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(one_feature_row());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let error = emit_model_features(
+        &ctx,
+        &scan,
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("row-native kind needs retained text");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo native row Feature kind"), "{error:?}");
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        emit_model_features(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service-profile row-native Feature");
+    let [feature] = ir.model.features.as_slice() else {
+        panic!("one row-native Feature expected");
+    };
+    assert!(matches!(feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Native { kind, parameters }
+        ) if kind.as_str() == "Native Feature" && parameters.is_empty()));
 }
 
 #[test]
