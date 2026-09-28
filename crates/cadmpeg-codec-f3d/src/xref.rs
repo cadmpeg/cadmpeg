@@ -132,7 +132,7 @@ enum StringProperty {
 }
 
 impl ReferenceJson {
-    fn into_record(self, ordinal: usize) -> Result<XrefReference, CodecError> {
+    fn into_record(self, ctx: &DecodeContext<'_>, ordinal: usize) -> Result<XrefReference, CodecError> {
         let Self::Xref {
             from,
             relative_path,
@@ -175,7 +175,7 @@ impl ReferenceJson {
             ))
         })?;
         Ok(XrefReference {
-            id: format!("f3d:xref:reference#{ordinal}"),
+            id: xref_id_charged(ctx, format_args!("f3d:xref:reference#{ordinal}"))?,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
             from,
@@ -185,6 +185,32 @@ impl ReferenceJson {
             transform: None,
         })
     }
+}
+
+fn xref_id_charged(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "retain F3D xref record ID";
+    struct Length(usize);
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut length = Length(0);
+    std::fmt::write(&mut length, args.clone())
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+    let bytes = u64::try_from(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, u64::MAX))?;
+    ctx.charge_retained(bytes, OPERATION)?;
+    let mut id = String::new();
+    id.try_reserve(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, bytes))?;
+    std::fmt::write(&mut id, args)
+        .map_err(|_| CodecError::Malformed("F3D xref ID formatting failed".into()))?;
+    Ok(id)
 }
 
 fn redirections_error(message: impl std::fmt::Display) -> CodecError {
@@ -298,7 +324,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
                 format_args!("designs[{ordinal}].targetFileName"),
             )?;
             designs.push(XrefDesign {
-                id: format!("f3d:xref:design#{ordinal}"),
+                id: xref_id_charged(ctx, format_args!("f3d:xref:design#{ordinal}"))?,
                 ordinal: ordinal_at(ordinal)?,
                 file_version: design.file_version,
                 target_file_name: design.target_file_name,
@@ -321,7 +347,7 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         ctx.charge_collection_items(1, "admit F3D xref references")?;
         admitted_references.try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("admit F3D xref references", 0, 1))?;
-        admitted_references.push(reference.into_record(ordinal)?);
+        admitted_references.push(reference.into_record(ctx, ordinal)?);
     }
     Ok(XrefTable {
         designs,
