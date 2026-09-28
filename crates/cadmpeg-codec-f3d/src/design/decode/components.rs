@@ -7,7 +7,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::fmt::Write;
 
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::{native_scope_charged, next_indexed_record_offset};
 use crate::design::decode::text::lp_utf16_bounded_charged;
@@ -67,7 +67,7 @@ fn exact_component_occurrence(
     stream: &str,
 ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
     let parsed = (|| {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     if after_tag != start.checked_add(7)? {
         return None;
     }
@@ -124,7 +124,7 @@ fn exact_component_occurrence(
         }
         _ => return None,
     };
-    let class_tag = class_tag.try_into().ok()?;
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     let byte_offset = u64::try_from(start).ok()?;
     Some((
         class_tag,

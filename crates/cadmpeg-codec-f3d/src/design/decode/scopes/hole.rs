@@ -3,7 +3,7 @@
 
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -69,7 +69,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
         }
         for (start, paired_at) in records.frames(*record_index) {
             let Some((_, after_tag)) =
-                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
@@ -123,11 +123,11 @@ fn exact_hole_face_selection(
         }
         for (start, _paired_at) in records.frames(*record_index) {
             let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
-            let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag)
+            let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag)
             else {
                 continue;
             };

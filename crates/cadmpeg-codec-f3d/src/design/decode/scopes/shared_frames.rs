@@ -3,7 +3,7 @@
 //! scope families.
 
 use crate::bytes::f64s_at;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
@@ -15,8 +15,8 @@ pub(in crate::design::decode) fn exact_indexed_header_at(
     start: usize,
     record_index: u32,
 ) -> Option<String> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
-    (View::u32_le_at(bytes, after_tag)? == record_index).then_some(class_tag)
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    (View::u32_le_at(bytes, after_tag)? == record_index).then(|| class_tag.to_owned())
 }
 
 pub(super) fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
@@ -58,7 +58,7 @@ pub(super) fn exact_fixed_scalar(
             matches!(frame_length, 100 | 103 | 104 | 105).then_some(())?;
             if frame_length == 100 || frame_length == 103 {
                 let (_, after_tag) =
-                    lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+                    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
                 if after_tag != start + 7
                     || bytes.get(start + 11..start + 19) != Some(&[0; 8])
                     || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])

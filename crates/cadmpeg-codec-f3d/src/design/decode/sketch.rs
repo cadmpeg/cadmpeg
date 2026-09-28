@@ -8,8 +8,10 @@ use crate::records::sketch_placement::{
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{
-    f64s_at, lp_ascii_filtered, take_reference, utf16le_at, Reference,
+    f64s_at, take_reference, utf16le_at, Reference,
 };
+use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -441,7 +443,7 @@ fn decode_sketch_visibilities_in_stream(
             )));
         };
         let Some((class_tag, after_tag)) =
-            lp_ascii_filtered(bytes, member_at, 3..=3, u8::is_ascii_digit)
+            lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
         else {
             return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
@@ -541,9 +543,9 @@ fn parse_member_run_head_placement(
     let entity_index = u32::try_from(entity_id.suffix()).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(1)?, entity_index)?;
     let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let paired_class_tag =
-        crate::records::references::DesignClassTag::try_from(paired_class_tag).ok()?;
+        crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?;
     // The paired record's prologue: the u32 index, zero bytes to offset 19,
     // then a marked u64 reference naming the head record.
     if paired_after_tag != paired_at + 7
@@ -558,8 +560,8 @@ fn parse_member_run_head_placement(
     }
     // Locate the head record and decode its transform.
     let head_at = records.offsets(head_index).first().copied()?;
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, head_at, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if after_tag != head_at + 7 {
         return None;
     }
@@ -619,12 +621,12 @@ fn parse_sketch_placement_candidates(
             continue;
         }
         let Some((class_tag, after_tag)) =
-            lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)
         else {
             continue;
         };
         let Some((paired_class_tag, paired_after_tag)) =
-            lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)
+            lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)
         else {
             continue;
         };
@@ -634,11 +636,11 @@ fn parse_sketch_placement_candidates(
         {
             continue;
         }
-        let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag) else {
+        let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag) else {
             continue;
         };
         let Ok(paired_class_tag) =
-            crate::records::references::DesignClassTag::try_from(paired_class_tag)
+            crate::design::decode::text::class_tag_from_view(paired_class_tag)
         else {
             continue;
         };
@@ -1032,7 +1034,7 @@ fn parse_legacy_sketch_member_run(
         return None;
     }
     let (paired_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != paired_at + 7
         || paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -1675,7 +1677,7 @@ fn read_property_block(payload: &[u8], cursor: &mut usize) -> Option<Vec<(String
                 let (key, after_key) =
                     lp_ascii_filtered(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
                 let (type_name, after_type) =
-                    lp_ascii_filtered(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
+                    lp_ascii_filtered_view(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
                 if type_name != "IntrinsicMetaTypeuint64" {
                     return None;
                 }
@@ -1920,8 +1922,8 @@ fn decode_sketch_text_head(
 ) -> Option<(SketchTextHead, SketchTextIdentity)> {
     // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
     // LP-ASCII record name.
-    let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
-    let (_, mut cursor) = lp_ascii_filtered(
+    let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let (_, mut cursor) = lp_ascii_filtered_view(
         payload,
         after_tag.checked_add(8)?,
         0..=256,
@@ -2002,7 +2004,7 @@ fn decode_sketch_text_head(
 /// width prefix is zero, unlike the legacy class form's one-byte prefix of
 /// one; the f64 width factor and the remaining metrics have the same roles.
 fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, NonNegativeReal)> {
-    let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
         || View::u32_le_at(payload, after_tag).is_none()
         || payload.get(11..20)?.iter().any(|byte| *byte != 0)
@@ -2441,7 +2443,7 @@ fn decode_version_zero_sketch_point(
 }
 
 fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<DecodedSketchPoint> {
-    let (_, after_class_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
+    let (_, after_class_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
     let header_end = after_class_tag.checked_add(4)?;
     if class_version == 0 {
         return decode_version_zero_sketch_point(payload, header_end);
@@ -2975,7 +2977,7 @@ pub(crate) fn decode_sketch_surfaces(
         while let Some(record_at) = next_indexed_record_offset(bytes, at) {
             at = record_at + 1;
             let Some((class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, record_at, 0..=2000, u8::is_ascii_graphic)
+                lp_ascii_filtered_view(bytes, record_at, 0..=2000, u8::is_ascii_graphic)
             else {
                 continue;
             };
@@ -2990,7 +2992,7 @@ pub(crate) fn decode_sketch_surfaces(
                 id: ids::native_sketch_surface_id(&entry.name, record_at),
                 record_index,
                 owner_reference: None,
-                class_tag: class_tag.try_into().map_err(CodecError::Malformed)?,
+                class_tag: crate::design::decode::text::class_tag_from_view(class_tag).map_err(CodecError::Malformed)?,
                 byte_offset: record_at as u64,
                 entity_genesis: surface.entity_genesis,
                 persistent_id: surface.persistent_id,
@@ -3396,7 +3398,7 @@ fn decode_text_frame_line(
             cursor = end + zero_count;
         }
         let (class_tag, after_tag) =
-            lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
+            lp_ascii_filtered_view(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
         if class_tag.len() != 3
             || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
             || View::u32_le_at(payload, after_tag) != Some(record_index)
@@ -3879,7 +3881,7 @@ impl SketchRelationMaskWidth {
 
 /// Read the relation's mask width from its leading-block presence member.
 pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWidth> {
-    let (_, start) = lp_ascii_filtered(record, 15, 0..=256, u8::is_ascii_graphic)?;
+    let (_, start) = lp_ascii_filtered_view(record, 15, 0..=256, u8::is_ascii_graphic)?;
     SketchRelationMaskWidth::from_leading_block(*record.get(start)?)
 }
 
@@ -4079,7 +4081,7 @@ fn parse_classed_sketch_relation(
 ) -> Option<ParsedSketchRelation> {
     // The record header is the LP-ASCII class tag, the u64 entity id, and the
     // LP-ASCII record name; the member payload follows it.
-    let (_, start) = lp_ascii_filtered(payload, 15, 0..=256, u8::is_ascii_graphic)?;
+    let (_, start) = lp_ascii_filtered_view(payload, 15, 0..=256, u8::is_ascii_graphic)?;
     let mask_width = SketchRelationMaskWidth::from_leading_block(*payload.get(start)?)?;
     let paired_run = mask_width.has_paired_member_run();
     let mut cursor = start + 1;

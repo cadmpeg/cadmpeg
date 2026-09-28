@@ -2,7 +2,7 @@
 //! Exact copy-paste bodies operation scopes.
 
 use super::shared_frames::marked_record_reference;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
@@ -45,7 +45,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
         .checked_add(1)?;
     let body_group_at = records.first_at_or_after(search_at, body_group_record_index)?;
     let (body_group_class_tag, body_group_after_tag) =
-        lp_ascii_filtered(bytes, body_group_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, body_group_at, 3..=3, u8::is_ascii_digit)?;
     let body_group_after_index = body_group_after_tag.checked_add(4)?;
     if bytes.get(body_group_after_index..body_group_after_index + 10)? != [0; 10] {
         return None;
@@ -69,7 +69,7 @@ pub(super) fn exact_copy_paste_bodies_operation(
     }
     let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
     let (relation_class_tag, after_tag) =
-        lp_ascii_filtered(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_digit)?;
     let after_index = after_tag.checked_add(4)?;
     if bytes.get(after_index..after_index + 8)? != [0; 8] {
         return None;
@@ -112,10 +112,10 @@ pub(super) fn exact_copy_paste_bodies_operation(
     DesignCopyPasteBodiesOperation::try_new(
         bodies,
         body_group_record_index,
-        body_group_class_tag.try_into().ok()?,
+        crate::design::decode::text::class_tag_from_view(body_group_class_tag).ok()?,
         u64::try_from(body_group_at).ok()?,
         relation_record_index,
-        relation_class_tag.try_into().ok()?,
+        crate::design::decode::text::class_tag_from_view(relation_class_tag).ok()?,
         u64::try_from(relation_at).ok()?,
     )
     .ok()

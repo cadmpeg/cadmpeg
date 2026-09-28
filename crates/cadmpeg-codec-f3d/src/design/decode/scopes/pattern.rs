@@ -3,7 +3,7 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -463,7 +463,7 @@ fn exact_legacy_circular_pattern_axis(
 ) -> Option<(patterns::DesignCircularPatternAxis, u32)> {
     use patterns::DesignCircularPatternAxis;
 
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != start + 7
@@ -533,7 +533,7 @@ fn exact_legacy_circular_pattern_axis(
         return None;
     }
     let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || paired_after_tag != paired_at + 7
@@ -582,7 +582,7 @@ fn exact_pattern_identity_wrapper(
         return None;
     };
     let start = *start;
-    let (_, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     if after_tag != start + 7
         || View::u32_le_at(bytes, after_tag) != Some(record_index)
         || bytes.get(start + 11..start + 21) != Some(&[0; 10])
@@ -602,7 +602,7 @@ fn exact_pattern_identity_wrapper(
         return None;
     }
     let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
-    let (_, nested_one_tag) = lp_ascii_filtered(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
+    let (_, nested_one_tag) = lp_ascii_filtered_view(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
     if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
         || bytes.get(nested_one_at + 11..nested_one_at + 21) != Some(&[0; 10])
         || marked_record_reference(bytes, nested_one_at + 21) != record_index.checked_add(2)
@@ -611,9 +611,9 @@ fn exact_pattern_identity_wrapper(
         return None;
     }
     let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
-    let (_, identity_tag) = lp_ascii_filtered(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
+    let (_, identity_tag) = lp_ascii_filtered_view(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
     let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
-    let (_, next_tag) = lp_ascii_filtered(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
+    let (_, next_tag) = lp_ascii_filtered_view(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
     if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
         || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
         || identity_at.checked_add(29) != Some(next_at)
@@ -635,7 +635,7 @@ fn exact_circular_pattern_axis(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignCircularPatternAxis> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != start + 7
@@ -671,7 +671,7 @@ fn exact_circular_pattern_axis(
         return None;
     }
     let (paired_class_tag, paired_after_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if paired_class_tag.len() != 3
         || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || paired_after_tag != paired_at + 7
@@ -699,7 +699,7 @@ fn exact_fixed_pattern_count(
         .frames(record_index)
         .filter_map(|(start, paired_at)| {
             let (class_tag, after_tag) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+                lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
             if class_tag.len() != 3
                 || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
                 || after_tag != start + 7

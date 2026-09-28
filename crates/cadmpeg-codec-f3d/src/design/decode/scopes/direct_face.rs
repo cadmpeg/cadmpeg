@@ -7,7 +7,7 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -229,7 +229,7 @@ pub(super) fn exact_move_operation(
                 _ => None,
             };
             if expected_paired_class.is_some_and(|expected| {
-                lp_ascii_filtered(bytes, paired, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, paired, 3..=3, u8::is_ascii_digit)
                     .is_none_or(|(paired_class_tag, _)| paired_class_tag != expected)
             }) {
                 continue;

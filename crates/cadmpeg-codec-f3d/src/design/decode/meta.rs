@@ -8,7 +8,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
+use crate::bytes::{take_reference, Reference};
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged};
 use crate::container::ContainerScan;
 use crate::ids::native_stream;
@@ -394,7 +395,7 @@ fn record_header_class_tag(
     end: usize,
     expected_entity_id: u64,
 ) -> Option<crate::records::references::DesignClassTag> {
-    let (class_tag, after_tag) = lp_ascii_filtered(bytes, at, 3..=3, u8::is_ascii_digit)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
     let indexed_matches = after_tag
         .checked_add(4)
         .filter(|entity_end| *entity_end <= end)
@@ -408,7 +409,7 @@ fn record_header_class_tag(
     if !indexed_matches && !named_matches {
         return None;
     }
-    crate::records::references::DesignClassTag::try_from(class_tag).ok()
+    crate::design::decode::text::class_tag_from_view(class_tag).ok()
 }
 
 /// Resolve every live sibling record from the primary index. The primary
@@ -687,13 +688,13 @@ fn parse_feature_timeline_record(
         count,
     )) = (|| {
         let (start, end) = (frame.start, frame.end);
-        let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+        let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if class_tag != expected_class_tag
             || View::u64_le_at(bytes, after_tag)? != expected_entity_id
         {
             return None;
         }
-        let (_, payload) = lp_ascii_filtered(
+        let (_, payload) = lp_ascii_filtered_view(
             bytes,
             after_tag.checked_add(8)?,
             0..=2000,
@@ -789,7 +790,7 @@ fn parse_feature_timeline_record(
     .ok() else {
         return Ok(None);
     };
-    let Some(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag).ok()
+    let Some(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag).ok()
     else {
         return Ok(None);
     };

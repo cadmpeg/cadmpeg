@@ -3,7 +3,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
@@ -717,8 +717,8 @@ impl ParsedParameterOwner {
 }
 
 pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
         || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
@@ -839,7 +839,7 @@ fn parse_legacy_parameter_owner_68(
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_68_class(&class_tag)
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
@@ -868,7 +868,7 @@ fn parse_legacy_parameter_owner_68(
     }
     Some(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
@@ -888,7 +888,7 @@ fn parse_legacy_parameter_owner_88(
     evaluated: crate::records::identity::Located<f64>,
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
-    let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
     if !is_legacy_parameter_owner_88_class(&class_tag)
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
@@ -929,7 +929,7 @@ fn parse_legacy_parameter_owner_88(
     }
     Some(ParsedParameterOwner {
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
-        class_tag: class_tag.try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         scope_record_index,
         local_ordinal: 0,
@@ -1042,8 +1042,8 @@ impl ParsedParameterCompanion {
 }
 
 fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> {
-    let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
-    let class_tag = crate::records::references::DesignClassTag::try_from(class_tag).ok()?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::design::decode::text::class_tag_from_view(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)

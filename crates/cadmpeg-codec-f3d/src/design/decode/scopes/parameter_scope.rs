@@ -40,7 +40,7 @@ use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
 use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::{design_record_id_charged, lp_utf16_bounded_charged, lp_utf16_bounded_scoped};
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -738,11 +738,11 @@ pub(super) fn parameter_scope_candidate_headers(
     for (record_index, offsets) in records.records() {
         for at in &offsets[..offsets.len().saturating_sub(1)] {
             let Some((class_tag, _)) =
-                lp_ascii_filtered(bytes, *at, 3..=3, u8::is_ascii_digit)
+                lp_ascii_filtered_view(bytes, *at, 3..=3, u8::is_ascii_digit)
             else {
                 continue;
             };
-            let Ok(class_tag) = class_tag.try_into() else {
+            let Ok(class_tag) = crate::design::decode::text::class_tag_from_view(class_tag) else {
                 continue;
             };
             let byte_offset = u64::try_from(*at).map_err(|_| {
@@ -824,7 +824,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
     let start = usize::try_from(byte_offset).ok()?;
     let paired_at = records.first_at_or_after(start.checked_add(11)?, record_index)?;
     let (paired_class_tag, _) =
-        lp_ascii_filtered(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
+        lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
     let mut fixed_candidate = None;
     let mut fixed_ambiguous = false;
     let mut named_candidate = None;
@@ -1137,7 +1137,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             kind => kind.try_into().ok()?,
         },
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: paired_class_tag.try_into().ok()?,
+        paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
         paired_byte_offset: paired_at as u64,
     })
     .ok()?;
