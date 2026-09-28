@@ -35,8 +35,8 @@ fn transition_state(
     }
 }
 
-fn assert_transition_collection_refusal(operation: &'static str, deleted: bool) {
-    let sketch = Sketch {
+fn empty_sketch() -> Sketch {
+    Sketch {
         id: SketchId::mint("synthetic:test:id#transition-allocation-sketch").unwrap(),
         name: None,
         configuration: None,
@@ -49,7 +49,11 @@ fn assert_transition_collection_refusal(operation: &'static str, deleted: bool) 
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
             Vec::<Vec<SketchEntityUse>>::new()).unwrap(),
         native_ref: None,
-    };
+    }
+}
+
+fn assert_transition_collection_refusal(operation: &'static str, deleted: bool) {
+    let sketch = empty_sketch();
     let previous_topology = AsmHistoricalTopology {
         face_surfaces: vec![
             AsmHistoricalCarrierBinding { entity: 10, carrier: 50 },
@@ -116,6 +120,93 @@ fn transition_cylindrical_selection_refuses_collection_limit() {
 #[test]
 fn transition_deleted_selection_refuses_collection_limit() {
     assert_transition_collection_refusal("f3d transition deleted selection", true);
+}
+
+fn assert_deleted_carrier_refusal(operation: &'static str) {
+    let topology = AsmHistoricalTopology {
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding { entity: 10, carrier: 50 },
+            AsmHistoricalCarrierBinding { entity: 11, carrier: 50 },
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::unique_multi_face_deleted_carrier_family(
+            &[10, 11], &topology, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected deleted carrier refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no deleted carrier refusal at {operation}");
+}
+
+#[test]
+fn deleted_face_uniqueness_refuses_collection_limit() {
+    assert_deleted_carrier_refusal("f3d deleted face uniqueness index");
+}
+
+#[test]
+fn deleted_carrier_family_refuses_collection_limit() {
+    assert_deleted_carrier_refusal("f3d deleted carrier family index");
+}
+
+#[test]
+fn deleted_carrier_face_refuses_collection_limit() {
+    assert_deleted_carrier_refusal("f3d deleted carrier family face");
+}
+
+fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
+    use super::super::ResolvedProfileSelection;
+
+    let sketch = empty_sketch();
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let selections = if region {
+            let region = cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![1]).unwrap();
+            vec![
+                Some(ResolvedProfileSelection::Regions(vec![region])),
+                Some(ResolvedProfileSelection::Loops(vec![0])),
+                Some(ResolvedProfileSelection::Loops(vec![1])),
+            ]
+        } else {
+            vec![
+                Some(ResolvedProfileSelection::Loops(vec![0])),
+                Some(ResolvedProfileSelection::Loops(vec![1])),
+            ]
+        };
+        match super::super::transition_inserted_profile_selection(
+            &sketch, &[], 0.000001, selections, Some(&ctx),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected inserted selection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no inserted selection refusal at {operation}");
+}
+
+#[test]
+fn inserted_transition_loop_refuses_collection_limit() {
+    assert_inserted_selection_refusal("f3d inserted transition profile loop", false);
+}
+
+#[test]
+fn inserted_transition_hole_refuses_collection_limit() {
+    assert_inserted_selection_refusal("f3d inserted transition region hole", true);
+}
+
+#[test]
+fn inserted_transition_region_refuses_collection_limit() {
+    assert_inserted_selection_refusal("f3d inserted transition region", true);
 }
 
 #[test]

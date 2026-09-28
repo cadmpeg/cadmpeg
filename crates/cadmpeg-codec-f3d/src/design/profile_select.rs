@@ -1106,8 +1106,9 @@ fn transition_profile_selection(
     let deleted = &geometric!(state.transition.as_ref()).topology.faces.deleted;
     let faces = geometric!(unique_multi_face_deleted_carrier_family(
         deleted,
-        previous_topology
-    ));
+        previous_topology,
+        resolution.ctx,
+    )?);
     let mut selections = Vec::new();
     for face in faces {
         let selection = match historical_face_points(face, previous_topology, resolution.ctx)? {
@@ -1422,30 +1423,49 @@ fn spatial_polyline_profile_containing_points(
 fn unique_multi_face_deleted_carrier_family(
     deleted_faces: &[i64],
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     let mut seen = HashSet::new();
     let mut families = HashMap::<i64, Vec<i64>>::new();
     for face in deleted_faces.iter().copied() {
-        if !seen.insert(face) {
-            return None;
+        if seen.contains(&face) {
+            return Ok(None);
         }
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d deleted face uniqueness index")?;
+            seen.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d deleted face uniqueness index allocation", 0, 1)
+            })?;
+        }
+        seen.insert(face);
         let mut bindings = topology
             .face_surfaces
             .iter()
             .filter(|binding| binding.entity == face);
-        let carrier = bindings.next()?.carrier;
+        let Some(carrier) = bindings.next().map(|binding| binding.carrier) else {
+            return Ok(None);
+        };
         if bindings.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        families.entry(carrier).or_default().push(face);
+        if !families.contains_key(&carrier) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d deleted carrier family index")?;
+                families.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d deleted carrier family index allocation", 0, 1)
+                })?;
+            }
+        }
+        let family = families.entry(carrier).or_default();
+        push_profile_item(ctx, family, face, "f3d deleted carrier family face")?;
     }
     let mut candidates = families.into_values().filter(|faces| faces.len() > 1);
-    let mut faces = candidates.next()?;
+    let Some(mut faces) = candidates.next() else { return Ok(None); };
     if candidates.next().is_some() {
-        return None;
+        return Ok(None);
     }
     faces.sort_unstable();
-    Some(faces)
+    Ok(Some(faces))
 }
 
 fn unique_resolved_selection<T: PartialEq>(
@@ -1462,44 +1482,51 @@ fn transition_inserted_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-    selections: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
+    selections: Vec<Option<ResolvedProfileSelection>>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let selections = selections.into_iter().flatten().collect::<Vec<_>>();
-    if let Some(selection) = unique_resolved_selection(selections.iter().cloned().map(Some)) {
-        return Ok(Some(selection));
+    let first_selection = selections.iter().flatten().next();
+    if let Some(first) = first_selection {
+        if selections.iter().flatten().all(|selection| selection == first) {
+            return Ok(selections.into_iter().flatten().next());
+        }
     }
-    let loop_selections = selections
+    let mut loop_selections = selections
         .iter()
+        .flatten()
         .filter_map(|selection| match selection {
             ResolvedProfileSelection::Loops(loops) if !loops.is_empty() => Some(loops.as_slice()),
             _ => None,
-        })
-        .collect::<Vec<_>>();
-    if let Some(first) = loop_selections.first() {
-        if loop_selections.iter().all(|candidate| candidate == first) {
-            return Ok(Some(ResolvedProfileSelection::Loops(first.to_vec())));
+        });
+    if let Some(first) = loop_selections.next() {
+        if loop_selections.all(|candidate| candidate == first) {
+            return Ok(selections.into_iter().flatten().find(|selection| {
+                matches!(selection, ResolvedProfileSelection::Loops(loops) if !loops.is_empty())
+            }));
         }
     }
-    if loop_selections.len() == selections.len() {
-        let loops = loop_selections
-            .iter()
-            .flat_map(|selection| selection.iter().copied())
-            .fold(Vec::new(), |mut loops, profile| {
+    if selections.iter().flatten().all(|selection| {
+        matches!(selection, ResolvedProfileSelection::Loops(loops) if !loops.is_empty())
+    }) {
+        let mut loops = Vec::new();
+        for selection in selections.iter().flatten() {
+            let ResolvedProfileSelection::Loops(selected) = selection else { continue; };
+            for profile in selected.iter().copied() {
                 if !loops.contains(&profile) {
-                    loops.push(profile);
+                    push_profile_item(ctx, &mut loops, profile,
+                        "f3d inserted transition profile loop")?;
                 }
-                loops
-            });
+            }
+        }
         if !loops.is_empty()
             && profile_loops_are_independent(sketch, entities, &loops, tolerance, ctx)?
         {
             return Ok(Some(ResolvedProfileSelection::Loops(loops)));
         }
     }
-    let mut regions = selections.iter().filter_map(|selection| match selection {
+    let mut regions = selections.iter().flatten().filter_map(|selection| match selection {
         ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
             [SketchProfileRegion::Loops { loops }] if !loops.holes().is_empty() => {
                 Some((loops.outer(), loops.holes()))
@@ -1515,7 +1542,7 @@ fn transition_inserted_profile_selection(
         return Ok(None);
     }
     let mut has_boundary_support = false;
-    for selection in &selections {
+    for selection in selections.iter().flatten() {
         match selection {
             ResolvedProfileSelection::Regions(regions)
                 if matches!(
@@ -1536,9 +1563,18 @@ fn transition_inserted_profile_selection(
     if !has_boundary_support {
         return Ok(None);
     }
-    Ok(SketchProfileRegion::loops(outer, holes.to_vec())
-        .ok()
-        .map(|region| ResolvedProfileSelection::Regions(vec![region])))
+    let mut owned_holes = Vec::new();
+    for hole in holes.iter().copied() {
+        push_profile_item(ctx, &mut owned_holes, hole,
+            "f3d inserted transition region hole")?;
+    }
+    let Some(region) = SketchProfileRegion::loops(outer, owned_holes).ok() else {
+        return Ok(None);
+    };
+    let mut output = Vec::new();
+    push_profile_item(ctx, &mut output, region,
+        "f3d inserted transition region")?;
+    Ok(Some(ResolvedProfileSelection::Regions(output)))
 }
 
 pub(super) fn historical_face_points(
