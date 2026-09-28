@@ -3987,7 +3987,7 @@ pub(crate) fn decode_body_recipe_operands(
                 continue;
             };
             if let Some(mut operand) =
-                parse_body_recipe_operand_with_index(bytes, records, group, ordinal, header, recipe)
+                parse_body_recipe_operand_with_index(ctx, bytes, records, group, ordinal, header, recipe).transpose()?
             {
                 operand.id =
                     ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
@@ -4054,13 +4054,14 @@ pub(crate) fn decode_body_recipe_operands(
                 scope_reference_ordinal,
             };
             if let Some(mut operand) = parse_body_recipe_operand_frame_with_index(
+                ctx,
                 bytes,
                 records,
                 scope.record_index,
                 owner,
                 header,
                 recipe,
-            ) {
+            ).transpose()? {
                 operand.id =
                     ids::native_design_body_recipe_operand_id(&entry.name, header.byte_offset);
                 out.push(operand);
@@ -4165,14 +4166,16 @@ fn body_recipe_operand_end_with_index(
 
 #[cfg(test)]
 fn parse_body_recipe_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<DesignBodyRecipeOperand> {
+) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     parse_body_recipe_operand_with_index(
+        ctx,
         bytes,
         &records,
         group,
@@ -4183,14 +4186,16 @@ fn parse_body_recipe_operand(
 }
 
 fn parse_body_recipe_operand_with_index(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<DesignBodyRecipeOperand> {
+) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
     parse_body_recipe_operand_frame_with_index(
+        ctx,
         bytes,
         records,
         group.scope_record_index,
@@ -4204,13 +4209,14 @@ fn parse_body_recipe_operand_with_index(
 }
 
 fn parse_body_recipe_operand_frame_with_index(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     owner: DesignOperandOwner,
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
-) -> Option<DesignBodyRecipeOperand> {
+) -> Option<Result<DesignBodyRecipeOperand, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let recipe_at = usize::try_from(recipe.byte_offset).ok()?;
     let prologue_end = body_recipe_prologue_end_with_index(records, start, header.record_index)?;
@@ -4230,7 +4236,17 @@ fn parse_body_recipe_operand_frame_with_index(
     if reference_count > bytes.len().saturating_sub(cursor) / 12 {
         return None;
     }
-    let mut references = Vec::with_capacity(reference_count);
+    let count = match u64::try_from(reference_count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d body recipe reference count", 0, 1))),
+    };
+    if let Err(error) = ctx.charge_collection_items(count, "f3d body recipe references") {
+        return Some(Err(error));
+    }
+    let mut references = Vec::new();
+    if references.try_reserve(reference_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d body recipe reference allocation", 0, 1)));
+    }
     for _ in 0..reference_count {
         references.push(DesignBodyRecipeReference {
             design_reference: View::u64_le_at(bytes, cursor)?,
@@ -4251,8 +4267,16 @@ fn parse_body_recipe_operand_frame_with_index(
     }
     let nested_record_index = View::u64_le_at(bytes, cursor + 1)?;
     let asset_id_at = cursor.checked_add(15)?;
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_id_at, 1..=256)?;
-    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, asset_id_at, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let selector_tail_at = after_context_id.checked_add(4)?;
     let selector_tail: [u8; 4] = bytes
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
@@ -4273,6 +4297,10 @@ fn parse_body_recipe_operand_frame_with_index(
     {
         return None;
     }
+    let recipe_id = match copy_ascii_retained(ctx, &recipe.id, "f3d body recipe operand recipe ID") {
+        Ok(id) => id,
+        Err(error) => return Some(Err(error)),
+    };
     DesignBodyRecipeOperand::try_new(
         crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
             id: String::new(),
@@ -4292,7 +4320,7 @@ fn parse_body_recipe_operand_frame_with_index(
             references,
             nested_record_index,
             nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
-            recipe_id: recipe.id.clone(),
+            recipe_id,
             resolved_face_slot: None,
             resolved_body_state_id: None,
             resolved_body_slot: None,
@@ -4302,6 +4330,7 @@ fn parse_body_recipe_operand_frame_with_index(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 /// Join body-recipe Design references to solved persistent face tags.
