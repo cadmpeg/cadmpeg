@@ -2595,7 +2595,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_split_face_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2609,7 +2610,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -2623,7 +2625,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
             ctx,
             scan,

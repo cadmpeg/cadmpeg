@@ -60,6 +60,20 @@ fn copy_profile_text(
         .map_err(|_| CodecError::malformed("validated profile text is not UTF-8"))
 }
 
+fn insert_profile_set<T: Eq + std::hash::Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if items.contains(&item) { return Ok(false); }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(items.insert(item))
+}
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -168,7 +182,8 @@ impl<'a> SketchCurveSelectionResolution<'a> {
 pub(crate) fn bind_sweep_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, PlanarProfileRef};
     let SketchCurveSelectionResolution {
         scopes,
@@ -182,7 +197,9 @@ pub(crate) fn bind_sweep_sketch_selections(
     } = resolution;
     let path_resolution = resolution.path_resolution();
     for feature in features {
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let Some(native_ref) = feature.native_ref.as_deref() else {
                 break 'feature_edit;
@@ -306,9 +323,9 @@ pub(crate) fn bind_sweep_sketch_selections(
                         section.set_referenced_profile(profile);
                     }
                 }
-                let resolve_path = |path: &PathRef| -> Option<PathRef> {
+                let resolve_path = |path: &PathRef| -> Result<Option<PathRef>, CodecError> {
                     let PathRef::Native(group_id) = path else {
-                        return None;
+                        return Ok(None);
                     };
                     let mut matching_groups = groups.iter().filter(|group| {
                         group.id == *group_id
@@ -316,38 +333,45 @@ pub(crate) fn bind_sweep_sketch_selections(
                             && group.role() == DesignOperandRole::ROLE_0X5
                             && native_stream(&group.id) == Some(stream)
                     });
-                    let group = matching_groups.next()?;
+                    let Some(group) = matching_groups.next() else { return Ok(None); };
                     if matching_groups.next().is_some() || group.members().len() != 1 {
-                        return None;
+                        return Ok(None);
                     }
-                    resolve_entity_selection_path(group, &path_resolution)
+                    resolve_entity_selection_path(group, &path_resolution, ctx)
                 };
                 if let Some(path) = path {
-                    if let Some(resolved) = resolve_path(path) {
+                    if let Some(resolved) = resolve_path(path)? {
                         *path = resolved;
                     }
                 }
                 if let Some(guide_rail) = guide_rail {
-                    if let Some(resolved) = resolve_path(&guide_rail.path) {
+                    if let Some(resolved) = resolve_path(&guide_rail.path)? {
                         guide_rail.path = resolved;
                     }
                 }
             }
         }
+        Ok(())
+        })();
         });
+        edit_result?;
     }
+    Ok(())
 }
 
 /// Resolve `SplitFace` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_split_face_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, SplitFaceTool};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::SplitFace { tool, .. }) =
                 definition
@@ -368,24 +392,31 @@ pub(crate) fn bind_split_face_sketch_selections(
             if matching_groups.next().is_some() {
                 break 'feature_edit;
             }
-            if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+            if let Some(path) = resolve_entity_selection_path(group, &path_resolution, ctx)? {
                 *tool = SplitFaceTool::Path(path);
             }
         }
+        Ok(())
+        })();
         });
+        edit_result?;
     }
+    Ok(())
 }
 
 /// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
 pub(crate) fn bind_surface_trim_sketch_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &SketchCurveSelectionResolution<'_>,
-) {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef};
 
     let path_resolution = resolution.path_resolution();
     for feature in features {
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::TrimSurface { tool, .. }) =
                 definition
@@ -406,12 +437,16 @@ pub(crate) fn bind_surface_trim_sketch_selections(
             if matching_groups.next().is_some() {
                 break 'feature_edit;
             }
-            if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+            if let Some(path) = resolve_entity_selection_path(group, &path_resolution, ctx)? {
                 *tool = path;
             }
         }
+        Ok(())
+        })();
         });
+        edit_result?;
     }
+    Ok(())
 }
 
 pub(crate) fn bind_extrude_profile_selections(
@@ -462,7 +497,8 @@ pub(crate) fn bind_extrude_profile_selections(
                 });
                 if let (Some(group), None) = (entity_groups.next(), entity_groups.next()) {
                     if let Some(selection) =
-                        resolve_entity_selection_profile(group, &curve_resolution.path_resolution())
+                        resolve_entity_selection_profile(group, &curve_resolution.path_resolution(),
+                            resolution.ctx)?
                     {
                         *profile = selection;
                         break 'feature_edit;
@@ -607,18 +643,22 @@ pub(crate) fn bind_extrude_profile_selections(
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::{PathRef, PlanarProfileRef, ProfileRef};
 
     if group.role() != DesignOperandRole::PROFILE {
-        return None;
+        return Ok(None);
     }
-    match resolve_entity_selection_path(group, resolution)? {
+    let Some(path) = resolve_entity_selection_path(group, resolution, ctx)? else {
+        return Ok(None);
+    };
+    match path {
         PathRef::SketchCurves { sketch, curves } => {
-            let source = resolution
+            let Some(source) = resolution
                 .sketches
                 .iter()
-                .find(|source| source.id == sketch)?;
+                .find(|source| source.id == sketch) else { return Ok(None); };
             let mut selected_profiles = Vec::new();
             let mut has_unprofiled_entity = false;
             for curve in &curves {
@@ -632,66 +672,47 @@ fn resolve_entity_selection_profile(
                     continue;
                 };
                 if matches.next().is_some() {
-                    return None;
+                    return Ok(None);
                 }
-                let profile_index = u32::try_from(profile_index).ok()?;
+                let Ok(profile_index) = u32::try_from(profile_index) else { return Ok(None); };
                 if !selected_profiles.contains(&profile_index) {
-                    selected_profiles.push(profile_index);
+                    push_profile_item(ctx, &mut selected_profiles, profile_index,
+                        "f3d entity path selected planar profile")?;
                 }
             }
             if has_unprofiled_entity {
-                Some(ProfileRef::Planar(PlanarProfileRef::SketchEntities {
+                Ok(Some(ProfileRef::Planar(PlanarProfileRef::SketchEntities {
                     sketch,
                     entities: curves,
-                }))
+                })))
             } else {
-                Some(ProfileRef::Planar(
-                    PlanarProfileRef::sketch_profiles(sketch, selected_profiles).ok()?,
-                ))
+                Ok(PlanarProfileRef::sketch_profiles(sketch, selected_profiles)
+                    .ok().map(ProfileRef::Planar))
             }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
-            let source = resolution
+            let Some(source) = resolution
                 .spatial_sketches
                 .iter()
-                .find(|source| source.id == sketch)?;
-            let profiles = selected_profile_indices(
-                curves.iter(),
-                source.profiles.iter().map(|profile| {
-                    profile
-                        .boundary()
-                        .iter()
-                        .map(|use_| &use_.entity)
-                        .collect::<HashSet<_>>()
-                }),
-            )?;
-            Some(ProfileRef::spatial_sketch_profiles(sketch, profiles).ok()?)
+                .find(|source| source.id == sketch) else { return Ok(None); };
+            let mut profiles = Vec::new();
+            for curve in &curves {
+                let mut matches = source.profiles.iter().enumerate().filter(|(_, profile)| {
+                    profile.boundary().iter().any(|use_| use_.entity == *curve)
+                });
+                let Some((index, _)) = matches.next() else { return Ok(None); };
+                if matches.next().is_some() { return Ok(None); }
+                let Ok(index) = u32::try_from(index) else { return Ok(None); };
+                if !profiles.contains(&index) {
+                    push_profile_item(ctx, &mut profiles, index,
+                        "f3d entity path selected spatial profile")?;
+                }
+            }
+            if profiles.is_empty() { return Ok(None); }
+            Ok(ProfileRef::spatial_sketch_profiles(sketch, profiles).ok())
         }
-        _ => None,
+        _ => Ok(None),
     }
-}
-
-fn selected_profile_indices<'a, Id: Eq + std::hash::Hash + 'a>(
-    selected: impl IntoIterator<Item = &'a Id>,
-    profiles: impl IntoIterator<Item = HashSet<&'a Id>>,
-) -> Option<Vec<u32>> {
-    let profiles = profiles.into_iter().collect::<Vec<_>>();
-    let mut selected_profiles = Vec::new();
-    for entity in selected {
-        let mut matches = profiles
-            .iter()
-            .enumerate()
-            .filter(|(_, profile)| profile.contains(entity));
-        let (index, _) = matches.next()?;
-        if matches.next().is_some() {
-            return None;
-        }
-        let index = u32::try_from(index).ok()?;
-        if !selected_profiles.contains(&index) {
-            selected_profiles.push(index);
-        }
-    }
-    (!selected_profiles.is_empty()).then_some(selected_profiles)
 }
 
 fn historical_face_profile_selection(
@@ -961,6 +982,17 @@ fn copy_profile_sketch_id(
         "f3d profile sketch id")?)
         .map_err(|_| CodecError::malformed("validated sketch ID is not UTF-8"))?;
     cadmpeg_ir::sketches::SketchId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_profile_spatial_sketch_id(
+    id: &cadmpeg_ir::sketches::SpatialSketchId,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let text = String::from_utf8(ctx.copy_retained(id.as_str().as_bytes(),
+        "f3d profile spatial sketch id")?)
+        .map_err(|_| CodecError::malformed("validated spatial sketch ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SpatialSketchId::try_from(text).map_err(CodecError::malformed)
 }
 
 fn copy_profile_boundary_use(
@@ -2255,16 +2287,25 @@ impl<'a> SketchProfileResolution<'a> {
 fn resolve_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
     use cadmpeg_ir::features::PathRef;
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    if group.members().is_empty() {
-        return None;
+    macro_rules! available {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
     }
-    let stream = native_stream(&group.id)?;
-    let mut selected_identities = Vec::with_capacity(group.members().len());
-    let mut member_records = HashSet::with_capacity(group.members().len());
+    if group.members().is_empty() {
+        return Ok(None);
+    }
+    let stream = available!(native_stream(&group.id));
+    let mut selected_identities = Vec::new();
+    let mut member_records = HashSet::new();
     let mut primary_identity = None;
     let mut asset_id = None;
     let mut context_id = None;
@@ -2274,9 +2315,10 @@ fn resolve_entity_selection_path(
         .map(|member| member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
-        if !member_records.insert(record_index) {
-            return None;
+        let ordinal = available!(u32::try_from(ordinal).ok());
+        if !insert_profile_set(ctx, &mut member_records, record_index,
+            "f3d entity path member record")? {
+            return Ok(None);
         }
         let mut matches = resolution.operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -2285,47 +2327,48 @@ fn resolve_entity_selection_path(
                 && operand.group_member_ordinal == ordinal
                 && operand.record_index() == record_index
         });
-        let operand = matches.next()?;
+        let operand = available!(matches.next());
         if matches.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        let secondary = operand.secondary()?;
+        let secondary = available!(operand.secondary());
         if let Some(expected) = primary_identity {
             if expected != operand.primary_identity {
-                return None;
+                return Ok(None);
             }
         } else {
             primary_identity = Some(operand.primary_identity);
         }
         if let Some(expected) = asset_id {
             if expected != operand.asset_id.as_str() {
-                return None;
+                return Ok(None);
             }
         } else {
             asset_id = Some(operand.asset_id.as_str());
         }
         if let Some(expected) = context_id {
             if expected != operand.context_id.as_str() {
-                return None;
+                return Ok(None);
             }
         } else {
             context_id = Some(operand.context_id.as_str());
         }
-        selected_identities.push(secondary);
+        push_profile_item(ctx, &mut selected_identities, secondary,
+            "f3d entity path selected identity")?;
     }
-    let primary_identity = primary_identity?;
+    let primary_identity = available!(primary_identity);
     let mut matching_placements = resolution.placements.iter().filter(|placement| {
         native_stream(&placement.id) == Some(stream)
             && placement.entity_id.suffix() == primary_identity
     });
-    let placement = matching_placements.next()?;
+    let placement = available!(matching_placements.next());
     if matching_placements.next().is_some() {
-        return None;
+        return Ok(None);
     }
 
-    let mut curve_ids = Vec::with_capacity(selected_identities.len());
-    let mut selected_curve_identities = HashSet::with_capacity(selected_identities.len());
-    let owner_reference = u32::try_from(primary_identity).ok()?;
+    let mut curve_ids = Vec::new();
+    let mut selected_curve_identities = HashSet::new();
+    let owner_reference = available!(u32::try_from(primary_identity).ok());
     for secondary in &selected_identities {
         let secondary_identity = secondary.identity.value;
         let mut curves = resolution.curve_identities.iter().filter(|curve| {
@@ -2336,13 +2379,17 @@ fn resolve_entity_selection_path(
                     .curve_identity
                     .is_none_or(|identity| curve.secondary_id == identity.value)
         });
-        let curve = curves.next()?;
-        if curves.next().is_some()
-            || !selected_curve_identities.insert((curve.primary_id.get(), curve.secondary_id))
-        {
-            return None;
+        let curve = available!(curves.next());
+        if curves.next().is_some() {
+            return Ok(None);
         }
-        curve_ids.push((curve.primary_id.get(), curve.secondary_id));
+        let identity = (curve.primary_id.get(), curve.secondary_id);
+        if !insert_profile_set(ctx, &mut selected_curve_identities, identity,
+            "f3d entity path curve identity")? {
+            return Ok(None);
+        }
+        push_profile_item(ctx, &mut curve_ids, identity,
+            "f3d entity path curve pair")?;
     }
 
     let spatial_sketch = neutral_spatial_sketch_id(placement);
@@ -2351,12 +2398,12 @@ fn resolve_entity_selection_path(
         .iter()
         .any(|sketch| sketch.id == spatial_sketch)
     {
-        let selections = curve_ids
-            .iter()
-            .map(|(primary, secondary)| {
-                neutral_spatial_sketch_curve_id(&spatial_sketch, *primary, *secondary)
-            })
-            .collect::<HashSet<_>>();
+        let mut selections = HashSet::new();
+        for (primary, secondary) in &curve_ids {
+            let id = neutral_spatial_sketch_curve_id(&spatial_sketch, *primary, *secondary);
+            insert_profile_set(ctx, &mut selections, id,
+                "f3d entity path spatial curve index")?;
+        }
         if selections.len() != curve_ids.len()
             || selections.iter().any(|curve| {
                 !resolution
@@ -2365,18 +2412,16 @@ fn resolve_entity_selection_path(
                     .any(|entity| entity.sketch == spatial_sketch && entity.id() == curve)
             })
         {
-            return None;
+            return Ok(None);
         }
-        return PathRef::spatial_sketch_curves(
-            spatial_sketch.clone(),
-            curve_ids
-                .into_iter()
-                .map(|(primary, secondary)| {
-                    neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
-                })
-                .collect::<Vec<_>>(),
-        )
-        .ok();
+        let mut curves = Vec::new();
+        for (primary, secondary) in curve_ids {
+            let id = neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary);
+            push_profile_item(ctx, &mut curves, id,
+                "f3d entity path spatial output curve")?;
+        }
+        let sketch = copy_profile_spatial_sketch_id(&spatial_sketch, ctx)?;
+        return Ok(PathRef::spatial_sketch_curves(sketch, curves).ok());
     }
 
     let sketch = neutral_sketch_id(placement);
@@ -2385,12 +2430,14 @@ fn resolve_entity_selection_path(
         .iter()
         .any(|candidate| candidate.id == sketch)
     {
-        return None;
+        return Ok(None);
     }
-    let curves = curve_ids
-        .into_iter()
-        .map(|(primary, secondary)| neutral_sketch_curve_id(&sketch, primary, secondary))
-        .collect::<Vec<_>>();
+    let mut curves = Vec::new();
+    for (primary, secondary) in curve_ids {
+        let id = neutral_sketch_curve_id(&sketch, primary, secondary);
+        push_profile_item(ctx, &mut curves, id,
+            "f3d entity path planar output curve")?;
+    }
     if curves.iter().any(|curve| {
         !resolution.sketch_entities.iter().any(|entity| {
             entity.sketch == sketch
@@ -2401,9 +2448,9 @@ fn resolve_entity_selection_path(
                 )
         })
     }) {
-        return None;
+        return Ok(None);
     }
-    PathRef::sketch_curves(sketch, curves).ok()
+    Ok(PathRef::sketch_curves(sketch, curves).ok())
 }
 
 /// Resolve one ordered Loft guide or centerline group whose members select
@@ -2411,15 +2458,16 @@ fn resolve_entity_selection_path(
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
     resolution: &SketchProfileResolution<'_>,
-) -> Option<cadmpeg_ir::features::PathRef> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::features::PathRef>, CodecError> {
     if !matches!(
         group.role(),
         DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
     ) {
-        return None;
+        return Ok(None);
     }
     let path_resolution = resolution.path_resolution();
-    resolve_entity_selection_path(group, &path_resolution)
+    resolve_entity_selection_path(group, &path_resolution, ctx)
 }
 
 fn spatial_profile_member_entity<'a>(
@@ -2778,7 +2826,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             DesignOperandRole::ROLE_0X5 | DesignOperandRole::ROLE_0X7
         ) && !group.members().is_empty()
     }) {
-        if let Some(path) = resolved_loft_entity_selection_path(group, resolution) {
+        if let Some(path) = resolved_loft_entity_selection_path(group, resolution, Some(ctx))? {
             resolved_entity_paths.insert(group.id.clone(), path);
         }
     }
