@@ -350,6 +350,56 @@ fn native_external_indexed_route_refuses_work_limit() {
         if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
 }
 
+fn native_external_empty_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceEmptyRecord>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let indexed = crate::test_support::with_decode_context(|ctx| {
+        let records = super::super::external_reference_records(ctx, &container)?;
+        super::super::external_reference_indexed_records(ctx, &container, &records)
+    })
+    .expect("native indexed records");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_empty_records(&ctx, &container, &indexed)
+}
+
+#[test]
+fn native_external_empty_route_preserves_record() {
+    let records = native_external_empty_result(|_| {}).expect("native empty record");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, "nx:external-reference-empty-record:/Root/ExternalReferences#7");
+    assert!(!records[0].closing_marker);
+}
+
+#[test]
+fn native_external_empty_route_refuses_collection_limit() {
+    let error = native_external_empty_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("native empty record exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx native external reference empty records"), "{error:?}");
+}
+
+#[test]
+fn native_external_empty_route_refuses_retained_limit() {
+    let error = native_external_empty_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("native empty record exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference empty records"), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
