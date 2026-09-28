@@ -312,6 +312,56 @@ fn b5_region_id_map_refuses_collection_limit_before_growth() {
 }
 
 #[test]
+fn b5_face_loop_and_coedge_emission_refuse_each_collection_limit() {
+    use cadmpeg_ir::ids::{EdgeId, SurfaceId};
+
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let plan = crate::test_support::with_service_context(|ctx| {
+        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("complete B5 plan");
+    let surfaces = graph.surfaces.keys().map(|&object_id| {
+        (object_id, SurfaceId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "surface"), object_id))
+    }).collect::<std::collections::HashMap<_, _>>();
+    let edges = graph.vertices.edges().keys().map(|&object_id| {
+        (object_id, EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "b5", "edge"), object_id))
+    }).collect::<std::collections::HashMap<_, _>>();
+    let pcurves = std::collections::HashMap::new();
+    let emitted = super::faces::EmittedFaceInputs {
+        surface_ids: &surfaces,
+        pcurve_uses: &pcurves,
+        edge_ids: &edges,
+    };
+    let operations = b5_collection_refusals(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let emitted = super::faces::emit_faces(&mut cadmpeg_ir::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(), &graph, &plan, &emitted,
+            &mut admission)?;
+        assert!(emitted);
+        Ok(())
+    });
+    for operation in [
+        "catia_b5_coedge_ids_by_member",
+        "catia_b5_oriented_coedge_ids",
+        "catia_b5_loop_vertex_uses",
+        "catia_b5_coedge_radial_occurrences",
+        "catia_b5_emit_coedges",
+    ] {
+        assert!(operations.contains(operation), "missing collection charge: {operation}");
+    }
+}
+
+#[test]
 fn b5_ownership_refuses_face_id_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
