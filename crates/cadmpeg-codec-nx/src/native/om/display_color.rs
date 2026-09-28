@@ -5,6 +5,8 @@ use super::{rmfastload_target_object_id, PartColorDefinition, RmFastLoadObjectId
 use crate::container::Container;
 use crate::om::color::PaletteIndex;
 use crate::om::column_row::{LinkedRow, TargetRow};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 mod borrowed_wires;
@@ -68,10 +70,11 @@ pub(in crate::native) struct RmDisplayColorAssignment {
 
 /// Decode explicit display-color assignments from `RMFastLoad` linked rows.
 pub(in crate::native) fn rm_display_color_assignments(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     color_definitions: &[PartColorDefinition],
     object_ids: &[RmFastLoadObjectId],
-) -> Vec<RmDisplayColorAssignment> {
+) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     let mut candidates = Vec::new();
     for (entry, section) in container
         .om_sections()
@@ -85,7 +88,7 @@ pub(in crate::native) fn rm_display_color_assignments(
         let record_area = record_area.bytes;
         let source_base =
             entry.file_span().map_or(0, |(offset, _)| offset) + record_area_offset as u64;
-        for row in crate::om::column_row::scan::linked_rows(record_area) {
+        for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
@@ -117,7 +120,7 @@ pub(in crate::native) fn rm_display_color_assignments(
                 entry.name.clone(),
             ));
         }
-        for row in crate::om::column_row::scan::target_rows(record_area) {
+        for row in crate::om::column_row::scan::target_rows(ctx, record_area)? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())
             else {
@@ -151,7 +154,7 @@ pub(in crate::native) fn rm_display_color_assignments(
         }
     }
     candidates.sort_by_key(|(frame, _, _, _)| frame.offset());
-    candidates
+    Ok(candidates
         .into_iter()
         .enumerate()
         .map(
@@ -166,5 +169,5 @@ pub(in crate::native) fn rm_display_color_assignments(
                 }
             },
         )
-        .collect()
+        .collect())
 }

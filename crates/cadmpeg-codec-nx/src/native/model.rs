@@ -1279,17 +1279,18 @@ impl NativeModel {
             data_block_references(container, &object_records, &expression_declarations);
         let data_block_counted_index_lanes = data_block_counted_index_lanes(container);
         let data_block_abr_reference_lanes = data_block_abr_reference_lanes(container);
-        let data_block_index_rows = data_block_index_rows(container);
-        let data_block_linked_index_rows = data_block_linked_index_rows(container);
-        let data_block_target_index_rows = data_block_target_index_rows(container);
+        let data_block_index_rows = data_block_index_rows(ctx, container)?;
+        let data_block_linked_index_rows = data_block_linked_index_rows(ctx, container)?;
+        let data_block_target_index_rows = data_block_target_index_rows(ctx, container)?;
         let rm_creation_display_data_relations =
-            rm_creation_display_data_relations(container, &rmfastload_object_ids);
+            rm_creation_display_data_relations(ctx, container, &rmfastload_object_ids)?;
         let (part_color_tables, part_color_definitions) = part_color_tables(ctx, container)?;
         let rm_display_color_assignments = rm_display_color_assignments(
+            ctx,
             container,
             &part_color_definitions,
             &rmfastload_object_ids,
-        );
+        )?;
         let data_block_column_index_tables = data_block_column_index_tables(
             &data_block_linked_index_rows,
             &data_block_target_index_rows,

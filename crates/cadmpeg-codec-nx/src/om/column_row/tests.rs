@@ -17,7 +17,7 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                     offset
                 });
                 bytes.extend([0, 0x47, 4, 4, 1, 0xc0, 0x44, 4, 0]);
-                let rows = scan::index_rows(&bytes);
+                let rows = crate::test_support::with_decode_context(|ctx| scan::index_rows(ctx, &bytes)).unwrap();
                 let [row] = rows.as_slice() else {
                     panic!("one complete index row");
                 };
@@ -47,7 +47,7 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                     offset
                 });
                 bytes.extend([0, 0x47, 3, 4, 1, 0xc0, 0x44, 4, 0]);
-                let rows = scan::linked_rows(&bytes);
+                let rows = crate::test_support::with_decode_context(|ctx| scan::linked_rows(ctx, &bytes)).unwrap();
                 let [row] = rows.as_slice() else {
                     panic!("one complete linked row");
                 };
@@ -76,7 +76,7 @@ fn row_positions_follow_token_widths_and_bound_absolute_extent() {
                     offset
                 });
                 bytes.extend([0, 0x47, 3, 7, 1, 0xc0, 0x44, 4, 0]);
-                let rows = scan::target_rows(&bytes);
+                let rows = crate::test_support::with_decode_context(|ctx| scan::target_rows(ctx, &bytes)).unwrap();
                 let [row] = rows.as_slice() else {
                     panic!("one complete target row");
                 };
