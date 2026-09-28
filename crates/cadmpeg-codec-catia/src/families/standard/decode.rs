@@ -2185,7 +2185,7 @@ fn try_decode_standard_populations(
     );
     merged.report.coverage.record(
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
-        scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+        scan.census.fbb_face_rows.checked_sub(admitted_face_rows).unwrap_or(0),
     );
     merged.report.coverage.record(
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
@@ -2201,29 +2201,27 @@ fn try_decode_standard_populations(
         )
     });
     if !all_fbb_rows_admitted {
-        merged.report.losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(
-            format!(
+        crate::resource::push_loss(ctx, &mut merged.report.losses,
+            CatiaLossCode::TopologyFbbRowsWithheld, format_args!(
                 "{} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have source-closed population bindings.",
-                scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+                scan.census.fbb_face_rows.checked_sub(admitted_face_rows).unwrap_or(0),
                 scan.census.fbb_runs,
                 admitted_face_rows,
-            ),
-        ));
+            ), "catia_standard_merged_withheld_loss")?;
     }
     if !all_topologies_attached {
-        merged
-            .report
-            .losses
-            .push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
+        crate::resource::push_loss(ctx, &mut merged.report.losses,
+            CatiaLossCode::TopologyBoundaryGraphNotEmitted, format_args!(
                 "The B-rep boundary graph was emitted for {attached_topology_count} of \
              {population_count} source-closed standard populations."
-            )));
+            ), "catia_standard_merged_boundary_loss")?;
     }
     let mut typed = TypedCounts::default();
     for surface in &merged.ir.model.surfaces {
         typed.record(&surface.geometry);
     }
-    merged.report.losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
+    crate::resource::push_loss(ctx, &mut merged.report.losses,
+        CatiaLossCode::GeometryCarrierSummary, format_args!(
         "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and {} analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} sphere, {} torus.",
         merged.ir.model.vertices.len(),
         typed.total(),
@@ -2232,7 +2230,7 @@ fn try_decode_standard_populations(
         typed.cone,
         typed.sphere,
         typed.torus,
-    )));
+    ), "catia_standard_merged_carrier_loss")?;
     crate::assemble::insert_unresolved_carrier_loss(ctx, &merged.ir, &mut merged.report.losses)?;
     Ok(Some(merged))
 }
@@ -3141,10 +3139,13 @@ fn try_decode_standard_population(
         Err(error) => return Some(Err(error)),
     };
     if consolidated_curve_bindings.rechart_numeric_failures != 0 {
-        report.losses.push(CatiaLossCode::GeometryPcurveRechartNonFinite.note(format!(
+        if let Err(error) = crate::resource::push_loss(ctx, &mut report.losses,
+            CatiaLossCode::GeometryPcurveRechartNonFinite, format_args!(
             "{} pcurve rechart attempts produced non-finite coordinates; native records remain retained",
             consolidated_curve_bindings.rechart_numeric_failures,
-        )));
+        ), "catia_standard_rechart_loss") {
+            return Some(Err(error));
+        }
     }
     report.coverage.record(
         crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT,
