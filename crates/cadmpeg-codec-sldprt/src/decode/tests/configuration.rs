@@ -48,8 +48,9 @@ fn configuration_partitions_require_explicit_source_identity() {
     let third = BodyId::mint("test:model:entity#body:third").expect("identity grammar");
 
     assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
-        &[
+        vec![
             (7, vec![third.clone()]),
             (5, vec![first.clone()]),
             (5, vec![second.clone()]),
@@ -99,7 +100,12 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     }
     let body = BodyId::mint("test:model:entity#body:partition").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        vec![(5, vec![body.clone()])],
+    )
+    .unwrap();
 
     assert!(ir.model.configurations[0].bodies.is_none());
     assert!(ir.model.configurations[1].bodies.is_none());
@@ -131,7 +137,12 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     ));
     let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
 
-    assign_configuration_bodies(&mut ir, &[(3, vec![body.clone()])]).unwrap();
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        vec![(3, vec![body.clone()])],
+    )
+    .unwrap();
     mark_active_configuration(&mut ir);
 
     assert_eq!(ir.model.configurations.len(), 1);
@@ -186,7 +197,8 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&mut ir, &[]).unwrap();
+    assign_configuration_bodies(&cadmpeg_test_support::service_decode_context(), &mut ir, Vec::new())
+        .unwrap();
     mark_active_configuration(&mut ir);
 
     let configuration = &ir.model.configurations[0];

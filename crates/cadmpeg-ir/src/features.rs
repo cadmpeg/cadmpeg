@@ -6387,6 +6387,31 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
     }
 }
 
+impl<T: Eq + std::hash::Hash> DistinctMembers<T> {
+    /// Verify a decoded member vector using the caller's collection and work budget.
+    pub fn try_from_charged(
+        value: Vec<T>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "validate distinct decoded members";
+        let count = u64::try_from(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_collection_items(count, OPERATION)?;
+        let mut seen = HashSet::new();
+        seen.try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        for member in &value {
+            ctx.charge_work(1, OPERATION)?;
+            if !seen.insert(member) {
+                return Err(cadmpeg_core::CodecError::Malformed(
+                    "members must be distinct".into(),
+                ));
+            }
+        }
+        Ok(Self(value))
+    }
+}
+
 impl<T: PartialEq> DistinctMembers<T> {
     /// Inserts a member unless it is already present, and returns whether it was added.
     pub fn insert(&mut self, value: T) -> bool {

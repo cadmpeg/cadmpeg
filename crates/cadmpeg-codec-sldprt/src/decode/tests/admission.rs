@@ -162,6 +162,24 @@ fn merged_brep_site_identity_refuses_retained_limit() {
 }
 
 #[test]
+fn geometry_configuration_partitions_refuse_collection_limit() {
+    let body = triangle_body();
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body("first partition", "SCH_SW_33103_11000", &body),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body("second partition", "SCH_SW_33103_11000", &body),
+    ));
+    let limit = collection_refusal_at(&source, "index SLDPRT configuration partitions");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
 fn geometry_material_appearance_refuses_collection_limit() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [80, 90, 100]);
     let limit = collection_refusal_at(&source, "admit SLDPRT material appearance");

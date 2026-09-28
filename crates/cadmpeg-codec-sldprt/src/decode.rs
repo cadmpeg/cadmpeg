@@ -3031,7 +3031,7 @@ fn build_geometry_ir(
         &native.feature_input_lanes,
     );
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    assign_configuration_bodies(&mut ir, &configuration_bodies)?;
+    assign_configuration_bodies(ctx, &mut ir, configuration_bodies)?;
     let configuration_losses =
         crate::history::configuration::project_configuration_sketch_states(
             ctx,
@@ -4803,53 +4803,87 @@ fn stamp_feature_baseline(ir: &mut CadIr) -> Result<(), CodecError> {
 }
 
 fn assign_configuration_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+    configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
-        let Ok(index) = u32::try_from(*index) else {
+        let Ok(index) = u32::try_from(index) else {
             continue;
         };
-        let merged = partition_map.entry(index).or_default();
+        let merged = match partition_map.entry(index) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "index SLDPRT configuration partitions")?;
+                entry.insert(Vec::new())
+            }
+        };
         for body in bodies {
-            if !merged.contains(body) {
-                merged.push(body.clone());
+            let comparisons = merged.len().checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("merge SLDPRT configuration bodies", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(
+                u64::try_from(comparisons).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "merge SLDPRT configuration bodies",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?,
+                "merge SLDPRT configuration bodies",
+            )?;
+            if !merged.contains(&body) {
+                ctx.reserve_precharged_vec(
+                    merged,
+                    1,
+                    "merge SLDPRT configuration bodies",
+                )?;
+                merged.push(body);
             }
         }
     }
 
-    let source_counts = ir
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| configuration.source_index)
-        .fold(BTreeMap::<u32, usize>::new(), |mut counts, source_index| {
-            *counts.entry(source_index).or_default() += 1;
-            counts
-        });
+    let mut source_counts = BTreeMap::<u32, usize>::new();
+    for source_index in ir.model.configurations.iter().filter_map(|configuration| {
+        configuration.source_index
+    }) {
+        ctx.charge_work(1, "count SLDPRT configuration sources")?;
+        match source_counts.entry(source_index) {
+            Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "count SLDPRT configuration sources")?;
+                entry.insert(1);
+            }
+        }
+    }
     for configuration in &mut ir.model.configurations {
         let Some(source_index) = configuration.source_index else {
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
             configuration.bodies = Some(
-                (partition_map.remove(&source_index).unwrap_or_default())
-                    .try_into()
-                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+                cadmpeg_ir::features::DistinctMembers::try_from_charged(
+                    partition_map.remove(&source_index).unwrap_or_default(),
+                    ctx,
+                )?,
             );
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
         if let Some(bodies) = partition_map.remove(&active_index) {
             ir.model.configurations[position].bodies = Some(
-                (bodies)
-                    .try_into()
-                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+                cadmpeg_ir::features::DistinctMembers::try_from_charged(bodies, ctx)?,
             );
         }
     }
     for (source_index, bodies) in partition_map {
+        ctx.charge_work(
+            u64::try_from(ir.model.configurations.len()).map_err(|_| {
+                ctx.refuse_codec_limit("order SLDPRT partition configurations", u64::MAX - 1, u64::MAX)
+            })?,
+            "order SLDPRT partition configurations",
+        )?;
         let ordinal = ir
             .model
             .configurations
@@ -4857,6 +4891,11 @@ fn assign_configuration_bodies(
             .map(|configuration| configuration.ordinal)
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
+        ctx.reserve_collection_vec(
+            &mut ir.model.configurations,
+            1,
+            "append SLDPRT partition configuration",
+        )?;
         ir.model
             .configurations
             .push(cadmpeg_ir::features::DesignConfiguration {
@@ -4871,9 +4910,7 @@ fn assign_configuration_bodies(
                 material: None,
                 properties: std::collections::BTreeMap::new(),
                 bodies: Some(
-                    (bodies)
-                        .try_into()
-                        .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
+                    cadmpeg_ir::features::DistinctMembers::try_from_charged(bodies, ctx)?,
                 ),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
