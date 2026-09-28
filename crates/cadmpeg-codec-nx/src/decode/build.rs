@@ -29,7 +29,7 @@ use super::support_uv::{
     IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
-use crate::decode::ids::IdScope;
+use crate::decode::ids::{copy_typed_id, IdScope};
 use crate::framing::node_kind::NodeKind;
 use crate::geometry;
 use crate::loss::NxLossCode;
@@ -399,7 +399,7 @@ pub(super) fn try_decode_geometry(
         {
             let pid: PointId = scope.id(&cadmpeg_ir::identity_component!("pt"), pi);
             let vid: VertexId = scope.id(&cadmpeg_ir::identity_component!("v"), pi);
-            annotate_node(&mut annotations, &pid, &source_stream, node, "POINT");
+            annotate_node(ctx, &mut annotations, pid.as_str(), &source_stream, node, "POINT")?;
             annotations
                 .derived(&pid, "position")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -436,8 +436,9 @@ pub(super) fn try_decode_geometry(
             }
             let id: SurfaceId = scope.id(&cadmpeg_ir::identity_component!("surf"), fi);
             annotate_node(
+                ctx,
                 &mut annotations,
-                &id,
+                id.as_str(),
                 &source_stream,
                 node,
                 surface_tag(geometry.solved().ok_or_else(|| {
@@ -445,7 +446,7 @@ pub(super) fn try_decode_geometry(
                         "carrier has no solved geometry".into(),
                     )
                 })?),
-            );
+            )?;
             annotations
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -674,8 +675,9 @@ pub(super) fn try_decode_geometry(
             }
             let id: CurveId = scope.id(&cadmpeg_ir::identity_component!("crv"), ci);
             annotate_node(
+                ctx,
                 &mut annotations,
-                &id,
+                id.as_str(),
                 &source_stream,
                 node,
                 curve_tag(geometry.solved().ok_or_else(|| {
@@ -683,7 +685,7 @@ pub(super) fn try_decode_geometry(
                         "carrier has no solved geometry".into(),
                     )
                 })?),
-            );
+            )?;
             annotations
                 .derived(&id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1089,6 +1091,7 @@ pub(super) fn try_decode_geometry(
             intersection_index.reindex_pcurves_after_prune(&ir);
         }
         retain_unresolved_topology_carriers(
+            ctx,
             &mut ir,
             si,
             graph,
@@ -1097,7 +1100,7 @@ pub(super) fn try_decode_geometry(
             &pcurves_by_xmt,
             &source_stream,
             &mut annotations,
-        );
+        )?;
         let intersection_starts = IntersectionEntityStarts {
             loops: ir.model.loops.len(),
             faces: ir.model.faces.len(),
@@ -2164,20 +2167,6 @@ fn finalize_point_topology(
         visible: None,
     });
     Ok(())
-}
-
-fn copy_typed_id<T>(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    operation: &'static str,
-) -> Result<T, CodecError>
-where
-    T: TryFrom<String>,
-    T::Error: std::fmt::Display,
-{
-    let bytes = ctx.copy_retained(id.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
-    T::try_from(text).map_err(CodecError::malformed)
 }
 
 fn insert_body_relation<K>(
