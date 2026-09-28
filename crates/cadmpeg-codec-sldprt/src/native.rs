@@ -8,8 +8,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use self::admission::{
-    admit_retained_clones, admit_temporary_clones, admit_validation_candidates, collect_index_map,
-    collect_index_set, NativeAdmission,
+    admit_temporary_clones, admit_validation_candidates, collect_index_map, collect_index_set,
+    collect_retained_clones, NativeAdmission,
 };
 
 use crate::records::{
@@ -713,18 +713,13 @@ impl SldprtNative {
             }
         }
         for history in &mut native.feature_histories {
-            admit_retained_clones(
+            history.configurations = collect_retained_clones(
                 admission,
                 configurations
                     .iter()
                     .filter(|record| record.parent == history.id),
                 "attach SLDPRT history configurations",
             )?;
-            history.configurations = configurations
-                .iter()
-                .filter(|record| record.parent == history.id)
-                .cloned()
-                .collect();
             history.configurations.sort_by_key(|record| record.ordinal);
             if let Some(pair) = history
                 .configurations
@@ -736,16 +731,11 @@ impl SldprtNative {
                     history.id, pair[1].ordinal
                 )));
             }
-            admit_retained_clones(
+            history.features = collect_retained_clones(
                 admission,
                 features.iter().filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
             )?;
-            history.features = features
-                .iter()
-                .filter(|record| record.parent == history.id)
-                .cloned()
-                .collect();
             history.features.sort_by_key(|record| record.ordinal);
             if let Some(pair) = history
                 .features
@@ -759,88 +749,53 @@ impl SldprtNative {
             }
         }
         for lane in &mut native.feature_input_lanes {
-            admit_retained_clones(
+            lane.classes = collect_retained_clones(
                 admission,
                 classes.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
             )?;
-            lane.classes = classes
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.classes.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.names = collect_retained_clones(
                 admission,
                 names.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
             )?;
-            lane.names = names
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.names.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.scalars = collect_retained_clones(
                 admission,
                 scalars.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
             )?;
-            lane.scalars = scalars
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.scalars.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.references = collect_retained_clones(
                 admission,
                 references.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
             )?;
-            lane.references = references
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.references.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.relation_bindings = collect_retained_clones(
                 admission,
                 relation_bindings
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation bindings",
             )?;
-            lane.relation_bindings = relation_bindings
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.relation_bindings.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.relation_instances = collect_retained_clones(
                 admission,
                 relation_instances
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation instances",
             )?;
-            lane.relation_instances = relation_instances
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.relation_instances.sort_by_key(|record| record.ordinal);
-            admit_retained_clones(
+            lane.body_selections = collect_retained_clones(
                 admission,
                 body_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane body selections",
             )?;
-            lane.body_selections = body_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.body_selections {
                 if body_selection_disagrees_with_payload(admission, lane, record)? {
@@ -850,18 +805,13 @@ impl SldprtNative {
                     )));
                 }
             }
-            admit_retained_clones(
+            lane.edge_selections = collect_retained_clones(
                 admission,
                 edge_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane edge selections",
             )?;
-            lane.edge_selections = edge_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
             let _edge_features_reservation = admit_temporary_clones(
                 admission,
@@ -918,18 +868,13 @@ impl SldprtNative {
                 &mut surface_features,
                 std::slice::from_ref(lane),
             );
-            admit_retained_clones(
+            lane.surface_selections = collect_retained_clones(
                 admission,
                 surface_selections
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane surface selections",
             )?;
-            lane.surface_selections = surface_selections
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
             for record in &lane.surface_selections {
                 if surface_selection_disagrees_with_payload(admission, lane, record, &surface_features)? {
@@ -939,18 +884,13 @@ impl SldprtNative {
                     )));
                 }
             }
-            admit_retained_clones(
+            let mut records = collect_retained_clones(
                 admission,
                 generated_surface_identities
                     .iter()
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane generated surfaces",
             )?;
-            let mut records = generated_surface_identities
-                .iter()
-                .filter(|record| record.parent == lane.id)
-                .cloned()
-                .collect::<Vec<_>>();
             records.sort_by_key(|record| record.ordinal);
             lane.generated_surface_identities = records;
             if generated_surface_identities_disagree_with_payload(admission, lane)? {
@@ -959,16 +899,11 @@ impl SldprtNative {
                     lane.id
                 )));
             }
-            admit_retained_clones(
+            lane.sketch_entities = collect_retained_clones(
                 admission,
                 entities.iter().filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
             )?;
-            lane.sketch_entities = entities
-                .iter()
-                .filter(|record| record.parent() == lane.id)
-                .cloned()
-                .collect();
             lane.sketch_entities
                 .sort_by_key(crate::records::SketchInputEntity::ordinal);
         }
