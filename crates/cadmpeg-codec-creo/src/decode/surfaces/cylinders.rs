@@ -595,7 +595,7 @@ fn round_edge_cylinder_frame(
             std::array::from_fn(|index| relative[index] - axis[index] * dot(relative, axis));
         dot(radial, radial).sqrt()
     };
-    let mut candidates = Vec::new();
+    let mut candidate: Option<crate::surface::PositionalCylinderFrame> = None;
     for (first_index, first_support) in support_planes.iter().copied().enumerate() {
         let Some(first_normal) = normalize(first_support.normal) else {
             continue;
@@ -672,40 +672,37 @@ fn round_edge_cylinder_frame(
                     ) else {
                         continue;
                     };
-                    let same_line = candidates.iter().any(
-                        |candidate: &crate::surface::PositionalCylinderFrame| {
-                            let parallel =
-                                dot(candidate.frame().axis(), frame.frame().axis()).abs();
-                            let origin_distance = distance_from_axis(
-                                candidate.frame().origin(),
-                                frame.frame().origin(),
-                                frame.frame().axis(),
-                            );
-                            parallel >= 1.0 - EPS_CYLINDER_GEOMETRY
-                                && origin_distance <= EPS_CYLINDER_GEOMETRY * radius.max(1.0)
-                        },
-                    );
+                    let same_line = candidate.is_some_and(|candidate| {
+                        let parallel = dot(candidate.frame().axis(), frame.frame().axis()).abs();
+                        let origin_distance = distance_from_axis(
+                            candidate.frame().origin(),
+                            frame.frame().origin(),
+                            frame.frame().axis(),
+                        );
+                        parallel >= 1.0 - EPS_CYLINDER_GEOMETRY
+                            && origin_distance <= EPS_CYLINDER_GEOMETRY * radius.max(1.0)
+                    });
                     if !same_line {
-                        candidates.push(frame);
+                        if candidate.is_some() {
+                            return None;
+                        }
+                        candidate = Some(frame);
                     }
                 }
             }
         }
     }
-    let [frame] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    candidate
 }
 
 fn unique_tangent_axial_interval_corner_frame(
     candidates: &[crate::surface::PositionalCylinderFrame],
     support_planes: &[PlaneEquation],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let scored = candidates
-        .iter()
-        .copied()
-        .filter_map(|candidate| {
+    let mut best = None;
+    let mut maximum = 0;
+    let mut tied = false;
+    for candidate in candidates.iter().copied() {
             let axis = unit_length(*candidate.frame().orthonormal_frame().axis());
             let score = support_planes
                 .iter()
@@ -722,15 +719,15 @@ fn unique_tangent_axial_interval_corner_frame(
                         <= EPS_CYLINDER_POSITION * candidate.radius().get().max(1.0)
                 })
                 .count();
-            (score != 0).then_some((candidate, score))
-        })
-        .collect::<Vec<_>>();
-    let maximum = scored.iter().map(|(_, score)| *score).max()?;
-    let mut best = scored
-        .into_iter()
-        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
-    let candidate = best.next()?;
-    best.next().is_none().then_some(candidate)
+            if score > maximum {
+                maximum = score;
+                best = Some(candidate);
+                tied = false;
+            } else if score != 0 && score == maximum {
+                tied = true;
+            }
+    }
+    (!tied).then_some(best?)
 }
 
 fn unique_support_tangent_cylinder_frame(
@@ -855,7 +852,7 @@ fn perpendicular_round_edge_cylinder_frame(
         (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
             <= EPS_CYLINDER_POSITION * scale
     };
-    let mut radii = Vec::new();
+    let mut radius: Option<f64> = None;
     let mut has_perpendicular_support_pair = false;
     let mut has_endpoint_incidence = false;
     let mut has_equal_radius_projections = false;
@@ -896,15 +893,17 @@ fn perpendicular_round_edge_cylinder_frame(
                     continue;
                 }
                 has_equal_radius_projections = true;
-                if !radii.iter().any(|radius: &f64| {
-                    (*radius - first_radius).abs() <= EPS_CYLINDER_GEOMETRY * scale
-                }) {
-                    radii.push(first_radius);
+                if let Some(known) = radius {
+                    if (known - first_radius).abs() > EPS_CYLINDER_GEOMETRY * scale {
+                        return Err(PerpendicularRoundEdgeFailure::NonuniqueRadius);
+                    }
+                } else {
+                    radius = Some(first_radius);
                 }
             }
         }
     }
-    let [radius] = radii.as_slice() else {
+    let Some(radius) = radius else {
         return Err(if !has_perpendicular_support_pair {
             PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair
         } else if !has_endpoint_incidence {
@@ -915,7 +914,7 @@ fn perpendicular_round_edge_cylinder_frame(
             PerpendicularRoundEdgeFailure::NonuniqueRadius
         });
     };
-    round_edge_cylinder_frame(envelope, *radius, support_planes)
+    round_edge_cylinder_frame(envelope, radius, support_planes)
         .ok_or(PerpendicularRoundEdgeFailure::CarrierValidationFailure)
 }
 
@@ -1377,11 +1376,10 @@ pub(in super::super) fn reference_cap_bound_round_frame(
             .zip(expected)
             .all(|(actual, expected)| (actual - expected).abs() <= tolerance)
     };
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for axis_index in 0..3 {
-        let radial_indices = (0..3)
-            .filter(|index| *index != axis_index)
-            .collect::<Vec<_>>();
+        let mut radial = (0..3).filter(|index| *index != axis_index);
+        let radial_indices = [radial.next()?, radial.next()?];
         if radial_indices.iter().any(|index| {
             ((second[*index] - first[*index]).abs() - envelope.diameter).abs() > tolerance
         }) || (second[axis_index] - first[axis_index]).abs() <= tolerance
@@ -1429,18 +1427,19 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         let reference_index = radial_indices[0];
         ref_direction[reference_index] =
             (second[reference_index] - first[reference_index]).signum();
-        candidates.push(crate::surface::PositionalCylinderFrame::new(
+        let frame = crate::surface::PositionalCylinderFrame::new(
             origin,
             axis,
             ref_direction,
             envelope.diameter / 2.0,
             Some((second[axis_index] - first[axis_index]).abs()),
-        )?);
+        )?;
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(frame);
     }
-    let [frame] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    candidate
 }
 
 pub(in super::super) fn transfer_positional_cones(
