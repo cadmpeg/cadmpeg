@@ -380,23 +380,21 @@ fn nurbs_translation_candidate(
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
     let pair_count = if along_v { u_count } else { v_count };
-    let poles = nurbs.poles();
-    let pole_weights = nurbs.pole_weights();
     let mut starts = Vec::with_capacity(pair_count);
     let mut vector: Option<[f64; 3]> = None;
     for index in 0..pair_count {
         let (start_index, end_index) = if along_v {
-            (index * v_count, index * v_count + 1)
+            ((index, 0), (index, 1))
         } else {
-            (index, v_count + index)
+            ((0, index), (1, index))
         };
-        let start = *poles.get(start_index)?;
-        let end = *poles.get(end_index)?;
+        let start = nurbs.pole(start_index.0, start_index.1)?;
+        let end = nurbs.pole(end_index.0, end_index.1)?;
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
-        if let Some(weights) = &pole_weights {
-            let start_weight = weights.get(start_index)?.get();
-            let end_weight = weights.get(end_index)?.get();
+        if let Some(start_weight) = nurbs.weight(start_index.0, start_index.1) {
+            let start_weight = start_weight.get();
+            let end_weight = nurbs.weight(end_index.0, end_index.1)?.get();
             ((start_weight - end_weight).abs()
                 <= EPS_SWEEP_EXTENT_DEGENERATE * start_weight.abs().max(end_weight.abs()).max(1.0))
             .then_some(())?;
