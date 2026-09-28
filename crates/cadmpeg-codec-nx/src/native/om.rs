@@ -3604,75 +3604,120 @@ pub(super) fn configuration_attribute_uses(
 }
 
 /// Decode the typed part-attribute XML stream atomically.
-pub(super) fn part_attributes(container: &Container) -> Vec<PartAttribute> {
-    if container
-        .entries
-        .iter()
-        .filter(|entry| entry.name == "/Root/part/attrs")
-        .count()
-        != 1
-    {
-        return Vec::new();
-    }
-    container
+pub(super) fn part_attributes(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<PartAttribute>, CodecError> {
+    let mut matches = container
         .entries
         .iter()
         .enumerate()
-        .find(|(_, entry)| entry.name == "/Root/part/attrs")
-        .and_then(|(entry_index, entry)| {
-            let (offset, size) = entry.file_span()?;
-            let start = usize::try_from(offset).ok()?;
-            let payload = container
-                .data
-                .get(start..start.checked_add(usize::try_from(size).ok()?)?)?;
-            parse_part_attributes(payload, entry_index, &entry.name, offset)
-        })
-        .unwrap_or_default()
+        .filter(|(_, entry)| entry.name == "/Root/part/attrs");
+    let Some((entry_index, entry)) = matches.next() else {
+        return Ok(Vec::new());
+    };
+    if matches.next().is_some() {
+        return Ok(Vec::new());
+    }
+    let Some((offset, size)) = entry.file_span() else {
+        return Ok(Vec::new());
+    };
+    let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+        return Ok(Vec::new());
+    };
+    let Some(end) = start.checked_add(size) else {
+        return Ok(Vec::new());
+    };
+    let Some(payload) = container.data.get(start..end) else {
+        return Ok(Vec::new());
+    };
+    Ok(parse_part_attributes(ctx, payload, entry_index, &entry.name, offset)?.unwrap_or_default())
 }
 
 fn parse_part_attributes(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     entry_index: usize,
     source_entry: &str,
     entry_offset: u64,
-) -> Option<Vec<PartAttribute>> {
-    let document = roxmltree::Document::parse(xml_stream_text(payload)?).ok()?;
+) -> Result<Option<Vec<PartAttribute>>, CodecError> {
+    let Some(xml) = xml_stream_text(payload) else {
+        return Ok(None);
+    };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(xml.len()), "nx part attribute XML scan")?;
+    let Ok(document) = roxmltree::Document::parse(xml) else {
+        return Ok(None);
+    };
     let root = document.root_element();
-    if root.tag_name().name() != "UgAttributes"
-        || root.attribute("version")?.parse::<u32>().ok()? < 4
-    {
-        return None;
+    let Some(version) = root.attribute("version").and_then(|version| version.parse::<u32>().ok()) else {
+        return Ok(None);
+    };
+    if root.tag_name().name() != "UgAttributes" || version < 4 {
+        return Ok(None);
     }
-    root.children()
-        .filter(roxmltree::Node::is_element)
-        .enumerate()
-        .map(|(ordinal, node)| {
-            if node.tag_name().name() != "Attribute" {
-                return None;
-            }
-            Some(PartAttribute {
-                id: format!("nx:part-attributes-{entry_index}:attribute#{ordinal}"),
-                owner: node.attribute("owner")?.to_string(),
-                title: node
-                    .attribute("utf8title")
-                    .or_else(|| node.attribute("title"))?
-                    .to_string(),
-                value: node
-                    .attribute("utf8value")
-                    .or_else(|| node.attribute("value"))?
-                    .to_string(),
-                value_type: node.attribute("type")?.to_string(),
-                pdm_based: match node.attribute("pdmBased")? {
-                    "true" => true,
-                    "false" => false,
-                    _ => return None,
-                },
-                version: node.attribute("version")?.parse().ok()?,
-                source_entry: source_entry.to_string(),
-                source_offset: entry_offset + node.range().start as u64,
-            })
-        })
-        .collect()
+    let count = root.children().filter(roxmltree::Node::is_element).count();
+    for node in root.children().filter(roxmltree::Node::is_element) {
+        ctx.charge_work(1, "nx part attribute records")?;
+        if node.tag_name().name() != "Attribute"
+            || node.attribute("owner").is_none()
+            || node.attribute("utf8title").or_else(|| node.attribute("title")).is_none()
+            || node.attribute("utf8value").or_else(|| node.attribute("value")).is_none()
+            || node.attribute("type").is_none()
+            || !matches!(node.attribute("pdmBased"), Some("true" | "false"))
+            || node.attribute("version").and_then(|version| version.parse::<u32>().ok()).is_none()
+        {
+            return Ok(None);
+        }
+    }
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "nx native part attributes")?;
+    let record_bytes = count
+        .checked_mul(std::mem::size_of::<PartAttribute>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx native part attributes", 0, count_u64))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(record_bytes),
+        "nx native part attributes",
+    )?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("nx native part attributes", 0, count_u64)
+    })?;
+    for (ordinal, node) in root.children().filter(roxmltree::Node::is_element).enumerate() {
+        let Some((owner, title, value, value_type, pdm_based, version)) = (|| {
+            Some((
+                node.attribute("owner")?,
+                node.attribute("utf8title").or_else(|| node.attribute("title"))?,
+                node.attribute("utf8value").or_else(|| node.attribute("value"))?,
+                node.attribute("type")?,
+                node.attribute("pdmBased")? == "true",
+                node.attribute("version")?.parse::<u32>().ok()?,
+            ))
+        })() else {
+            return Ok(None);
+        };
+        let source_offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx part attribute source offset", 0, 1))?;
+        output.push(PartAttribute {
+            id: retained_om_index_id(
+                ctx,
+                "nx:part-attributes-",
+                entry_index,
+                ":attribute#",
+                cadmpeg_core::decode::u64_from_index(ordinal),
+                "nx native part attribute id",
+            )?,
+            owner: copy_om_retained_text(ctx, owner, "nx part attribute owner")?,
+            title: copy_om_retained_text(ctx, title, "nx part attribute title")?,
+            value: copy_om_retained_text(ctx, value, "nx part attribute value")?,
+            value_type: copy_om_retained_text(ctx, value_type, "nx part attribute type")?,
+            pdm_based,
+            version,
+            source_entry: copy_om_retained_text(ctx, source_entry, "nx part attribute source entry")?,
+            source_offset,
+        });
+    }
+    Ok(Some(output))
 }
 
 /// Return the exact XML document carried by an NX XML stream.
@@ -7407,8 +7452,11 @@ mod tests {
       <Attribute owner="part" pdmBased="false" title="legacy" utf8title="Material"
         value="legacy-value" utf8value="Steel" version="3" xsi:type="StringAttributeType"/>
     </UgAttributes>"#;
-        let attributes = super::parse_part_attributes(xml, 7, "/Root/part/attrs", 100)
-            .expect("typed attributes");
+        let attributes = crate::test_support::with_decode_context(|ctx| {
+            super::parse_part_attributes(ctx, xml, 7, "/Root/part/attrs", 100)
+        })
+        .expect("typed attribute budget")
+        .expect("typed attributes");
         assert_eq!(attributes.len(), 1);
         assert_eq!(attributes[0].id, "nx:part-attributes-7:attribute#0");
         assert_eq!(attributes[0].title, "Material");
@@ -7420,12 +7468,19 @@ mod tests {
         let mut terminated = xml.to_vec();
         terminated.push(0);
         assert_eq!(
-            super::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100)
-                .expect("terminated typed attributes"),
+            crate::test_support::with_decode_context(|ctx| {
+                super::parse_part_attributes(ctx, &terminated, 7, "/Root/part/attrs", 100)
+            })
+            .expect("terminated attribute budget")
+            .expect("terminated typed attributes"),
             attributes
         );
         terminated.push(0);
-        assert!(super::parse_part_attributes(&terminated, 7, "/Root/part/attrs", 100).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::parse_part_attributes(ctx, &terminated, 7, "/Root/part/attrs", 100)
+        })
+        .expect("malformed attribute budget")
+        .is_none());
 
         let malformed = xml
             .windows(b"pdmBased=\"false\"".len())
@@ -7437,7 +7492,11 @@ mod tests {
                 malformed
             })
             .expect("required invariant");
-        assert!(super::parse_part_attributes(&malformed, 7, "/Root/part/attrs", 100).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::parse_part_attributes(ctx, &malformed, 7, "/Root/part/attrs", 100)
+        })
+        .expect("invalid attribute budget")
+        .is_none());
     }
 
     #[test]

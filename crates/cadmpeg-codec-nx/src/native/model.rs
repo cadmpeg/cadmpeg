@@ -1384,7 +1384,7 @@ impl NativeModel {
         let object_references = object_references(ctx, container)?;
         let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(ctx, container)?;
-        let part_attributes = part_attributes(container);
+        let part_attributes = part_attributes(ctx, container)?;
         let configuration_attribute_uses =
             configuration_attribute_uses(ctx, &configurations, &part_attributes)?;
         let external_references = external_references(ctx, container)?;
