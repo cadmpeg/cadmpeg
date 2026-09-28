@@ -864,11 +864,6 @@ native_record_id!(
     "design-dimension-locus-group"
 );
 native_record_id!(
-    /// The native design-edge-identity-operand record key.
-    native_design_edge_identity_operand_id,
-    "design-edge-identity-operand"
-);
-native_record_id!(
     /// The native design-extrude-selection-group record key.
     native_design_extrude_selection_group_id,
     "design-extrude-selection-group"

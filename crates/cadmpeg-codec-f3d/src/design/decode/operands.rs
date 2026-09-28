@@ -694,15 +694,24 @@ pub(crate) fn edge_recipe_terminal_delta(
 
 /// Decode persistent selection identities named by Fillet and Chamfer groups.
 pub(crate) fn decode_edge_identity_operands(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignEdgeIdentityOperand>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !header_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d edge identity header index")?;
+            header_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge identity header index allocation", 0, 1)
+            })?;
+        }
+        header_index.insert(key, header);
+    }
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -729,7 +738,7 @@ pub(crate) fn decode_edge_identity_operands(
             .map(|member| member.value)
             .enumerate()
         {
-            let Some(header) = headers.get(&(stream, record_index)) else {
+            let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
             let Ok(start) = usize::try_from(header.byte_offset) else {
@@ -747,13 +756,18 @@ pub(crate) fn decode_edge_identity_operands(
             ) else {
                 continue;
             };
+            ctx.charge_collection_items(1, "f3d edge identity output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d edge identity output allocation", 0, 1)
+            })?;
             out.push(
                 DesignEdgeIdentityOperand::try_new(
                     crate::records::topology::edge_identity::DesignEdgeIdentityOperandDraft {
-                        id: ids::native_design_edge_identity_operand_id(
-                            &entry.name,
-                            header.byte_offset,
-                        ),
+                        id: design_record_id_charged(
+                            ctx, &entry.name, ":design-edge-identity-operand#",
+                            header.byte_offset, "f3d edge identity ID",
+                            "f3d edge identity ID allocation",
+                        )?,
                         scope_record_index: scope.record_index,
                         group_record_index: group.record_index,
                         group_member_ordinal,
