@@ -36,6 +36,20 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+fn push_profile_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -470,10 +484,9 @@ pub(crate) fn bind_extrude_profile_selections(
                     .iter()
                     .find(|candidate| candidate.id.as_str() == spatial_id)
                 {
-                    let selections = matching_groups
-                        .iter()
-                        .map(|group| {
-                            resolved_spatial_extrude_profile_selection(
+                    let mut selections = Vec::new();
+                    for group in &matching_groups {
+                        let selection = resolved_spatial_extrude_profile_selection(
                                 group,
                                 members,
                                 spatial_sketch,
@@ -481,9 +494,10 @@ pub(crate) fn bind_extrude_profile_selections(
                                 scoped_resolution,
                                 scope.history_state_id(),
                                 effective_previous_history_state_id,
-                            )
-                        })
-                        .collect::<Vec<_>>();
+                            )?;
+                        push_profile_item(scoped_resolution.ctx, &mut selections, selection,
+                            "f3d spatial profile selection")?;
+                    }
                     let mut indices = Vec::new();
                     if selections.iter().all(|selection| {
                         if let Some(index) = selection {
@@ -1038,7 +1052,7 @@ fn transition_profile_selection(
     let tolerance = resolution.linear_tolerance;
     let mut inserted_selections = Vec::new();
     for face in inserted_faces {
-        let selection = match historical_face_points(*face, topology) {
+        let selection = match historical_face_points(*face, topology, resolution.ctx)? {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
@@ -1049,7 +1063,8 @@ fn transition_profile_selection(
             )?,
             None => None,
         };
-        inserted_selections.push(selection);
+        push_profile_item(resolution.ctx, &mut inserted_selections, selection,
+            "f3d transition inserted selection")?;
     }
     let inserted = transition_inserted_profile_selection(
         sketch,
@@ -1061,16 +1076,21 @@ fn transition_profile_selection(
     if inserted.is_some() {
         return Ok(inserted);
     }
-    if let Some(selection) = unique_resolved_selection(inserted_faces.iter().map(|face| {
-        inserted_cylindrical_profile_selection(
+    let mut cylindrical_selections = Vec::new();
+    for face in inserted_faces {
+        let selection = inserted_cylindrical_profile_selection(
             sketch,
             entities,
             topology,
             *face,
             tolerance,
             resolution.angular_tolerance,
-        )
-    })) {
+            resolution.ctx,
+        )?;
+        push_profile_item(resolution.ctx, &mut cylindrical_selections, selection,
+            "f3d transition cylindrical selection")?;
+    }
+    if let Some(selection) = unique_resolved_selection(cylindrical_selections) {
         return Ok(Some(selection));
     }
     let mut previous_states = resolution
@@ -1090,7 +1110,7 @@ fn transition_profile_selection(
     ));
     let mut selections = Vec::new();
     for face in faces {
-        let selection = match historical_face_points(face, previous_topology) {
+        let selection = match historical_face_points(face, previous_topology, resolution.ctx)? {
             Some(points) => selection_containing_points(
                 sketch,
                 entities,
@@ -1101,7 +1121,8 @@ fn transition_profile_selection(
             )?,
             None => None,
         };
-        selections.push(selection);
+        push_profile_item(resolution.ctx, &mut selections, selection,
+            "f3d transition deleted selection")?;
     }
     Ok(ordered_unique_profile_selections(selections))
 }
@@ -1113,49 +1134,56 @@ fn inserted_cylindrical_profile_selection(
     face: i64,
     linear_tolerance: f64,
     angular_tolerance: f64,
-) -> Option<ResolvedProfileSelection> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ResolvedProfileSelection>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let mut carriers = topology
         .face_surfaces
         .iter()
         .filter(|binding| binding.entity == face);
-    let carrier = carriers.next()?.carrier;
+    let Some(carrier) = carriers.next().map(|binding| binding.carrier) else {
+        return Ok(None);
+    };
     if carriers.next().is_some() {
-        return None;
+        return Ok(None);
     }
     let mut cylinders = topology
         .surface_cylinders
         .iter()
         .filter(|cylinder| cylinder.surface == carrier);
-    let cylinder = cylinders.next()?;
+    let Some(cylinder) = cylinders.next() else { return Ok(None); };
     if cylinders.next().is_some() || !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
-    let (sketch_origin, sketch_normal, _) = sketch.resolved_placement()?;
+    let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
+        return Ok(None);
+    };
     let alignment = cylinder.axis.x * sketch_normal.x
         + cylinder.axis.y * sketch_normal.y
         + cylinder.axis.z * sketch_normal.z;
     if alignment.abs() < angular_tolerance.cos() {
-        return None;
+        return Ok(None);
     }
     let offset = (sketch_origin.x - cylinder.origin.x) * sketch_normal.x
         + (sketch_origin.y - cylinder.origin.y) * sketch_normal.y
         + (sketch_origin.z - cylinder.origin.z) * sketch_normal.z;
     let parameter = offset / alignment;
-    let center = project_to_sketch(
+    let Some(center) = project_to_sketch(
         sketch,
         Point3::new(
             cylinder.origin.x + parameter * cylinder.axis.x,
             cylinder.origin.y + parameter * cylinder.axis.y,
             cylinder.origin.z + parameter * cylinder.axis.z,
         ),
-    )?;
-    let points = historical_face_points(face, topology)?;
-    let projected = points
-        .iter()
-        .map(|point| project_to_sketch(sketch, *point))
-        .collect::<Option<Vec<_>>>()?;
+    ) else { return Ok(None); };
+    let Some(points) = historical_face_points(face, topology, ctx)? else { return Ok(None); };
+    let mut projected = Vec::new();
+    for point in &points {
+        let Some(point) = project_to_sketch(sketch, *point) else { return Ok(None); };
+        push_profile_item(ctx, &mut projected, point,
+            "f3d cylindrical profile projected point")?;
+    }
     let mut matches = sketch
         .profiles
         .iter()
@@ -1185,11 +1213,11 @@ fn inserted_cylindrical_profile_selection(
                 }))
             .then(|| u32::try_from(index).ok())?
         });
-    let profile = matches.next()?;
-    matches
+    let Some(profile) = matches.next() else { return Ok(None); };
+    Ok(matches
         .next()
         .is_none()
-        .then(|| ResolvedProfileSelection::Loops(vec![profile]))
+        .then(|| ResolvedProfileSelection::Loops(vec![profile])))
 }
 
 fn resolved_spatial_extrude_profile_selection(
@@ -1200,20 +1228,21 @@ fn resolved_spatial_extrude_profile_selection(
     resolution: ScopedExtrudeProfileResolution<'_>,
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
-) -> Option<u32> {
+) -> Result<Option<u32>, CodecError> {
     enum ExactSelection {
         Resolved(u32),
         Unavailable,
         Contradictory,
     }
 
-    let mut group_members = members
-        .iter()
-        .filter(|member| {
+    let mut group_members = Vec::new();
+    for member in members.iter().filter(|member| {
             native_stream(&member.id) == native_stream(&group.id)
                 && member.group_record_index == group.record_index
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_profile_item(resolution.ctx, &mut group_members, member,
+            "f3d spatial profile group member")?;
+    }
     group_members.sort_by_key(|member| member.group_member_ordinal);
     let exact_member_run = group_members.len() == group.members().len()
         && group_members
@@ -1235,22 +1264,16 @@ fn resolved_spatial_extrude_profile_selection(
                 return ExactSelection::Unavailable;
             };
             let entity = neutral_spatial_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
-            let matches = sketch
-                .profiles
-                .iter()
-                .enumerate()
-                .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == entity))
-                .map(|(index, _)| u32::try_from(index).ok())
-                .collect::<Option<Vec<_>>>();
-            let Some(matches) = matches else {
+            let mut matches = sketch.profiles.iter().enumerate()
+                .filter(|(_, profile)| profile.boundary().iter().any(|use_| use_.entity == entity));
+            let Some((index, _)) = matches.next() else {
                 return ExactSelection::Unavailable;
             };
-            let [profile] = matches.as_slice() else {
-                return ExactSelection::Unavailable;
-            };
+            if matches.next().is_some() { return ExactSelection::Unavailable; }
+            let Ok(profile) = u32::try_from(index) else { return ExactSelection::Unavailable; };
             if selected
-                .replace(*profile)
-                .is_some_and(|selected| selected != *profile)
+                .replace(profile)
+                .is_some_and(|selected| selected != profile)
             {
                 return ExactSelection::Contradictory;
             }
@@ -1258,11 +1281,11 @@ fn resolved_spatial_extrude_profile_selection(
         selected.map_or(ExactSelection::Unavailable, ExactSelection::Resolved)
     })();
     match exact_selection {
-        ExactSelection::Resolved(selection) => Some(selection),
-        ExactSelection::Contradictory => None,
-        ExactSelection::Unavailable => history_state_id
-            .zip(previous_history_state_id)
-            .and_then(|(state_id, previous_state_id)| {
+        ExactSelection::Resolved(selection) => Ok(Some(selection)),
+        ExactSelection::Contradictory => Ok(None),
+        ExactSelection::Unavailable => {
+            let transition = if let Some((state_id, previous_state_id)) =
+                history_state_id.zip(previous_history_state_id) {
                 transition_spatial_profile_selection(
                     sketch,
                     entities,
@@ -1270,9 +1293,11 @@ fn resolved_spatial_extrude_profile_selection(
                     state_id,
                     previous_state_id,
                     resolution.linear_tolerance,
-                )
-            })
-            .or_else(|| (sketch.profiles.len() == 1).then_some(0)),
+                    resolution.ctx,
+                )?
+            } else { None };
+            Ok(transition.or_else(|| (sketch.profiles.len() == 1).then_some(0)))
+        }
     }
 }
 
@@ -1283,12 +1308,13 @@ fn transition_spatial_profile_selection(
     state_id: i64,
     previous_state_id: i64,
     linear_tolerance: f64,
-) -> Option<u32> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<u32>, CodecError> {
     let mut states = histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == state_id);
-    let state = states.next()?;
+    let Some(state) = states.next() else { return Ok(None); };
     if states.next().is_some()
         || state
             .transition
@@ -1296,42 +1322,45 @@ fn transition_spatial_profile_selection(
             .and_then(|transition| transition.previous_state_id)
             != Some(previous_state_id)
     {
-        return None;
+        return Ok(None);
     }
-    let topology = state.topology()?;
+    let Some(topology) = state.topology() else { return Ok(None); };
     // The document linear tolerance is admitted at or above the analytic floor
     // when the kernel header is read, so it drives the comparisons unchanged.
     let tolerance = linear_tolerance;
-    let unique = |faces: &[i64], topology: &crate::history_records::AsmHistoricalTopology| {
-        let mut indices = faces
-            .iter()
-            .filter_map(|face| {
-                let points = historical_face_points(*face, topology)?;
-                spatial_polyline_profile_containing_points(sketch, entities, &points, tolerance)
-            })
-            .collect::<Vec<_>>();
+    let unique = |faces: &[i64], topology: &crate::history_records::AsmHistoricalTopology| -> Result<Option<u32>, CodecError> {
+        let mut indices = Vec::new();
+        for face in faces {
+            if let Some(points) = historical_face_points(*face, topology, ctx)? {
+                if let Some(index) = spatial_polyline_profile_containing_points(
+                    sketch, entities, &points, tolerance, ctx,
+                )? {
+                    push_profile_item(ctx, &mut indices, index,
+                        "f3d spatial transition profile index")?;
+                }
+            }
+        }
         indices.sort_unstable();
         indices.dedup();
-        (indices.len() == 1).then(|| indices[0])
+        Ok((indices.len() == 1).then(|| indices[0]))
     };
+    let Some(transition) = state.transition.as_ref() else { return Ok(None); };
     if let Some(index) = unique(
-        &state.transition.as_ref()?.topology.faces.inserted,
+        &transition.topology.faces.inserted,
         topology,
-    ) {
-        return Some(index);
+    )? {
+        return Ok(Some(index));
     }
     let mut previous_states = histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
-    let previous = previous_states.next()?;
+    let Some(previous) = previous_states.next() else { return Ok(None); };
     if previous_states.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    unique(
-        &state.transition.as_ref()?.topology.faces.deleted,
-        previous.topology()?,
-    )
+    let Some(previous_topology) = previous.topology() else { return Ok(None); };
+    unique(&transition.topology.faces.deleted, previous_topology)
 }
 
 fn spatial_polyline_profile_containing_points(
@@ -1339,22 +1368,15 @@ fn spatial_polyline_profile_containing_points(
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     points: &[Point3],
     tolerance: f64,
-) -> Option<u32> {
-    let mut matches = Vec::new();
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<u32>, CodecError> {
+    let mut selected = None;
     for (index, profile) in sketch.profiles.iter().enumerate() {
-        let offsets = points
-            .iter()
-            .map(|point| {
-                point
-                    .vector_from(profile.origin().get())
-                    .dot(profile.normal().into())
-            })
-            .collect::<Vec<_>>();
-        if !offsets.first().is_some_and(|first| {
-            offsets
-                .iter()
-                .all(|offset| (offset - first).abs() <= tolerance)
-        }) {
+        let mut offsets = points.iter().map(|point| {
+            point.vector_from(profile.origin().get()).dot(profile.normal().into())
+        });
+        let Some(first) = offsets.next() else { continue; };
+        if !offsets.all(|offset| (offset - first).abs() <= tolerance) {
             continue;
         }
         let normal = Vector3::from(profile.normal());
@@ -1364,25 +1386,22 @@ fn spatial_polyline_profile_containing_points(
             let offset = point.vector_from(profile.origin().get());
             Point2::new(offset.dot(u_axis), offset.dot(v_axis))
         };
-        let polygon = profile
-            .boundary()
-            .iter()
-            .map(|use_| {
-                let entity = entities
-                    .iter()
-                    .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)?;
-                let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
-                    entity.geometry.definition()
-                else {
-                    return None;
-                };
-                Some(project(if use_.reversed {
+        let mut polygon = Vec::new();
+        for use_ in profile.boundary() {
+            let Some(entity) = entities.iter()
+                .find(|entity| entity.sketch == sketch.id && entity.id() == &use_.entity)
+            else { return Ok(None); };
+            let cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } =
+                entity.geometry.definition()
+            else { return Ok(None); };
+            let point = project(if use_.reversed {
                     end.get()
                 } else {
                     start.get()
-                }))
-            })
-            .collect::<Option<Vec<_>>>()?;
+                });
+            push_profile_item(ctx, &mut polygon, point,
+                "f3d spatial profile polygon point")?;
+        }
         if polygon.len() >= 3
             && points.iter().all(|point| {
                 let point = project(*point);
@@ -1393,13 +1412,11 @@ fn spatial_polyline_profile_containing_points(
                     })
             })
         {
-            matches.push(u32::try_from(index).ok()?);
+            let Ok(index) = u32::try_from(index) else { return Ok(None); };
+            if selected.replace(index).is_some() { return Ok(None); }
         }
     }
-    let [selected] = matches.as_slice() else {
-        return None;
-    };
-    Some(*selected)
+    Ok(selected)
 }
 
 fn unique_multi_face_deleted_carrier_family(
@@ -1527,44 +1544,51 @@ fn transition_inserted_profile_selection(
 pub(super) fn historical_face_points(
     face: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
-) -> Option<Vec<Point3>> {
-    let loops = topology
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<Point3>>, CodecError> {
+    let Some(loops) = topology
         .face_loops
         .iter()
-        .find(|relation| relation.owner_ref == face)?;
+        .find(|relation| relation.owner_ref == face) else { return Ok(None); };
     let mut positions = Vec::new();
     for loop_ref in &loops.member_refs {
-        let coedges = topology
+        let Some(coedges) = topology
             .loop_coedges
             .iter()
-            .find(|relation| relation.owner_ref == *loop_ref)?;
+            .find(|relation| relation.owner_ref == *loop_ref) else { return Ok(None); };
         for coedge_ref in &coedges.member_refs {
-            let coedge = topology
+            let Some(coedge) = topology
                 .coedge_topology
                 .iter()
-                .find(|coedge| coedge.coedge == *coedge_ref)?;
-            let edge = topology
+                .find(|coedge| coedge.coedge == *coedge_ref) else { return Ok(None); };
+            let Some(edge) = topology
                 .edge_vertices
                 .iter()
-                .find(|edge| edge.edge == coedge.edge)?;
+                .find(|edge| edge.edge == coedge.edge) else { return Ok(None); };
             for vertex_ref in [edge.start_vertex, edge.end_vertex] {
-                let point_ref = topology
+                let Some(point_ref) = topology
                     .vertex_points
                     .iter()
-                    .find(|binding| binding.entity == vertex_ref)?
-                    .carrier;
-                let position = topology
+                    .find(|binding| binding.entity == vertex_ref)
+                    .map(|binding| binding.carrier) else { return Ok(None); };
+                let Some(position) = topology
                     .point_positions
                     .iter()
-                    .find(|point| point.point == point_ref)?
-                    .position;
+                    .find(|point| point.point == point_ref)
+                    .map(|point| point.position) else { return Ok(None); };
                 if !positions.contains(&position) {
+                    if let Some(ctx) = ctx {
+                        ctx.charge_collection_items(1, "f3d historical face point")?;
+                        positions.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("f3d historical face point allocation", 0, 1)
+                        })?;
+                    }
                     positions.push(position);
                 }
             }
         }
     }
-    (positions.len() >= 3).then_some(positions)
+    Ok((positions.len() >= 3).then_some(positions))
 }
 
 fn historical_selection_regions(
@@ -1616,16 +1640,16 @@ fn historical_selection_regions(
         else {
             continue;
         };
-        let member_points = members
-            .iter()
-            .map(|member| {
-                historical_member_points_in_state(member, topology)
-                    .or_else(|| resolved_selection_member_points(member, sketch, entities))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(member_points) = member_points else {
-            continue;
-        };
+        let mut member_points = Vec::new();
+        let mut complete = true;
+        for member in members {
+            let points = historical_member_points_in_state(member, topology, ctx)?
+                .or_else(|| resolved_selection_member_points(member, sketch, entities));
+            let Some(points) = points else { complete = false; break; };
+            push_profile_item(ctx, &mut member_points, points,
+                "f3d historical selection member points")?;
+        }
+        if !complete { continue; }
         let key = member_points
             .iter()
             .map(|points| {
