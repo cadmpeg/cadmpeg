@@ -3013,7 +3013,11 @@ pub(crate) fn scan_bytes<'a>(
                     CurveExpressionValue::Number(value)
                 }
             });
-        relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
+        let (name, _reservation) = ctx.format_scoped(
+            format_args!("d{}", dimension.external_id),
+            "creo relation dimension symbol formatting",
+        )?;
+        relation_dimension_symbols.observe(ctx, name, value)?;
     }
     curve::reevaluate_expression_records(
         ctx,
