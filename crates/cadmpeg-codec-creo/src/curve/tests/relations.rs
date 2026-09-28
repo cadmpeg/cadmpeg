@@ -3,6 +3,7 @@
 
 use crate::curve::evaluate_creo_math_function;
 use crate::curve::evaluate_creo_relation_function;
+use crate::curve::curve_equation_prohibited_constructs;
 use crate::curve::expression_records;
 use crate::curve::parse_relation_expression;
 use crate::curve::reevaluate_expression_records;
@@ -19,6 +20,8 @@ use crate::curve::ExpressionParser;
 use crate::curve::ExpressionValue;
 use crate::curve::ExternalRelationSymbols;
 use crate::curve::RelationEvaluationContext;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
@@ -1272,6 +1275,58 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
         .assignments
         .iter()
         .all(|assignment| assignment.value.is_none()));
+}
+
+fn prohibited_construct_error(
+    text: &str,
+    max_collection_items: u64,
+    max_retained_bytes: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    policy.limits.max_retained_bytes = max_retained_bytes;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    curve_equation_prohibited_constructs(
+        &ctx,
+        &[CurveExpressionLine {
+            text: text.to_owned(),
+            offset: 0,
+        }],
+    )
+    .expect_err("one prohibited construct exceeds limit")
+}
+
+#[test]
+fn prohibited_relation_keyword_refuses_node() {
+    let error = prohibited_construct_error("IF a", 0, 32);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prohibited construct nodes"));
+}
+
+#[test]
+fn prohibited_function_refuses_node() {
+    let error = prohibited_construct_error("r=AbS(1)", 0, 32);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prohibited construct nodes"));
+}
+
+#[test]
+fn prohibited_function_refuses_retained_name() {
+    let error = prohibited_construct_error("r=AbS(1)", 2, 0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo prohibited construct names"));
+}
+
+#[test]
+fn prohibited_relation_keyword_refuses_output_vector() {
+    let error = prohibited_construct_error("IF a", 1, 32);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prohibited construct records"));
 }
 
 #[test]
