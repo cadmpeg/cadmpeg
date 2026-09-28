@@ -1159,7 +1159,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     let Some(feature_id) = feature_id_for_section_transform(definition, transform) else {
         return Ok(None);
     };
-    let mut span = generated_arc_cylinder_extent(scan, ir, source_carriers, definition, transform)
+    let mut span = generated_arc_cylinder_extent(ctx, scan, ir, source_carriers, definition, transform)?
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction));
     if span.is_none() {
         span = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?
