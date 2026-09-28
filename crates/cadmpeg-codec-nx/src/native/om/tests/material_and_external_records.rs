@@ -212,6 +212,32 @@ fn assembly_metadata_lists_external_child_paths() {
 }
 
 #[test]
+fn external_reference_extraction_refuses_record_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let file = assembly_with_external_paths();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file)
+    })
+    .expect("external reference container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // Two strings enter both the parsed table and the container result before
+    // extraction admits the two native records.
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let error = super::super::external_references(&ctx, &container)
+        .expect_err("two native records exceed the remaining collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "nx external references"
+    ));
+}
+
+#[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
         id: "nx:test:reference#0".into(),
