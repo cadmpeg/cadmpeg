@@ -27,7 +27,9 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         .reference_signature
         .as_ref()
         .map(|signature| &signature.production)
-        == entity_table::parse_reference_signature(record.value_payload()).as_ref()
+        == crate::test_support::with_service_context(|ctx| {
+            entity_table::parse_reference_signature(ctx, record.value_payload())
+        }).expect("service reference signature budget").as_ref()
         && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 

@@ -395,6 +395,43 @@ fn reference_signature_program(
     signature: &str,
     signature_offset: usize,
 ) -> Option<Vec<ReferenceSignatureInstruction>> {
+    match reference_signature_program_with(
+        signature,
+        signature_offset,
+        |program, instruction| {
+            program.push(instruction);
+            Ok::<(), Infallible>(())
+        },
+        |digits| Ok::<String, Infallible>(digits.to_owned()),
+    ) {
+        Ok(program) => program,
+        Err(never) => match never {},
+    }
+}
+
+fn reference_signature_program_charged(
+    ctx: &DecodeContext<'_>,
+    signature: &str,
+    signature_offset: usize,
+) -> Result<Option<Vec<ReferenceSignatureInstruction>>, CodecError> {
+    reference_signature_program_with(
+        signature,
+        signature_offset,
+        |program, instruction| crate::resource::push(
+            ctx, program, instruction, "catia_reference_signature_instructions",
+        ),
+        |digits| crate::resource::copy_retained_str(
+            ctx, digits, "catia_reference_signature_digits",
+        ),
+    )
+}
+
+fn reference_signature_program_with<E>(
+    signature: &str,
+    signature_offset: usize,
+    mut push: impl FnMut(&mut Vec<ReferenceSignatureInstruction>, ReferenceSignatureInstruction) -> Result<(), E>,
+    mut copy_digits: impl FnMut(&str) -> Result<String, E>,
+) -> Result<Option<Vec<ReferenceSignatureInstruction>>, E> {
     let bytes = signature.as_bytes();
     let mut program = Vec::new();
     let mut call_depth = 0_usize;
@@ -408,81 +445,83 @@ fn reference_signature_program(
             b'T' => ReferenceSignatureSymbol::T,
             byte if byte.is_ascii_digit() => {
                 if !expects_operand {
-                    return None;
+                    return Ok(None);
                 }
                 at += 1;
                 while bytes.get(at).is_some_and(u8::is_ascii_digit) {
                     at += 1;
                 }
-                program.push(ReferenceSignatureInstruction::Decimal {
-                    digits: signature[start..at].to_owned(),
+                push(&mut program, ReferenceSignatureInstruction::Decimal {
+                    digits: copy_digits(&signature[start..at])?,
                     offset: signature_offset + start,
-                });
+                })?;
                 expects_operand = false;
                 continue;
             }
             b'(' if !expects_operand => {
-                program.push(ReferenceSignatureInstruction::OpenCall {
+                push(&mut program, ReferenceSignatureInstruction::OpenCall {
                     offset: signature_offset + start,
-                });
-                call_depth = call_depth.checked_add(1)?;
+                })?;
+                let Some(next_depth) = call_depth.checked_add(1) else { return Ok(None) };
+                call_depth = next_depth;
                 expects_operand = true;
                 at += 1;
                 continue;
             }
             b',' if call_depth != 0 && !expects_operand => {
-                program.push(ReferenceSignatureInstruction::Comma {
+                push(&mut program, ReferenceSignatureInstruction::Comma {
                     offset: signature_offset + start,
-                });
+                })?;
                 expects_operand = true;
                 at += 1;
                 continue;
             }
             b')' if call_depth != 0 && !expects_operand => {
-                program.push(ReferenceSignatureInstruction::CloseCall {
+                push(&mut program, ReferenceSignatureInstruction::CloseCall {
                     offset: signature_offset + start,
-                });
+                })?;
                 call_depth -= 1;
                 expects_operand = false;
                 at += 1;
                 continue;
             }
             b'#' if !expects_operand => {
-                let selector_offset = start.checked_add(1)?;
-                let selector = match *bytes.get(selector_offset)? {
+                let Some(selector_offset) = start.checked_add(1) else { return Ok(None) };
+                let Some(&selector_byte) = bytes.get(selector_offset) else { return Ok(None) };
+                let selector = match selector_byte {
                     byte @ b'0'..=b'9' => byte - b'0',
                     byte @ b'A'..=b'F' => byte - b'A' + 10,
-                    _ => return None,
+                    _ => return Ok(None),
                 };
-                program.push(ReferenceSignatureInstruction::Qualifier {
+                push(&mut program, ReferenceSignatureInstruction::Qualifier {
                     selector,
                     hash_offset: signature_offset + start,
                     selector_offset: signature_offset + selector_offset,
-                });
+                })?;
                 at += 2;
                 continue;
             }
             b'-' if !expects_operand => {
-                program.push(ReferenceSignatureInstruction::Difference {
+                push(&mut program, ReferenceSignatureInstruction::Difference {
                     offset: signature_offset + start,
-                });
+                })?;
                 expects_operand = true;
                 at += 1;
                 continue;
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         if !expects_operand {
-            return None;
+            return Ok(None);
         }
-        program.push(ReferenceSignatureInstruction::Symbol {
+        push(&mut program, ReferenceSignatureInstruction::Symbol {
             symbol,
             offset: signature_offset + start,
-        });
+        })?;
         expects_operand = false;
         at += 1;
     }
-    (!expects_operand && call_depth == 0).then_some(program)
+    Ok((!expects_operand && call_depth == 0).then_some(program))
 }
 
 fn reference_signature_has_one_outer_call(program: &[ReferenceSignatureInstruction]) -> bool {
@@ -926,10 +965,13 @@ impl EntityRecord {
 
     /// Complete reference-signature view when the entire value payload has that production.
     #[must_use]
-    pub(crate) fn reference_signature(&self) -> Option<ReferenceSignature> {
+    pub(crate) fn reference_signature(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<ReferenceSignature>, CodecError> {
         match &self.body {
-            EntityBody::Nested { value_payload, .. } => parse_reference_signature(value_payload),
-            EntityBody::Inline(_) => None,
+            EntityBody::Nested { value_payload, .. } => parse_reference_signature(ctx, value_payload),
+            EntityBody::Inline(_) => Ok(None),
         }
     }
 }
@@ -1469,7 +1511,19 @@ pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
     })
 }
 
-pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
+pub(crate) fn parse_reference_signature(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<ReferenceSignature>, CodecError> {
+    (|| -> Option<Result<ReferenceSignature, CodecError>> {
+        macro_rules! admitted {
+            ($value:expr) => {
+                match $value {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+        }
     if payload.first() != Some(&0x32) {
         return None;
     }
@@ -1508,8 +1562,14 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     {
         return None;
     }
-    let signature = std::str::from_utf8(signature_bytes).ok()?.to_owned();
-    let signature_program = reference_signature_program(&signature, signature_offset)?;
+    let signature = admitted!(crate::resource::copy_retained_str(
+        ctx,
+        std::str::from_utf8(signature_bytes).ok()?,
+        "catia_reference_signature_text",
+    ));
+    let signature_program = admitted!(reference_signature_program_charged(
+        ctx, &signature, signature_offset,
+    ))?;
     if !reference_signature_has_one_outer_call(&signature_program)
         || usize::try_from(layout_atom).ok() != signature_bytes.len().checked_add(1)
     {
@@ -1553,16 +1613,22 @@ pub(crate) fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSigna
     if payload.get(at..at + 5) != Some(&[0x08, 0x37, 0xfe, 0xfe, 0xfe]) {
         return None;
     }
-    (at + 5 == payload.len()).then_some(ReferenceSignature {
+    if at + 5 != payload.len() {
+        return None;
+    }
+    let tokens = admitted!(crate::resource::collect_vec(
+        ctx,
+        signature_program.into_iter().map(ReferenceSignatureToken::from),
+        "catia_reference_signature_tokens",
+    ));
+    Some(Ok(ReferenceSignature {
         references,
         prefix,
-        tokens: signature_program
-            .into_iter()
-            .map(ReferenceSignatureToken::from)
-            .collect(),
+        tokens,
         signature_offset,
         second_reference_offset,
-    })
+    }))
+    })().transpose()
 }
 
 fn one_byte_atom(data: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -1646,7 +1712,7 @@ pub(crate) fn parse_range_interval(
 mod tests {
     use super::{
         parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval,
-        parse_reference_signature, value_packets, DefinitionSchemaSelector, EntityBody,
+        value_packets, DefinitionSchemaSelector, EntityBody,
         EntityIdentityCandidate, EntityRecord, EntityRecordCandidates, EntityRecordLayout,
         EntityValuePacket, NumericPacketItem, NumericPair, NumericPairSlot, PathCount,
         RangeInterval, RangeIntervalPrefix, RangeIntervalSlot, ReferenceSignature,
@@ -1654,6 +1720,12 @@ mod tests {
         ReferenceSignatureWire,
     };
     use crate::value_block;
+
+    fn parse_reference_signature(payload: &[u8]) -> Option<ReferenceSignature> {
+        crate::test_support::with_service_context(|ctx| {
+            super::parse_reference_signature(ctx, payload)
+        }).expect("service reference signature budget")
+    }
 
     fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -2232,6 +2304,16 @@ mod tests {
         let mut nonconsecutive = payload;
         nonconsecutive[25] += 1;
         assert_eq!(parse_reference_signature(&nonconsecutive), None);
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            super::parse_reference_signature(ctx, &nonconsecutive)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_reference_signature_text"));
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::parse_reference_signature(ctx, &nonconsecutive)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_reference_signature_instructions"));
 
         for (offset, replacement) in [
             (5, 0x83),

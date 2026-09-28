@@ -10282,7 +10282,7 @@ fn native_object_graph(
     let mut entities = Vec::new();
     for (ordinal, entity) in entity_records.into_iter().enumerate() {
             let Some(object_record) = records.get(ordinal) else { continue };
-            let reference_signature = entity.reference_signature();
+            let reference_signature = entity.reference_signature(ctx)?;
             let body = match entity.body {
                 entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
                 entity_table::EntityBody::Nested {
