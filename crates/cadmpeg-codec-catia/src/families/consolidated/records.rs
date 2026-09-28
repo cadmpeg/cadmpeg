@@ -1638,7 +1638,10 @@ fn pcurve_endpoints_match(
 pub(in crate::families) fn object_stream_vertices(
     ctx: &DecodeContext<'_>, data: &[u8],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
-    let records = consolidated_records(data);
+    let records = crate::wire::records::consolidated_records_in_sources(
+        ctx, data, std::iter::once(std::iter::once(
+            crate::wire::records::SourceExtent::whole(data)
+        )))?;
     object_stream_vertices_from_records(ctx, data, &records)
 }
 

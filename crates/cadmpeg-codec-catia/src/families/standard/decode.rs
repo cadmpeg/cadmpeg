@@ -2238,10 +2238,12 @@ fn try_decode_standard_population(
     if !work_budget.charge() {
         return None;
     }
-    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
-        &scan.data,
-        container::consolidated_record_sources(scan),
-    );
+    let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
+        ctx, &scan.data, container::consolidated_record_sources(scan),
+    ) {
+        Ok(records) => records,
+        Err(error) => return Some(Err(error)),
+    };
     let vertex_points = match edge_table_form {
         EdgeTableForm::FbbOnly => match fbb::fbb_only_vertex_points(ctx, standard_spine) {
             Ok(points) => points,

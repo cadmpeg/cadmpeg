@@ -336,10 +336,12 @@ pub(super) fn try_decode_freeform_surfaces(
                 run_count,
             } => (run_count, 1, false, source, frames, records, census_records),
         };
-        let consolidated_records = crate::wire::records::consolidated_records_in_sources(
-            &scan.data,
-            container::consolidated_record_sources(scan),
-        );
+        let consolidated_records = match crate::wire::records::consolidated_records_in_sources(
+            ctx, &scan.data, container::consolidated_record_sources(scan),
+        ) {
+            Ok(records) => records,
+            Err(error) => return Some(Err(error)),
+        };
         let mut b5_graph = match crate::families::b5::graph::parse_from_records_budgeted(
             ctx,
             &object_source,

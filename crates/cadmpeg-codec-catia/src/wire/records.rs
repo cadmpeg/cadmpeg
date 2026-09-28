@@ -455,11 +455,13 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
 /// [`consolidated_records_in_sources`] so directory and unrelated-file bytes
 /// cannot seed the inventory.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(
-        data,
-        std::iter::once(std::iter::once(SourceExtent::whole(data))),
-    )
+    crate::test_support::with_service_context(|ctx| {
+        consolidated_records_in_sources(ctx, data,
+            std::iter::once(std::iter::once(SourceExtent::whole(data))))
+            .expect("service decode")
+    })
 }
 
 /// A physical record-source extent proved to lie inside the image it indexes.
@@ -475,7 +477,7 @@ pub(crate) struct SourceExtent(Range<usize>);
 impl SourceExtent {
     /// The complete image.
     #[must_use]
-    fn whole(data: &[u8]) -> Self {
+    pub(crate) fn whole(data: &[u8]) -> Self {
         Self(0..data.len())
     }
 
@@ -509,13 +511,13 @@ pub(crate) fn consolidated_records_in_ranges(
     data: &[u8],
     ranges: impl IntoIterator<Item = Range<usize>>,
 ) -> Vec<ConsolidatedRecord> {
-    consolidated_records_in_sources(
-        data,
+    crate::test_support::with_service_context(|ctx| consolidated_records_in_sources(
+        ctx, data,
         ranges
             .into_iter()
             .filter_map(|range| SourceExtent::within(data, range.start, range.end))
             .map(std::iter::once),
-    )
+    ).expect("service decode"))
 }
 
 /// Inventory records in descriptor-scoped logical sources stated as byte
@@ -533,15 +535,15 @@ where
     S: IntoIterator<Item = R>,
     R: IntoIterator<Item = Range<usize>>,
 {
-    consolidated_records_in_sources(
-        data,
+    crate::test_support::with_service_context(|ctx| consolidated_records_in_sources(
+        ctx, data,
         sources.into_iter().map(|ranges| {
             ranges
                 .into_iter()
                 .filter_map(|range| SourceExtent::within(data, range.start, range.end))
                 .collect::<Vec<_>>()
         }),
-    )
+    ).expect("service decode"))
 }
 
 /// Inventory records in descriptor-scoped logical sources. Physical extents
@@ -550,9 +552,10 @@ where
 /// as an ordinal-bearing non-contiguous frame; typed payload decoding requires
 /// one physical extent.
 pub(crate) fn consolidated_records_in_sources<S, R>(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     sources: S,
-) -> Vec<ConsolidatedRecord>
+) -> Result<Vec<ConsolidatedRecord>, CodecError>
 where
     S: IntoIterator<Item = R>,
     R: IntoIterator<Item = SourceExtent>,
@@ -561,11 +564,11 @@ where
     for (source_index, extents) in sources.into_iter().enumerate() {
         // Every extent is inside the image by construction. An empty extent
         // holds no record, so it opens no logical source offset.
-        let source_ranges = extents
+        let source_ranges = crate::resource::collect_vec(ctx, extents
             .into_iter()
             .map(|extent| extent.range())
-            .filter(|range| range.start < range.end)
-            .collect::<Vec<_>>();
+            .filter(|range| range.start < range.end),
+            "catia_record_source_ranges")?;
         let mut source_records = Vec::new();
         let mut source_offset = 0usize;
         for range in &source_ranges {
@@ -578,39 +581,42 @@ where
                     continue;
                 };
                 let Some(physical_range) = record.range() else {
-                    return records;
+                    return Ok(records);
                 };
                 record.source_index = source_index;
                 let Some(source_start) = source_offset.checked_add(physical_range.start - start)
                 else {
-                    return records;
+                    return Ok(records);
                 };
                 let Some(source_end) = source_offset.checked_add(physical_range.end - start) else {
-                    return records;
+                    return Ok(records);
                 };
                 pos = physical_range.end;
                 record.source_range = source_start..source_end;
-                source_records.push(record);
+                crate::resource::push(ctx, &mut source_records, record,
+                    "catia_source_records")?;
             }
             let Some(next_source_offset) = source_offset.checked_add(end - start) else {
-                return records;
+                return Ok(records);
             };
             source_offset = next_source_offset;
         }
-        let mut record_starts = source_records
-            .iter()
-            .map(|record| record.source_range.start)
-            .collect::<HashSet<_>>();
-        let mut record_ranges = source_records
-            .iter()
-            .map(|record| (record.source_range.start, record.source_range.end))
-            .collect::<HashSet<_>>();
+        let mut record_starts = HashSet::new();
+        let mut record_ranges = HashSet::new();
+        for record in &source_records {
+            crate::resource::insert_set(ctx, &mut record_starts, record.source_range.start,
+                "catia_record_starts")?;
+            crate::resource::insert_set(ctx, &mut record_ranges,
+                (record.source_range.start, record.source_range.end),
+                "catia_record_ranges")?;
+        }
         loop {
             let mut added = Vec::new();
-            let source_ends = source_records
-                .iter()
-                .map(|record| record.source_range.end)
-                .collect::<HashSet<_>>();
+            let mut source_ends = HashSet::new();
+            for record in &source_records {
+                crate::resource::insert_set(ctx, &mut source_ends, record.source_range.end,
+                    "catia_record_source_ends")?;
+            }
             for source_start in source_ends {
                 if record_starts.contains(&source_start) {
                     continue;
@@ -623,20 +629,28 @@ where
                 ) else {
                     continue;
                 };
-                if record_ranges.insert((record.source_range.start, record.source_range.end)) {
-                    record_starts.insert(record.source_range.start);
-                    added.push(record);
+                if crate::resource::insert_set(ctx, &mut record_ranges,
+                    (record.source_range.start, record.source_range.end),
+                    "catia_record_ranges")? {
+                    crate::resource::insert_set(ctx, &mut record_starts, record.source_range.start,
+                        "catia_record_starts")?;
+                    crate::resource::push(ctx, &mut added, record,
+                        "catia_spanning_records")?;
                 }
             }
             if added.is_empty() {
                 break;
             }
+            crate::resource::reserve_vec(ctx, &mut source_records, added.len(),
+                "catia_source_records")?;
             source_records.extend(added);
             source_records.sort_by_key(|record| record.source_range.start);
         }
+        crate::resource::reserve_vec(ctx, &mut records, source_records.len(),
+            "catia_consolidated_records")?;
         records.extend(source_records);
     }
-    records
+    Ok(records)
 }
 
 fn parse_spanning_consolidated_record(
@@ -871,6 +885,59 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn consolidated_record_inventory_refuses_each_contiguous_collection() {
+        let bytes = [0xb2, 0x03, 0x06, 0x00, 0x05];
+        for (limit, operation) in [
+            (0, "catia_record_source_ranges"),
+            (1, "catia_source_records"),
+            (2, "catia_record_starts"),
+            (3, "catia_record_ranges"),
+            (4, "catia_record_source_ends"),
+            (5, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(ctx, &bytes,
+                    std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))))
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation), "limit {limit}");
+        }
+        let records = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_records_in_sources(ctx, &bytes,
+                std::iter::once(std::iter::once(super::SourceExtent::whole(&bytes))))
+        }).expect("service decode");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].class, 0x06);
+    }
+
+    #[test]
+    fn spanning_record_inventory_refuses_nested_growth() {
+        let mut bytes = vec![0xb2, 0x03, 0x20, 0x01, 0x05, 0];
+        let spanning_start = bytes.len();
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x34]);
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+        let split = spanning_start + 10;
+        for (limit, operation) in [
+            (8, "catia_spanning_records"),
+            (9, "catia_source_records"),
+            (13, "catia_consolidated_records"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_records_in_sources(ctx, &bytes,
+                    [[super::SourceExtent::within(&bytes, 0, split).expect("first extent"),
+                      super::SourceExtent::within(&bytes, split, bytes.len()).expect("second extent")]])
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation), "limit {limit}");
+        }
+        let records = consolidated_records_in_range_sources(&bytes,
+            [[0..split, split..bytes.len()]]);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].source_range, spanning_start..bytes.len());
+    }
 
     #[test]
     fn consolidated_pcurve_sites_tail_and_outer_collection_refuse_limits() {
