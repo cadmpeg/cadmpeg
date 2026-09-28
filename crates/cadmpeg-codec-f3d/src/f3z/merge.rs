@@ -41,28 +41,49 @@ pub(super) fn merge_archive(
 /// Reassigns only repeated sibling ordinals after independent document graphs
 /// have been combined.
 pub(super) fn make_sibling_ordinals_unique(
+    ctx: &DecodeContext<'_>,
     occurrences: &mut [cadmpeg_ir::products::Occurrence],
 ) -> Result<(), CodecError> {
     use std::collections::{HashMap, HashSet};
 
-    let mut used = HashMap::<Option<String>, HashSet<u32>>::new();
+    let mut used = HashMap::<Option<&cadmpeg_ir::ids::OccurrenceId>, HashSet<u32>>::new();
     for occurrence in occurrences {
+        ctx.charge_work(1, "index F3Z sibling ordinals")?;
         let parent = match &occurrence.parent {
             cadmpeg_ir::products::OccurrenceParent::Root {} => None,
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => {
-                Some(occurrence.as_str().to_owned())
+                Some(occurrence)
             }
         };
-        let siblings = used.entry(parent).or_default();
-        if !siblings.insert(occurrence.ordinal) {
-            occurrence.ordinal = (0..=u32::MAX)
-                .find(|ordinal| siblings.insert(*ordinal))
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "F3Z sibling occurrence population exhausts the u32 ordinal space",
-                    )
-                })?;
+        if !used.contains_key(&parent) {
+            ctx.charge_collection_items(1, "index F3Z sibling parents")?;
+            used.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3Z sibling parents", 0, 1))?;
         }
+        let siblings = used.entry(parent).or_default();
+        let ordinal = if siblings.contains(&occurrence.ordinal) {
+            let mut free = None;
+            for candidate in 0..=u32::MAX {
+                ctx.charge_work(1, "find F3Z sibling ordinal")?;
+                if !siblings.contains(&candidate) {
+                    free = Some(candidate);
+                    break;
+                }
+            }
+            free.ok_or_else(|| {
+                CodecError::malformed(
+                    "F3Z sibling occurrence population exhausts the u32 ordinal space",
+                )
+            })?
+        } else {
+            occurrence.ordinal
+        };
+        ctx.charge_collection_items(1, "index F3Z sibling ordinals")?;
+        siblings
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("index F3Z sibling ordinals", 0, 1))?;
+        siblings.insert(ordinal);
+        occurrence.ordinal = ordinal;
     }
     Ok(())
 }
@@ -644,8 +665,69 @@ mod tests {
     mod fidelity;
     mod occurrence;
 
-    use super::{apply_occurrence_transform, compose_transforms, xref_table_from_ir};
+    use super::{
+        apply_occurrence_transform, compose_transforms, make_sibling_ordinals_unique,
+        xref_table_from_ir,
+    };
     use cadmpeg_ir::document::Model;
+
+    fn root_occurrence(id: &str, ordinal: u32) -> cadmpeg_ir::products::Occurrence {
+        cadmpeg_ir::products::Occurrence {
+            id: cadmpeg_ir::ids::OccurrenceId::mint(id).unwrap(),
+            prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
+            parent: cadmpeg_ir::products::OccurrenceParent::Root {},
+            ordinal,
+            transform: cadmpeg_ir::transform::Transform::identity(),
+            linked_prototype: None,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn f3z_sibling_parent_index_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
+        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z sibling parents"));
+    }
+
+    #[test]
+    fn f3z_sibling_ordinal_index_refuses_collection_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut occurrences = [root_occurrence("f3d:model:occurrence#0", 0)];
+        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3Z sibling ordinals"));
+    }
+
+    #[test]
+    fn f3z_sibling_reassignment_refuses_work_limit() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 2;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut occurrences = [
+            root_occurrence("f3d:model:occurrence#0", 0),
+            root_occurrence("f3d:model:occurrence#1", 0),
+        ];
+        let error = make_sibling_ordinals_unique(&ctx, &mut occurrences).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "find F3Z sibling ordinal"));
+    }
 
     #[test]
     fn f3z_xref_native_reload_refuses_collection_limit() {
