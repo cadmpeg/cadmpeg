@@ -1012,14 +1012,17 @@ fn offset_cell_address(address: &str, rows: u32, columns: u32) -> Option<String>
     let (row, mut column) = cell_address(address)?;
     let row = row.checked_add(rows)?;
     column = column.checked_add(columns)?;
-    let mut label = Vec::new();
+    // Seven base-26 letters hold every nonzero u32 column index.
+    let mut label = [0_u8; 7];
+    let mut start = label.len();
     while column > 0 {
+        start = start.checked_sub(1)?;
         column -= 1;
-        label.push(b'A' + (column % 26) as u8);
+        label[start] = b'A' + u8::try_from(column % 26).ok()?;
         column /= 26;
     }
-    label.reverse();
-    Some(format!("{}{row}", String::from_utf8(label).ok()?))
+    let letters = std::str::from_utf8(&label[start..]).ok()?;
+    Some(format!("{letters}{row}"))
 }
 
 fn cell_address(address: &str) -> Option<(u32, u32)> {
@@ -7228,7 +7231,7 @@ mod profile_tests {
     };
     use cadmpeg_ir::spreadsheets::{CellAddress, SpreadsheetRange};
 
-    use super::{endpoints_match_by_roundoff, merged_range, range_contains_address};
+    use super::{cell_address, endpoints_match_by_roundoff, merged_range, offset_cell_address, range_contains_address};
 
     fn build_profiles(
         entities: &[SketchEntity],
@@ -7305,6 +7308,12 @@ mod profile_tests {
         assert!(range_contains_address(&range, "I2"));
         assert!(!range_contains_address(&range, "J1"));
         assert!(!range_contains_address(&range, "A3"));
+    }
+
+    #[test]
+    fn spreadsheet_column_label_holds_maximum_u32_index() {
+        let address = offset_cell_address("A1", 0, u32::MAX - 1).expect("valid column offset");
+        assert_eq!(cell_address(&address), Some((1, u32::MAX)));
     }
 
     fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
