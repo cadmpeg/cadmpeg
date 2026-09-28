@@ -12,6 +12,67 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_revolution_reference_copies_refuse_at_retained_limits() {
+    let property = |id: &str, name: &str, type_name: &str, xml: &str,
+                    links: Vec<Option<crate::native::LinkTarget>>| crate::native::PropertyRecord {
+        id: id.into(),
+        owner: "revolution".into(),
+        name: name.into(),
+        type_name: type_name.into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(), links, side_entries: Vec::new(), dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(xml.into(), 0)
+            .expect("valid XML span"),
+    };
+    let axis = property(
+        "axis-property", "Axis", "App::PropertyVector",
+        "<Property><PropertyVector valueX=\"0\" valueY=\"1\" valueZ=\"0\"/></Property>",
+        Vec::new(),
+    );
+    let mode_face = property(
+        "mode-face", "Type", "App::PropertyEnumeration",
+        "<Property><Integer value=\"3\"/></Property>", Vec::new(),
+    );
+    let mode_first = property(
+        "mode-first", "Type", "App::PropertyEnumeration",
+        "<Property><Integer value=\"2\"/></Property>", Vec::new(),
+    );
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None, document_attribute: None, object: Some("target".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let face = property(
+        "terminal-face", "UpToFace", "App::PropertyLinkSub", "<Property/>",
+        vec![link.clone()],
+    );
+    let reference = property(
+        "axis-reference", "ReferenceAxis", "App::PropertyLinkSub", "<Property/>",
+        vec![link],
+    );
+    let sketches = std::collections::HashMap::new();
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd revolution terminal face", |ctx| {
+            super::revolution_definition(
+                ctx, "PartDesign::Revolution", "revolution", &[&axis, &mode_face, &face],
+                &sketches,
+            )
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd revolution axis reference", |ctx| {
+            super::revolution_definition(
+                ctx, "PartDesign::Revolution", "revolution", &[&axis, &mode_first, &reference],
+                &sketches,
+            )
+        },
+    );
+}
+
+#[test]
 fn design_grouped_and_native_constraints_refuse_at_matching_limits() {
     use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
     let object = crate::native::ObjectRecord {

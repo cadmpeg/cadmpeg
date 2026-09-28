@@ -3707,25 +3707,27 @@ fn revolution_definition(
     } else {
         None
     };
-    let profile = profile_ref(ctx, owner, properties, sketches)?;
-    Ok((|| {
-    let profile = match profile {
+    let profile = match profile_ref(ctx, owner, properties, sketches)? {
         ProfileRef::Planar(PlanarProfileRef::Unresolved(_)) => None,
         profile => Some(profile),
     };
-    let mut axis = revolution_axis(properties)?;
-    axis.direction = cadmpeg_ir::features::FeatureDirection3::from(
-        cadmpeg_ir::units::UnitVector3::normalized(*axis.direction)?,
-    );
+    let Some(mut axis) = revolution_axis(properties) else { return Ok(None); };
+    let Some(direction) = cadmpeg_ir::units::UnitVector3::normalized(*axis.direction) else {
+        return Ok(None);
+    };
+    axis.direction = cadmpeg_ir::features::FeatureDirection3::from(direction);
     let angle = || {
         scalar_named(properties, "Angle")
             .filter(|angle| angle.get() > 0.0)
             .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::new(angle.get().to_radians()))
     };
-    let mode = enumeration_selector(properties, "Type", 0)?;
+    let Some(mode) = enumeration_selector(properties, "Type", 0) else { return Ok(None); };
     let extent = if kind == "Part::Revolution" {
-        let angle = angle()?;
-        if bool_selector(properties, "Symmetric", false)? {
+        let Some(angle) = angle() else { return Ok(None); };
+        let Some(symmetric) = bool_selector(properties, "Symmetric", false) else {
+            return Ok(None);
+        };
+        if symmetric {
             RevolveExtent::Symmetric {
                 termination: AngularTermination::Angle { angle },
             }
@@ -3737,8 +3739,11 @@ fn revolution_definition(
     } else {
         match mode {
             0 => {
-                let angle = angle()?;
-                if bool_selector(properties, "Midplane", false)? {
+                let Some(angle) = angle() else { return Ok(None); };
+                let Some(midplane) = bool_selector(properties, "Midplane", false) else {
+                    return Ok(None);
+                };
+                if midplane {
                     RevolveExtent::Symmetric {
                         termination: AngularTermination::Angle { angle },
                     }
@@ -3754,30 +3759,38 @@ fn revolution_definition(
             2 => RevolveExtent::OneSided {
                 termination: AngularTermination::ToFirst {},
             },
-            3 => RevolveExtent::OneSided {
-                termination: AngularTermination::ToFace {
-                    face: cadmpeg_ir::features::FaceSelection::Native(
-                        singular_operand(properties, "UpToFace")?.id.clone(),
-                    ),
-                    offset: None,
-                },
-            },
-            4 => RevolveExtent::TwoSided {
-                first: AngularTermination::Angle { angle: angle()? },
-                second: AngularTermination::Angle {
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(
-                        scalar_named(properties, "Angle2")
-                            .filter(|angle| angle.get() > 0.0)?
-                            .get()
-                            .to_radians(),
-                    )?,
-                },
-            },
-            _ => return None,
+            3 => {
+                let Some(face) = singular_operand(properties, "UpToFace") else {
+                    return Ok(None);
+                };
+                RevolveExtent::OneSided {
+                    termination: AngularTermination::ToFace {
+                        face: cadmpeg_ir::features::FaceSelection::Native(retained_string(
+                            ctx, &face.id, "fcstd revolution terminal face",
+                        )?),
+                        offset: None,
+                    },
+                }
+            }
+            4 => {
+                let Some(first) = angle() else { return Ok(None); };
+                let Some(second) = scalar_named(properties, "Angle2")
+                    .filter(|angle| angle.get() > 0.0)
+                    .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::new(angle.get().to_radians()))
+                else { return Ok(None); };
+                RevolveExtent::TwoSided {
+                    first: AngularTermination::Angle { angle: first },
+                    second: AngularTermination::Angle { angle: second },
+                }
+            }
+            _ => return Ok(None),
         }
     };
     let reversed = if kind.starts_with("PartDesign::") {
-        bool_selector(properties, "Reversed", false)?
+        let Some(reversed) = bool_selector(properties, "Reversed", false) else {
+            return Ok(None);
+        };
+        reversed
     } else {
         false
     };
@@ -3791,48 +3804,59 @@ fn revolution_definition(
     axis.reference = match axis_reference_properties.as_slice() {
         [] => None,
         [property] => {
-            if property
-                .links()
-                .iter()
-                .any(|link| nonempty_link(link.as_ref()))
-            {
-                singular_reference_link(property)?;
-                Some(PathRef::Native(property.id.clone()))
+            if property.links().iter().any(|link| nonempty_link(link.as_ref())) {
+                if singular_reference_link(property).is_none() {
+                    return Ok(None);
+                }
+                Some(PathRef::Native(retained_string(
+                    ctx, &property.id, "fcstd revolution axis reference",
+                )?))
             } else {
                 None
             }
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let face_maker =
-        if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
-            Some(FaceMaker::new(face_maker_class?)?)
-        } else {
-            None
-        };
-    let fuse_order =
-        if kind.starts_with("PartDesign::") && property(properties, "FuseOrder").is_some() {
-            Some(match integer_property(properties, "FuseOrder")? {
-                0 => RevolutionFuseOrder::BaseFirst,
-                1 => RevolutionFuseOrder::FeatureFirst,
-                _ => return None,
-            })
-        } else {
-            None
-        };
-    let profile: Option<cadmpeg_ir::features::PlanarProfileRef> =
-        profile.and_then(|profile| profile.planar().cloned());
+    let face_maker = if kind == "Part::Revolution"
+        && property(properties, "FaceMakerClass").is_some()
+    {
+        let Some(face_maker_class) = face_maker_class else { return Ok(None); };
+        let Some(face_maker) = FaceMaker::new(face_maker_class) else { return Ok(None); };
+        Some(face_maker)
+    } else {
+        None
+    };
+    let fuse_order = if kind.starts_with("PartDesign::")
+        && property(properties, "FuseOrder").is_some()
+    {
+        let Some(value) = integer_property(properties, "FuseOrder") else { return Ok(None); };
+        Some(match value {
+            0 => RevolutionFuseOrder::BaseFirst,
+            1 => RevolutionFuseOrder::FeatureFirst,
+            _ => return Ok(None),
+        })
+    } else {
+        None
+    };
+    let profile = profile.and_then(|profile| match profile {
+        ProfileRef::Planar(profile) => Some(profile),
+        _ => None,
+    });
     let solid = Some(if kind == "Part::Revolution" {
-        bool_selector(properties, "Solid", false)?
+        let Some(solid) = bool_selector(properties, "Solid", false) else { return Ok(None); };
+        solid
     } else {
         true
     });
     let allow_multi_profile_faces = if kind.starts_with("PartDesign::") {
-        Some(bool_selector(properties, "AllowMultiFace", false)?)
+        let Some(allow) = bool_selector(properties, "AllowMultiFace", false) else {
+            return Ok(None);
+        };
+        Some(allow)
     } else {
         None
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match profile {
             Some(profile) => RevolveConstruction::Resolved {
                 profile,
@@ -3861,8 +3885,7 @@ fn revolution_definition(
         } else {
             BooleanOp::Join
         },
-    }))
-    })())
+    })))
 }
 
 fn vector_property(
