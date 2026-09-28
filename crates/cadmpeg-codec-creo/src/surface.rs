@@ -6848,6 +6848,17 @@ fn plane_local_systems_for_rows(
     payload: &[u8],
     rows: &[SurfaceRow],
 ) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    struct Candidate<'a> {
+        complete: bool,
+        scanner_owned: bool,
+        fallback_owned: bool,
+        body: &'a [u8],
+        slots: [Option<f64>; 12],
+        layout: Option<scalar::PlaneSupportFrameLayout>,
+        simple: bool,
+        offset: usize,
+    }
+
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let parameters = parameter_records_for_rows(ctx, payload, rows)?;
     let headers = rows
@@ -6859,8 +6870,7 @@ fn plane_local_systems_for_rows(
                 .get(index + 1)
                 .map_or(payload.len(), |next| next.offset);
             (row, row_end)
-        })
-        .collect::<Vec<_>>();
+        });
     let mut systems = Vec::new();
     for (row, row_end) in headers {
         let Some(envelope_start) = positional_body_start(payload, row) else {
@@ -6872,14 +6882,15 @@ fn plane_local_systems_for_rows(
             .filter(|parameter| parameter.boundary == SurfaceBodyBoundary::CompoundClose)
             .map(|parameter| parameter.body_offset + parameter.body.len());
         let scanner_close = first_compound_close(payload, envelope_start, row_end);
-        let mut envelope_closes = scanner_close
-            .into_iter()
-            .chain(parameter_close)
-            .collect::<Vec<_>>();
-        envelope_closes.sort_unstable();
-        envelope_closes.dedup();
+        let envelope_closes = match (scanner_close, parameter_close) {
+            (Some(first), Some(second)) if first < second => [Some(first), Some(second)],
+            (Some(first), Some(second)) if second < first => [Some(second), Some(first)],
+            (Some(first), Some(_)) => [Some(first), None],
+            (Some(first), None) | (None, Some(first)) => [Some(first), None],
+            (None, None) => [None, None],
+        };
         let mut row_systems = Vec::new();
-        for envelope_close in envelope_closes {
+        for envelope_close in envelope_closes.into_iter().flatten() {
             let chunk_start = envelope_close + 1;
             let chunk_end =
                 plane_local_system_compound_close(payload, chunk_start, row_end, &cache);
@@ -6889,53 +6900,60 @@ fn plane_local_systems_for_rows(
             if chunk_end <= chunk_start {
                 continue;
             }
-            let body = payload[chunk_start..chunk_end].to_vec();
-            let decoded = complete_plane_local_system(&body, &cache);
+            let body = &payload[chunk_start..chunk_end];
+            let decoded = complete_plane_local_system(body, &cache);
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
             let layout = decoded.as_ref().map(|(_, layout)| *layout);
-            let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
+            let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
             let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
                 && frame_body.len() <= 24
                 && !frame_body
                     .iter()
                     .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
-            row_systems.push((
-                decoded.is_some(),
-                Some(envelope_close) == scanner_close,
-                Some(envelope_close) == scanner_close.or(parameter_close),
-                PlaneLocalSystem {
+            ctx.try_reserve_items(&mut row_systems, 1, "creo plane row systems")?;
+            row_systems.push(Candidate {
+                complete: decoded.is_some(),
+                scanner_owned: Some(envelope_close) == scanner_close,
+                fallback_owned: Some(envelope_close) == scanner_close.or(parameter_close),
+                body,
+                slots,
+                layout,
+                simple,
+                offset: chunk_start,
+            });
+        }
+        let has_complete = row_systems.iter().any(|candidate| candidate.complete);
+        let has_complete_scanner = row_systems
+            .iter()
+            .any(|candidate| candidate.complete && candidate.scanner_owned);
+        for candidate in row_systems {
+            let selected = if has_complete_scanner {
+                candidate.complete && candidate.scanner_owned
+            } else if has_complete {
+                candidate.complete
+            } else {
+                candidate.fallback_owned
+            };
+            if selected {
+                let body = ctx.copy_retained(candidate.body, "creo plane local-system body")?;
+                ctx.try_reserve_items(&mut systems, 1, "creo plane local systems")?;
+                systems.push(PlaneLocalSystem {
                     surface_id: row.id,
                     body,
-                    slots,
-                    layout,
-                    classification: if simple {
+                    slots: candidate.slots,
+                    layout: candidate.layout,
+                    classification: if candidate.simple {
                         LocalSystemClassification::Simple
                     } else {
                         LocalSystemClassification::Unclassified
                     },
                     row_offset: row.offset,
-                    offset: chunk_start,
-                },
-            ));
+                    offset: candidate.offset,
+                });
+            }
         }
-        let has_complete = row_systems.iter().any(|(complete, _, _, _)| *complete);
-        let has_complete_scanner = row_systems
-            .iter()
-            .any(|(complete, scanner_owned, _, _)| *complete && *scanner_owned);
-        systems.extend(row_systems.into_iter().filter_map(
-            |(complete, scanner_owned, fallback_owned, system)| {
-                (if has_complete_scanner {
-                    complete && scanner_owned
-                } else if has_complete {
-                    complete
-                } else {
-                    fallback_owned
-                })
-                .then_some(system)
-            },
-        ));
     }
     Ok(systems)
 }
