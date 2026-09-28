@@ -749,7 +749,7 @@ pub(super) fn try_decode_geometry(
                             &model_index,
                             &surfaces_by_xmt,
                             [Some(charted.primary_support), charted.secondary_support],
-                            &charted.samples.points(),
+                            &charted.samples.points_charged(ctx)?,
                             charted.fit_tolerance.get(),
                             &charted.support_uv,
                             &serialized_support_uv_geometry_budget,
@@ -758,7 +758,7 @@ pub(super) fn try_decode_geometry(
                             &model_index,
                             &surfaces_by_xmt,
                             [Some(charted.primary_support), charted.secondary_support],
-                            &charted.samples.points(),
+                            &charted.samples.points_charged(ctx)?,
                             charted.fit_tolerance.get(),
                             &charted.ext_support_uv,
                             &serialized_support_uv_geometry_budget,
@@ -838,8 +838,8 @@ pub(super) fn try_decode_geometry(
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         NurbsCurve::from_lanes(
                             1,
-                            linear_knots(&charted.samples.parameters()),
-                            charted.samples.points(),
+                            linear_knots(&charted.samples.parameters_charged(ctx)?),
+                            charted.samples.points_charged(ctx)?,
                             None,
                             false,
                         )
@@ -886,7 +886,7 @@ pub(super) fn try_decode_geometry(
                     .get(&construction.xmt)
                     .cloned()
                     .unwrap_or([None, None]);
-                let parameters = charted.samples.parameters();
+                let parameters = charted.samples.parameters_charged(ctx)?;
                 let first = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
@@ -1132,6 +1132,7 @@ pub(super) fn try_decode_geometry(
             completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
         let support_uv_validation =
             invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
                 &validated_support_uv_lanes,
@@ -1143,6 +1144,7 @@ pub(super) fn try_decode_geometry(
         let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
+            ctx,
             &mut ir,
             &pending_ext11_support_uv,
             &serialized_support_uv_geometry_budget,
@@ -1153,6 +1155,7 @@ pub(super) fn try_decode_geometry(
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
+                ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
                 &support_budget,

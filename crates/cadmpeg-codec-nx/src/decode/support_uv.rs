@@ -33,7 +33,7 @@ use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
-use cadmpeg_core::decode::{work_units, WorkBudget};
+use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
@@ -560,10 +560,11 @@ pub(super) fn complete_ext11_support_uv(
     pending: &[PendingExt11SupportUv],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    complete_ext11_support_uv_with_budget(ir, pending, &geometry_budget)
+    crate::test_support::with_decode_context(|ctx| complete_ext11_support_uv_with_budget(ctx, ir, pending, &geometry_budget))
 }
 
 pub(super) fn complete_ext11_support_uv_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
@@ -571,8 +572,8 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
-        let points = &samples.points();
-        let parameters = &samples.parameters();
+        let points = &samples.points_charged(ctx)?;
+        let parameters = &samples.parameters_charged(ctx)?;
         let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
@@ -690,7 +691,8 @@ pub(super) fn complete_support_uv_with_budget(
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
-    complete_support_uv_with_budget_and_endpoint_witnesses(
+    crate::test_support::with_decode_context(|ctx| complete_support_uv_with_budget_and_endpoint_witnesses(
+        ctx,
         ir,
         pending,
         support_budget,
@@ -698,10 +700,11 @@ pub(super) fn complete_support_uv_with_budget(
         coupled_support_budget,
         coupled_geometry_budget,
         &mut endpoint_witnesses,
-    )
+    ))
 }
 
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
@@ -725,6 +728,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
         geometry_budget.clear_blend_frame_cache();
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_support_uv_wave(
+            ctx,
             ir,
             pending,
             support_budget,
@@ -750,14 +754,15 @@ pub(super) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+    crate::test_support::with_decode_context(|ctx| invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+        ctx,
         ir,
         pending,
         &BTreeSet::new(),
         &support_budget,
         &geometry_budget,
         false,
-    )
+    ))
     .expect("evaluator allocation succeeds");
 }
 
@@ -769,21 +774,22 @@ pub(in crate::decode) struct SupportUvValidationResult {
 }
 
 pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
     isolate_lanes: bool,
-) -> Result<SupportUvValidationResult, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<SupportUvValidationResult, cadmpeg_core::CodecError> {
     let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
         let mut lane_geometry_exhausted = false;
         for (procedural_id, samples, fit_tolerance, _) in pending {
-            let points = &samples.points();
-            let parameters = &samples.parameters();
+            let points = &samples.points_charged(ctx)?;
+            let parameters = &samples.parameters_charged(ctx)?;
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -941,6 +947,7 @@ fn pending_support_lanes_requiring_completion(
 // this completion boundary.
 #[allow(clippy::too_many_arguments)]
 fn complete_support_uv_wave(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     support_budget: &SupportUvBudget<'_>,
@@ -960,8 +967,8 @@ fn complete_support_uv_wave(
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         for (procedural_id, samples, fit_tolerance, serialized) in pending {
-            let points = &samples.points();
-            let parameters = &samples.parameters();
+            let points = &samples.points_charged(ctx)?;
+            let parameters = &samples.parameters_charged(ctx)?;
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
@@ -1452,6 +1459,7 @@ fn complete_support_uv_wave(
     if !coupled_geometry_budget.exhausted() {
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_coupled_support_uv(
+            ctx,
             ir,
             pending,
             coupled_support_budget,
@@ -1551,6 +1559,7 @@ fn complete_blend_boundary_support_uv_with_index_and_budget(
 }
 
 fn complete_coupled_support_uv(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     coupled_support_budget: &SupportUvBudget<'_>,
@@ -1569,8 +1578,8 @@ fn complete_coupled_support_uv(
     let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
-        let points = &samples.points();
-        let parameters = &samples.parameters();
+        let points = &samples.points_charged(ctx)?;
+        let parameters = &samples.parameters_charged(ctx)?;
         let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
@@ -1795,14 +1804,15 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = GeometryWorkBudget::new(geometry_work);
     let mut failed_attempts = BTreeMap::new();
-    complete_coupled_support_uv(
+    crate::test_support::with_decode_context(|ctx| complete_coupled_support_uv(
+        ctx,
         ir,
         pending,
         &coupled_support_budget,
         &geometry_budget,
         &mut failed_attempts,
         &mut BTreeMap::new(),
-    )
+    ))
     .expect("the coupled support-uv wave pairs its lanes");
 }
 
