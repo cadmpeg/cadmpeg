@@ -266,10 +266,6 @@ pub(super) fn try_decode_geometry(
     let mut emitted_body_ids = BTreeSet::new();
     for body in body_node_ids.keys() {
         ctx.charge_collection_items(1, "nx emitted terminal body index")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
-            "nx emitted terminal body identity",
-        )?;
         emitted_body_ids.insert(copy_typed_id(
             ctx,
             body.as_str(),
@@ -1361,38 +1357,18 @@ pub(super) fn try_decode_geometry(
                 &mut completed_endpoint_witnesses,
             )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
-        for (key, witnesses) in validated_support_uv_endpoint_witnesses(
+        extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, validated_support_uv_endpoint_witnesses(
             &ir,
             &pending_ext11_support_uv,
             &validated_support_uv_lanes,
-        ) {
-            validated_endpoint_witnesses
-                .entry(key)
-                .or_default()
-                .extend(witnesses);
-        }
-        for (key, witness) in newly_validated_endpoint_witnesses {
-            validated_endpoint_witnesses
-                .entry(key)
-                .or_default()
-                .extend(witness);
-        }
-        for (key, witnesses) in completed_endpoint_witnesses {
-            validated_endpoint_witnesses
-                .entry(key)
-                .or_default()
-                .extend(witnesses);
-        }
-        for (key, witnesses) in &validated_endpoint_witnesses {
-            model_endpoint_witnesses
-                .entry(key.clone())
-                .or_default()
-                .extend(witnesses.iter().cloned());
-        }
+        ))?;
+        extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, newly_validated_endpoint_witnesses)?;
+        extend_endpoint_witnesses(ctx, &mut validated_endpoint_witnesses, completed_endpoint_witnesses)?;
+        copy_endpoint_witnesses(ctx, &mut model_endpoint_witnesses, &validated_endpoint_witnesses)?;
         attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
-            &IdScope::stream(si),
+            &IdScope::stream_charged(ctx, si)?,
             intersection_starts.coedges,
             intersection_starts.procedural_curves,
             source_stream.clone(),
@@ -1420,16 +1396,27 @@ pub(super) fn try_decode_geometry(
     }
 
     intersection_index.complete_from_model(&mut ir);
-    let completion_sources = completion_streams
-        .iter()
-        .map(|(si, source_stream)| IntersectionCompletionSource {
-            scope: IdScope::stream(*si),
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(completion_streams.len()),
+        "nx completion sources",
+    )?;
+    let mut completion_sources = Vec::new();
+    completion_sources.try_reserve_exact(completion_streams.len()).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx completion sources",
+            0,
+            cadmpeg_core::decode::u64_from_index(completion_streams.len()),
+        )
+    })?;
+    for (si, source_stream) in &completion_streams {
+        completion_sources.push(IntersectionCompletionSource {
+            scope: IdScope::stream_charged(ctx, *si)?,
             graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     attach_completed_intersection_pcurves_for_model_with_budget(
         &mut ir,
         &completion_sources,
@@ -1574,6 +1561,62 @@ where
 {
     ctx.charge_collection_items(1, operation)?;
     ids.insert(copy_typed_id(ctx, identity, operation)?);
+    Ok(())
+}
+
+fn extend_endpoint_witnesses(
+    ctx: &DecodeContext<'_>,
+    target: &mut EndpointWitnesses,
+    source: EndpointWitnesses,
+) -> Result<(), CodecError> {
+    for (key, witnesses) in source {
+        let target_witnesses = match target.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "nx endpoint witness index")?;
+                entry.insert(Vec::new())
+            }
+        };
+        let count = cadmpeg_core::decode::u64_from_index(witnesses.len());
+        ctx.charge_collection_items(count, "nx endpoint witness merge")?;
+        target_witnesses.try_reserve(witnesses.len()).map_err(|_| {
+            ctx.refuse_codec_limit("nx endpoint witness merge", 0, count)
+        })?;
+        target_witnesses.extend(witnesses);
+    }
+    Ok(())
+}
+
+fn copy_endpoint_witnesses(
+    ctx: &DecodeContext<'_>,
+    target: &mut EndpointWitnesses,
+    source: &EndpointWitnesses,
+) -> Result<(), CodecError> {
+    for ((curve, surface), witnesses) in source {
+        let key = (
+            copy_typed_id(ctx, curve.as_str(), "nx endpoint witness curve")?,
+            copy_typed_id(ctx, surface.as_str(), "nx endpoint witness surface")?,
+        );
+        let target_witnesses = match target.entry(key) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "nx model endpoint witness index")?;
+                entry.insert(Vec::new())
+            }
+        };
+        let count = cadmpeg_core::decode::u64_from_index(witnesses.len());
+        ctx.charge_collection_items(count, "nx model endpoint witnesses")?;
+        target_witnesses.try_reserve(witnesses.len()).map_err(|_| {
+            ctx.refuse_codec_limit("nx model endpoint witnesses", 0, count)
+        })?;
+        for (geometry, range, endpoints) in witnesses {
+            target_witnesses.push((
+                geometry.try_clone_for_decode(ctx, "nx endpoint witness geometry")?,
+                *range,
+                *endpoints,
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -2041,11 +2084,11 @@ fn select_terminal_feature_bodies(
     let mut emitted = BTreeSet::new();
     for body in &ir.model.bodies {
         ctx.charge_collection_items(1, "nx terminal body selection index")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+        emitted.insert(copy_typed_id(
+            ctx,
+            body.id.as_str(),
             "nx terminal body selection identity",
-        )?;
-        emitted.insert(body.id.clone());
+        )?);
     }
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
