@@ -193,7 +193,7 @@ pub(crate) fn transfer(
         } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
             parametric_helix_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_binder(&object.type_name) {
-            binder_definition(&object.type_name, &owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            binder_definition(ctx, &object.type_name, &owned, &feature_ids)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_pattern(&object.type_name) {
             pattern_definition(
                 ctx,
@@ -5986,124 +5986,129 @@ fn helical_sweep_definition(
 }
 
 fn binder_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
     features: &HashMap<&str, FeatureId>,
-) -> Option<FeatureDefinition> {
-    let sources = property(properties, "Support")?
-        .links()
-        .iter()
-        .flatten()
-        .filter(|link| link.object().is_some())
-        .map(|link| {
-            Some(BinderSource {
-                target: binder_target(link, features)?,
-                subelements: link_selectors(link)
-                    .map(cadmpeg_core::text::NonBlankString::new)
-                    .collect::<Option<Vec<_>>>()?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(support) = property(properties, "Support") else { return Ok(None); };
+    let source_links = || support.links().iter().flatten().filter(|link| link.object().is_some());
+    let mut sources = collection_vec(ctx, source_links().count(), "fcstd binder sources")?;
+    for link in source_links() {
+        let Some(target) = binder_target(ctx, link, features)? else { return Ok(None); };
+        let mut subelements = collection_vec(ctx, link_selectors(link).count(), "fcstd binder subelements")?;
+        for selector in link_selectors(link) {
+            let Some(selector) = cadmpeg_core::text::NonBlankString::new(
+                retained_string(ctx, selector, "fcstd binder subelement selector")?
+            ) else { return Ok(None); };
+            subelements.push(selector);
+        }
+        sources.push(BinderSource { target, subelements });
+    }
     let construction = if kind == "PartDesign::ShapeBinder" {
+        let Some(trace_support) = bool_selector(properties, "TraceSupport", false) else { return Ok(None); };
         BinderConstruction::Shape {
-            trace_support: bool_selector(properties, "TraceSupport", false)?,
+            trace_support,
         }
     } else {
-        let distance =
-            finite_float_selector(properties, "Offset", "App::PropertyFloat", FiniteReal::ZERO)?;
-        let offset_join = enumeration_selector(properties, "OffsetJoinType", 0)?;
-        let offset_fill = bool_selector(properties, "OffsetFill", false)?;
-        let offset_open_result = bool_selector(properties, "OffsetOpenResult", false)?;
-        let offset_intersection = bool_selector(properties, "OffsetIntersection", false)?;
+        let Some(distance) = finite_float_selector(properties, "Offset", "App::PropertyFloat", FiniteReal::ZERO) else { return Ok(None); };
+        let Some(offset_join) = enumeration_selector(properties, "OffsetJoinType", 0) else { return Ok(None); };
+        let Some(offset_fill) = bool_selector(properties, "OffsetFill", false) else { return Ok(None); };
+        let Some(offset_open_result) = bool_selector(properties, "OffsetOpenResult", false) else { return Ok(None); };
+        let Some(offset_intersection) = bool_selector(properties, "OffsetIntersection", false) else { return Ok(None); };
         let offset = if distance.get() == 0.0 {
             None
         } else {
+            let Some(distance) = cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(distance) else { return Ok(None); };
             Some(BinderOffset {
-                distance: cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(distance)?,
+                distance,
                 join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,
                     2 => BinderOffsetJoin::Intersection,
-                    _ => return None,
+                    _ => return Ok(None),
                 },
                 fill: offset_fill,
                 open_result: offset_open_result,
                 intersection: offset_intersection,
             })
         };
-        let context_properties = properties
-            .iter()
-            .filter(|property| property.name == "Context")
-            .copied()
-            .collect::<Vec<_>>();
-        let context = match context_properties.as_slice() {
-            [] => None,
-            [property]
-                if property.type_name == "App::PropertyXLink"
-                    && property.links().len() == 1
-                    && property.links()[0]
-                        .as_ref()
-                        .is_none_or(|link| link.subelements().is_empty()) =>
-            {
-                property
-                    .links()
-                    .first()
-                    .and_then(Option::as_ref)
-                    .filter(|link| link.object().is_some_and(|object| !object.is_empty()))
-                    .and_then(|link| binder_target(link, features))
+        let mut context_properties = properties.iter().filter(|property| property.name == "Context");
+        let context = if let Some(property) = context_properties.next() {
+            if context_properties.next().is_some()
+                || property.type_name != "App::PropertyXLink"
+                || property.links().len() != 1
+                || !property.links()[0].as_ref().is_none_or(|link| link.subelements().is_empty())
+            { return Ok(None); }
+            match property.links().first().and_then(Option::as_ref)
+                .filter(|link| link.object().is_some_and(|object| !object.is_empty())) {
+                Some(link) => binder_target(ctx, link, features)?,
+                None => None,
             }
-            _ => return None,
-        };
+        } else { None };
+        let Some(lifecycle) = enumeration_selector(properties, "BindMode", 0) else { return Ok(None); };
+        let Some(relative) = bool_selector(properties, "Relative", true) else { return Ok(None); };
+        let Some(copy_on_change) = enumeration_selector(properties, "BindCopyOnChange", 0) else { return Ok(None); };
+        let Some(claim_children) = bool_selector(properties, "ClaimChildren", false) else { return Ok(None); };
+        let Some(fuse) = bool_selector(properties, "Fuse", false) else { return Ok(None); };
+        let Some(make_face) = bool_selector(properties, "MakeFace", true) else { return Ok(None); };
+        let Some(partial_load) = bool_selector(properties, "PartialLoad", false) else { return Ok(None); };
+        let Some(refine) = bool_selector(properties, "Refine", true) else { return Ok(None); };
         BinderConstruction::SubShape {
-            lifecycle: match enumeration_selector(properties, "BindMode", 0)? {
+            lifecycle: match lifecycle {
                 0 => BinderLifecycle::Synchronized,
                 1 => BinderLifecycle::Frozen,
                 2 => BinderLifecycle::Detached,
-                _ => return None,
+                _ => return Ok(None),
             },
-            placement: if bool_selector(properties, "Relative", true)? {
+            placement: if relative {
                 BinderPlacement::Relative
             } else {
                 BinderPlacement::Global
             },
-            copy_on_change: match enumeration_selector(properties, "BindCopyOnChange", 0)? {
+            copy_on_change: match copy_on_change {
                 0 => BinderCopyOnChange::Disabled,
                 1 => BinderCopyOnChange::Enabled,
                 2 => BinderCopyOnChange::Mutated,
-                _ => return None,
+                _ => return Ok(None),
             },
-            claim_children: bool_selector(properties, "ClaimChildren", false)?,
-            fuse: bool_selector(properties, "Fuse", false)?,
-            make_face: bool_selector(properties, "MakeFace", true)?,
-            partial_load: bool_selector(properties, "PartialLoad", false)?,
-            refine: bool_selector(properties, "Refine", true)?,
+            claim_children,
+            fuse,
+            make_face,
+            partial_load,
+            refine,
             offset,
             context,
         }
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::Binder {
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Binder {
         sources,
         construction,
-    }))
+    })))
 }
 
 fn binder_target(
+    ctx: &DecodeContext<'_>,
     link: &crate::native::LinkTarget,
     features: &HashMap<&str, FeatureId>,
-) -> Option<BinderTarget> {
-    let object = link.object()?;
+) -> Result<Option<BinderTarget>, CodecError> {
+    let Some(object) = link.object() else { return Ok(None); };
     if let Some(document) = link.document() {
-        return Some(BinderTarget::External {
-            document: cadmpeg_core::text::NonBlankString::new(document.as_str())?,
-            object: cadmpeg_core::text::NonBlankString::new(object)?,
-        });
+        let Some(document) = cadmpeg_core::text::NonBlankString::new(retained_string(ctx, document.as_str(), "fcstd external binder document")?) else { return Ok(None); };
+        let Some(object) = cadmpeg_core::text::NonBlankString::new(retained_string(ctx, object, "fcstd external binder object")?) else { return Ok(None); };
+        return Ok(Some(BinderTarget::External { document, object }));
     }
-    Some(match features.get(object).cloned() {
-        Some(feature) => BinderTarget::Feature { feature },
-        None => BinderTarget::Native {
-            reference: cadmpeg_core::text::NonBlankString::new(object)?,
+    Ok(Some(match features.get(object) {
+        Some(feature) => BinderTarget::Feature {
+            feature: FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd binder feature target")?).map_err(CodecError::malformed)?,
         },
-    })
+        None => BinderTarget::Native {
+            reference: match cadmpeg_core::text::NonBlankString::new(retained_string(ctx, object, "fcstd binder native target")?) {
+                Some(reference) => reference,
+                None => return Ok(None),
+            },
+        },
+    }))
 }
 
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
