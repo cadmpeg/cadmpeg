@@ -108,7 +108,7 @@ pub(super) struct CreoCurveExpressionRecord {
     prohibited_constructs: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub(super) struct CreoFeatureReferenceNameRecord {
     pub(super) id: String,
     owner_feature_id: u32,
@@ -2258,21 +2258,35 @@ pub(super) fn feature_operation_state_records(
 }
 
 pub(super) fn feature_reference_name_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<CreoFeatureReferenceNameRecord> {
-    scan.features
-        .reference_names
-        .iter()
-        .map(|record| CreoFeatureReferenceNameRecord {
-            id: format!("creo:mdlrefinfo:feature_name#{}", record.offset),
+) -> Result<Vec<CreoFeatureReferenceNameRecord>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.features.reference_names {
+        let id = ctx.format_retained(
+            format_args!("creo:mdlrefinfo:feature_name#{}", record.offset),
+            "creo native feature reference IDs",
+        )?;
+        let name = ctx.copy_retained_lossy_utf8(
+            &record.name_bytes,
+            "creo native feature reference text",
+        )?;
+        let name_bytes = ctx.copy_retained(
+            &record.name_bytes,
+            "creo native feature reference bytes",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native feature reference records")?;
+        records.push(CreoFeatureReferenceNameRecord {
+            id,
             owner_feature_id: record.feature_id,
-            name: record.name().into_owned(),
-            name_bytes: record.name_bytes.clone(),
+            name,
+            name_bytes,
             own_reference_id: record.own_reference_id,
             reference_type: record.reference_type,
             offset: record.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
 #[derive(Serialize)]
@@ -2926,8 +2940,78 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 
 #[cfg(test)]
 mod tests {
-    use super::feature_row_records;
+    use super::{feature_reference_name_records, feature_row_records};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
+
+    fn reference_name_scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.features.reference_names.push(crate::feature::operations::FeatureReferenceName {
+            feature_id: 40,
+            name_bytes: b"A\xff".to_vec(),
+            own_reference_id: 3,
+            reference_type: 1,
+            offset: 0,
+        });
+        scan
+    }
+
+    fn reference_name_records_with_limits(
+        max_retained_bytes: u64,
+        max_collection_items: u64,
+    ) -> Result<Vec<super::CreoFeatureReferenceNameRecord>, cadmpeg_core::CodecError> {
+        let scan = reference_name_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        feature_reference_name_records(&ctx, &scan)
+    }
+
+    #[test]
+    fn native_feature_reference_id_refuses_retained_limit() {
+        let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
+        let error = reference_name_records_with_limits(id_len - 1, 1)
+            .expect_err("native reference ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature reference IDs"));
+    }
+
+    #[test]
+    fn native_feature_reference_text_refuses_replacement_limit() {
+        let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
+        let error = reference_name_records_with_limits(id_len + 3, 1)
+            .expect_err("invalid UTF-8 needs four retained bytes");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature reference text"));
+    }
+
+    #[test]
+    fn native_feature_reference_bytes_refuse_retained_limit() {
+        let id_len = "creo:mdlrefinfo:feature_name#0".len() as u64;
+        let error = reference_name_records_with_limits(id_len + 4 + 1, 1)
+            .expect_err("source bytes need their full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature reference bytes"));
+    }
+
+    #[test]
+    fn native_feature_reference_row_refuses_collection_limit() {
+        let error = reference_name_records_with_limits(u64::MAX, 0)
+            .expect_err("one native record needs one collection item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native feature reference records"));
+        let records = reference_name_records_with_limits(u64::MAX, 1)
+            .expect("one native record is admitted");
+        assert_eq!(records[0].name, "A\u{fffd}");
+        assert_eq!(records[0].name_bytes, b"A\xff");
+    }
 
     #[test]
     fn overlapping_feature_candidates_do_not_expose_short_headers() {
