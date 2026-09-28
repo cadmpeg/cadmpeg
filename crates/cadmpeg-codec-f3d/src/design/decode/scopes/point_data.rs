@@ -3,7 +3,6 @@
 
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
-use crate::bytes::lp_ascii_filtered;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::scope;
@@ -13,10 +12,21 @@ use crate::records::feature::work_geometry::DesignWorkPointInput;
 use crate::records::feature::work_geometry::DesignWorkPointRule;
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
+use std::ops::RangeInclusive;
 
 /// Type GUID of the point-data class a `WorkPoint` scope references. Every
 /// record of this class carries the `point3d` member sequence below.
 const POINT_DATA_TYPE_GUID: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+
+fn graphic_ascii_end(bytes: &[u8], at: usize, bounds: RangeInclusive<usize>) -> Option<usize> {
+    let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if !bounds.contains(&length) {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(length)?;
+    bytes.get(start..end)?.iter().all(u8::is_ascii_graphic).then_some(end)
+}
 
 /// The base class level of a point-data record, read under one record version.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,11 +130,11 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
     point_record_indices: impl IntoIterator<Item = &'a u32>,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignWorkPointConstruction> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for record_index in point_record_indices {
         for (start, paired) in records.frames(*record_index) {
-            let Some((_class_tag, after_tag)) =
-                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            let Some(after_tag) =
+                graphic_ascii_end(bytes, start, 0..=2000)
             else {
                 continue;
             };
@@ -139,46 +149,54 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
                 continue;
             }
             // The payload begins after the record name that closes the header.
-            let Some((_name, payload_at)) =
-                lp_ascii_filtered(bytes, after_tag + 8, 0..=256, u8::is_ascii_graphic)
+            let Some(payload_at) =
+                graphic_ascii_end(bytes, after_tag + 8, 0..=256)
             else {
                 continue;
             };
-            let levels = stored
-                .map_or_else(|| (0..=3).collect::<Vec<_>>(), |(_, version)| vec![version])
-                .into_iter()
-                .filter_map(|version| point_data_level(bytes, payload_at, paired, version))
-                .fold(Vec::new(), |mut levels, level| {
-                    if !levels.contains(&level) {
-                        levels.push(level);
+            let versions = match stored {
+                Some((_, version)) => [Some(version), None, None, None],
+                None => [Some(0), Some(1), Some(2), Some(3)],
+            };
+            let mut unique_level = None;
+            let mut ambiguous_level = false;
+            for version in versions.into_iter().flatten() {
+                if let Some(level) = point_data_level(bytes, payload_at, paired, version) {
+                    match &unique_level {
+                        Some(previous) if previous != &level => {
+                            ambiguous_level = true;
+                            break;
+                        }
+                        Some(_) => {}
+                        None => unique_level = Some(level),
                     }
-                    levels
-                });
+                }
+            }
             // Agreement is over the levels the fitting versions name, so the
             // duplicates are removed by value regardless of version order.
-            let [level] = levels.as_slice() else {
+            let Some(level) = unique_level.filter(|_| !ambiguous_level) else {
                 continue;
             };
             if let Some(position) = finite_reals_at(bytes, level.position_at) {
-                candidates.push(DesignWorkPointConstruction {
+                let construction = DesignWorkPointConstruction {
                     point_record_index: *record_index,
                     point_record_byte_offset: u64::try_from(start).ok()?,
                     position,
                     position_offset: u64::try_from(level.position_at).ok()?,
                     rule: DesignWorkPointRule::from_serialized(
                         level.reference_type,
-                        level.inputs.clone(),
+                        level.inputs,
                     )
                     .ok()?,
                     reference_type_offset: u64::try_from(level.reference_type_at).ok()?,
-                });
+                };
+                if candidate.replace(construction).is_some() {
+                    return None;
+                }
             }
         }
     }
-    if candidates.len() != 1 {
-        return None;
-    }
-    candidates.pop()
+    candidate
 }
 
 #[cfg(test)]
