@@ -1088,7 +1088,7 @@ fn validate_loaded(
         &edge_operand_records,
         &edge_treatment_vertex_records,
     )?;
-    validate_extrude_selection_members(&ctx, &mut findings);
+    validate_extrude_selection_members(&ctx, &mut findings)?;
     validate_entity_selection_operands(&ctx, &mut findings)?;
     validate_extrude_selection_group_members(&ctx, &mut findings)?;
     validate_edge_treatment_groups(
@@ -6112,7 +6112,7 @@ fn validate_operand_group_carriers<'a>(
 }
 
 /// Validate Extrude selection members against their resolved sketch geometry.
-fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -6150,12 +6150,14 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     secondary_id: curve.secondary_id,
                 })
         });
-        let targets = point_targets.chain(curve_targets).collect::<Vec<_>>();
-        let expected_target = match targets.as_slice() {
-            [target] => Some(target.clone()),
-            _ => None,
+        let mut targets = point_targets.chain(curve_targets);
+        let first_target = targets.next();
+        let expected_target = if targets.next().is_none() {
+            first_target
+        } else {
+            None
         };
-        let mut expected_identities = native
+        let mut expected_identities = ctx.collect_vec(native
             .design_construction_operand_identities
             .iter()
             .filter(|identity| {
@@ -6167,18 +6169,13 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && persistent.asset_id == member.asset_id
                             && persistent.context_id == member.context_id
                     })
-            })
-            .collect::<Vec<_>>();
+            }), "collect F3D Extrude selection identities")?;
         expected_identities.sort_by_key(|identity| {
             identity
                 .wrappers()
                 .first()
                 .map(|wrapper| wrapper.byte_offset)
         });
-        let expected_identity_ids = expected_identities
-            .into_iter()
-            .map(|identity| identity.id.as_str())
-            .collect::<Vec<_>>();
         let expected_history = history::historical_extrude_selection_identity_kind(
             member,
             &native.design_component_naming_spaces,
@@ -6186,22 +6183,16 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             &native.asm_histories,
         );
         let history_matches = if history::projection_was_finalized(&native.asm_histories) {
-            member.historical.as_ref().is_none_or(|binding| {
-                binding
-                    .state_ids
-                    .iter()
-                    .copied()
-                    .collect::<HashSet<_>>()
-                    .len()
-                    == binding.state_ids.len()
+            if let Some(binding) = member.historical.as_ref() {
+                ctx.collect_set(binding.state_ids.iter().copied(),
+                    "index F3D Extrude selection history states")?.len() == binding.state_ids.len()
                     && binding.state_ids.iter().all(|state_id| {
-                        native
-                            .asm_histories
-                            .iter()
-                            .flat_map(|history| &history.states)
+                        native.asm_histories.iter().flat_map(|history| &history.states)
                             .any(|state| state.state_id == *state_id)
                     })
-            })
+            } else {
+                true
+            }
         } else {
             expected_history
                 .as_ref()
@@ -6234,24 +6225,24 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .operand_identity_ids
                 .iter()
                 .map(String::as_str)
-                .eq(expected_identity_ids)
+                .eq(expected_identities.iter().map(|identity| identity.id.as_str()))
             && history_matches
             && (member.next_record_index != 0 || terminal_next)
-            && member_slots.insert((
+            && ctx.insert_unique(&mut member_slots, (
                 native_stream,
                 member.group_record_index,
                 member.group_member_ordinal,
-            ))
-            && member_records.insert((native_stream, member.record_index()));
+            ), "index F3D Extrude selection member slots")?
+            && ctx.insert_unique(&mut member_records,
+                (native_stream, member.record_index()),
+                "index F3D Extrude selection member records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Extrude selection member has an invalid fixed frame".into(),
-                entity: Some(member.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Extrude selection member has an invalid fixed frame",
+                Some(ctx.copy_entity(&member.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate entity-selection operand nested frames.
