@@ -121,6 +121,27 @@ fn source_image_copy_refuses_retained_limit() {
 }
 
 #[test]
+fn unique_asset_append_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let asset = cadmpeg_ir::assets::Asset::try_new(
+        cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
+        Some("one.png".into()),
+        Some("image/png".into()),
+        cadmpeg_ir::assets::AssetContent::Embedded {
+            data: cadmpeg_ir::assets::AssetData::new(vec![1]).unwrap(),
+        },
+        None,
+    )
+    .unwrap();
+    let mut assets = Vec::new();
+    let error = super::super::extend_unique_assets(&ctx, &mut assets, vec![asset]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append F3D unique assets"));
+    assert!(assets.is_empty());
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
