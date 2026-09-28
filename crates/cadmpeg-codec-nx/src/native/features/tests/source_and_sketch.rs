@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod data_block_object_frames;
+mod offset_block_view;
 
 use crate::native::features::canonical_feature_history_links;
 use crate::native::features::data_block_object_frame_id;
@@ -516,7 +517,20 @@ fn nx_offset_store_block_bytes_follow_catalog_identity() {
         offset: 7,
         bytes: &[0xcc],
     };
-    let controlled = offset_data_block_bytes_for_section(3, 100, &control, &[first, second]);
+    let controlled = crate::test_support::with_decode_context(|ctx| {
+        let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage").unwrap();
+        let mut blocks = std::collections::BTreeMap::new();
+        offset_data_block_bytes_for_section(
+            ctx,
+            &mut reservation,
+            &mut blocks,
+            3,
+            100,
+            &control,
+            &[first, second],
+        ).unwrap();
+        blocks
+    });
     assert_eq!(
         controlled["nx:om-data-blocks-3:block#0"],
         (&[0xaa][..], 105)

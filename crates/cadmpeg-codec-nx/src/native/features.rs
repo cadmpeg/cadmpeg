@@ -6062,54 +6062,91 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
 
 type OffsetDataBlocks<'a> = BTreeMap<String, (&'a [u8], u64)>;
 
+struct OffsetDataBlockView<'blocks, 'ctx> {
+    blocks: Cow<'blocks, OffsetDataBlocks<'blocks>>,
+    _reservation: Option<cadmpeg_core::decode::ScopedReservation<'ctx>>,
+}
+
+impl<'blocks> std::ops::Deref for OffsetDataBlockView<'blocks, '_> {
+    type Target = OffsetDataBlocks<'blocks>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.blocks
+    }
+}
+
 fn offset_data_block_bytes_for_section<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    blocks: &mut OffsetDataBlocks<'a>,
     section_ordinal: usize,
     entry_offset: u64,
     control: &crate::om::EntityRecord<'a>,
     records: &[crate::om::EntityRecord<'a>],
-) -> OffsetDataBlocks<'a> {
-    let mut blocks = BTreeMap::new();
-    blocks.insert(
-        format!("nx:om-data-blocks-{section_ordinal}:block#0"),
-        (control.bytes, entry_offset + control.offset as u64),
-    );
-    for (record_ordinal, block) in records.iter().enumerate() {
-        blocks.insert(
-            format!(
-                "nx:om-data-blocks-{section_ordinal}:block#{}",
-                record_ordinal + 1
-            ),
-            (block.bytes, entry_offset + block.offset as u64),
-        );
+) -> Result<(), cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+
+    for (block_ordinal, block) in std::iter::once(control).chain(records.iter()).enumerate() {
+        let prefix = "nx:om-data-blocks-";
+        let infix = ":block#";
+        let length = prefix.len()
+            .checked_add(section_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+            .and_then(|length| length.checked_add(infix.len()))
+            .and_then(|length| length.checked_add(block_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view key length", 0, 1))?;
+        let map_bytes = std::mem::size_of::<(String, (&[u8], u64))>()
+            .checked_add(length)
+            .and_then(|bytes| bytes.checked_add(64))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view storage", 0, 1))?;
+        ctx.charge_collection_items(1, "NX offset block view entries")?;
+        ctx.charge_work(
+            u64::from(usize::BITS - blocks.len().leading_zeros()),
+            "index NX offset block view",
+        )?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(map_bytes))?;
+        let mut key = String::new();
+        key.try_reserve_exact(length).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX offset block view key", 0, 1)
+        })?;
+        write!(&mut key, "{prefix}{section_ordinal}{infix}{block_ordinal}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX offset block view key", 0, 1))?;
+        let offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX offset block view source offset", 0, 1))?;
+        blocks.insert(key, (block.bytes, offset));
     }
-    blocks
+    Ok(())
 }
 
-fn offset_data_block_bytes<'a>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn offset_data_block_bytes<'a, 'ctx>(
+    ctx: &'ctx cadmpeg_core::decode::DecodeContext<'_>,
     container: &'a Container<'_>,
-) -> Result<Cow<'a, OffsetDataBlocks<'a>>, cadmpeg_core::CodecError> {
+) -> Result<OffsetDataBlockView<'a, 'ctx>, cadmpeg_core::CodecError> {
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(Cow::Borrowed(blocks));
+        return Ok(OffsetDataBlockView { blocks: Cow::Borrowed(blocks), _reservation: None });
     }
     let indexed = container.indexed_om_sections(ctx)?;
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
-        return Ok(Cow::Borrowed(blocks));
+        return Ok(OffsetDataBlockView { blocks: Cow::Borrowed(blocks), _reservation: None });
     }
+    let mut reservation = ctx.reserve_scoped(0, "NX offset block view storage")?;
     let mut blocks = BTreeMap::new();
     for (section_ordinal, (entry, section)) in indexed.into_iter().enumerate() {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        blocks.extend(offset_data_block_bytes_for_section(
+        offset_data_block_bytes_for_section(
+            ctx,
+            &mut reservation,
+            &mut blocks,
             section_ordinal,
             entry_offset,
             control,
             records,
-        ));
+        )?;
     }
-    Ok(Cow::Owned(blocks))
+    Ok(OffsetDataBlockView { blocks: Cow::Owned(blocks), _reservation: Some(reservation) })
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
