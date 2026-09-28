@@ -2888,30 +2888,51 @@ fn build_geometry_ir(
         &edge_use_sequences,
         &vertex_use_sequences,
     );
-    let face_identities = brep
-        .face_atoms
-        .iter()
-        .map(|atom| (atom.face.clone(), atom.identity.clone()))
-        .collect::<Vec<_>>();
-    let face_producers = face_identities
-        .iter()
-        .map(|(target, identity)| {
-            (
-                target.as_str().to_owned(),
-                identity.feature_source_id.value(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let body_modifiers = brep
+    let face_atoms = std::mem::take(&mut brep.face_atoms);
+    let mut face_identities = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut face_identities,
+        face_atoms.len(),
+        "collect SLDPRT face identities",
+    )?;
+    for atom in face_atoms {
+        face_identities.push((atom.face, atom.identity));
+    }
+    let mut face_producers = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut face_producers,
+        face_identities.len(),
+        "collect SLDPRT face producers",
+    )?;
+    for (target, identity) in &face_identities {
+        face_producers.push((
+            copy_retained_string(ctx, target.as_str(), "retain SLDPRT face producer ID")?,
+            identity.feature_source_id.value(),
+        ));
+    }
+    ctx.charge_work(
+        u64::try_from(brep.body_modifiers.len()).map_err(|_| {
+            ctx.refuse_codec_limit("count SLDPRT body modifiers", u64::MAX - 1, u64::MAX)
+        })?,
+        "count SLDPRT body modifiers",
+    )?;
+    let modifier_count = brep
         .body_modifiers
         .iter()
-        .filter_map(|modifier| {
-            modifier
-                .target
-                .clone()
-                .map(|target| (target, modifier.history_ordinal))
-        })
-        .collect::<Vec<_>>();
+        .filter(|modifier| modifier.target.is_some())
+        .count();
+    let mut body_modifiers = Vec::new();
+    ctx.reserve_collection_vec(
+        &mut body_modifiers,
+        modifier_count,
+        "collect SLDPRT body modifiers",
+    )?;
+    for modifier in std::mem::take(&mut brep.body_modifiers) {
+        ctx.charge_work(1, "collect SLDPRT body modifiers")?;
+        if let Some(target) = modifier.target {
+            body_modifiers.push((target, modifier.history_ordinal));
+        }
+    }
     crate::history::bind::derive_feature_outputs(
         &mut ir.model.features,
         &histories,
