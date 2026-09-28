@@ -999,6 +999,50 @@ impl<P, W> NurbsSurfaceLanes<P, W> {
 }
 
 impl NurbsSurface {
+    /// Copy the admitted surface with fallible knot and pole row allocations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when a knot lane or pole row cannot reserve storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let u_knots = self.u_knots.try_clone()?;
+        let v_knots = self.v_knots.try_clone()?;
+        let poles = match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(rows.len())?;
+                for row in rows {
+                    let mut copied_row = Vec::new();
+                    copied_row.try_reserve_exact(row.len())?;
+                    copied_row.extend_from_slice(row);
+                    copied.push(copied_row);
+                }
+                NurbsPoleGrid::Polynomial { rows: copied }
+            }
+            NurbsPoleGrid::Rational { rows } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(rows.len())?;
+                for row in rows {
+                    let mut copied_row = Vec::new();
+                    copied_row.try_reserve_exact(row.len())?;
+                    copied_row.extend_from_slice(row);
+                    copied.push(copied_row);
+                }
+                NurbsPoleGrid::Rational { rows: copied }
+            }
+        };
+        Ok(Self {
+            u_degree: self.u_degree,
+            v_degree: self.v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed: self.normal_reversed,
+            u_periodic: self.u_periodic,
+            v_periodic: self.v_periodic,
+        })
+    }
+
     /// Build a tensor-product NURBS surface with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

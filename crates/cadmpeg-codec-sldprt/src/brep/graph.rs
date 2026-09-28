@@ -406,6 +406,42 @@ fn collect_graph_ids<'a>(
     Ok(collected)
 }
 
+fn copy_surface_carrier_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &SurfaceGeometry,
+) -> Result<SurfaceGeometry, cadmpeg_core::CodecError> {
+    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = geometry {
+        ctx.charge_collection_items(nurbs.u_knots().as_slice().len() as u64, "copy Parasolid surface u knots")?;
+        ctx.charge_collection_items(nurbs.v_knots().as_slice().len() as u64, "copy Parasolid surface v knots")?;
+        ctx.charge_collection_items(nurbs.u_count() as u64, "copy Parasolid surface pole rows")?;
+        for _ in 0..nurbs.u_count() {
+            ctx.charge_collection_items(nurbs.v_count() as u64, "copy Parasolid surface poles")?;
+        }
+        let copied = nurbs.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit("copy Parasolid NURBS surface", u64::MAX - 1, u64::MAX)
+        })?;
+        Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(copied)))
+    } else {
+        Ok(geometry.clone())
+    }
+}
+
+fn copy_curve_carrier_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &CurveGeometry,
+) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
+    if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry {
+        ctx.charge_collection_items(nurbs.knots().as_slice().len() as u64, "copy Parasolid curve knots")?;
+        ctx.charge_collection_items(nurbs.pole_count() as u64, "copy Parasolid curve poles")?;
+        let copied = nurbs.try_clone().map_err(|_| {
+            ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX)
+        })?;
+        Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(copied)))
+    } else {
+        Ok(geometry.clone())
+    }
+}
+
 fn shell_face_components(
     ctx: &DecodeContext<'_>,
     out: &Brep,
@@ -902,7 +938,7 @@ fn ensure_surface_support(
             if !sink.out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let geometry = carrier.geometry.clone();
+                let geometry = copy_surface_carrier_geometry(sink.ctx, &carrier.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     if annotate_surface_frame(annotations, id.as_str(), solved).is_err() {
                         return Ok(None);
@@ -2321,7 +2357,7 @@ fn decode_graph(
                 annotations
                     .note(id_surf(f.bridge_attr), &source_stream, c.offset as u64)
                     .tag("compact_surface");
-                let geometry = c.geometry.clone();
+                let geometry = copy_surface_carrier_geometry(ctx, &c.geometry)?;
                 if let SurfaceGeometry::Solved(solved) = &geometry {
                     annotate_surface_frame(
                         &mut annotations,
@@ -6580,7 +6616,7 @@ fn emit_curve(
     out.curves.push(Curve {
         id: id_curve(carrier.attr),
         source_object: None,
-        geometry: carrier.geometry.clone(),
+        geometry: copy_curve_carrier_geometry(ctx, &carrier.geometry)?,
     });
     Ok(())
 }
