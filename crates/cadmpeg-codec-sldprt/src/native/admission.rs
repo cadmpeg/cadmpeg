@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
+use std::fmt;
 
 #[derive(Clone, Copy)]
 pub(super) enum NativeAdmission<'ctx, 'arena> {
@@ -18,6 +19,38 @@ impl<'ctx, 'arena> NativeAdmission<'ctx, 'arena> {
             Self::Decode(ctx) => Some(ctx),
         }
     }
+}
+
+struct FormattedByteCount(usize);
+
+impl fmt::Write for FormattedByteCount {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
+
+pub(super) fn invalid_owner(
+    admission: NativeAdmission<'_, '_>,
+    message: fmt::Arguments<'_>,
+) -> Result<NativeConvertError, NativeConvertError> {
+    let Some(ctx) = admission.context() else {
+        return Ok(NativeConvertError::InvalidOwner(message.to_string()));
+    };
+    let mut count = FormattedByteCount(0);
+    fmt::write(&mut count, message).map_err(|_| {
+        ctx.refuse_codec_limit("format SLDPRT native validation error", u64::MAX - 1, u64::MAX)
+    })?;
+    let mut text = String::new();
+    ctx.reserve_retained_string(
+        &mut text,
+        count.0,
+        "format SLDPRT native validation error",
+    )?;
+    fmt::write(&mut text, message).map_err(|_| {
+        NativeConvertError::InvalidOwner("cannot format SLDPRT native validation error".into())
+    })?;
+    Ok(NativeConvertError::InvalidOwner(text))
 }
 
 struct SerializedByteCount {

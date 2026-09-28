@@ -109,7 +109,7 @@ fn native_id_matches(id: &str, family: &str, lane_key: &str, offset: usize) -> b
         .is_some_and(|tail| decimal_matches(tail, offset))
 }
 
-fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
+pub(crate) fn utf16_units(units: &[u8]) -> impl Iterator<Item = u16> + '_ {
     (0..units.len() / 2).filter_map(|index| View::u16_le_at(units, index * 2))
 }
 
@@ -210,9 +210,9 @@ pub(crate) fn object_names_structure_match(
 }
 
 pub(crate) fn first_object_name_value_mismatch<'a>(
-    payload: &[u8],
+    payload: &'a [u8],
     names: &'a [FeatureInputName],
-) -> Option<(usize, &'a FeatureInputName, String)> {
+) -> Option<(usize, &'a FeatureInputName, &'a [u8])> {
     names
         .iter()
         .zip(payload_names(payload))
@@ -222,10 +222,7 @@ pub(crate) fn first_object_name_value_mismatch<'a>(
             if actual.value.chars().eq(expected.filter_map(Result::ok)) {
                 None
             } else {
-                let decoded = std::char::decode_utf16(utf16_units(units))
-                    .collect::<Result<String, _>>()
-                    .ok()?;
-                Some((index, actual, decoded))
+                Some((index, actual, units))
             }
         })
 }
