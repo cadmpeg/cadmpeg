@@ -3464,7 +3464,7 @@ fn source_meta(
             copy_retained_string(ctx, &header.description, "retain SLDPRT source description")?,
         );
     }
-    add_preview_metadata(scan, &mut attributes);
+    add_preview_metadata(ctx, scan, &mut attributes)?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
     Ok(SourceMeta::classified(
         classification.layers().clone(),
@@ -3473,12 +3473,14 @@ fn source_meta(
 }
 
 fn add_preview_metadata(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     attributes: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) {
+) -> Result<(), CodecError> {
     let mut png_index = 0;
     let mut bmp_index = 0;
     for section in scan.sections() {
+        ctx.charge_work(1, "scan SLDPRT preview metadata")?;
         let payload = section.payload();
         match container::payload_family(payload) {
             container::PayloadFamily::PngPreview => {
@@ -3497,6 +3499,7 @@ fn add_preview_metadata(
                 let key = |field: &str| {
                     cadmpeg_core::nonblank_literal!("png_preview_{png_index}_{field}")
                 };
+                ctx.charge_collection_items(7, "collect SLDPRT PNG preview metadata")?;
                 attributes.insert(key("width"), width.to_string());
                 attributes.insert(key("height"), height.to_string());
                 attributes.insert(key("bit_depth"), fields[0].to_string());
@@ -3524,6 +3527,7 @@ fn add_preview_metadata(
                 let key = |field: &str| {
                     cadmpeg_core::nonblank_literal!("bmp_thumbnail_{bmp_index}_{field}")
                 };
+                ctx.charge_collection_items(6, "collect SLDPRT BMP preview metadata")?;
                 attributes.insert(key("width"), width.to_string());
                 attributes.insert(key("height"), height.to_string());
                 attributes.insert(key("planes"), planes.to_string());
@@ -3543,6 +3547,7 @@ fn add_preview_metadata(
         cadmpeg_core::nonblank_literal!("bmp_thumbnail_count"),
         bmp_index.to_string(),
     );
+    Ok(())
 }
 
 fn add_solidworks_xml_metadata(
