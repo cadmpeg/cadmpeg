@@ -344,6 +344,27 @@ fn count_keys<K: Ord>(
     Ok(counts)
 }
 
+fn charged_map<K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<BTreeMap<K, V>, CodecError> {
+    let mut map = BTreeMap::new();
+    for (key, value) in entries {
+        ctx.charge_work(1, operation)?;
+        match map.entry(key) {
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, operation)?;
+                entry.insert(value);
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(value);
+            }
+        }
+    }
+    Ok(map)
+}
+
 fn charged_set<'a, T: Eq + Hash + 'a>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = &'a T>,
@@ -659,18 +680,17 @@ fn append_design_losses(
             &global_parameter_owners,
             &ir.model.configurations,
         );
-    let feature_ordinals = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature.ordinal))
-        .collect::<BTreeMap<_, _>>();
-    let parameter_positions = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
-        .collect::<BTreeMap<_, _>>();
+    let feature_ordinals = charged_map(
+        ctx,
+        ir.model.features.iter().map(|feature| (&feature.id, feature.ordinal)),
+        "index SLDPRT feature ordinals",
+    )?;
+    let parameter_positions = charged_map(
+        ctx,
+        ir.model.parameters.iter()
+            .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal))),
+        "index SLDPRT parameter positions",
+    )?;
     let invalid_parameter_dependency_order = ir
         .model
         .parameters
@@ -796,15 +816,10 @@ fn append_design_losses(
     });
     if incomplete_history_references > 0 {
         report.losses.push(SldprtLossCode::HistoryIncompleteReferences.note(format!(
-                "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
-            )));
+            "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
+        )));
     }
-    let feature_positions = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature.ordinal))
-        .collect::<BTreeMap<_, _>>();
+    let feature_positions = &feature_ordinals;
     let evaluated_feature_states = if ir
         .model
         .configurations
@@ -871,18 +886,16 @@ fn append_design_losses(
                 "{incoherent_feature_edges} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; {duplicate_feature_ordinals} feature record(s) share regeneration ordinals."
             )));
     }
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (&parameter.id, &parameter.owner))
-        .collect::<BTreeMap<_, _>>();
-    let features_by_id = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (&feature.id, feature))
-        .collect::<BTreeMap<_, _>>();
+    let parameter_owners = charged_map(
+        ctx,
+        ir.model.parameters.iter().map(|parameter| (&parameter.id, &parameter.owner)),
+        "index SLDPRT parameter owners",
+    )?;
+    let features_by_id = charged_map(
+        ctx,
+        ir.model.features.iter().map(|feature| (&feature.id, feature)),
+        "index SLDPRT features by ID",
+    )?;
     let incoherent_feature_content = ir
         .model
         .features
