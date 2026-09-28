@@ -2412,8 +2412,81 @@ mod surface_intersections;
 
 #[test]
 fn line_pair_constraint_rejects_pairs_beyond_edge_roles() {
-    let constraint = super::super::StandardLinePairConstraint::new(&[], &[], &[]);
+    let constraint = crate::test_support::with_service_context(|ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &[], &[], &[])
+    })
+    .expect("empty constraint fits service budget");
     assert!(constraint.edge_pairs(&[None]).is_none());
+}
+
+#[test]
+fn line_pair_constraint_refuses_collection_growth_before_face_edges() {
+    let points = [Point::new(
+        PointId::mint("catia:test:point#p0").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite point"),
+        None,
+    )];
+    let point_refusal = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &points, &[], &[])
+    });
+    assert!(matches!(point_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_line_constraint_points"));
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 0,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Line,
+    }];
+    let options = [vec![[0, 1], [1, 2]]];
+    let role_refusal = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+    });
+    assert!(matches!(role_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_line_constraint_roles"));
+    let face_refusal = crate::test_support::with_collection_limit(1, |ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+    });
+    assert!(matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_line_constraint_faces"));
+    let refused = crate::test_support::with_collection_limit(2, |ctx| {
+        super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_line_constraint_face_edges"));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(super::super::StandardLinePairConstraint::new(ctx, &[], &supports, &options)
+            .is_ok());
+    });
+}
+
+#[test]
+fn circle_pair_constraint_refuses_nested_range_growth() {
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 0,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Circle {
+            center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite center"),
+            radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius"),
+        },
+    }];
+    let options = [vec![[0, 1], [1, 2]]];
+    let face_refusal = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
+    });
+    assert!(matches!(face_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_circle_constraint_faces"));
+    let refused = crate::test_support::with_collection_limit(1, |ctx| {
+        super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_circle_constraint_ranges"));
+    crate::test_support::with_service_context(|ctx| {
+        assert!(super::super::StandardCirclePairConstraint::new(ctx, &supports, &options)
+            .is_ok());
+    });
 }
 
 /// A unit-radius cone about +Z whose cross-section radius overflows at

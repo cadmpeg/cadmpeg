@@ -6286,10 +6286,12 @@ fn attach_standard_topology(
                     })
                 };
                 let line_constraint = StandardLinePairConstraint::new(
+                    ctx,
                     &ir.model.points,
                     selected_supports,
                     &solver_options,
-                );
+                )?;
+                let circle_constraint = StandardCirclePairConstraint::new(ctx, selected_supports, &solver_options)?;
                 let face_domain_edges = match open_face_domains.as_ref() {
                     Some(domains) => crate::resource::collect_vec(
                         ctx,
@@ -6350,6 +6352,7 @@ fn attach_standard_topology(
                                 .edge_pairs(pairs)
                                 .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                             && standard_circle_pair_solution_is_simple(
+                                &circle_constraint,
                                 ir,
                                 bindings,
                                 &surface_indices,
@@ -10670,7 +10673,53 @@ fn ensure_native_edge_support_surface(
     Ok(id)
 }
 
+type CircleFaceKey = (u64, u64, u64, u64, usize);
+
+#[derive(Clone, Copy)]
+struct CircleRangeChoices {
+    ranges: [[f64; 2]; 2],
+    len: usize,
+}
+
+impl AsRef<[[f64; 2]]> for CircleRangeChoices {
+    fn as_ref(&self) -> &[[f64; 2]] {
+        &self.ranges[..self.len]
+    }
+}
+
+struct StandardCirclePairConstraint {
+    ranges_by_face: RefCell<HashMap<CircleFaceKey, Vec<CircleRangeChoices>>>,
+}
+
+impl StandardCirclePairConstraint {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        supports: &[crate::families::standard::records::StandardCurveSupport],
+        endpoint_options: &[Vec<[usize; 2]>],
+    ) -> Result<Self, CodecError> {
+        let mut ranges_by_face = HashMap::<CircleFaceKey, Vec<CircleRangeChoices>>::new();
+        for (support, options) in supports.iter().zip(endpoint_options) {
+            if options.len() <= 1 { continue; }
+            let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } = &support.geometry else { continue; };
+            let center = center.get();
+            let radius = radius.get();
+            for &face in &support.faces {
+                let key = (center.x.to_bits(), center.y.to_bits(), center.z.to_bits(), radius.to_bits(), face);
+                if !ranges_by_face.contains_key(&key) {
+                    crate::resource::insert_map(ctx, &mut ranges_by_face, key, Vec::new(), "catia_standard_circle_constraint_faces")?;
+                }
+                if let Some(ranges) = ranges_by_face.get_mut(&key) {
+                    crate::resource::push(ctx, ranges, CircleRangeChoices { ranges: [[0.0; 2]; 2], len: 0 }, "catia_standard_circle_constraint_ranges")?;
+                }
+            }
+        }
+        for ranges in ranges_by_face.values_mut() { ranges.clear(); }
+        Ok(Self { ranges_by_face: RefCell::new(ranges_by_face) })
+    }
+}
+
 fn standard_circle_pair_solution_is_simple(
+    constraint: &StandardCirclePairConstraint,
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
@@ -10678,9 +10727,8 @@ fn standard_circle_pair_solution_is_simple(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    type CircleFaceKey = (u64, u64, u64, u64, usize);
-
-    let mut range_choices = HashMap::<CircleFaceKey, Vec<Vec<[f64; 2]>>>::new();
+    let mut range_choices = constraint.ranges_by_face.borrow_mut();
+    for choices in range_choices.values_mut() { choices.clear(); }
     for ((support, options), pair) in supports.iter().zip(endpoint_options).zip(pairs) {
         let Some(pair) = pair else {
             continue;
@@ -10717,15 +10765,15 @@ fn standard_circle_pair_solution_is_simple(
             .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
             .filter_map(|surface| {
                 standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-            })
-            .collect::<Vec<_>>();
+            });
+        let mut axes = axes;
         let Some(axis) = axes
-            .first()
+            .next()
             .and_then(|axis| canonical_unoriented_axis(*axis.as_raw()))
         else {
             continue;
         };
-        if axes.iter().skip(1).any(|other| {
+        if axes.any(|other| {
             canonical_unoriented_axis(*other.as_raw())
                 .is_none_or(|other| axis.as_raw().dot(*other.as_raw()).abs() < 0.9999)
         }) {
@@ -10742,7 +10790,8 @@ fn standard_circle_pair_solution_is_simple(
                 radius.to_bits(),
                 face,
             );
-            range_choices.entry(key).or_default().push(choices.clone());
+            let Some(ranges) = range_choices.get_mut(&key) else { return false; };
+            ranges.push(choices);
         }
     }
     for choices in range_choices.values() {
@@ -10763,14 +10812,6 @@ struct StandardLineSegment {
     end: Point3,
 }
 
-#[derive(Clone, Copy)]
-struct StandardLineSelection {
-    pair: [usize; 2],
-    segment: StandardLineSegment,
-}
-
-type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EdgeLineRole {
     NotLine,
@@ -10782,20 +10823,21 @@ struct StandardLinePairConstraint {
     points: Vec<Point3>,
     edge_roles: Vec<EdgeLineRole>,
     edges_by_face: HashMap<usize, Vec<usize>>,
-    simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
 }
 
 impl StandardLinePairConstraint {
     fn new(
+        ctx: &DecodeContext<'_>,
         points: &[Point],
         supports: &[crate::families::standard::records::StandardCurveSupport],
         endpoint_options: &[Vec<[usize; 2]>],
-    ) -> Self {
-        let points = points
-            .iter()
-            .map(|point| point.position().get())
-            .collect::<Vec<_>>();
-        let edge_roles = supports
+    ) -> Result<Self, CodecError> {
+        let points = crate::resource::collect_vec(
+            ctx,
+            points.iter().map(|point| point.position().get()),
+            "catia_standard_line_constraint_points",
+        )?;
+        let edge_roles = crate::resource::collect_vec(ctx, supports
             .iter()
             .enumerate()
             .map(|(edge, support)| {
@@ -10812,8 +10854,7 @@ impl StandardLinePairConstraint {
                 } else {
                     EdgeLineRole::Fixed
                 }
-            })
-            .collect::<Vec<_>>();
+            }), "catia_standard_line_constraint_roles")?;
         let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
 
         for (edge, support) in supports.iter().enumerate() {
@@ -10821,19 +10862,22 @@ impl StandardLinePairConstraint {
                 continue;
             }
             for &face in &support.faces {
-                let edges = edges_by_face.entry(face).or_default();
-                if !edges.contains(&edge) {
-                    edges.push(edge);
+                if !edges_by_face.contains_key(&face) {
+                    crate::resource::insert_map(ctx, &mut edges_by_face, face, Vec::new(), "catia_standard_line_constraint_faces")?;
+                }
+                if let Some(edges) = edges_by_face.get_mut(&face) {
+                    if !edges.contains(&edge) {
+                        crate::resource::push(ctx, edges, edge, "catia_standard_line_constraint_face_edges")?;
+                    }
                 }
             }
         }
 
-        Self {
+        Ok(Self {
             points,
             edge_roles,
             edges_by_face,
-            simplicity_cache: RefCell::new(HashMap::new()),
-        }
+        })
     }
 
     fn flexible_edge_mask(&self) -> impl Iterator<Item = bool> + '_ {
@@ -10868,49 +10912,18 @@ impl StandardLinePairConstraint {
         if !self.is_valid(pairs) {
             return false;
         }
-        let mut selected = vec![None; self.edge_roles.len()];
-        for (edge, (role, pair)) in self.edge_roles.iter().zip(pairs.pairs()).enumerate() {
-            if *role != EdgeLineRole::Flexible {
-                continue;
-            }
-            let Some(pair) = pair else {
-                continue;
-            };
-            let segment = standard_line_segment(&self.points, *pair);
-            let Some(segment) = segment else {
-                continue;
-            };
-            selected[edge] = Some(StandardLineSelection {
-                pair: *pair,
-                segment,
-            });
-        }
-
         for edges in self.edges_by_face.values() {
             for (left_position, &left_edge) in edges.iter().enumerate() {
-                let Some(left) = selected[left_edge] else {
+                let Some(left_pair) = pairs.pairs()[left_edge] else {
                     continue;
                 };
+                let Some(left) = standard_line_segment(&self.points, left_pair) else { continue };
                 for &right_edge in &edges[left_position + 1..] {
-                    let Some(right) = selected[right_edge] else {
+                    let Some(right_pair) = pairs.pairs()[right_edge] else {
                         continue;
                     };
-                    let key = ordered_line_pair(left_edge, left.pair, right_edge, right.pair);
-                    let incompatible = {
-                        let cached = {
-                            let cache = self.simplicity_cache.borrow();
-                            cache.get(&key).copied()
-                        };
-                        if let Some(simple) = cached {
-                            !simple
-                        } else {
-                            let simple =
-                                standard_line_segments_are_simple(left.segment, right.segment);
-                            self.simplicity_cache.borrow_mut().insert(key, simple);
-                            !simple
-                        }
-                    };
-                    if incompatible {
+                    let Some(right) = standard_line_segment(&self.points, right_pair) else { continue };
+                    if !standard_line_segments_are_simple(left, right) {
                         return false;
                     }
                 }
@@ -10942,19 +10955,6 @@ mod line_edge_pairs {
 }
 
 use line_edge_pairs::StandardLineEdgePairs;
-
-fn ordered_line_pair(
-    left_edge: usize,
-    left_pair: [usize; 2],
-    right_edge: usize,
-    right_pair: [usize; 2],
-) -> StandardLinePairKey {
-    if left_edge < right_edge {
-        ((left_edge, left_pair), (right_edge, right_pair))
-    } else {
-        ((right_edge, right_pair), (left_edge, left_pair))
-    }
-}
 
 fn standard_line_segment(points: &[Point3], pair: [usize; 2]) -> Option<StandardLineSegment> {
     Some(StandardLineSegment {
@@ -11081,10 +11081,13 @@ fn standard_line_pair_solution_is_simple_cached(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    let constraint = StandardLinePairConstraint::new(points, supports, endpoint_options);
-    constraint
-        .edge_pairs(pairs)
-        .is_some_and(|pairs| constraint.is_simple(&pairs))
+    crate::test_support::with_service_context(|ctx| {
+        let constraint = StandardLinePairConstraint::new(ctx, points, supports, endpoint_options)
+            .expect("service budget admits line constraint");
+        constraint
+            .edge_pairs(pairs)
+            .is_some_and(|pairs| constraint.is_simple(&pairs))
+    })
 }
 
 fn circle_endpoint_range_choices(
@@ -11093,7 +11096,7 @@ fn circle_endpoint_range_choices(
     axis: UnitVector3,
     start: Point3,
     end: Point3,
-) -> Option<Vec<[f64; 2]>> {
+) -> Option<CircleRangeChoices> {
     const ENDPOINT_TOLERANCE: f64 = 2e-3;
 
     if !radius.is_finite()
@@ -11104,7 +11107,7 @@ fn circle_endpoint_range_choices(
         return None;
     }
     if start.distance(end) <= ENDPOINT_TOLERANCE {
-        return Some(vec![[0.0, std::f64::consts::TAU]]);
+        return Some(CircleRangeChoices { ranges: [[0.0, std::f64::consts::TAU], [0.0; 2]], len: 1 });
     }
     let axis = axis.recharted_by_largest_component();
     let reference = cadmpeg_ir::geometry::derive_reference_direction(*axis.as_raw());
@@ -11126,16 +11129,16 @@ fn circle_endpoint_range_choices(
         endpoints[1],
         endpoints[0] + std::f64::consts::TAU,
     ])?;
-    Some(vec![short, long])
+    Some(CircleRangeChoices { ranges: [short, long], len: 2 })
 }
 
-fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bool {
+fn circular_range_choices_have_simple_selection<T: AsRef<[[f64; 2]]>>(choices: &[T]) -> bool {
     const MAX_SELECTION_STATES: usize = 4_096;
 
-    fn visit(
-        choices: &[Vec<[f64; 2]>],
+    fn visit<T: AsRef<[[f64; 2]]>>(
+        choices: &[T],
         index: usize,
-        selected: &mut Vec<[f64; 2]>,
+        selected: &mut [[f64; 2]; MAX_SELECTION_STATES],
         states: &mut usize,
     ) -> Option<bool> {
         if *states >= MAX_SELECTION_STATES {
@@ -11145,45 +11148,39 @@ fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bo
         if index == choices.len() {
             return Some(true);
         }
-        for &range in &choices[index] {
-            selected.push(range);
-            let compatible = circular_ranges_are_nonoverlapping_or_coincident(selected);
+        for &range in choices[index].as_ref() {
+            selected[index] = range;
+            let compatible = circular_ranges_are_nonoverlapping_or_coincident(&selected[..index + 1]);
             if compatible {
                 match visit(choices, index + 1, selected, states) {
                     Some(true) => {
-                        selected.pop();
                         return Some(true);
                     }
                     None => {
-                        selected.pop();
                         return None;
                     }
                     Some(false) => {}
                 }
             }
-            selected.pop();
         }
         Some(false)
     }
 
-    if choices.iter().any(Vec::is_empty) {
+    if choices.iter().any(|choice| choice.as_ref().is_empty()) {
         return false;
     }
-    visit(choices, 0, &mut Vec::new(), &mut 0).unwrap_or(false)
+    visit(choices, 0, &mut [[0.0; 2]; MAX_SELECTION_STATES], &mut 0).unwrap_or(false)
 }
 
 fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
-    fn segments(range: [f64; 2]) -> Vec<[f64; 2]> {
+    fn segments(range: [f64; 2]) -> [Option<[f64; 2]>; 2] {
         let span = range[1] - range[0];
         let start = range[0].rem_euclid(std::f64::consts::TAU);
         let end = start + span;
         if end <= std::f64::consts::TAU {
-            vec![[start, end]]
+            [Some([start, end]), None]
         } else {
-            vec![
-                [start, std::f64::consts::TAU],
-                [0.0, end - std::f64::consts::TAU],
-            ]
+            [Some([start, std::f64::consts::TAU]), Some([0.0, end - std::f64::consts::TAU])]
         }
     }
 
@@ -11192,8 +11189,8 @@ fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool
             let coincident = (right[0] - left[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
                 && (right[1] - left[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
             coincident
-                || !segments(*left).iter().any(|left| {
-                    segments(*right).iter().any(|right| {
+                || !segments(*left).into_iter().flatten().any(|left| {
+                    segments(*right).into_iter().flatten().any(|right| {
                         left[1].min(right[1]) - left[0].max(right[0])
                             > EPS_STANDARD_DECODE_COARSE_GEOMETRY
                     })
