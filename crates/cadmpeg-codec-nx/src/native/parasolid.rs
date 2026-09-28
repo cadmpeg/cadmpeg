@@ -283,18 +283,25 @@ fn replace_group_record_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, 
 }
 
 fn group_members_from_records(
+    ctx: &DecodeContext<'_>,
     partition_stream_ordinal: u32,
     records: &[crate::deltas::Record],
-) -> Vec<ParasolidGroupMember> {
-    let mut records_by_xmt = BTreeMap::<u32, Vec<&crate::deltas::Record>>::new();
+    members: &mut Vec<ParasolidGroupMember>,
+) -> Result<(), CodecError> {
+    let mut records_by_xmt = BTreeMap::<u32, Option<&crate::deltas::Record>>::new();
+    let mut record_guard = ctx.reserve_scoped(0, "NX GROUP record index")?;
     for record in records {
-        records_by_xmt.entry(record.xmt).or_default().push(record);
+        if let Some(unique) = records_by_xmt.get_mut(&record.xmt) {
+            *unique = None;
+        } else {
+            ctx.charge_collection_items(1, "NX GROUP record index")?;
+            record_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Option<&crate::deltas::Record>)>() * 4))?;
+            records_by_xmt.insert(record.xmt, Some(record));
+        }
     }
-    let unique_record = |xmt| match records_by_xmt.get(&xmt).map(Vec::as_slice) {
-        Some([record]) => Some(*record),
-        _ => None,
-    };
-    let mut groups_by_node = BTreeMap::<u32, Vec<(u32, u32)>>::new();
+    let unique_record = |xmt| records_by_xmt.get(&xmt).copied().flatten();
+    let mut groups_by_node = BTreeMap::<u32, Option<(u32, u32)>>::new();
+    let mut group_guard = ctx.reserve_scoped(0, "NX GROUP node index")?;
     for record in records {
         if let crate::deltas::record_family::RecordFamily::Group {
             node_id,
@@ -302,27 +309,35 @@ fn group_members_from_records(
             ..
         } = &record.family
         {
-            groups_by_node
-                .entry(*node_id)
-                .or_default()
-                .push((record.xmt, references[4]));
+            if let Some(unique) = groups_by_node.get_mut(node_id) {
+                *unique = None;
+            } else {
+                ctx.charge_collection_items(1, "NX GROUP node index")?;
+                group_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, Option<(u32, u32)>)>() * 4))?;
+                groups_by_node.insert(*node_id, Some((record.xmt, references[4])));
+            }
         }
     }
-    let mut members = Vec::new();
-    for (&group_node_id, groups) in &groups_by_node {
-        let &[(group_xmt, tail)] = groups.as_slice() else {
+    for (&group_node_id, unique) in &groups_by_node {
+        let Some((group_xmt, tail)) = *unique else {
             continue;
         };
         let mut reverse_chain = Vec::new();
+        let mut chain_guard = ctx.reserve_scoped(0, "NX GROUP member chain")?;
         let mut seen = BTreeSet::new();
+        let mut seen_guard = ctx.reserve_scoped(0, "NX GROUP member seen index")?;
         let mut current = tail;
         let mut expected_next = 1;
         let mut complete = true;
         while current != 1 {
-            if !seen.insert(current) {
+            ctx.charge_work(1, "NX GROUP member chain")?;
+            if seen.contains(&current) {
                 complete = false;
                 break;
             }
+            ctx.charge_collection_items(1, "NX GROUP member seen index")?;
+            seen_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>() * 4))?;
+            seen.insert(current);
             let Some(list_record) = unique_record(current) else {
                 complete = false;
                 break;
@@ -346,6 +361,10 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
+            ctx.charge_collection_items(1, "NX GROUP member chain")?;
+            chain_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, u32, GroupMemberTarget)>()))?;
+            reverse_chain.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP member chain", 0, 1))?;
             reverse_chain.push((current, member_xmt, target));
             expected_next = current;
             current = references[4];
@@ -354,29 +373,55 @@ fn group_members_from_records(
             continue;
         }
         reverse_chain.reverse();
-        members.extend(reverse_chain.into_iter().enumerate().filter_map(
-            |(ordinal, (list_record_xmt, member_xmt, target))| {
-                Some(ParasolidGroupMember {
-                    id: format!(
-                        "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{group_xmt}-{ordinal}"
-                    ),
-                    partition_stream_ordinal,
-                    group_xmt,
-                    group_node_id,
-                    ordinal: u32::try_from(ordinal).ok()?,
-                    list_record_xmt,
-                    member_xmt,
-                    target,
-                })
-            },
-        ));
+        for (ordinal, (list_record_xmt, member_xmt, target)) in reverse_chain.into_iter().enumerate() {
+            let Ok(ordinal_u32) = u32::try_from(ordinal) else { continue; };
+            ctx.charge_collection_items(1, "NX GROUP members")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidGroupMember>()), "NX GROUP member")?;
+            members.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP members", 0, 1))?;
+            members.push(ParasolidGroupMember {
+                id: group_member_id(ctx, partition_stream_ordinal, group_node_id, group_xmt, ordinal)?,
+                partition_stream_ordinal,
+                group_xmt,
+                group_node_id,
+                ordinal: ordinal_u32,
+                list_record_xmt,
+                member_xmt,
+                target,
+            });
+        }
     }
-    members
+    Ok(())
+}
+
+fn group_member_id(
+    ctx: &DecodeContext<'_>,
+    partition_stream_ordinal: u32,
+    group_node_id: u32,
+    group_xmt: u32,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let length = "nx:s".len()
+        .checked_add(digits(u64::from(partition_stream_ordinal)))
+        .and_then(|length| length.checked_add(":parasolid-group-member#".len()))
+        .and_then(|length| length.checked_add(digits(u64::from(group_node_id))))
+        .and_then(|length| length.checked_add(1 + digits(u64::from(group_xmt))))
+        .and_then(|length| length.checked_add(1 + digits(cadmpeg_core::decode::u64_from_index(ordinal))))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP member identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX GROUP member identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP member identity", 0, 1))?;
+    write!(&mut id, "nx:s{partition_stream_ordinal}:parasolid-group-member#{group_node_id}-{group_xmt}-{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX GROUP member identity", 0, 1))?;
+    Ok(id)
 }
 
 fn apply_group_state_events(
     ctx: &DecodeContext<'_>,
     records: &mut BTreeMap<u32, crate::deltas::Record>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     bytes: &[u8],
 ) -> Result<(), CodecError> {
     enum Event {
@@ -384,21 +429,32 @@ fn apply_group_state_events(
         Tombstone(u32),
     }
     let census = crate::deltas::census::walk(ctx, bytes)?.into_events();
-    let mut events = census
-        .records
-        .into_iter()
-        .map(|record| (record.offset, Event::Record(record)))
-        .chain(
-            census
-                .tombstones
-                .into_iter()
-                .map(|tombstone| (tombstone.offset, Event::Tombstone(tombstone.xmt))),
-        )
-        .collect::<Vec<_>>();
+    let count = census.records.len().checked_add(census.tombstones.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
+    let bytes = count.checked_mul(std::mem::size_of::<(usize, Event)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state events", 0, 1))?;
+    let _events_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX GROUP state events")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX GROUP state events")?;
+    let mut events = Vec::new();
+    events.try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP state events", 0, 1))?;
+    for record in census.records {
+        events.push((record.offset, Event::Record(record)));
+    }
+    for tombstone in census.tombstones {
+        events.push((tombstone.offset, Event::Tombstone(tombstone.xmt)));
+    }
+    let work = count.checked_mul(count.checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP state event sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX GROUP state event sort work")?;
     events.sort_by_key(|(offset, _)| *offset);
     for (_, event) in events {
         match event {
             Event::Record(record) => {
+                if !records.contains_key(&record.xmt) {
+                    ctx.charge_collection_items(1, "NX GROUP current record index")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, crate::deltas::Record)>() * 4))?;
+                }
                 records.insert(record.xmt, record);
             }
             Event::Tombstone(xmt) => {
@@ -416,32 +472,39 @@ pub(super) fn parasolid_group_members(
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
     parsed: &ParsedStreams<'_>,
 ) -> Result<Vec<ParasolidGroupMember>, CodecError> {
-    let mut members = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind() == crate::parasolid::StreamKind::Partition)
-        .map(|(stream_ordinal, stream)| -> Result<Option<(u32, Vec<crate::deltas::Record>)>, CodecError> {
-            let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
-                return Ok(None);
+    let mut members = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if stream.kind() != crate::parasolid::StreamKind::Partition {
+            continue;
+        }
+        let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
+            continue;
+        };
+        let mut current = BTreeMap::new();
+        let mut current_guard = ctx.reserve_scoped(0, "NX GROUP current record index")?;
+        apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
+        let mut complete = true;
+        for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
+            let Some(stream) = streams.get(*delta) else {
+                complete = false;
+                break;
             };
-            let mut current = BTreeMap::new();
-            apply_group_state_events(ctx, &mut current, &stream.inflated)?;
-            for delta in delta_pairs.get(&stream_ordinal).into_iter().flatten() {
-                let Some(stream) = streams.get(*delta) else {
-                    return Ok(None);
-                };
-                apply_group_state_events(ctx, &mut current, &stream.inflated)?;
-            }
-            Ok(Some((
-                stream_ordinal_u32,
-                current.into_values().collect::<Vec<_>>(),
-            )))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?
-        .into_iter()
-        .flatten()
-        .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
-        .collect::<Vec<_>>();
+            apply_group_state_events(ctx, &mut current, &mut current_guard, &stream.inflated)?;
+        }
+        if !complete {
+            continue;
+        }
+        let count = current.len();
+        let bytes = count.checked_mul(std::mem::size_of::<crate::deltas::Record>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX GROUP current records", 0, 1))?;
+        let _records_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(bytes), "NX GROUP current records")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX GROUP current records")?;
+        let mut records = Vec::new();
+        records.try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP current records", 0, 1))?;
+        records.extend(current.into_values());
+        group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
+    }
     for member in &mut members {
         let Ok(partition) = usize::try_from(member.partition_stream_ordinal) else {
             continue;
@@ -4450,6 +4513,58 @@ mod tests {
             .expect("GROUP record limit refusal")
     }
 
+    fn group_member_route_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let bytes = prt_with_partition(
+            &crate::test_support::test_streams::parasolid_group_partition_stream(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &arena, &policy,
+        ).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut limited_policy);
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes, &limited_arena, &limited_policy,
+        ).unwrap();
+        super::parasolid_group_members(&limited_ctx, &scan.streams, &BTreeMap::new(), &parsed)
+            .err()
+            .expect("GROUP member route limit refusal")
+    }
+
+    #[test]
+    fn group_member_route_refuses_collection_limit() {
+        let error = group_member_route_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn group_member_route_refuses_retained_limit() {
+        let error = group_member_route_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn group_member_route_refuses_scoped_limit() {
+        let error = group_member_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn group_member_route_refuses_work_limit() {
+        let error = group_member_route_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
     #[test]
     fn group_record_route_refuses_collection_limit() {
         let error = group_record_limit_error(|policy| policy.limits.max_collection_items = 0);
@@ -4597,7 +4712,11 @@ mod tests {
         let head_member = record(16, 101, Some(51), Vec::new());
         let records = [group, tail, head, tail_member, head_member];
 
-        let members = super::group_members_from_records(4, &records);
+        let members = crate::test_support::with_decode_context(|ctx| {
+            let mut members = Vec::new();
+            super::group_members_from_records(ctx, 4, &records, &mut members).unwrap();
+            members
+        });
 
         assert_eq!(members.len(), 2);
         assert_eq!(members[0].list_record_xmt, 20);
@@ -4627,7 +4746,12 @@ mod tests {
         broken[2].family = crate::deltas::record_family::RecordFamily::Type91 {
             references: [10, 101, 3, 4, 1, 99],
         };
-        assert!(super::group_members_from_records(4, &broken).is_empty());
+        let broken_members = crate::test_support::with_decode_context(|ctx| {
+            let mut members = Vec::new();
+            super::group_members_from_records(ctx, 4, &broken, &mut members).unwrap();
+            members
+        });
+        assert!(broken_members.is_empty());
     }
 
     #[test]
