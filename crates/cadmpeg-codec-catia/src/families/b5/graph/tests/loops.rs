@@ -10,7 +10,8 @@ use crate::families::b5::graph::{
     merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
     parse_face_record, parse_loop, parse_pcurve, pcurve_endpoints, pcurve_nurbs_knots,
     pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
-    sphere_great_circle_point, surface_alias_carrier, B5FaceRecord, B5IncidenceLane,
+    sphere_great_circle_point, surface_alias_carrier, typed_face_records_from_records,
+    B5FaceRecord, B5IncidenceLane,
     B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
     B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
     B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
@@ -711,7 +712,9 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             payload: vec![0x82, 0x81, 0x82, terminal_control],
         };
         assert_eq!(
-            parse_face_record(&record),
+            crate::test_support::with_service_context(|ctx| {
+                parse_face_record(ctx, &record).expect("service budget")
+            }),
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
@@ -724,7 +727,9 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
 
         let mut overlong = record;
         overlong.payload.push(terminal_control);
-        assert_eq!(parse_face_record(&overlong), None);
+        assert_eq!(crate::test_support::with_service_context(|ctx| {
+            parse_face_record(ctx, &overlong).expect("service budget")
+        }), None);
     }
 }
 
@@ -737,13 +742,57 @@ fn counted_face_references_reject_unknown_terminal_controls() {
         object_id: 3,
         payload: vec![0x82, 0x81, 0x82, 0x04],
     };
-    assert_eq!(parse_face_record(&record), None);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        parse_face_record(ctx, &record).expect("service budget")
+    }), None);
 
     let mut empty = record;
     empty.payload.clear();
-    assert_eq!(parse_face_record(&empty), None);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        parse_face_record(ctx, &empty).expect("service budget")
+    }), None);
     empty.payload.extend_from_slice(&[0x80, 0x03]);
-    assert_eq!(parse_face_record(&empty), None);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        parse_face_record(ctx, &empty).expect("service budget")
+    }), None);
+}
+
+#[test]
+fn counted_face_reference_list_refuses_collection_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    };
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        parse_face_record(ctx, &record)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        parse_face_record(ctx, &record)
+    }).expect("service budget");
+    assert_eq!(parsed.as_ref().map(|face| face.references.as_slice()), Some([1, 2].as_slice()));
+}
+
+#[test]
+fn typed_face_record_index_refuses_collection_limit() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    }];
+    let limited = crate::test_support::with_collection_limit(2, |ctx| {
+        typed_face_records_from_records(ctx, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        typed_face_records_from_records(ctx, &records)
+    }).expect("service budget");
+    assert_eq!(parsed.get(&3).map(|face| face.references.as_slice()), Some([1, 2].as_slice()));
 }
 
 #[test]

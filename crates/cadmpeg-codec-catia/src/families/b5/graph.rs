@@ -1355,11 +1355,13 @@ fn parse_from_records_with_class21(
             .map(|loop_| (object_id, loop_))
         })
         .collect();
-    let face_records: BTreeMap<u32, B5FaceRecord> = records
-        .iter()
-        .filter(|record| record.class == 0x5f)
-        .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
-        .collect();
+    let mut face_records = BTreeMap::new();
+    for record in records.iter().filter(|record| record.class == 0x5f) {
+        if let Some(face) = parse_face_record(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut face_records,
+                record.object_id, face, "catia_b5_graph_face_records")?;
+        }
+    }
     let surface_aliases = records
         .iter()
         .filter(|record| surfaces.contains_key(&record.object_id))
@@ -5839,36 +5841,45 @@ fn parse_face(
     })
 }
 
-fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
+fn parse_face_record(
+    ctx: &DecodeContext<'_>,
+    record: &B5Record,
+) -> Result<Option<B5FaceRecord>, CodecError> {
     if record.class != 0x5f {
-        return None;
+        return Ok(None);
     }
     if let Some(count) = record
         .payload
         .first()
         .and_then(|lead| lead.checked_sub(0x80))
     {
-        (count != 0).then_some(())?;
+        if count == 0 { return Ok(None); }
         let mut position = 1;
-        let references = (0..count)
-            .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-            .collect::<Option<Vec<_>>>()?;
-        let &[terminal_control] = record.payload.get(position..)? else {
-            return None;
+        let Some(references) = crate::resource::collect_options(
+            ctx,
+            (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+            "catia_b5_counted_face_references",
+        )? else { return Ok(None) };
+        let Some(&[terminal_control]) = record.payload.get(position..) else {
+            return Ok(None);
         };
-        let terminal_control = B5FramingControl::from_byte(terminal_control)?;
-        Some(B5FaceRecord {
+        let Some(terminal_control) = B5FramingControl::from_byte(terminal_control) else {
+            return Ok(None);
+        };
+        Ok(Some(B5FaceRecord {
             object_id: record.object_id,
             references,
             terminal_control: Some(terminal_control),
-        })
+        }))
     } else {
-        let references = uncounted_references(&record.payload)?;
-        (!references.is_empty()).then_some(B5FaceRecord {
+        let Some(references) = uncounted_references(ctx, &record.payload)? else {
+            return Ok(None);
+        };
+        Ok((!references.is_empty()).then_some(B5FaceRecord {
             object_id: record.object_id,
             references,
             terminal_control: None,
-        })
+        }))
     }
 }
 
@@ -5878,16 +5889,23 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_face_records_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_face_records_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_face_records_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5FaceRecord> {
-    records
-        .iter()
-        .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
-        .collect()
+) -> Result<BTreeMap<u32, B5FaceRecord>, CodecError> {
+    let mut faces = BTreeMap::new();
+    for record in records {
+        if let Some(face) = parse_face_record(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut faces, record.object_id, face,
+                "catia_b5_typed_face_records")?;
+        }
+    }
+    Ok(faces)
 }
 
 /// Read every structurally complete loop record independently of target
@@ -6052,30 +6070,38 @@ pub(in crate::families) fn face_surface_references_from_frames(
 /// loop records, without requiring their referenced surfaces or p-curves to
 /// resolve into a transferable graph.
 pub(in crate::families) fn edge_face_references_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
-) -> HashMap<u32, HashSet<u32>> {
+) -> Result<HashMap<u32, HashSet<u32>>, CodecError> {
     let records = records_from_frames(bytes, frames);
-    let edge_ids = records
-        .iter()
-        .filter(|record| record.family == 0xb5 && record.class == 0x5e)
-        .map(|record| record.object_id)
-        .collect::<HashSet<_>>();
+    let mut edge_ids = HashSet::new();
+    for record in records.iter().filter(|record| record.family == 0xb5 && record.class == 0x5e) {
+        crate::resource::insert_set(ctx, &mut edge_ids, record.object_id,
+            "catia_b5_edge_face_edge_ids")?;
+    }
     let loops = typed_loop_records_from_records(&records);
     let mut owners = HashMap::<u32, HashSet<u32>>::new();
-    for (face, record) in typed_face_records_from_records(&records) {
+    for (face, record) in typed_face_records_from_records(ctx, &records)? {
         for loop_id in record.references.iter().skip(1) {
             let Some(loop_record) = loops.get(loop_id) else {
                 continue;
             };
             for member in &loop_record.members {
                 if edge_ids.contains(&member.edge) {
-                    owners.entry(member.edge).or_default().insert(face);
+                    if !owners.contains_key(&member.edge) {
+                        crate::resource::insert_map(ctx, &mut owners, member.edge,
+                            HashSet::new(), "catia_b5_edge_face_owners")?;
+                    }
+                    if let Some(row) = owners.get_mut(&member.edge) {
+                        crate::resource::insert_set(ctx, row, face,
+                            "catia_b5_edge_face_owner_entries")?;
+                    }
                 }
             }
         }
     }
-    owners
+    Ok(owners)
 }
 
 fn parse_loop(
@@ -6231,13 +6257,20 @@ fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
     }
 }
 
-fn uncounted_references(bytes: &[u8]) -> Option<Vec<u32>> {
+fn uncounted_references(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<u32>>, CodecError> {
     let mut position = 0;
     let mut references = Vec::new();
     while position < bytes.len() {
-        references.push(wire::tokens::object_ref(bytes, &mut position, true)?);
+        let Some(reference) = wire::tokens::object_ref(bytes, &mut position, true) else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut references, reference,
+            "catia_b5_uncounted_face_references")?;
     }
-    Some(references)
+    Ok(Some(references))
 }
 
 #[cfg(test)]
