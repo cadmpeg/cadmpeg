@@ -3558,13 +3558,8 @@ impl TryFrom<FeatureBooleanOperationWire> for FeatureBooleanOperation {
 fn feature_history_sections(
     ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<(usize, SegmentOmLink)>, CodecError> {
-    Ok(
-        canonical_feature_history_links(segment_om_links(ctx, container)?)
-            .into_iter()
-            .enumerate()
-            .collect(),
-    )
+) -> Result<Vec<SegmentOmLink>, CodecError> {
+    canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)
 }
 
 fn visit_feature_history_operation_records(
@@ -3606,12 +3601,21 @@ fn visit_feature_history_unlabeled_operation_records(
 }
 
 pub(super) fn canonical_feature_history_links(
-    links: impl IntoIterator<Item = SegmentOmLink>,
-) -> Vec<SegmentOmLink> {
-    let mut links = links
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
-        .collect::<Vec<_>>();
+    ctx: &DecodeContext<'_>,
+    mut links: Vec<SegmentOmLink>,
+) -> Result<Vec<SegmentOmLink>, CodecError> {
+    links.retain(|link| link.schema_role == OmSchemaRole::FeatureHistory);
+    let count = links.len();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let comparisons = count_u64.checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+        .and_then(|work| work.checked_add(count_u64))
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX feature history links", 0, 1))?;
+    ctx.charge_work(comparisons, "sort NX feature history links")?;
+    let _sorting = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(count.checked_mul(std::mem::size_of::<SegmentOmLink>())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX feature history links", 0, 1))?),
+        "sort NX feature history links",
+    )?;
     links.sort_by(|first, second| {
         first
             .location
@@ -3626,7 +3630,7 @@ pub(super) fn canonical_feature_history_links(
             .then_with(|| first.id.cmp(&second.id))
     });
     links.dedup_by_key(|link| link.location.section_offset());
-    links
+    Ok(links)
 }
 
 /// Return unique content-backed identities for the offset-store ordinals used
@@ -3781,7 +3785,7 @@ pub(super) fn feature_operation_labels(
     let sections = container.om_sections(ctx)?;
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut labels = Vec::new();
-    for (section_ordinal, link) in feature_history_sections(ctx, container)? {
+    for (section_ordinal, link) in feature_history_sections(ctx, container)?.into_iter().enumerate() {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
@@ -8673,7 +8677,7 @@ fn visit_feature_history_sections(
     mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
-    for (section_ordinal, link) in feature_history_sections(ctx, container)? {
+    for (section_ordinal, link) in feature_history_sections(ctx, container)?.into_iter().enumerate() {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()

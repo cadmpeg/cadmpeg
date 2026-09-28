@@ -261,7 +261,7 @@ pub(super) fn operation_state_counters(
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
     for (section_ordinal, link) in
-        crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+        crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
             .into_iter()
             .enumerate()
     {
@@ -308,7 +308,7 @@ pub(super) fn operation_state_journal_groups(
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
     for (section_ordinal, link) in
-        crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+        crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
             .into_iter()
             .enumerate()
     {
@@ -354,7 +354,7 @@ pub(super) fn operation_state_groups(
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -405,7 +405,7 @@ pub(super) fn operation_state_messages(
     container: &Container,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -457,7 +457,7 @@ pub(super) fn operation_state_statuses(
     container: &Container,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -514,7 +514,7 @@ pub(super) fn operation_state_slot_lanes(
     container: &Container,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
     let sections = container.om_sections(ctx)?;
-    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+    crate::native::features::canonical_feature_history_links(ctx, segment_om_links(ctx, container)?)?
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
