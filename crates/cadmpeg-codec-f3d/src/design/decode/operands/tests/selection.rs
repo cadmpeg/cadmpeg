@@ -643,6 +643,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
 #[test]
 fn extrude_selection_group_and_members_have_exact_counted_frames() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -711,7 +714,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let paired_at = group_bytes.len();
     indexed_header(&mut group_bytes, *b"259", 100);
 
-    let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
+    let mut group = parse_extrude_selection_group(&ctx, &group_bytes, &scope, 0, &record)
+        .transpose().unwrap()
         .expect("counted Extrude selection group");
     assert_eq!(
         group
@@ -1116,6 +1120,103 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             ref profiles,
         }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
+}
+
+fn counted_extrude_selection_fixture() -> (Vec<u8>, DesignParameterScope, DesignRecordHeader) {
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        12,
+    );
+    let record = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#100".into(),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("331".to_owned()).unwrap(),
+        record_index: 100,
+    };
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"331", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for member in [200u32, 201] {
+        bytes.push(1);
+        bytes.extend_from_slice(&member.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&180u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&102u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[1, 1, 0, 1]);
+    bytes.extend_from_slice(&101u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    bytes.push(1);
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    indexed_header(&mut bytes, *b"259", 100);
+    (bytes, scope, record)
+}
+
+#[test]
+fn extrude_selection_group_member_copies_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (bytes, scope, record) = counted_extrude_selection_fixture();
+    for (limit, operation) in [
+        (1, "f3d extrude selection members"),
+        (3, "f3d extrude selection member offsets"),
+        (5, "f3d extrude selection unique members"),
+        (7, "f3d extrude selection normalized members"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record).transpose(),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+    }
+}
+
+#[test]
+fn extrude_selection_group_output_refuses_collection_and_id_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (bytes, scope, record) = counted_extrude_selection_fixture();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let group = parse_extrude_selection_group(&ctx, &bytes, &scope, 0, &record)
+        .transpose().unwrap().expect("counted Extrude selection group");
+    let stream = "Design/BulkStream.dat";
+    let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d extrude selection group output"),
+        (1, native_scope_len, ResourceDimension::RetainedBytes, "f3d extrude selection group ID"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut out = Vec::new();
+        assert!(matches!(
+            crate::design::decode::operands::push_extrude_selection_group(
+                &ctx, &mut out, group.clone(), stream, 0,
+            ),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
 }
 
 fn region_member(bytes: &mut Vec<u8>, curve_primary_id: u32, incidence: [u32; 3]) {

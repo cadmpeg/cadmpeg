@@ -1623,15 +1623,32 @@ pub(crate) fn decode_extrude_selection_groups(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut group) = parse_extrude_selection_group(bytes, scope, ordinal, header) {
-                group.id =
-                    ids::native_design_extrude_selection_group_id(&entry.name, header.byte_offset);
-                out.push(group);
+            if let Some(group) = parse_extrude_selection_group(ctx, bytes, scope, ordinal, header).transpose()? {
+                push_extrude_selection_group(ctx, &mut out, group, &entry.name, header.byte_offset)?;
             }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn push_extrude_selection_group(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignExtrudeSelectionGroup>,
+    mut group: DesignExtrudeSelectionGroup,
+    stream: &str,
+    offset: u64,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d extrude selection group output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d extrude selection group allocation", 0, 1)
+    })?;
+    group.id = design_record_id_charged(
+        ctx, stream, ":design-extrude-selection-group#", offset,
+        "f3d extrude selection group ID", "f3d extrude selection group ID allocation",
+    )?;
+    out.push(group);
+    Ok(())
 }
 
 /// Decode counted construction-operand groups named by feature scopes.
@@ -3235,11 +3252,12 @@ fn take_optional_tracking_identity(
 }
 
 fn parse_extrude_selection_group(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignExtrudeSelectionGroup> {
+) -> Option<Result<DesignExtrudeSelectionGroup, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -3255,15 +3273,34 @@ fn parse_extrude_selection_group(
     if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
         return None;
     }
-    let mut members = Vec::with_capacity(member_count);
+    let charge = match u64::try_from(member_count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d extrude selection member count", 0, 1))),
+    };
+    for operation in [
+        "f3d extrude selection members",
+        "f3d extrude selection member offsets",
+        "f3d extrude selection unique members",
+        "f3d extrude selection normalized members",
+    ] {
+        if let Err(error) = ctx.charge_collection_items(charge, operation) {
+            return Some(Err(error));
+        }
+    }
+    let mut members = Vec::new();
+    if members.try_reserve(member_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d extrude selection member allocation", 0, 1)));
+    }
+    let mut member_offsets = Vec::new();
+    if member_offsets.try_reserve(member_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d extrude selection offset allocation", 0, 1)));
+    }
     for _ in 0..member_count {
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(crate::records::identity::Located {
-            value: View::u32_le_at(bytes, position + 1)?,
-            offset: u64::try_from(position + 1).ok()?,
-        });
+        members.push(View::u32_le_at(bytes, position + 1)?);
+        member_offsets.push(u64::try_from(position + 1).ok()?);
         position = position.checked_add(11)?;
     }
     let opaque_index = View::u32_le_at(bytes, position)?;
@@ -3300,8 +3337,8 @@ fn parse_extrude_selection_group(
             byte_offset: header.byte_offset,
             class_tag: header.class_tag.clone().into(),
             member_count_offset: u64::try_from(start + 32).ok()?,
-            members: members.iter().map(|member| member.value).collect(),
-            member_offsets: members.iter().map(|member| member.offset).collect(),
+            members,
+            member_offsets,
             opaque_index,
             opaque_index_offset: u64::try_from(position).ok()?,
             opaque_scalar,
@@ -3312,6 +3349,7 @@ fn parse_extrude_selection_group(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 /// Decode the fixed-width records named by Extrude selection groups.
