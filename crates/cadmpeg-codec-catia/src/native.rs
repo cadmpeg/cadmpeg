@@ -7534,7 +7534,7 @@ mod consolidated_cylinder_limit_tests {
 mod consolidated_analytic_limit_tests {
     use super::{consolidated_circles, consolidated_cones, consolidated_revolutions,
         consolidated_spheres, consolidated_tori, consolidated_parameter_points,
-        consolidated_line_profiles, consolidated_reference_lists};
+        consolidated_line_profiles, consolidated_reference_lists, consolidated_plane_carriers};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -7621,6 +7621,22 @@ mod consolidated_analytic_limit_tests {
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_reference_list_id"));
     }
+
+    #[test]
+    fn native_plane_carriers_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_plane_carrier_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            consolidated_plane_carriers(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_plane_carriers"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_plane_carriers(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_plane_carrier_id"));
+    }
 }
 
 fn consolidated_parameter_points(
@@ -7661,15 +7677,14 @@ fn consolidated_parameter_points(
 }
 
 fn consolidated_plane_carriers(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedPlaneCarrier> {
+) -> Result<Vec<CatiaConsolidatedPlaneCarrier>, CodecError> {
     use crate::families::b2::records::B2PlaneCarrierPayload;
 
-    crate::families::b2::records::b2_plane_carriers_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, carrier)| {
+    let mut carriers = Vec::new();
+    for (index, carrier) in crate::families::b2::records::b2_plane_carriers_from_records(ctx, bytes, records)?.into_iter().enumerate() {
             let payload = match carrier.payload {
                 B2PlaneCarrierPayload::PointDirection2 {
                     origin,
@@ -7704,17 +7719,20 @@ fn consolidated_plane_carriers(
                     CatiaConsolidatedPlaneCarrierPayload::ScalarLane { selector, values }
                 }
             };
-            CatiaConsolidatedPlaneCarrier {
-                id: format!("catia:consolidated:plane-carrier#{index}"),
+            let value = CatiaConsolidatedPlaneCarrier {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:plane-carrier#", index, 0,
+                    "catia_native_plane_carrier_id")?,
                 byte_offset: carrier.pos as u64,
                 byte_len: (carrier.end - carrier.pos) as u64,
                 width: carrier.width,
                 flag: carrier.flag,
                 header_token: carrier.header_token,
                 payload,
-            }
-        })
-        .collect()
+            };
+            crate::resource::push(ctx, &mut carriers, value,
+                "catia_native_plane_carriers")?;
+    }
+    Ok(carriers)
 }
 
 fn consolidated_reference_lists(
@@ -9338,7 +9356,7 @@ impl CatiaNative {
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(ctx, bytes, consolidated_records)?;
-        let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
+        let consolidated_plane_carriers = consolidated_plane_carriers(ctx, bytes, consolidated_records)?;
         let consolidated_reference_lists =
             consolidated_reference_lists(ctx, bytes, consolidated_records)?;
         let consolidated_revolutions =

@@ -1803,7 +1803,7 @@ fn append_resolved_consolidated_surface_curves(
         .into_iter()
         .map(|torus| (torus.pos, torus))
         .collect::<HashMap<_, _>>();
-    let planes = crate::families::b2::records::b2_plane_carriers_from_records(data, records)
+    let planes = crate::families::b2::records::b2_plane_carriers_from_records(admission.context(), data, records)?
         .into_iter()
         .map(|plane| (plane.pos, plane))
         .collect::<HashMap<_, _>>();
