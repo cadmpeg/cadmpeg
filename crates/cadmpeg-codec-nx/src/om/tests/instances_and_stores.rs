@@ -1639,7 +1639,7 @@ fn om_offset_only_index_bounds_storage_blocks() {
     );
     assert!(records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
     assert!(records[1].bytes.ends_with(b"\0"));
-    let expressions = sections[0].numeric_expressions();
+    let expressions = crate::test_support::with_decode_context(|ctx| sections[0].numeric_expressions(ctx)).unwrap();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name.as_str(), "length");
     assert_eq!(
@@ -1678,7 +1678,7 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
         .any(|window| window == b"NX 2027.3102"));
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].bytes, &[0; 32]);
-    assert_eq!(sections[0].numeric_expressions()[0].name.as_str(), "length");
+    assert_eq!(crate::test_support::with_decode_context(|ctx| sections[0].numeric_expressions(ctx)).unwrap()[0].name.as_str(), "length");
 }
 
 #[test]

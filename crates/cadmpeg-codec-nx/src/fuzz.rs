@@ -54,7 +54,7 @@ pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         at += token.raw().len();
     }
     for section in crate::om::indexed_sections(&ctx, data)? {
-        drop(section.numeric_expressions());
+        drop(section.numeric_expressions(&ctx)?);
     }
     for section in crate::om::sections(&ctx, data)? {
         drop(section.operation_body_references());

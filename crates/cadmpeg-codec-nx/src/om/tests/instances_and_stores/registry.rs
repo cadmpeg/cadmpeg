@@ -151,7 +151,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
     let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap().remove(0);
-    let expression_records = section.numeric_expression_records();
+    let expression_records = crate::test_support::with_decode_context(|ctx| section.numeric_expression_records(ctx)).unwrap();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records
         .iter()
@@ -196,4 +196,42 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(declaration.literal, None);
     assert!(expression_declaration_name(b"\x04\x04p1\0\x04\x04p2\0").is_none());
     assert!(expression_declaration_name(b"\x04\x05p1-\0").is_none());
+}
+
+#[test]
+fn om_indexed_numeric_expression_records_refuse_collection_limit() {
+    let bytes = indexed_om_section();
+    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
+        .unwrap()
+        .remove(0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = section.numeric_expression_records(&ctx).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn om_indexed_numeric_expression_records_refuse_scoped_limit() {
+    let bytes = indexed_om_section();
+    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
+        .unwrap()
+        .remove(0);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .unwrap();
+    let error = section.numeric_expression_records(&ctx).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    ));
 }
