@@ -70,12 +70,12 @@ fn add_bounded_curve(
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
     sequences.record_point(&start_point, &stem, ctx)?;
-    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     sequences.record_point(&end_point, &stem, ctx)?;
-    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-    let curve = crate::ids::curve(&stem);
-    let edge = crate::ids::edge(&stem);
+    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+    let curve = crate::ids::curve_admitted(&stem, ctx)?;
+    let edge = crate::ids::edge_admitted(&stem, ctx)?;
     reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges conic neutral points")?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_conics")?;
     ir.model.points.extend([

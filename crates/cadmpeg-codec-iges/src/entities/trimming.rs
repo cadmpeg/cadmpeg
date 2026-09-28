@@ -225,11 +225,11 @@ fn create_boundary_vertices(
     vertex_ids.resize(positions.len(), None);
     let mut derivations = reserve_vec(ctx, clusters.len(), "iges boundary vertex derivations")?;
     for (index, cluster) in clusters.into_iter().enumerate() {
-        let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
+        let point_id = crate::ids::point_admitted(&stem.slot(boundary).slot(index), ctx)?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().points, 1, "iges boundary points")?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().vertices, 1, "iges boundary vertices")?;
         sequences.record_point(&point_id, stem, Some(ctx))?;
-        let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
+        let vertex_id = crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx)?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
             crate::decode_resource::clone_optional_identity(Some(ctx), &point_id, "iges trimming identity copy")?,
@@ -388,7 +388,7 @@ pub(super) fn pcurve_geometry(
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
 ) -> Result<Option<(PcurveGeometry, [f64; 2])>, super::composite::CompositeCurveError> {
-    let curve_id = crate::ids::curve(&crate::ids::Stem::directory(sequence));
+    let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
     let Some((nurbs, range)) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?
     else {
@@ -530,20 +530,22 @@ fn parameter_curve_carrier_id(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Option<CurveId> {
-    let entry = entries.get(&sequence).copied()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CurveId>, CodecError> {
+    let Some(entry) = entries.get(&sequence).copied() else { return Ok(None); };
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
-        records
+        let Some(carrier_sequence) = records
             .get(&sequence)
             .and_then(|record| record.integer(3))
             .and_then(|value| u32::try_from(value).ok())
-            .filter(|sequence| sequence % 2 == 1)?
+            .filter(|sequence| sequence % 2 == 1) else { return Ok(None); };
+        carrier_sequence
     } else {
         sequence
     };
-    Some(crate::ids::curve(&crate::ids::Stem::directory(
+    Ok(Some(crate::ids::curve_admitted(&crate::ids::Stem::directory(
         carrier_sequence,
-    )))
+    ), ctx)?))
 }
 
 fn surface_parameter_bound_intervals(
@@ -611,12 +613,12 @@ fn source_curve_control_intervals(
                 };
                 let mut child_ids = reserve_vec(ctx, child_count, "iges source composite child IDs")?;
                 for offset in 0..child_count {
-                    let Some(child_id) = (|| {
-                        let child_sequence = record
-                            .integer(offset.checked_add(2)?)
-                            .and_then(|value| u32::try_from(value).ok())?;
-                        parameter_curve_carrier_id(child_sequence, entries, records)
-                    })() else {
+                    let Some(child_sequence) = offset.checked_add(2)
+                        .and_then(|index| record.integer(index))
+                        .and_then(|value| u32::try_from(value).ok()) else {
+                        return Ok(None);
+                    };
+                    let Some(child_id) = parameter_curve_carrier_id(child_sequence, entries, records, ctx)? else {
                         return Ok(None);
                     };
                     child_ids.push(child_id);
@@ -2111,7 +2113,7 @@ pub(super) fn project(
         if !valid {
             continue;
         }
-        let surface_id = crate::ids::surface(&crate::ids::Stem::directory(surface_sequence));
+        let surface_id = crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?;
         let Some(support_geometry) = carrier_index.surfaces(surface_id.as_str()).map(|surface| {
             if let Some(cache) = surface.geometry.solved_cache() {
                 super::geometry_copy::copy_solved_surface(cache, Some(ctx)).map(SurfaceGeometry::Solved)
@@ -2124,11 +2126,11 @@ pub(super) fn project(
         };
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let body_id = crate::ids::body(&stem);
+        let body_id = crate::ids::body_admitted(&stem, ctx)?;
         sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
-        let region_id = crate::ids::region(&stem);
-        let shell_id = crate::ids::shell(&stem);
-        let face_id = crate::ids::face(&stem);
+        let region_id = crate::ids::region_admitted(&stem, ctx)?;
+        let shell_id = crate::ids::shell_admitted(&stem, ctx)?;
+        let face_id = crate::ids::face_admitted(&stem, ctx)?;
         sequences.record_face(&face_id, entry.sequence, Some(ctx))?;
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id, ctx)?;
@@ -2163,7 +2165,7 @@ pub(super) fn project(
             let mut items = reserve_vec(ctx, boundary.segments.len(), "iges trimming boundary items")?;
             for segment in &boundary.segments {
                 let model_curve_id =
-                    crate::ids::curve(&crate::ids::Stem::directory(segment.model_curve));
+                    crate::ids::curve_admitted(&crate::ids::Stem::directory(segment.model_curve), ctx)?;
                 let Some(candidates) = edges_by_curve.get(&model_curve_id) else {
                     super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "boundary model curve has no bounded edge"))?;
                     valid = false;
@@ -2229,7 +2231,7 @@ pub(super) fn project(
                             ctx,
                         )? && !source_curve_control_polygon_within_bounds(
                             ir,
-                            &crate::ids::curve(&crate::ids::Stem::directory(*sequence)),
+                            &crate::ids::curve_admitted(&crate::ids::Stem::directory(*sequence), ctx)?,
                             &PcurveSupport {
                                 surface_id: &surface_id,
                                 geometry: &support_geometry,
@@ -2351,12 +2353,12 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
-            let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
+            let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
             let mut coedge_ids = reserve_vec(ctx, items.len(), "iges trimming coedge ids")?;
             let endpoint_count = items.len().checked_mul(2).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges trimming source endpoints", u64::MAX, 1))?;
             let mut source_endpoints = reserve_vec(ctx, endpoint_count, "iges trimming source endpoints")?;
             for (index, item) in items.iter().enumerate() {
-                coedge_ids.push(crate::ids::coedge(&stem.slot(boundary_index).slot(index)));
+                coedge_ids.push(crate::ids::coedge_admitted(&stem.slot(boundary_index).slot(index), ctx)?);
                 for (endpoint, position) in [(BoundaryEndpoint::Start, item.start), (BoundaryEndpoint::End, item.end)] {
                     source_endpoints.push(BoundaryVertexSourceEndpoint {
                         edge: format_retained(ctx, format_args!("{}", item.source_edge.id), "iges trimming source endpoint edge text")?,
@@ -2393,7 +2395,7 @@ pub(super) fn project(
             reserve_vec_growth(ctx, &mut candidate_boundary_vertex_derivations, derivations.len(), "iges trimming candidate vertex derivations")?;
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
-                let edge_id = crate::ids::edge(&stem.slot(boundary_index).slot(segment_index));
+                let edge_id = crate::ids::edge_admitted(&stem.slot(boundary_index).slot(segment_index), ctx)?;
                 let start_vertex = crate::decode_resource::clone_optional_identity(
                     Some(ctx), &vertex_ids[segment_index * 2], "iges trimming identity copy",
                 )?;
@@ -2431,9 +2433,9 @@ pub(super) fn project(
                 }
                 let mut pcurve_uses = reserve_vec(ctx, item.pcurves.len(), "iges trimming coedge pcurve uses")?;
                 for (pcurve_index, (geometry, parameter_range)) in item.pcurves.into_iter().enumerate() {
-                    let id = crate::ids::pcurve(
+                    let id = crate::ids::pcurve_admitted(
                         &stem.slot(boundary_index).slot(segment_index).slot(pcurve_index),
-                    );
+                     ctx)?;
                     if implicit_outer_domain {
                         reserve_vec_growth(ctx, &mut implicit_boundary_pcurves, 1, "iges implicit boundary pcurve IDs")?;
                         implicit_boundary_pcurves.push(copy_optional_identity(
@@ -2518,9 +2520,9 @@ pub(super) fn project(
             continue;
         }
         let face_surface_id = if implicit_outer_domain {
-            let derived_surface_id = crate::ids::surface(
+            let derived_surface_id = crate::ids::surface_admitted(
                 &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::ImplicitOuter),
-            );
+             ctx)?;
             sequences.record_surface(&derived_surface_id, entry.sequence, Some(ctx))?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
             candidate.model_mut().surfaces.push(Surface {
@@ -2549,10 +2551,10 @@ pub(super) fn project(
             let _attached = candidate.model_mut().add_procedural_surface(
                 crate::decode_resource::clone_optional_identity(Some(ctx), &derived_surface_id, "iges trimming identity copy")?,
                 ProceduralSurface::new(
-                    crate::ids::procedural_surface(
+                    crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
                             .part(crate::ids::Word::ImplicitOuter),
-                    ),
+                     ctx)?,
                     ProceduralSurfaceDefinition::CurveBounded {
                         support: crate::decode_resource::clone_optional_identity(Some(ctx), &surface_id, "iges trimming identity copy")?,
                         boundaries: implicit_boundary_curves,

@@ -485,7 +485,7 @@ pub(super) fn project(
         )?;
         appearance(
             ir,
-            crate::ids::appearance_color(&crate::ids::Stem::directory(entry.sequence)),
+            crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             name,
             color,
             ctx,
@@ -507,15 +507,15 @@ pub(super) fn project(
             std::cmp::Ordering::Equal => None,
         }
     };
-    let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
-        let color = resolve_color(value)?;
+    let resolve = |value: i64| -> Result<Option<(AppearanceId, Color)>, CodecError> {
+        let Some(color) = resolve_color(value) else { return Ok(None); };
         let id = if value > 0 {
-            crate::ids::appearance_standard(&crate::ids::Stem::number(value))
+            crate::ids::appearance_standard_admitted(&crate::ids::Stem::number(value), ctx)?
         } else {
-            let sequence = u32::try_from(value.checked_neg()?).ok()?;
-            crate::ids::appearance_color(&crate::ids::Stem::directory(sequence))
+            let Some(sequence) = value.checked_neg().and_then(|value| u32::try_from(value).ok()) else { return Ok(None); };
+            crate::ids::appearance_color_admitted(&crate::ids::Stem::directory(sequence), ctx)?
         };
-        Some((id, color))
+        Ok(Some((id, color)))
     };
 
     for entry in directory.iter().filter(|entry| {
@@ -562,15 +562,15 @@ pub(super) fn project(
     }
 
     for index in 0..ir.model.bodies.len() {
-        let Some((sequence, appearance_id, color, visible)) = (|| {
+        let Some((sequence, color_number, visible)) = (|| {
             let body = &ir.model.bodies[index];
             let sequence = sequences.body(&body.id)?;
             let entry = entries.get(&sequence)?;
-            let (appearance_id, color) = resolve(entry.color)?;
-            Some((sequence, appearance_id, color, entry.status.is_visible()))
+            Some((sequence, entry.color, entry.status.is_visible()))
         })() else {
             continue;
         };
+        let Some((appearance_id, color)) = resolve(color_number)? else { continue; };
         let body = &mut ir.model.bodies[index];
         let body_id = crate::decode_resource::clone_optional_identity(Some(ctx), &body.id, "iges appearance body ID copy")?;
         body.color = Some(color);
@@ -579,10 +579,10 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+            id: crate::ids::appearance_binding_admitted(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Body,
                 sequence,
-            )),
+            ), ctx)?,
             target: AppearanceTarget::Body(body_id),
             appearance: appearance_id,
             source_entity_id: None,
@@ -645,15 +645,15 @@ pub(super) fn project(
     }
 
     for index in 0..ir.model.faces.len() {
-        let Some((sequence, appearance_id, color)) = (|| {
+        let Some((sequence, color_number)) = (|| {
             let face = &ir.model.faces[index];
             let sequence = sequences.face(&face.id)?;
             let entry = entries.get(&sequence)?;
-            let (appearance_id, color) = resolve(entry.color)?;
-            Some((sequence, appearance_id, color))
+            Some((sequence, entry.color))
         })() else {
             continue;
         };
+        let Some((appearance_id, color)) = resolve(color_number)? else { continue; };
         let face = &mut ir.model.faces[index];
         let face_id = crate::decode_resource::clone_optional_identity(Some(ctx), &face.id, "iges appearance face ID copy")?;
         face.color = Some(color);
@@ -661,10 +661,10 @@ pub(super) fn project(
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
+            id: crate::ids::appearance_binding_admitted(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Face,
                 sequence,
-            )),
+            ), ctx)?,
             target: AppearanceTarget::Face(face_id),
             appearance: appearance_id,
             source_entity_id: None,

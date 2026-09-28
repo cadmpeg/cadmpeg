@@ -330,7 +330,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset parameter interval is not increasing"))?;
             continue;
         };
-        let source_id = crate::ids::curve(&crate::ids::Stem::directory(source_sequence));
+        let source_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(source_sequence), ctx)?;
         let Some(source_geometry) = ir
             .model
             .curves
@@ -400,9 +400,9 @@ pub(super) fn project(
                 continue;
             };
             normal = placed_normal;
-            offset_source_id = crate::ids::curve(
+            offset_source_id = crate::ids::curve_admitted(
                 &crate::ids::Stem::directory(entry.sequence).tail(crate::ids::Word::PlacedSource),
-            );
+             ctx)?;
             offset_source_geometry = Cow::Owned(placed_source_geometry);
         }
         let normal_direction = *normal.as_raw();
@@ -658,7 +658,7 @@ pub(super) fn project(
                     continue;
                 }
                 let function_id =
-                    crate::ids::curve(&crate::ids::Stem::directory(function_sequence));
+                    crate::ids::curve_admitted(&crate::ids::Stem::directory(function_sequence), ctx)?;
                 let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
                 else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset function curve is missing"))?;
@@ -808,22 +808,22 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "offset end parameter cannot be evaluated"))?;
             continue;
         };
-        let curve_id = crate::ids::curve(&crate::ids::Stem::directory(entry.sequence));
-        let start_point = crate::ids::point(
+        let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
+        let start_point = crate::ids::point_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
-        );
+         ctx)?;
         sequences.record_point(&start_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
-        let end_point = crate::ids::point(
+        let end_point = crate::ids::point_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
-        );
+         ctx)?;
         sequences.record_point(&end_point, &crate::ids::Stem::directory(entry.sequence), ctx)?;
-        let start_vertex = crate::ids::vertex(
+        let start_vertex = crate::ids::vertex_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::Start),
-        );
-        let end_vertex = crate::ids::vertex(
+         ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
-        );
-        let edge_id = crate::ids::edge(&crate::ids::Stem::directory(entry.sequence));
+         ctx)?;
+        let edge_id = crate::ids::edge_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         let range = distance_law
             .transpose()
             .and_then(|distance_law| match distance_law {
@@ -841,18 +841,17 @@ pub(super) fn project(
             }
             Err(error) => Err(error),
         };
-        let procedural = match payload.map(|admitted_payload| {
-                ProceduralCurve::new(
-                    crate::ids::procedural_curve(&crate::ids::Stem::directory(entry.sequence)),
-                    ProceduralCurveDefinition::Offset(admitted_payload),
-                )
-            }) {
-            Ok(procedural) => procedural,
+        let admitted_payload = match payload {
+            Ok(admitted_payload) => admitted_payload,
             Err(error) => {
                 super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", error.to_string()))?;
                 continue;
             }
         };
+        let procedural = ProceduralCurve::new(
+            crate::ids::procedural_curve_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
+            ProceduralCurveDefinition::Offset(admitted_payload),
+        );
         if offset_source_id != source_id {
             let placed_geometry = match offset_source_geometry {
                 Cow::Owned(geometry) => geometry,

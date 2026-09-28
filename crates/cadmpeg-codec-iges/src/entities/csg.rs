@@ -24,8 +24,8 @@ fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option
     ))
 }
 
-fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
-    let curve = crate::ids::curve(&crate::ids::Stem::directory(sequence));
+fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64, ctx: Option<&DecodeContext<'_>>) -> Result<Option<bool>, CodecError> {
+    let curve = crate::ids::curve_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -46,15 +46,15 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
         .iter()
         .filter(|edge| edge.curve() == Some(&curve))
     {
-        let start = point(&edge.start)?;
-        let end = point(&edge.end)?;
+        let Some(start) = point(&edge.start) else { return Ok(None); };
+        let Some(end) = point(&edge.end) else { return Ok(None); };
         let closed = cadmpeg_ir::math::Point3::distance(start, end) <= tolerance;
         if result.is_some_and(|previous| previous != closed) {
-            return None;
+            return Ok(None);
         }
         result = Some(closed);
     }
-    result
+    Ok(result)
 }
 
 #[derive(Clone, Copy)]
@@ -290,15 +290,15 @@ pub(super) fn project(
             continue;
         };
         let factor = global.length_factor_mm();
-        let Some(profile) = pointer(record, 1).filter(|sequence| {
-            ir.model
-                .curves
-                .iter()
-                .any(|curve| curve.id == crate::ids::curve(&crate::ids::Stem::directory(*sequence)))
-        }) else {
+        let Some(profile) = pointer(record, 1) else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile curve pointer is invalid"))?;
             continue;
         };
+        let profile_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(profile), ctx)?;
+        if !ir.model.curves.iter().any(|curve| curve.id == profile_id) {
+            super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile curve pointer is invalid"))?;
+            continue;
+        }
         let Some(amount) = record
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
@@ -325,7 +325,7 @@ pub(super) fn project(
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid sweep axis is invalid"))?;
             continue;
         }
-        let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
+        let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm(), ctx)? else {
             super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "solid profile endpoints are unavailable"))?;
             continue;
         };
