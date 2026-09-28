@@ -773,11 +773,6 @@ pub(crate) fn native_scope(name: &str) -> String {
     format!("f3d:{}", identity_key_component(name))
 }
 
-/// The escaped native scope key with a trailing separator for prefix tests.
-pub(crate) fn native_scope_prefix(name: &str) -> String {
-    format!("{}:", native_scope(name))
-}
-
 /// Build one record ID in an archive-entry-qualified native scope.
 pub(crate) fn native_scoped_id(scope: &str, kind: &str, key: impl std::fmt::Display) -> String {
     format!("{}:{kind}#{key}", native_scope(scope))
@@ -834,16 +829,6 @@ native_record_id!(
     "design-decal-image"
 );
 native_record_id!(
-    /// The native design-dimension-locus-pair record key.
-    native_design_dimension_locus_pair_id,
-    "design-dimension-locus-pair"
-);
-native_record_id!(
-    /// The native design-dimension-null-locus-pair record key.
-    native_design_dimension_null_locus_pair_id,
-    "design-dimension-null-locus-pair"
-);
-native_record_id!(
     /// The native design-dimension-annotation-frame record key.
     native_design_dimension_annotation_frame_id,
     "design-dimension-annotation-frame"
@@ -852,11 +837,6 @@ native_record_id!(
     /// The native design-dimension-presentation-frame record key.
     native_design_dimension_presentation_frame_id,
     "design-dimension-presentation-frame"
-);
-native_record_id!(
-    /// The native design-dimension-locus-group record key.
-    native_design_dimension_locus_group_id,
-    "design-dimension-locus-group"
 );
 native_record_id!(
     /// The native persistent-reference record key.

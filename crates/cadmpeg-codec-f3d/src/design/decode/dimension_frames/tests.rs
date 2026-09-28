@@ -1113,14 +1113,29 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    ).unwrap();
+    assert!(matches!(
+        find_dimension_locus_groups(
+            &limited, &bytes, 0, bytes.len(), 240,
+            &HashSet::from([175, 217]), &HashSet::from([172]),
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d dimension locus group candidates"
+    ));
     let groups = find_dimension_locus_groups(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         bytes.len(),
         240,
         &HashSet::from([175, 217]),
         &HashSet::from([172]),
-    );
+    ).unwrap();
     assert_eq!(
         groups
             .iter()
@@ -1510,6 +1525,134 @@ fn dimension_recipe_indexes_refuse_collection_limit() {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d dimension recipe records"
+        ));
+    });
+}
+
+#[test]
+fn dimension_locus_lookup_collections_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(300), "40 mm", "Linear Dimension-3", Some("mm"), "d3", 4.0,
+    ))
+    .unwrap();
+    parameter.id = "f3d:Design/BulkStream.dat:design-parameter#301".into();
+    parameter.record_index = 301;
+    let parameters = [parameter];
+    let owner = DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 300,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 4.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 301,
+            owned_ordinal: 3,
+            variant: Some(0),
+            companion_record_index: 302,
+        },
+    )
+    .unwrap();
+    let parameter_index = super::dimension_parameter_index(
+        &cadmpeg_test_support::service_decode_context(), &parameters,
+        "f3d dimension locus parameter index", "f3d dimension locus parameter index allocation",
+    ).unwrap();
+    let point = crate::records::sketch_geometry::SketchPoint::try_from(
+        crate::records::sketch_geometry::SketchPointDraft {
+            id: "f3d:Design/BulkStream.dat:sketch-point#0".into(),
+            record_index: 20,
+            owner_reference: None,
+            class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            companion: crate::records::sketch_geometry::SketchPointCompanion { incident_curves: Vec::new() },
+            record_form: crate::records::sketch_geometry::SketchPointRecordForm::version11(
+                20, crate::records::sketch_geometry::SketchPointClosure::Selector0State0,
+                None, 0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(1.0, 2.0),
+        },
+    ).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let refusal = super::dimension_parameter_index(
+        &ctx, &parameters, "f3d dimension locus parameter index",
+        "f3d dimension locus parameter index allocation",
+    );
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d dimension locus parameter index"));
+    let companion_arena = DecodeArena::new();
+    let (companion_ctx, _) = DecodeContext::from_root_bytes(&[], &companion_arena, &policy).unwrap();
+    let refusal = super::dimension_companion_keys(
+        &companion_ctx, std::slice::from_ref(&owner), &parameter_index,
+        "f3d dimension locus companions", "f3d dimension locus companion allocation",
+    );
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d dimension locus companions"));
+    let geometry_arena = DecodeArena::new();
+    let (geometry_ctx, _) = DecodeContext::from_root_bytes(&[], &geometry_arena, &policy).unwrap();
+    let refusal = super::dimension_geometry_indices(
+        &geometry_ctx, "f3d:Design/BulkStream.dat", std::slice::from_ref(&point), &[],
+    );
+    assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d dimension geometry indices"));
+}
+
+#[test]
+fn typed_dimension_companions_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let mut bytes = vec![0; 74];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"277");
+    bytes[7..11].copy_from_slice(&1394u32.to_le_bytes());
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    bytes[24] = 1;
+    bytes[35..39].copy_from_slice(&10u32.to_le_bytes());
+    bytes[39] = 1;
+    bytes[40..44].copy_from_slice(&1109u32.to_le_bytes());
+    bytes[50..54].copy_from_slice(&7u32.to_le_bytes());
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"273");
+    bytes.extend_from_slice(&1394u32.to_le_bytes());
+    let mut pair = parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109])).unwrap();
+    pair.id = "f3d:Design/BulkStream.dat:design-dimension-null-locus-pair#0".into();
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored).unwrap();
+    zip.write_all(&[]).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let inputs = super::DimensionDecodeInputs {
+            scan, placements: &[], parameters: &[], owners: &[], companions: &[],
+            scopes: &[], headers: &[], points: &[], curves: &[],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::decode_dimension_null_locus_pairs(&ctx, &inputs, &[pair], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d typed dimension companions"
         ));
     });
 }
