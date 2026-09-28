@@ -664,46 +664,62 @@ pub(super) struct CreoSketchRelationTriple {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionLocalSystem {
+pub(super) struct CreoCurveExpressionLocalSystem<'a> {
     pub(super) dimensions: u32,
     pub(super) count: u32,
-    pub(super) body: Vec<u8>,
+    pub(super) body: &'a [u8],
     pub(super) explicit_slots: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionLine {
-    pub(super) text: String,
+pub(super) struct CreoCurveExpressionLine<'a> {
+    pub(super) text: &'a str,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionAssignment {
-    pub(super) target: crate::curve::CurveExpressionTarget,
-    pub(super) expression: String,
-    pub(super) dependencies: Vec<String>,
-    pub(super) value: Option<crate::curve::CurveExpressionValue>,
+pub(super) struct CreoCurveExpressionAssignment<'a> {
+    pub(super) target: &'a crate::curve::CurveExpressionTarget,
+    pub(super) expression: &'a str,
+    pub(super) dependencies: &'a [String],
+    pub(super) value: Option<&'a crate::curve::CurveExpressionValue>,
     pub(super) activation: &'static str,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionSolveBlock {
-    pub(super) equations: Vec<CreoCurveExpressionEquation>,
-    pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
-    pub(super) variables: Vec<String>,
-    pub(super) solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
+pub(super) struct CreoCurveExpressionSolveBlock<'a> {
+    pub(super) equations: Vec<CreoCurveExpressionEquation<'a>>,
+    pub(super) assignments: Vec<CreoCurveExpressionAssignment<'a>>,
+    #[serde(serialize_with = "serialize_curve_expression_unknown_names")]
+    pub(super) variables: &'a [crate::curve::SolveUnknown],
+    #[serde(serialize_with = "serialize_curve_expression_unknown_solutions")]
+    pub(super) solutions: &'a [crate::curve::SolveUnknown],
     pub(super) offset: usize,
     pub(super) for_offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionEquation {
-    pub(super) left: String,
-    pub(super) right: String,
-    pub(super) dependencies: Vec<String>,
+pub(super) struct CreoCurveExpressionEquation<'a> {
+    pub(super) left: &'a str,
+    pub(super) right: &'a str,
+    pub(super) dependencies: &'a [String],
     pub(super) offset: usize,
+}
+
+fn serialize_curve_expression_unknown_names<S: serde::Serializer>(
+    unknowns: &[crate::curve::SolveUnknown],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(unknowns.iter().map(|unknown| &unknown.name))
+}
+
+fn serialize_curve_expression_unknown_solutions<S: serde::Serializer>(
+    unknowns: &[crate::curve::SolveUnknown],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(unknowns.iter().map(|unknown| &unknown.solution))
 }
 
 #[derive(Debug, Serialize)]
