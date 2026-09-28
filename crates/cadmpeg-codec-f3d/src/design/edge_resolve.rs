@@ -2183,31 +2183,29 @@ fn primary_terminal_reference_shared_edge(operand: &DesignEdgeOperand) -> Option
     }
 }
 
-pub(super) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
-    let reference_edge_slots = if operand.recipe_reference_contexts.is_empty() {
-        operand
-            .terminal_reference_edge_slots
-            .iter()
-            .map(Vec::as_slice)
-            .collect::<Vec<_>>()
+pub(super) fn edge_operand_reference_edge_sets(
+    operand: &DesignEdgeOperand,
+) -> impl Iterator<Item = &[i64]> + '_ {
+    let terminal = operand.recipe_reference_contexts.is_empty();
+    let source_count = if terminal {
+        operand.terminal_reference_edge_slots.len()
     } else {
-        operand
-            .recipe_reference_contexts
-            .iter()
-            .map(|context| context.changed_reference_edge_slots.as_slice())
-            .collect::<Vec<_>>()
+        operand.recipe_reference_contexts.len()
     };
-    if let Some(local_topology_references) = &operand.local_topology_references {
-        local_topology_references
-            .iter()
-            .filter_map(|ordinal| {
-                reference_edge_slots.get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
-            })
-            .copied()
-            .collect()
-    } else {
-        reference_edge_slots
-    }
+    let selected_count = operand.local_topology_references.as_ref()
+        .map_or(source_count, Vec::len);
+    (0..selected_count).filter_map(move |selected| {
+        let source = match &operand.local_topology_references {
+            Some(ordinals) => usize::try_from(ordinals.get(selected)?.get()).ok()?.checked_sub(1)?,
+            None => selected,
+        };
+        if terminal {
+            operand.terminal_reference_edge_slots.get(source).map(Vec::as_slice)
+        } else {
+            operand.recipe_reference_contexts.get(source)
+                .map(|context| context.changed_reference_edge_slots.as_slice())
+        }
+    })
 }
 
 pub(crate) fn resolved_edge_candidate_intersection<'a>(
