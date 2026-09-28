@@ -421,6 +421,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             },
         )?;
         source_carriers.admit_procedural_surface(
+            ctx,
             ir,
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -657,6 +658,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             },
         )?;
         source_carriers.admit_procedural_surface(
+            ctx,
             ir,
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(

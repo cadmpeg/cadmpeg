@@ -14,6 +14,8 @@ use serde::{
 };
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -950,26 +952,20 @@ impl Model {
         owners.next().is_none().then_some(owner)
     }
 
-    /// Attaches one procedural surface construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn add_procedural_surface(
-        &mut self,
-        owner: SurfaceId,
-        procedural: ProceduralSurface,
-    ) -> Result<(), ProceduralCarrierError> {
-        if self
-            .procedural_surfaces
-            .iter()
-            .any(|existing| existing.id == procedural.id)
-        {
+    /// Validates a procedural surface attachment and returns its owner slot.
+    fn procedural_surface_slot(
+        &self,
+        owner: &SurfaceId,
+        procedural: &ProceduralSurface,
+    ) -> Result<usize, ProceduralCarrierError> {
+        if self.procedural_surfaces.iter().any(|existing| existing.id == procedural.id) {
             return Err(ProceduralCarrierError::new(format!(
                 "procedural surface construction {} already exists",
                 procedural.id
             )));
         }
         if let Some(existing_owner) = self.surfaces.iter().find(|surface| {
-            surface.id != owner
+            surface.id != *owner
                 && surface.geometry.procedural_construction() == Some(&procedural.id)
         }) {
             return Err(ProceduralCarrierError::new(format!(
@@ -977,21 +973,13 @@ impl Model {
                 procedural.id, existing_owner.id
             )));
         }
-        let surface = self
-            .surfaces
-            .iter_mut()
-            .find(|surface| surface.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
-                    "procedural surface {} references missing surface {owner}",
-                    procedural.id
-                ))
-            })?;
-        match &surface.geometry {
-            SurfaceGeometry::Procedural {
-                construction,
-                cache: None,
-            } if *construction == procedural.id => {
+        let slot = self.surfaces.iter().position(|surface| surface.id == *owner)
+            .ok_or_else(|| ProceduralCarrierError::new(format!(
+                "procedural surface {} references missing surface {owner}", procedural.id
+            )))?;
+        match &self.surfaces[slot].geometry {
+            SurfaceGeometry::Procedural { construction, cache: None }
+                if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Err(ProceduralCarrierError::new(format!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
@@ -1003,8 +991,24 @@ impl Model {
                     "surface {owner} is already owned by procedural construction {construction}"
                 )));
             }
+            SurfaceGeometry::Solved(_) => {}
+        }
+        Ok(slot)
+    }
+
+    /// Attaches one procedural surface construction to its carrier.
+    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_procedural_surface(
+        &mut self,
+        owner: SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<(), ProceduralCarrierError> {
+        let slot = self.procedural_surface_slot(&owner, &procedural)?;
+        match &self.surfaces[slot].geometry {
+            SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Solved(geometry) => {
-                surface.geometry = SurfaceGeometry::Procedural {
+                self.surfaces[slot].geometry = SurfaceGeometry::Procedural {
                     construction: procedural.id.clone(),
                     cache: Some(geometry.clone()),
                 };
@@ -1014,47 +1018,59 @@ impl Model {
         Ok(())
     }
 
-    /// Attaches one procedural curve construction to its carrier.
-    // Attachment accepts the owner ID and its construction at the same ownership boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn add_procedural_curve(
+    /// Attaches a procedural surface after admitting its carrier copy and arena item.
+    pub fn add_procedural_surface_admitted(
         &mut self,
-        owner: CurveId,
-        procedural: ProceduralCurve,
-    ) -> Result<(), ProceduralCarrierError> {
-        if self
-            .procedural_curves
-            .iter()
-            .any(|existing| existing.id == procedural.id)
-        {
+        ctx: &DecodeContext<'_>,
+        owner: &SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<(), CodecError> {
+        let slot = self.procedural_surface_slot(owner, &procedural)
+            .map_err(CodecError::malformed)?;
+        let replacement = match &self.surfaces[slot].geometry {
+            SurfaceGeometry::Procedural { .. } => None,
+            SurfaceGeometry::Solved(geometry) => Some(SurfaceGeometry::Procedural {
+                construction: ProceduralSurfaceId::mint(ctx.copy_retained_text(
+                    procedural.id.as_str(), "procedural surface owner identity",
+                )?).map_err(CodecError::malformed)?,
+                cache: Some(geometry.copy_admitted(ctx, "procedural surface solved cache")?),
+            }),
+        };
+        ctx.try_reserve_items(&mut self.procedural_surfaces, 1, "procedural surface arena")?;
+        if let Some(replacement) = replacement {
+            self.surfaces[slot].geometry = replacement;
+        }
+        self.procedural_surfaces.push(procedural);
+        Ok(())
+    }
+
+    /// Validates a procedural curve attachment and returns its owner slot.
+    fn procedural_curve_slot(
+        &self,
+        owner: &CurveId,
+        procedural: &ProceduralCurve,
+    ) -> Result<usize, ProceduralCarrierError> {
+        if self.procedural_curves.iter().any(|existing| existing.id == procedural.id) {
             return Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already exists",
                 procedural.id
             )));
         }
         if let Some(existing_owner) = self.curves.iter().find(|curve| {
-            curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
+            curve.id != *owner && curve.geometry.procedural_construction() == Some(&procedural.id)
         }) {
             return Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already owns curve {}",
                 procedural.id, existing_owner.id
             )));
         }
-        let curve = self
-            .curves
-            .iter_mut()
-            .find(|curve| curve.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
-                    "procedural curve {} references missing curve {owner}",
-                    procedural.id
-                ))
-            })?;
-        match &curve.geometry {
-            CurveGeometry::Procedural {
-                construction,
-                cache: None,
-            } if *construction == procedural.id => {
+        let slot = self.curves.iter().position(|curve| curve.id == *owner)
+            .ok_or_else(|| ProceduralCarrierError::new(format!(
+                "procedural curve {} references missing curve {owner}", procedural.id
+            )))?;
+        match &self.curves[slot].geometry {
+            CurveGeometry::Procedural { construction, cache: None }
+                if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
                     return Err(ProceduralCarrierError::new(format!(
                         "direct procedural curve {owner} cannot carry a solved-cache tolerance"
@@ -1066,12 +1082,54 @@ impl Model {
                     "curve {owner} is already owned by procedural construction {construction}"
                 )));
             }
+            CurveGeometry::Solved(_) => {}
+        }
+        Ok(slot)
+    }
+
+    /// Attaches one procedural curve construction to its carrier.
+    // Attachment accepts the owner ID and its construction at the same ownership boundary.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn add_procedural_curve(
+        &mut self,
+        owner: CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<(), ProceduralCarrierError> {
+        let slot = self.procedural_curve_slot(&owner, &procedural)?;
+        match &self.curves[slot].geometry {
+            CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Solved(geometry) => {
-                curve.geometry = CurveGeometry::Procedural {
+                self.curves[slot].geometry = CurveGeometry::Procedural {
                     construction: procedural.id.clone(),
                     cache: Some(geometry.clone()),
                 };
             }
+        }
+        self.procedural_curves.push(procedural);
+        Ok(())
+    }
+
+    /// Attaches a procedural curve after admitting its carrier copy and arena item.
+    pub fn add_procedural_curve_admitted(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        owner: &CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<(), CodecError> {
+        let slot = self.procedural_curve_slot(owner, &procedural)
+            .map_err(CodecError::malformed)?;
+        let replacement = match &self.curves[slot].geometry {
+            CurveGeometry::Procedural { .. } => None,
+            CurveGeometry::Solved(geometry) => Some(CurveGeometry::Procedural {
+                construction: ProceduralCurveId::mint(ctx.copy_retained_text(
+                    procedural.id.as_str(), "procedural curve owner identity",
+                )?).map_err(CodecError::malformed)?,
+                cache: Some(geometry.copy_admitted(ctx, "procedural curve solved cache")?),
+            }),
+        };
+        ctx.try_reserve_items(&mut self.procedural_curves, 1, "procedural curve arena")?;
+        if let Some(replacement) = replacement {
+            self.curves[slot].geometry = replacement;
         }
         self.procedural_curves.push(procedural);
         Ok(())
