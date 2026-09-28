@@ -1143,9 +1143,10 @@ pub(crate) fn project_profiled_hole_constructions(
     ctx.charge_collection_items(histories.len() as u64, "SLDPRT profiled-hole history copy")?;
     let mut enriched_histories = histories.to_vec();
     crate::history::configuration::enrich_history_parameters_semantic(
+        ctx,
         &mut enriched_histories,
         lanes,
-    );
+    )?;
     ctx.charge_collection_items(
         histories.len() as u64,
         "SLDPRT profiled-hole ownership copy",

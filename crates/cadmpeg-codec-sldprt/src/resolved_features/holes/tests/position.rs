@@ -1484,7 +1484,15 @@ fn source_intervals_supply_legacy_hole_profiles() {
         operands: Vec::new(),
     });
     let mut histories = [history];
-    enrich_history_parameters(&mut histories, [&lane], true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("hole lane fits service policy");
+    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+        .expect("hole parameter enrichment succeeds");
     assert_eq!(histories[0].features[1].parameters["depth"], "6.8mm");
     enrich_history_hole_constructions(&mut histories, &[lane]);
     assert_eq!(
@@ -1713,7 +1721,15 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         operands: Vec::new(),
     });
 
-    enrich_history_parameters(std::slice::from_mut(&mut history), [&lane], true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("hole lane fits service policy");
+    enrich_history_parameters(&ctx, std::slice::from_mut(&mut history), [&lane], true)
+        .expect("hole parameter enrichment succeeds");
     assert_eq!(
         history.features[0].parameters.get("D1").map(String::as_str),
         Some("6.283185307179586rad")
