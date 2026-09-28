@@ -37,7 +37,7 @@ pub(crate) mod report;
 mod support_uv;
 
 use build::try_decode_geometry;
-use emit::{source_meta, unknown_stream};
+use emit::{render_retained_text, source_meta, unknown_stream};
 
 const MISSING_TOLERANCE: f64 = -31_415_800_000_000.0;
 /// Parsed container data shared by inspection and entity decoding.
@@ -93,8 +93,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) =
             build_metadata_ir(ctx, root, &scan, &dialects)?;
-        let mut body = build_container_body(&scan, dialect_losses, notes);
-        body.losses.extend(native_losses);
+        let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
+        append_losses(ctx, &mut body, native_losses)?;
         report_untransferred_streams(ctx, &scan, &mut body, TypedNative::ContainerOnly)?;
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
@@ -113,8 +113,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 
     let (ir, annotations, unknowns, native_losses) =
         build_metadata_ir(ctx, root, &scan, &dialects)?;
-    let mut body = build_container_body(&scan, dialect_losses, notes);
-    body.losses.extend(native_losses);
+    let mut body = build_container_body(ctx, &scan, dialect_losses, notes)?;
+    append_losses(ctx, &mut body, native_losses)?;
     report_untransferred_streams(ctx, &scan, &mut body, TypedNative::Available)?;
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
@@ -150,10 +150,14 @@ fn report_untransferred_streams(
     let (control_count, classified_control_count) =
         offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
-        body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
-            "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
-            control_count - classified_control_count
-        )));
+        push_loss(ctx, body, NxLossCode::OffsetStoreControlUntyped.note(render_retained_text(
+            ctx,
+            format_args!(
+                "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
+                control_count - classified_control_count
+            ),
+            "nx offset control loss text",
+        )?))?;
     }
     for entry in &scan.container.entries {
         let content = entry.content();
@@ -162,22 +166,56 @@ fn report_untransferred_streams(
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
-            body.losses.push(NxLossCode::ContainerStreamOpaque.note(format!(
-                "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
-                entry.name,
-                content.label()
-            )));
+            push_loss(ctx, body, NxLossCode::ContainerStreamOpaque.note(render_retained_text(
+                ctx,
+                format_args!(
+                    "Named container stream {} is classified as {} and retained byte-exact; its field semantics are not completely typed.",
+                    entry.name,
+                    content.label()
+                ),
+                "nx opaque stream loss text",
+            )?))?;
         }
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
-            body.losses
-                .push(NxLossCode::NonParasolidStreamOmitted.note(format!(
+            push_loss(ctx, body, NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
+                ctx,
+                format_args!(
                     "Non-Parasolid {} stream #{index} was classified but not transferred.",
                     stream.kind().label()
-                )));
+                ),
+                "nx omitted stream loss text",
+            )?))?;
         }
     }
+    Ok(())
+}
+
+fn push_loss(
+    ctx: &DecodeContext<'_>,
+    body: &mut DecodeBody,
+    loss: LossNote,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx decode losses")?;
+    body.losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx decode losses", 0, 1))?;
+    body.losses.push(loss);
+    Ok(())
+}
+
+fn append_losses(
+    ctx: &DecodeContext<'_>,
+    body: &mut DecodeBody,
+    losses: Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let count = cadmpeg_core::decode::u64_from_index(losses.len());
+    ctx.charge_collection_items(count, "nx decode losses")?;
+    body.losses
+        .try_reserve(losses.len())
+        .map_err(|_| ctx.refuse_codec_limit("nx decode losses", 0, count))?;
+    body.losses.extend(losses);
     Ok(())
 }
 
@@ -315,11 +353,11 @@ fn build_metadata_ir(
 }
 
 fn build_container_body(
+    ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialect_losses: Vec<LossNote>,
     notes: Vec<String>,
-) -> DecodeBody {
-    let mut losses = Vec::new();
+) -> Result<DecodeBody, CodecError> {
 
     let assembly = scan
         .container
@@ -328,30 +366,32 @@ fn build_container_body(
         .any(|e| e.name.contains("ExternalReferences"))
         && !scan.has_parasolid();
 
-    if assembly {
-        losses.push(NxLossCode::AssemblyComponentsExternal.note(
+    let loss = if assembly {
+        NxLossCode::AssemblyComponentsExternal.note(
             "No inline Parasolid geometry: this is an assembly .prt. Component geometry \
                       lives in external child .prt files named in EXTREFSTREAM, and the assembled \
                       solid's inputs (child partitions + constraint solve) are absent from this \
                       file. This is an external-dependency boundary, not a decode gap.",
-        ));
+        )
     } else {
-        losses.push(NxLossCode::GeometryNotTransferred.note(
+        NxLossCode::GeometryNotTransferred.note(
             "No B-rep geometry was transferred: no gate-passing analytic carrier was found \
                       in the embedded Parasolid streams (they may hold only B-spline/procedural \
                       geometry this codec does not yet type). The streams are preserved verbatim as \
                       unknown passthrough records.",
-        ));
-    }
+        )
+    };
 
-    losses.extend(dialect_losses);
-    DecodeBody {
+    let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
-        losses,
+        losses: Vec::new(),
         notes,
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    }
+    };
+    push_loss(ctx, &mut body, loss)?;
+    append_losses(ctx, &mut body, dialect_losses)?;
+    Ok(body)
 }
 
 #[cfg(test)]
