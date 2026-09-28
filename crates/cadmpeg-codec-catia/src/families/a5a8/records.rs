@@ -12,8 +12,7 @@ use crate::wire::bytes::{
 #[cfg(test)]
 use crate::wire::records::ConsolidatedPcurve;
 use crate::wire::records::{
-    consolidated_records, family_frames_from_records, ConsolidatedFamily, ConsolidatedFrame,
-    ConsolidatedRecord,
+    consolidated_records, ConsolidatedFamily, ConsolidatedFrame, ConsolidatedRecord,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -891,23 +890,28 @@ pub(in crate::families) struct A8FreeformCurve {
 impl A8FreeformCurve {
     const DEGREE: u32 = 5;
 
-    pub(in crate::families) fn multiplicities(&self) -> Vec<u32> {
-        self.sites.iter().map(|site| site.multiplicity).collect()
+    pub(in crate::families) fn multiplicities(
+        &self, ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<u32>, CodecError> {
+        let mut multiplicities = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut multiplicities, self.sites.len(), "catia_a8_jet_multiplicities")?;
+        multiplicities.extend(self.sites.iter().map(|site| site.multiplicity));
+        Ok(multiplicities)
     }
 }
 
 /// Convert a complete common-form rolling-ball jet to its exact neutral
 /// procedural carrier.
 pub(in crate::families) fn rolling_ball_jet_definition(
+    ctx: &DecodeContext<'_>,
     jet: &A8FreeformCurve,
-) -> Option<ProceduralSurfaceDefinition> {
+) -> Result<Option<ProceduralSurfaceDefinition>, CodecError> {
     if jet.sites.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let stations = jet
-        .sites
-        .iter()
-        .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
+    let mut stations = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut stations, jet.sites.len(), "catia_a8_jet_stations")?;
+    stations.extend(jet.sites.iter().map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
             knot: sample.knot,
             multiplicity: sample.multiplicity,
             site: rolling_ball_jet_site(
@@ -915,15 +919,13 @@ pub(in crate::families) fn rolling_ball_jet_definition(
                 sample.first_derivatives,
                 sample.second_derivatives,
             ),
-        })
-        .collect();
-    Some(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
+        }));
+    Ok(cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
             A8FreeformCurve::DEGREE,
             stations,
         )
-        .ok()?,
-    ))
+        .ok()
+        .map(ProceduralSurfaceDefinition::RollingBallJet))
 }
 
 /// The admitted neutral jet site of one decoded rolling-ball site and its two
@@ -956,20 +958,28 @@ pub(in crate::families) fn rolling_ball_jet_derivative(
 
 /// Decode framed `a8 <flag> 32` common-form rolling-ball jet records.
 #[must_use]
-pub(in crate::families) fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
-    a8_frames(data, 0x32)
-        .into_iter()
-        .filter_map(|frame| parse_a8_curve(data, frame))
-        .collect()
+pub(in crate::families) fn a8_freeform_curves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<A8FreeformCurve>, CodecError> {
+    let mut curves = Vec::new();
+    for frame in a8_frames(data, 0x32) {
+        if let Some(curve) = parse_a8_curve(ctx, data, frame)? {
+            crate::resource::push(ctx, &mut curves, curve, "catia_a8_freeform_curves")?;
+        }
+    }
+    Ok(curves)
 }
 
-fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
+fn parse_a8_curve(
+    ctx: &DecodeContext<'_>, data: &[u8], frame: A8Frame,
+) -> Result<Option<A8FreeformCurve>, CodecError> {
     let A8Frame {
         pos,
         payload,
         end,
         object_id,
     } = frame;
+    let Some((count, knot_start, multiplicity_start, block_start, block_bytes)) = (|| {
     let mut at = payload.checked_add(1)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
@@ -987,87 +997,86 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     if at.checked_add(known_bytes)? > end {
         return None;
     }
-    let mut knots = Vec::with_capacity(count);
+    let knot_start = at;
+    let mut previous_knot = None;
     for _ in 0..count {
-        knots.push(f64_le(data, at)?);
+        let knot = f64_le(data, at)?.get();
+        if previous_knot.is_some_and(|previous| knot <= previous) { return None }
+        previous_knot = Some(knot);
         at += 8;
     }
-    let mut multiplicities = Vec::with_capacity(count);
-    for _ in 0..count {
-        multiplicities.push(compact_int(data, &mut at)?);
+    let multiplicity_start = at;
+    for index in 0..count {
+        let multiplicity = compact_int(data, &mut at)?;
+        if (index == 0 || index + 1 == count) && multiplicity != 6 { return None }
+        if index != 0 && index + 1 != count && !matches!(multiplicity, 1 | 3) { return None }
     }
-    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
-        return None;
-    }
+    let block_start = at;
     let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
-    if multiplicities.first() != Some(&6)
-        || multiplicities.last() != Some(&6)
-        || multiplicities[1..multiplicities.len() - 1]
-            .iter()
-            .any(|value| !matches!(value, 1 | 3))
-        || blocks_end > end
-        || end - blocks_end != 59
-    {
+    if blocks_end > end || end - blocks_end != 59 {
         return None;
     }
-    let block = |start: usize| -> Option<Vec<[FiniteReal; 10]>> {
-        (0..count)
-            .map(|site| read_f64_array::<10>(data, start + site * 80))
-            .collect()
-    };
-    let positions = block(at)?;
-    let first_derivatives = block(at + block_bytes)?;
-    let second_derivatives = block(at + 2 * block_bytes)?;
-    let sites = rolling_ball_sites(positions)?;
-    Some(A8FreeformCurve {
-        pos,
-        object_id,
-        sites: knots
-            .into_iter()
-            .zip(multiplicities)
-            .zip(sites)
-            .zip(first_derivatives)
-            .zip(second_derivatives)
-            .map(
-                |((((knot, multiplicity), site), first_derivatives), second_derivatives)| {
-                    A8FreeformJet {
-                        knot,
-                        multiplicity,
-                        site,
-                        first_derivatives,
-                        second_derivatives,
-                    }
-                },
-            )
-            .collect(),
-    })
+    Some((count, knot_start, multiplicity_start, block_start, block_bytes))
+    })() else { return Ok(None) };
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a8_freeform_sites")?;
+    let mut multiplicity_at = multiplicity_start;
+    for index in 0..count {
+        let offset = index * 80;
+        let (Some(knot), Some(multiplicity), Some(positions), Some(first_derivatives), Some(second_derivatives)) = (
+            f64_le(data, knot_start + index * 8),
+            compact_int(data, &mut multiplicity_at),
+            read_f64_array::<10>(data, block_start + offset),
+            read_f64_array::<10>(data, block_start + block_bytes + offset),
+            read_f64_array::<10>(data, block_start + 2 * block_bytes + offset),
+        ) else { return Ok(None) };
+        let Some(site) = rolling_ball_site(positions) else { return Ok(None) };
+        sites.push(A8FreeformJet { knot, multiplicity, site, first_derivatives, second_derivatives });
+    }
+    Ok(Some(A8FreeformCurve { pos, object_id, sites }))
 }
 
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[must_use]
 #[cfg(test)]
-fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
+fn a5_freeform_curves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<A5FreeformCurve>, CodecError> {
     let records = consolidated_records(data);
-    a5_freeform_curves_from_records(data, &records)
+    a5_freeform_curves_from_records(ctx, data, &records)
 }
 
 pub(in crate::families) fn a5_freeform_curves_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<A5FreeformCurve> {
-    family_frames_from_records(records, ConsolidatedFamily::A, 0x32)
-        .into_iter()
-        .filter_map(|frame| parse_a5_curve(data, frame))
-        .collect()
+) -> Result<Vec<A5FreeformCurve>, CodecError> {
+    let mut curves = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.family == ConsolidatedFamily::A && record.class == 0x32
+    }) {
+        let (Some(payload), Some(end)) = (record.payload(), record.range()) else { continue };
+        let frame = ConsolidatedFrame {
+            pos: record.byte_offset(), payload: payload.start, end: end.end,
+            header_token: record.header_token,
+        };
+        if let Some(curve) = parse_a5_curve(ctx, data, frame)? {
+            crate::resource::push(ctx, &mut curves, curve, "catia_a5_freeform_curves")?;
+        }
+    }
+    Ok(curves)
 }
 
-fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCurve> {
+fn parse_a5_curve(
+    ctx: &DecodeContext<'_>, data: &[u8], frame: ConsolidatedFrame,
+) -> Result<Option<A5FreeformCurve>, CodecError> {
     let ConsolidatedFrame {
         pos,
         payload,
         end,
         header_token,
     } = frame;
+    let Some((count, knot_start, block_start, block_bytes)) = (|| {
     if data.get(pos) == Some(&0xa5) {
         let header_byte = u8::try_from(header_token).ok()?;
         a5_int(header_byte)?;
@@ -1089,46 +1098,33 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     if at.checked_add(known_bytes)? > end {
         return None;
     }
-    let mut knots = Vec::with_capacity(count);
+    let knot_start = at;
+    let mut previous_knot = None;
     for _ in 0..count {
-        knots.push(f64_le(data, at)?);
+        let knot = f64_le(data, at)?.get();
+        if previous_knot.is_some_and(|previous| knot <= previous) { return None }
+        previous_knot = Some(knot);
         at += 8;
     }
-    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
-        return None;
+    Some((count, knot_start, at, block_bytes))
+    })() else { return Ok(None) };
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_a5_freeform_sites")?;
+    for index in 0..count {
+        let offset = index * 80;
+        let (Some(knot), Some(positions), Some(first_derivatives), Some(second_derivatives)) = (
+            f64_le(data, knot_start + index * 8),
+            read_f64_array::<10>(data, block_start + offset),
+            read_f64_array::<10>(data, block_start + block_bytes + offset),
+            read_f64_array::<10>(data, block_start + 2 * block_bytes + offset),
+        ) else { return Ok(None) };
+        let Some(site) = rolling_ball_site(positions) else { return Ok(None) };
+        sites.push(A5FreeformJet { knot, site, first_derivatives, second_derivatives });
     }
-    let block = |start: usize| -> Option<Vec<[FiniteReal; 10]>> {
-        (0..count)
-            .map(|site| read_f64_array::<10>(data, start + site * 80))
-            .collect()
-    };
-    let positions = block(at)?;
-    let first_derivatives = block(at + block_bytes)?;
-    let second_derivatives = block(at + 2 * block_bytes)?;
-    let sites = rolling_ball_sites(positions)?;
-    Some(A5FreeformCurve {
-        pos,
-        header_token,
-        sites: knots
-            .into_iter()
-            .zip(sites)
-            .zip(first_derivatives)
-            .zip(second_derivatives)
-            .map(
-                |(((knot, site), first_derivatives), second_derivatives)| A5FreeformJet {
-                    knot,
-                    site,
-                    first_derivatives,
-                    second_derivatives,
-                },
-            )
-            .collect(),
-    })
+    Ok(Some(A5FreeformCurve { pos, header_token, sites }))
 }
 
-fn rolling_ball_sites(positions: Vec<[FiniteReal; 10]>) -> Option<Vec<RollingBallSite>> {
-    let mut sites = Vec::with_capacity(positions.len());
-    for values in positions {
+fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
         let limit1 = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
         let limit2 = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
         let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
@@ -1147,14 +1143,12 @@ fn rolling_ball_sites(positions: Vec<[FiniteReal; 10]>) -> Option<Vec<RollingBal
         {
             return None;
         }
-        sites.push(RollingBallSite {
+        Some(RollingBallSite {
             limit1,
             limit2,
             center,
             theta,
-        });
-    }
-    Some(sites)
+        })
 }
 
 /// Decode framed `a8 <flag> 20` UV jet records.
