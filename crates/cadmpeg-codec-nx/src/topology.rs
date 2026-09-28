@@ -1387,7 +1387,7 @@ impl Graph {
         }
         let mut reachable_fins = BTreeSet::new();
         for shell in shells {
-            let Some(face_xmts) = self.shell_face_xmts(shell) else {
+            let Some(face_xmts) = self.shell_face_xmts(ctx, shell)? else {
                 return Ok(false);
             };
             for face_xmt in face_xmts {
@@ -1423,7 +1423,7 @@ impl Graph {
     /// Count faces owned by validated body-shape shells.
     pub(crate) fn body_shape_face_count(&self) -> usize {
         self.body_shape_shells()
-            .filter_map(|shell| self.shell_face_xmts(shell).map(|faces| faces.len()))
+            .filter_map(|shell| self.shell_face_count(shell))
             .sum()
     }
 
@@ -1563,34 +1563,33 @@ impl Graph {
             return false;
         }
 
-        self.shell_face_xmts(shell).is_some()
+        self.shell_face_count(shell).is_some()
     }
 
-    pub(crate) fn shell_face_xmts(&self, shell: &Node) -> Option<Vec<u32>> {
+    fn shell_face_count(&self, shell: &Node) -> Option<usize> {
         let fields = shell.shell_fields()?;
         if fields.last_face.is_some() {
             (fields.last_face == fields.first_face).then_some(())?;
             self.get_target(NodeKind::Face, fields.first_face)
                 .and_then(Node::face_fields)
                 .filter(|face| face.shell.map(u32::from) == Some(shell.xmt))?;
-            let faces: Vec<_> = self
+            let count = self
                 .of_kind(NodeKind::Face)
                 .filter(|face| {
                     face.face_fields()
                         .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt))
                 })
-                .map(|face| face.xmt)
-                .collect();
-            return (!faces.is_empty()).then_some(faces);
+                .count();
+            return (count != 0).then_some(count);
         }
 
         let mut face_xmt = fields.first_face;
-        let mut visited = BTreeSet::new();
+        let face_limit = self.of_kind(NodeKind::Face).count();
+        let mut count = 0usize;
         while let Some(target) = face_xmt {
             let current = u32::from(target);
-            if !visited.insert(current) {
-                return None;
-            }
+            count = count.checked_add(1)?;
+            (count <= face_limit).then_some(())?;
             let face = self
                 .get(NodeKind::Face, current)
                 .and_then(Node::face_fields)?;
@@ -1599,7 +1598,49 @@ impl Graph {
             }
             face_xmt = face.next_face;
         }
-        (!visited.is_empty()).then(|| visited.into_iter().collect())
+        (count != 0).then_some(count)
+    }
+
+    pub(crate) fn shell_face_xmts(
+        &self,
+        ctx: &DecodeContext<'_>,
+        shell: &Node,
+    ) -> Result<Option<Vec<u32>>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.nodes.len()), "validate NX shell faces")?;
+        let Some(count) = self.shell_face_count(shell) else {
+            return Ok(None);
+        };
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        ctx.charge_collection_items(count_u64, "NX shell face identities")?;
+        let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX shell face identities", 0, count_u64))?;
+        ctx.charge_retained(bytes, "NX shell face identities")?;
+        let mut faces = Vec::new();
+        faces.try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("NX shell face identities", 0, count_u64))?;
+        let Some(fields) = shell.shell_fields() else {
+            return Ok(None);
+        };
+        if fields.last_face.is_some() {
+            faces.extend(self.of_kind(NodeKind::Face)
+                .filter(|face| face.face_fields()
+                    .is_some_and(|fields| fields.shell.map(u32::from) == Some(shell.xmt)))
+                .map(|face| face.xmt));
+        } else {
+            let mut face_xmt = fields.first_face;
+            while let Some(target) = face_xmt {
+                let current = u32::from(target);
+                faces.push(current);
+                face_xmt = self.get(NodeKind::Face, current)
+                    .and_then(Node::face_fields)
+                    .and_then(|face| face.next_face);
+            }
+            let sort_work = count_u64.checked_mul(u64::from(usize::BITS - count.leading_zeros()))
+                .ok_or_else(|| ctx.refuse_codec_limit("sort NX shell faces", 0, count_u64))?;
+            ctx.charge_work(sort_work, "sort NX shell faces")?;
+            faces.sort_unstable();
+        }
+        Ok(Some(faces))
     }
 }
 

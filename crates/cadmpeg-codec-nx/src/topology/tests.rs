@@ -326,6 +326,20 @@ fn topology_carrier_references_refuse_collection_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
+#[test]
+fn topology_shell_face_route_refuses_retained_limit() {
+    let stream = topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let shell = graph.get(NodeKind::Shell, 3).expect("shell");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    let error = graph.shell_face_xmts(&ctx, shell).expect_err("shell face retained refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
 fn face_ring_refusal(policy: &cadmpeg_core::decode::DecodePolicy) -> FaceLoopError {
     let stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
