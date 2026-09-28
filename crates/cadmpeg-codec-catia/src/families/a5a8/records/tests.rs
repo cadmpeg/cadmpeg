@@ -215,7 +215,7 @@ fn a8_surface_parser_accepts_inline_continuation_tail_variants() {
         )
         .try_into()
         .expect("one inline-tail surface");
-        let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
             .try_into()
             .expect("one inline-tail header");
         assert_eq!(
@@ -231,7 +231,7 @@ fn a8_elided_surface_requires_the_fixed_zero_continuation() {
     let tail_start = 59;
     bytes[tail_start + 71..tail_start + 79].copy_from_slice(&le_f64(2.0));
 
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
         .try_into()
         .expect("one parameter lattice");
     assert_eq!(
@@ -272,7 +272,7 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
             "flag {flag:#04x}"
         );
         assert_eq!(
-            crate::families::a5a8::records::a8_surface_headers(&bytes).len(),
+            crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>().len(),
             1,
             "flag {flag:#04x}"
         );
@@ -306,7 +306,7 @@ fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
             "{label} must not produce a resolved surface"
         );
         assert!(
-            crate::families::a5a8::records::a8_surface_headers(&bytes).is_empty(),
+            crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>().is_empty(),
             "{label} must not produce a surface header"
         );
     }
@@ -321,7 +321,7 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
         &mut crate::nurbs::LaneRefusals::new()
     )
     .is_empty());
-    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0].object_id, 0xdeca_fbad);
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
@@ -352,7 +352,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
         &mut crate::nurbs::LaneRefusals::new()
     )
     .is_empty());
-    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>();
     assert_eq!(headers.len(), 1);
     assert_eq!(
         headers[0].pole_storage,
@@ -363,7 +363,7 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
 #[test]
 fn a8_surface_header_retains_an_inline_parameter_tail() {
     let headers =
-        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream());
+        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream()).collect::<Vec<_>>();
     let [header] = headers.as_slice() else {
         panic!("one inline-tail header");
     };
@@ -377,7 +377,7 @@ fn a8_surface_header_retains_an_inline_parameter_tail() {
 fn a8_surface_header_rejects_an_incomplete_elided_program() {
     let mut bytes = a8_elided_surface_stream();
     bytes[59 + 44] = 1;
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
         .try_into()
         .expect("one surface header");
     assert_eq!(
@@ -401,7 +401,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
     let new_payload_len = payload_len + u32::try_from(child.len()).unwrap();
     bytes[3..7].copy_from_slice(&new_payload_len.to_le_bytes());
 
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
         .try_into()
         .expect("one elided surface header");
     assert_eq!(
@@ -410,7 +410,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
     );
 
     bytes[a8_end + 3] = 250;
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
         .try_into()
         .expect("one surface header");
     assert_eq!(
@@ -428,7 +428,7 @@ fn a8_elided_surface_requires_length_closed_nested_children() {
 fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let bytes = a8_elided_surface_stream();
 
-    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>()
         .try_into()
         .expect("one elided header");
     let surface = crate::families::a5a8::records::a8_surface_from_external_grid(
@@ -456,6 +456,23 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
 }
 
 #[test]
+fn a8_external_grid_range_refuses_collection_limit_before_retention() {
+    let bytes = a8_elided_surface_stream();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
+    });
+    assert!(matches!(limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_a8_external_grid_ranges"));
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_external_grid_ranges(ctx, &bytes)
+    }).expect("service collection budget");
+    assert_eq!(ranges.len(), 1);
+    assert!(ranges[0].start < ranges[0].end);
+    assert!(ranges[0].end <= bytes.len());
+}
+
+#[test]
 fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_grids() {
     let first = a8_elided_surface_stream();
     let mut second = a8_elided_surface_stream();
@@ -468,7 +485,7 @@ fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_gri
 
     let mut bytes = first;
     bytes.extend(second);
-    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes).collect::<Vec<_>>();
     assert_eq!(headers.len(), 2);
     assert_eq!(
         headers

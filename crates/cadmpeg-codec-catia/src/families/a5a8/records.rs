@@ -15,7 +15,8 @@ use crate::wire::records::{
     consolidated_records, family_frames_from_records, ConsolidatedFamily, ConsolidatedFrame,
     ConsolidatedRecord,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{knots_strictly_increasing, NurbsCurve, NurbsSurface},
@@ -77,14 +78,11 @@ struct ObjectStreamFrame {
     object_id: u32,
 }
 
-fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
-    let mut frames = Vec::new();
-    let mut payload_end = None;
+fn a8_frames(data: &[u8], class: u8) -> impl Iterator<Item = A8Frame> + '_ {
     let mut pos = 0usize;
-    while pos + 11 <= data.len() {
-        if let Some(end) = payload_end.filter(|end| pos < *end) {
-            pos = end;
-            continue;
+    std::iter::from_fn(move || loop {
+        if pos.checked_add(11).is_none_or(|end| end > data.len()) {
+            return None;
         }
         if data[pos] != 0xa8 || !object_frame_flag(data[pos + 1]) {
             pos += 1;
@@ -108,18 +106,17 @@ fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
             pos += 1;
             continue;
         };
-        if data[pos + 2] == class {
-            frames.push(A8Frame {
-                pos,
-                payload: pos + 11,
-                end,
-                object_id,
-            });
+        let frame = A8Frame {
+            pos,
+            payload: pos + 11,
+            end,
+            object_id,
+        };
+        pos = end;
+        if data[frame.pos + 2] == class {
+            return Some(frame);
         }
-        payload_end = Some(end);
-        pos += 1;
-    }
-    frames
+    })
 }
 
 fn object_frame_flag(flag: u8) -> bool {
@@ -1292,14 +1289,11 @@ pub(in crate::families) fn resolved_a8_surfaces(
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
-#[must_use]
-fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
+fn a8_surface_headers(data: &[u8]) -> impl Iterator<Item = A8SurfaceHeader> + '_ {
     a8_frames(data, 0x34)
-        .into_iter()
         .filter_map(|frame| {
             a8_surface_header_from_object_frame(data, frame.pos, frame.end, frame.object_id)
         })
-        .collect()
 }
 
 /// Decode one selected `a8 <flag> 34` frame's parameter lattice.
@@ -1390,18 +1384,20 @@ fn a8_surface_from_external_grid(
 }
 
 /// Return every complete support-bound external A8 pole allocation.
-pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usize>> {
-    let mut ranges = a8_surface_headers(data)
-        .into_iter()
-        .flat_map(|header| {
-            a8_external_grid_candidates(data, &header)
-                .into_iter()
-                .map(|candidate| candidate.range)
-        })
-        .collect::<Vec<_>>();
+pub(in crate::families) fn a8_external_grid_ranges(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<Range<usize>>, CodecError> {
+    let mut ranges = Vec::new();
+    for header in a8_surface_headers(data) {
+        for candidate in a8_external_grid_candidates(data, &header) {
+            crate::resource::push(ctx, &mut ranges, candidate.range,
+                "catia_a8_external_grid_ranges")?;
+        }
+    }
     ranges.sort_unstable_by_key(|range| (range.start, range.end));
     ranges.dedup();
-    ranges
+    Ok(ranges)
 }
 
 struct ExternalGridCandidate {

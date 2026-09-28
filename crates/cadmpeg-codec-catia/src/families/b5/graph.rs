@@ -5263,7 +5263,7 @@ fn object_stream_run_ranges(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<Range<usize>>, CodecError> {
-    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
+    let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(ctx, bytes)?;
     let mut ranges = Vec::new();
     let mut position = 0usize;
     while position + 8 <= bytes.len() {
