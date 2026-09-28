@@ -295,9 +295,10 @@ pub(crate) fn transfer_parameters(
                                     },
                                     dependencies: dependencies.into_iter().collect(),
                                     properties: parameter_properties(
+                                        ctx,
                                         parameter_type.as_str(),
                                         Some(output_value.binding.value.as_str()),
-                                    ),
+                                    )?,
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
@@ -612,57 +613,40 @@ fn definition_chain_parameter_candidate(
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name = chain.selector.value.clone();
+    let name = resource::copy_retained_str(ctx, &chain.selector.value,
+        "catia_formula_chain_name")?;
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
-            let expression = parameter_expression(&value);
+            let expression = parameter_expression(ctx, &value)?;
             (expression, Some(value))
         }
     };
     // A definition chain names the parameter in its first definition. It does
     // not carry the named-parameter value record's scope/expression binding,
     // so do not publish the definition name as `catia_binding`.
-    let mut properties = parameter_properties(parameter_type.as_str(), None);
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_selector_entry"),
-        chain.selector.entry.clone(),
-    );
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_selector_ordinal"),
-        chain.selector.ordinal.to_string(),
-    );
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_selector_offset"),
-        chain.selector.offset.to_string(),
-    );
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_role_entry"),
-        chain.role.entry.clone(),
-    );
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_role_ordinal"),
-        chain.role.ordinal.to_string(),
-    );
-    properties.insert(
-        cadmpeg_core::nonblank_literal!("catia_definition_role_offset"),
-        chain.role.offset.to_string(),
-    );
+    let mut properties = parameter_properties(ctx, parameter_type.as_str(), None)?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_selector_entry",
+        format_args!("{}", chain.selector.entry))?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_selector_ordinal",
+        format_args!("{}", chain.selector.ordinal))?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_selector_offset",
+        format_args!("{}", chain.selector.offset))?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_role_entry",
+        format_args!("{}", chain.role.entry))?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_role_ordinal",
+        format_args!("{}", chain.role.ordinal))?;
+    insert_parameter_property(ctx, &mut properties, "catia_definition_role_offset",
+        format_args!("{}", chain.role.offset))?;
     if let Some(opcode_offset) = evaluation_opcode_offset {
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("catia_definition_evaluation_opcode_offset"),
-            opcode_offset.to_string(),
-        );
+        insert_parameter_property(ctx, &mut properties,
+            "catia_definition_evaluation_opcode_offset", format_args!("{opcode_offset}"))?;
     }
     if let Some(atom_value) = atom_value {
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("catia_definition_value_kind"),
-            "atom".to_string(),
-        );
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("catia_definition_atom_value"),
-            atom_value.to_string(),
-        );
+        insert_parameter_property(ctx, &mut properties, "catia_definition_value_kind",
+            format_args!("atom"))?;
+        insert_parameter_property(ctx, &mut properties, "catia_definition_atom_value",
+            format_args!("{atom_value}"))?;
     }
     Ok(Some(FormulaParameterCandidate {
         parameter: DesignParameter {
@@ -676,7 +660,8 @@ fn definition_chain_parameter_candidate(
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties,
             pmi: None,
-            native_ref: Some(entity.id.clone()),
+            native_ref: Some(resource::copy_retained_str(ctx, &entity.id,
+                "catia_formula_chain_native_ref")?),
         },
         parameter_type,
         role: FormulaParameterRole::Input,
@@ -762,7 +747,7 @@ fn collect_legacy_parameters(
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
                 TypedParameterEvaluation::Value(value) => {
-                    let expression = parameter_expression(&value);
+                    let expression = parameter_expression(ctx, &value)?;
                     (expression, Some(value))
                 }
             };
@@ -778,7 +763,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value,
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties(parameter_type.as_str(), None),
+                        properties: parameter_properties(ctx, parameter_type.as_str(), None)?,
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -834,11 +819,11 @@ fn collect_legacy_parameters(
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
-                        expression: parameter_expression(&value),
+                        expression: parameter_expression(ctx, &value)?,
                         display: None,
                         value: Some(value),
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties("String", None),
+                        properties: parameter_properties(ctx, "String", None)?,
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -894,11 +879,11 @@ fn collect_legacy_parameters(
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
-                        expression: parameter_expression(&value),
+                        expression: parameter_expression(ctx, &value)?,
                         display: None,
                         value: Some(value),
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                        properties: parameter_properties("Integer", None),
+                        properties: parameter_properties(ctx, "Integer", None)?,
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -1216,7 +1201,7 @@ fn typed_entity_parameter_candidate(
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
         TypedParameterEvaluation::Value(value) => {
-            let expression = parameter_expression(&value);
+            let expression = parameter_expression(ctx, &value)?;
             (expression, Some(value))
         }
     };
@@ -1231,9 +1216,10 @@ fn typed_entity_parameter_candidate(
             value,
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             properties: parameter_properties(
+                ctx,
                 parameter_type.as_str(),
                 Some(parameter.binding.value.as_str()),
-            ),
+            )?,
             pmi: None,
             native_ref: Some(entity.id.clone()),
         },
@@ -1440,9 +1426,10 @@ fn relation_program_output_candidate(
             },
             dependencies: dependencies.iter().cloned().collect(),
             properties: parameter_properties(
+                ctx,
                 parameter_type.as_str(),
                 Some(output_value.binding.value.as_str()),
-            ),
+            )?,
             pmi: None,
             native_ref: Some(output_entity.id.clone()),
         },
@@ -1525,45 +1512,69 @@ enum TypedParameterEvaluation {
     Value(ParameterValue),
 }
 
-fn parameter_expression(value: &ParameterValue) -> String {
+fn parameter_expression(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &ParameterValue,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let operation = "catia_formula_parameter_expression";
     match value {
         ParameterValue::Length(value) => {
             let value = value.get();
-            format!("{value} mm")
+            resource::format_retained(ctx, format_args!("{value} mm"), operation)
         }
         ParameterValue::Angle(value) => {
             let value = value.get();
-            format!("{value} rad")
+            resource::format_retained(ctx, format_args!("{value} rad"), operation)
         }
-        ParameterValue::Real(value) => value.get().to_string(),
-        ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(value) => value.to_string(),
-        ParameterValue::String(value) => string_literal_expression(value).unwrap_or_default(),
+        ParameterValue::Real(value) => resource::format_retained(ctx,
+            format_args!("{}", value.get()), operation),
+        ParameterValue::Integer(value) => resource::format_retained(ctx,
+            format_args!("{value}"), operation),
+        ParameterValue::Boolean(value) => resource::format_retained(ctx,
+            format_args!("{value}"), operation),
+        ParameterValue::String(value) => Ok(string_literal_expression(ctx, value)?.unwrap_or_default()),
     }
 }
 
-fn string_literal_expression(value: &str) -> Option<String> {
-    value
-        .chars()
-        .all(|character| character != '"' && character != '\\' && !character.is_control())
-        .then(|| format!("\"{value}\""))
+fn string_literal_expression(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    if !value.chars().all(|character| character != '"' && character != '\\' && !character.is_control()) {
+        return Ok(None);
+    }
+    resource::format_retained(ctx, format_args!("\"{value}\""),
+        "catia_formula_string_literal").map(Some)
 }
 
 fn parameter_properties(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameter_type: &'static str,
     binding: Option<&str>,
-) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
-    let mut properties = BTreeMap::from([(
-        cadmpeg_core::nonblank_literal!("value_type"),
-        parameter_type.to_string(),
-    )]);
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
+    let mut properties = BTreeMap::new();
+    insert_parameter_property(ctx, &mut properties, "value_type",
+        format_args!("{parameter_type}"))?;
     if let Some(binding) = binding {
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("catia_binding"),
-            binding.to_string(),
-        );
+        insert_parameter_property(ctx, &mut properties, "catia_binding",
+            format_args!("{binding}"))?;
     }
-    properties
+    Ok(properties)
+}
+
+fn insert_parameter_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    key: &str,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let operation = "catia_formula_property";
+    let key = resource::copy_retained_str(ctx, key, operation)?;
+    let key = cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("empty CATIA formula property key"))?;
+    let value = resource::format_retained(ctx, value, operation)?;
+    resource::insert_btree_map(ctx, properties, key, value, operation)?;
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3511,17 +3522,41 @@ mod parser_tests {
     #[test]
     fn string_parameter_expressions_match_literal_grammar() {
         let literal = ParameterValue::String("Cilas Evans".to_string());
-        assert_eq!(parameter_expression(&literal), "\"Cilas Evans\"");
-        assert!(string_literal_expression("").is_some_and(|expression| expression == "\"\""));
-        for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
-            assert!(string_literal_expression(value).is_none(), "{value:?}");
-            assert!(parameter_expression(&ParameterValue::String(value.to_string())).is_empty());
-        }
+        crate::test_support::with_service_context(|ctx| {
+            assert_eq!(parameter_expression(ctx, &literal).expect("service expression"), "\"Cilas Evans\"");
+            assert!(string_literal_expression(ctx, "").expect("service literal")
+                .is_some_and(|expression| expression == "\"\""));
+            for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
+                assert!(string_literal_expression(ctx, value).expect("service literal").is_none(), "{value:?}");
+                assert!(parameter_expression(ctx, &ParameterValue::String(value.to_string()))
+                    .expect("service expression").is_empty());
+            }
+        });
         assert_eq!(
             evaluate_formula_expression("\"Cilas Evans\"", &BTreeMap::new())
                 .and_then(EvaluatedFormulaValue::string),
             Some("Cilas Evans".to_string())
         );
+    }
+
+    #[test]
+    fn formula_literal_and_property_projection_refuse_retained_limit() {
+        let literal = ParameterValue::String("Cilas Evans".to_string());
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::parameter_expression(ctx, &literal)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_string_literal"));
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::parameter_properties(ctx, "String", Some("source-binding"))
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_property"));
+        let properties = crate::test_support::with_service_context(|ctx| {
+            super::parameter_properties(ctx, "String", Some("source-binding"))
+        }).expect("service profile admits properties");
+        assert_eq!(properties["value_type"], "String");
+        assert_eq!(properties["catia_binding"], "source-binding");
     }
 
     #[test]
