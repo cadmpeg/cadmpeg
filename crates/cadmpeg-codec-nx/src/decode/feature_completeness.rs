@@ -188,70 +188,91 @@ pub(crate) fn incomplete_expression_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .collect::<BTreeSet<_>>();
+    let mut parameter_owners = BTreeSet::new();
+    for parameter in &ir.model.parameters {
+        if !parameter_owners.contains(&parameter.owner) {
+            ctx.charge_collection_items(1, "nx expression parameter owners")?;
+            parameter_owners.insert(&parameter.owner);
+        }
+    }
     let mut incomplete = BTreeSet::new();
     for owner in parameter_owners {
-        let parameters = ir
-            .model
-            .parameters
-            .iter()
-            .filter(|parameter| parameter.owner == owner)
-            .collect::<Vec<_>>();
+        let mut parameters = Vec::new();
+        for parameter in ir.model.parameters.iter().filter(|parameter| &parameter.owner == owner) {
+            ctx.charge_collection_items(1, "nx owned expression parameters")?;
+            parameters.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx owned expression parameters", 0, 1)
+            })?;
+            parameters.push(parameter);
+        }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
         for parameter in &parameters {
-            ids_by_name
-                .entry((
-                    parameter.name.as_str(),
-                    parameter.properties.get("unit").map(String::as_str),
-                ))
-                .or_default()
-                .push(&parameter.id);
+            let ids = match ids_by_name.entry((
+                parameter.name.as_str(),
+                parameter.properties.get("unit").map(String::as_str),
+            )) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "nx expression name index")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.charge_collection_items(1, "nx expression name identities")?;
+            ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx expression name identities", 0, 1)
+            })?;
+            ids.push(&parameter.id);
         }
-        let expected = parameters
-            .iter()
-            .map(|parameter| {
+        let mut expected = ctx.alloc_filled(
+            parameters.len(),
+            None::<Vec<ParameterId>>,
+            "nx expected expression dependencies",
+        )?;
+        for (index, parameter) in parameters.iter().enumerate() {
+            expected[index] = (|| -> Result<Option<Vec<ParameterId>>, cadmpeg_core::CodecError> {
                 let unit = match parameter.properties.get("unit").map(String::as_str) {
                     None => None,
                     Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
-                    Some(_) => return None,
+                    Some(_) => return Ok(None),
                 };
-                let [_] = ids_by_name
-                    .get(&(parameter.name.as_str(), unit))?
-                    .as_slice()
+                let Some(ids) = ids_by_name.get(&(parameter.name.as_str(), unit)) else {
+                    return Ok(None);
+                };
+                let [_] = ids.as_slice()
                 else {
-                    return None;
+                    return Ok(None);
                 };
-                let mut seen = BTreeSet::new();
-                let dependencies =
-                    crate::native::om::expression_parameter_names(&parameter.expression)
-                        .into_iter()
-                        .map(|name| {
-                            let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                                return None;
-                            };
-                            Some((*dependency).clone())
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                Some(
-                    dependencies
-                        .into_iter()
-                        .filter(|dependency| seen.insert(dependency.clone()))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let indices = parameters
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| (&parameter.id, index))
-            .collect::<BTreeMap<_, _>>();
+                let mut dependencies = Vec::new();
+                for name in crate::native::om::expression_parameter_names(&parameter.expression) {
+                    let Some(ids) = ids_by_name.get(&(name, unit)) else {
+                        return Ok(None);
+                    };
+                    let [dependency] = ids.as_slice() else {
+                        return Ok(None);
+                    };
+                    if dependencies.iter().any(|id| id == *dependency) {
+                        continue;
+                    }
+                    ctx.charge_collection_items(1, "nx expression dependencies")?;
+                    dependencies.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx expression dependencies", 0, 1)
+                    })?;
+                    dependencies.push(crate::decode::ids::copy_typed_id(
+                        ctx,
+                        dependency.as_str(),
+                        "nx expression dependency identity",
+                    )?);
+                }
+                Ok(Some(dependencies))
+            })()?;
+        }
+        let mut indices = BTreeMap::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx expression parameter index")?;
+            indices.insert(&parameter.id, index);
+        }
         let mut emitted = BTreeSet::new();
-        let mut evaluated = BTreeMap::<ParameterId, f64>::new();
+        let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
         while let Some(index) = (0..parameters.len()).find(|index| {
             !emitted.contains(index)
                 && expected[*index].as_ref().is_some_and(|dependencies| {
@@ -303,10 +324,12 @@ pub(crate) fn incomplete_expression_parameters(
                         && stored.is_finite()
                         && (canonical_value - stored).abs() <= tolerance
                     {
-                        evaluated.insert(parameter.id.clone(), native_value);
+                        ctx.charge_collection_items(1, "nx evaluated expression parameters")?;
+                        evaluated.insert(&parameter.id, native_value);
                     }
                 }
             }
+            ctx.charge_collection_items(1, "nx emitted expression parameters")?;
             emitted.insert(index);
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
@@ -314,7 +337,12 @@ pub(crate) fn incomplete_expression_parameters(
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                incomplete.insert(parameter.id.clone());
+                ctx.charge_collection_items(1, "nx incomplete expression parameters")?;
+                incomplete.insert(crate::decode::ids::copy_typed_id(
+                    ctx,
+                    parameter.id.as_str(),
+                    "nx incomplete expression identity",
+                )?);
             }
         }
     }
