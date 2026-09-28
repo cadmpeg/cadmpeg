@@ -1272,13 +1272,19 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u1 = f64::from_bits(u0.to_bits() + 1);
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).expect("test context");
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&ctx, 100);
 
     assert!(subdivide_offset_rectangle(
         &mut rectangles,
         [u0, u1, 0.0, 1.0],
         [u, 0.5],
         true,
-    ));
+        &geometry_budget,
+    ).expect("subdivision allocation"));
     assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
 }
 
