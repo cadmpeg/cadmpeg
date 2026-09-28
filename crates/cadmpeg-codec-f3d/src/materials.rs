@@ -31,7 +31,7 @@ use cadmpeg_protein::{
 };
 
 use crate::bytes::{
-    is_guid_prefix, lp_ascii_filtered, lp_utf16_bounded_charged, skip_lp_u32_bytes, take_lp_utf8,
+    is_guid_prefix, lp_utf16_bounded_charged, skip_lp_u32_bytes, take_lp_utf8,
     take_lp_utf8_charged,
 };
 use crate::container::ContainerScan;
@@ -68,6 +68,34 @@ fn copy_material_text(
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
     copy.push_str(value);
     Ok(copy)
+}
+
+fn lp_ascii_printable_charged(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(String, usize)>, CodecError> {
+    let Some(length) = View::u32_le_at(bytes, at).and_then(|value| usize::try_from(value).ok()) else {
+        return Ok(None);
+    };
+    if !(1..=64).contains(&length) {
+        return Ok(None);
+    }
+    let Some(start) = at.checked_add(4) else {
+        return Ok(None);
+    };
+    let Some(end) = start.checked_add(length) else {
+        return Ok(None);
+    };
+    let Some(raw) = bytes.get(start..end) else {
+        return Ok(None);
+    };
+    if !raw.iter().all(|byte| (0x20..0x7f).contains(byte)) {
+        return Ok(None);
+    }
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| CodecError::Malformed("F3D printable ASCII validation failed".into()))?;
+    Ok(Some((copy_material_text(ctx, text, "retain F3D printable ASCII string")?, end)))
 }
 
 fn push_material_item<T>(
@@ -702,7 +730,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     out.dedup_by(|a, b| a.id == b.id);
     let assignments = decode_design_assignments(ctx, scan)?;
     let act_channels = decode_act_channels(ctx, scan)?;
-    let object_types = decode_design_object_types(scan)?;
+    let object_types = decode_design_object_types(ctx, scan)?;
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             push_material_item(ctx, &mut out, Appearance {
@@ -1681,6 +1709,7 @@ fn resolved_body_for_map_pair(
 }
 
 fn decode_design_object_types(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, String>, CodecError> {
     let mut out = std::collections::HashMap::new();
@@ -1693,7 +1722,7 @@ fn decode_design_object_types(
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
             let Some((object_type, after_type)) =
-                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+                lp_ascii_printable_charged(ctx, bytes, position)?
             else {
                 position += 1;
                 continue;
@@ -1710,12 +1739,22 @@ fn decode_design_object_types(
                 position += 1;
                 continue;
             }
-            let Some(ids) = view.read_counted(u64::from(count), 8, View::u64_le) else {
+            if view.counted(u64::from(count), 8).is_none() {
                 position += 1;
                 continue;
-            };
-            for id in ids {
-                out.insert(id, object_type.clone());
+            }
+            for _ in 0..count {
+                let Some(id) = view.u64_le() else {
+                    break;
+                };
+                let value = copy_material_text(ctx, &object_type, "copy F3D Design object type")?;
+                if !out.contains_key(&id) {
+                    ctx.charge_collection_items(1, "index F3D Design object types")?;
+                    out.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("index F3D Design object types", 0, 1)
+                    })?;
+                }
+                out.insert(id, value);
             }
             position = after_type + view.position();
         }
@@ -1737,7 +1776,7 @@ fn decode_act_channels(
         let mut position = 0usize;
         while position + 4 <= bytes.len() {
             let Some((tag, after_tag)) =
-                lp_ascii_filtered(bytes, position, 1..=64, |byte| (0x20..0x7f).contains(byte))
+                lp_ascii_printable_charged(ctx, bytes, position)?
             else {
                 position += 1;
                 continue;
@@ -1762,7 +1801,7 @@ fn decode_act_channels(
             let mut valid = true;
             for _ in 0..count {
                 let Some((name, after_name)) =
-                    lp_ascii_filtered(bytes, cursor, 1..=64, |byte| (0x20..0x7f).contains(byte))
+                    lp_ascii_printable_charged(ctx, bytes, cursor)?
                 else {
                     valid = false;
                     break;
@@ -1775,12 +1814,19 @@ fn decode_act_channels(
                     valid = false;
                     break;
                 }
+                ctx.charge_collection_items(1, "collect F3D ACT channels")?;
                 channels.insert(name, guid);
                 cursor = after_guid;
             }
             if valid {
                 if let Some((entity, end)) = lp_utf16_bounded_charged(ctx, bytes, cursor, 1..=64)? {
                     if let Some(suffix) = entity_suffix(&entity) {
+                        if !out.contains_key(&suffix) {
+                            ctx.charge_collection_items(1, "index F3D ACT entities")?;
+                            out.try_reserve(1).map_err(|_| {
+                                ctx.refuse_codec_limit("index F3D ACT entities", 0, 1)
+                            })?;
+                        }
                         out.insert(suffix, channels);
                     }
                     position = end;
@@ -1924,12 +1970,19 @@ fn definition_catalog<'a>(
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
         let definition = decode_definition_catalog_record(ctx, frame.bytes())?;
-        merge_definition_catalog_record(&mut definitions, definition);
+        merge_definition_catalog_record(ctx, &mut definitions, definition)?;
     }
-    Ok(definitions
-        .into_iter()
-        .map(|((asset_id, schema), definition)| ((asset_id, schema), definition.category))
-        .collect())
+    let count = u64::try_from(definitions.len())
+        .map_err(|_| ctx.refuse_codec_limit("project F3D definition catalog", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "project F3D definition catalog")?;
+    let mut catalog = std::collections::HashMap::new();
+    catalog.try_reserve(definitions.len()).map_err(|_| {
+        ctx.refuse_codec_limit("project F3D definition catalog", 0, count)
+    })?;
+    for ((asset_id, schema), definition) in definitions {
+        catalog.insert((asset_id, schema), definition.category);
+    }
+    Ok(catalog)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1940,10 +1993,20 @@ struct DefinitionCatalog {
 }
 
 fn merge_definition_catalog_record(
+    ctx: &DecodeContext<'_>,
     definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalog>,
     definition: DefinitionCatalog,
-) {
-    let key = (definition.asset_id.clone(), definition.schema.clone());
+) -> Result<(), CodecError> {
+    let key = (
+        copy_material_text(ctx, &definition.asset_id, "copy F3D definition asset ID")?,
+        copy_material_text(ctx, &definition.schema, "copy F3D definition schema")?,
+    );
+    if !definitions.contains_key(&key) {
+        ctx.charge_collection_items(1, "index F3D definition catalog")?;
+        definitions.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index F3D definition catalog", 0, 1)
+        })?;
+    }
     match definitions.entry(key) {
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(definition);
@@ -1954,6 +2017,7 @@ fn merge_definition_catalog_record(
             }
         }
     }
+    Ok(())
 }
 
 fn decode_definition_catalog_record(

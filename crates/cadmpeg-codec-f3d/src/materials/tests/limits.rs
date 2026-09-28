@@ -39,6 +39,54 @@ fn material_utf16_string_index_refuses_collection_limit() {
         if limit.operation == "collect F3D UTF-16 strings"));
 }
 
+#[test]
+fn material_printable_ascii_refuses_retained_limit() {
+    let mut bytes = Vec::new();
+    super::lp_ascii(&mut bytes, "Body");
+    let error = material_context_with_limits(u64::MAX, 3, |ctx| {
+        super::super::lp_ascii_printable_charged(ctx, &bytes, 0).unwrap_err()
+    });
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D printable ASCII string"));
+}
+
+fn definition_catalog_merge_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    material_context_with_limits(max_items, max_retained, |ctx| {
+        let mut definitions = std::collections::HashMap::new();
+        super::super::merge_definition_catalog_record(
+            ctx,
+            &mut definitions,
+            super::super::DefinitionCatalog {
+                schema: "Schema".into(),
+                asset_id: "Asset".into(),
+                category: None,
+            },
+        )
+        .unwrap_err()
+    })
+}
+
+#[test]
+fn material_definition_asset_key_refuses_retained_limit() {
+    let error = definition_catalog_merge_error(u64::MAX, 4);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D definition asset ID"));
+}
+
+#[test]
+fn material_definition_schema_key_refuses_retained_limit() {
+    let error = definition_catalog_merge_error(u64::MAX, 10);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D definition schema"));
+}
+
+#[test]
+fn material_definition_index_refuses_collection_limit() {
+    let error = definition_catalog_merge_error(0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D definition catalog"));
+}
+
 fn schema_appearance_error(
     records: &[cadmpeg_protein::DecodedRecord],
     max_items: u64,
