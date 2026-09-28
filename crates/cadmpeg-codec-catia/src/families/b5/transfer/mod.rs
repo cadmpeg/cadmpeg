@@ -565,16 +565,21 @@ fn build_plan(
                 let lifted = match lifted_curve_geometry(ctx, pcurve, surface) {
                     Ok(lifted) => lifted,
                     Err(error) => return Some(Err(error)),
-                }.or_else(|| {
-                    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(cache)) =
-                        &surface_plan.get(&loop_.surface)?.geometry
-                    else {
-                        return None;
-                    };
-                    nurbs_isocurve(pcurve, cache)
-                        .map(SolvedCurveGeometry::Nurbs)
-                        .map(CurveGeometry::Solved)
-                });
+                };
+                let lifted = if lifted.is_some() {
+                    lifted
+                } else {
+                    match surface_plan.get(&loop_.surface) {
+                        Some(SurfacePlan { geometry: SurfaceGeometry::Solved(
+                            SolvedSurfaceGeometry::Nurbs(cache)), .. }) =>
+                            match nurbs_isocurve(ctx, pcurve, cache) {
+                                Ok(curve) => curve.map(SolvedCurveGeometry::Nurbs)
+                                    .map(CurveGeometry::Solved),
+                                Err(error) => return Some(Err(error)),
+                            },
+                        _ => None,
+                    }
+                };
                 if let Some(geometry) = lifted {
                     let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
                     let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {

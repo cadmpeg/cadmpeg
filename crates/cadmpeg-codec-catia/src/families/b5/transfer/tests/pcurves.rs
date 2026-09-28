@@ -114,6 +114,39 @@ fn lifted_pcurve_refuses_the_caller_collection_limit() {
 }
 
 #[test]
+fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let pcurve = B5Pcurve {
+        object_id: 1, surface: 2, degree: 1,
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.5, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.5, 1.0]),
+        ],
+        weights: None, parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None, lifted_endpoints: None,
+    };
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]],
+            None,
+        ), false,
+    ).expect("valid bilinear surface");
+    let refused = crate::test_support::with_collection_limit(9, |ctx|
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface));
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let admitted = crate::test_support::with_service_context(|ctx|
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface))
+        .expect("service budget");
+    assert!(admitted.is_some());
+}
+
+#[test]
 fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
     let surface = B5Surface::Cylinder {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
