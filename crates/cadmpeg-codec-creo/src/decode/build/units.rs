@@ -1156,13 +1156,13 @@ pub(in crate::decode) fn surface_parameter_scales(
 }
 
 pub(in crate::decode) fn scale_sketch_geometry(
-    geometry: &mut SketchGeometry,
+    geometry: SketchGeometry,
     scale: PositiveReal,
-) -> Result<(), CodecError> {
+) -> Result<SketchGeometry, CodecError> {
     use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
 
-    *geometry = geometry
-        .scaled_lengths(scale)
+    geometry
+        .scaled_lengths_owned(scale)
         .map_err(|error| match error {
             SketchLengthScaleError::LengthOverflow => {
                 CodecError::Malformed("Creo scaled length must be finite".into())
@@ -1178,8 +1178,7 @@ pub(in crate::decode) fn scale_sketch_geometry(
             "Creo sketch unit normalization produced invalid B-spline control points: {error}"
         ))
             }
-        })?;
-    Ok(())
+        })
 }
 
 #[cfg(test)]
@@ -1188,7 +1187,7 @@ mod tests {
     #[test]
     fn numerical_followup_parabola_parameter_bounds_scale_as_lengths() {
         use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
-        let mut geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
+        let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
             vertex: Point2::new(0., 0.),
             axis_angle: cadmpeg_ir::scalar::Angle::new(0.)
                 .expect("valid finite regression fixture"),
@@ -1196,7 +1195,7 @@ mod tests {
             bounds: Some([1., 2.]),
         })
         .expect("valid finite regression fixture");
-        super::scale_sketch_geometry(&mut geometry, positive(10.))
+        let geometry = super::scale_sketch_geometry(geometry, positive(10.))
             .expect("valid finite regression fixture");
         assert!(
             matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)

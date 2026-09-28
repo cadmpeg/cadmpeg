@@ -255,10 +255,14 @@ impl SourceUnitCarriers {
             )?)
             .map_err(CodecError::malformed)?;
             let source_geometry = Self::copy_sketch_geometry(ctx, &entity.geometry)?;
-            if let Some(scale) = self.length_scale_mm {
-                crate::decode::build::units::scale_sketch_geometry(&mut entity.geometry, scale)
+            let source_geometry = if let Some(scale) = self.length_scale_mm {
+                let unscaled = std::mem::replace(&mut entity.geometry, source_geometry);
+                let scaled = crate::decode::build::units::scale_sketch_geometry(unscaled, scale)
                     .map_err(Self::unrepresentable_length)?;
-            }
+                std::mem::replace(&mut entity.geometry, scaled)
+            } else {
+                source_geometry
+            };
             self.sketch_entities
                 .insert(source_id, source_geometry);
             ctx.try_reserve_items(&mut ir.model.sketch_entities, 1, "creo model sketch entities")?;

@@ -1805,6 +1805,46 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Scale admitted pole positions in place without copying the knot or pole lanes.
+    ///
+    /// Every scaled position is checked before any position changes, so a
+    /// refusal leaves this curve unchanged.
+    pub fn scale_control_points_in_place(
+        &mut self,
+        scale: PositiveReal,
+    ) -> Result<(), NurbsError> {
+        let scaled = |point: FinitePoint2| {
+            let point = point.get();
+            FinitePoint2::new(Point2::new(point.u * scale.get(), point.v * scale.get()))
+                .ok_or_else(non_finite_control_point)
+        };
+        match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points {
+                    scaled(*point)?;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points {
+                    scaled(pole.point)?;
+                }
+            }
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points {
+                    *point = scaled(*point)?;
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points {
+                    pole.point = scaled(pole.point)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Copy admitted knots and pole rows with fallible vector reservations.
     ///
     /// The caller charges both collection lengths before calling this method.
