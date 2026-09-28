@@ -5854,6 +5854,7 @@ fn resolve_display_jt_node_paths(
     object_id: u32,
     lookup: &JtPathLookup<'_, '_>,
     visiting: &mut BTreeSet<u32>,
+    visiting_reservation: &mut ScopedReservation<'_>,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
     let _depth = ctx.enter_nested("resolve JT node path")?;
     let Some(base) = lookup.by_object.get(&object_id) else {
@@ -5866,15 +5867,19 @@ fn resolve_display_jt_node_paths(
         return Ok(None);
     }
     ctx.charge_collection_items(1, "nx JT visiting nodes")?;
+    visiting_reservation.grow(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<u32>() * 4,
+    ))?;
     visiting.insert(object_id);
     let mut parent_states = Vec::new();
+    let mut parent_states_reservation = ctx.reserve_scoped(0, "nx JT parent path states")?;
     if let Some(ids) = lookup.parents.get(&object_id) {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ids.len()),
             "resolve JT parent paths",
         )?;
         for id in ids {
-            let Some(paths) = resolve_display_jt_node_paths(ctx, *id, lookup, visiting)? else {
+            let Some(paths) = resolve_display_jt_node_paths(ctx, *id, lookup, visiting, visiting_reservation)? else {
                 return Ok(None);
             };
             let count = paths.len();
@@ -5882,6 +5887,9 @@ fn resolve_display_jt_node_paths(
                 cadmpeg_core::decode::u64_from_index(count),
                 "nx JT parent path states",
             )?;
+            let bytes = count.checked_mul(std::mem::size_of::<DisplayJtPath>())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx JT parent path states", 0, 1))?;
+            parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
             parent_states
                 .try_reserve(count)
                 .map_err(|_| {
@@ -5894,9 +5902,12 @@ fn resolve_display_jt_node_paths(
             parent_states.extend(paths);
         }
     } else {
-        reserve_jt_retained_vec(
-            ctx, &mut parent_states, 1, "nx JT root path state"
-        )?;
+        ctx.charge_collection_items(1, "nx JT root path state")?;
+        parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<DisplayJtPath>(),
+        ))?;
+        parent_states.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx JT root path state", 0, 1))?;
         parent_states.push(DisplayJtPath {
             matrix: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -5983,7 +5994,23 @@ fn display_jt_node_paths(
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
-    let decoded: Option<Result<_, CodecError>> = (|| {
+    let scene_scans = inputs.base_nodes.len()
+        .checked_add(inputs.transforms.len())
+        .and_then(|count| count.checked_add(inputs.materials.len()))
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_mul(inputs.compressed_elements.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let instance_scans = inputs.instance_nodes.len()
+        .checked_mul(inputs.base_nodes.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let child_scans = inputs.group_nodes.len()
+        .checked_add(inputs.instance_nodes.len())
+        .and_then(|count| count.checked_mul(inputs.base_nodes.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let work = scene_scans.checked_add(instance_scans)
+        .and_then(|count| count.checked_add(child_scans))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan JT node paths")?;
     let in_scene = |element_id: &str| {
         inputs
             .compressed_elements
@@ -5997,10 +6024,9 @@ fn display_jt_node_paths(
         .filter(|base| in_scene(&base.element))
         .count();
     let mut scoped = Vec::new();
-    let _scoped_reservation =
-        propagate_display_refusal!(reserve_jt_scratch_vec(
-            ctx, &mut scoped, scoped_count, "nx JT scoped base nodes"
-        ));
+    let _scoped_reservation = reserve_jt_scratch_vec(
+        ctx, &mut scoped, scoped_count, "nx JT scoped base nodes"
+    )?;
     scoped.extend(
         inputs
             .base_nodes
@@ -6008,26 +6034,32 @@ fn display_jt_node_paths(
             .filter(|base| in_scene(&base.element)),
     );
     let mut by_object = BTreeMap::new();
+    let mut by_object_reservation = ctx.reserve_scoped(0, "nx JT node index")?;
     for base in &scoped {
         if by_object.contains_key(&base.object_id) {
-            return None;
+            return Ok(None);
         }
-        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT node index"));
+        ctx.charge_collection_items(1, "nx JT node index")?;
+        by_object_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, &DisplayJtBaseNodeData)>() * 4,
+        ))?;
         by_object.insert(base.object_id, *base);
     }
-    by_object.get(&shape_object_id)?;
+    if !by_object.contains_key(&shape_object_id) {
+        return Ok(None);
+    }
     let transform_count = inputs
         .transforms
         .iter()
         .filter(|attribute| in_scene(&attribute.element))
         .count();
     let mut scoped_transforms = Vec::new();
-    let _transform_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
+    let _transform_reservation = reserve_jt_scratch_vec(
         ctx,
         &mut scoped_transforms,
         transform_count,
         "nx JT scoped transforms",
-    ));
+    )?;
     scoped_transforms.extend(
         inputs
             .transforms
@@ -6040,12 +6072,12 @@ fn display_jt_node_paths(
         .filter(|attribute| in_scene(&attribute.element))
         .count();
     let mut scoped_materials = Vec::new();
-    let _material_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
+    let _material_reservation = reserve_jt_scratch_vec(
         ctx,
         &mut scoped_materials,
         material_count,
         "nx JT scoped materials",
-    ));
+    )?;
     scoped_materials.extend(
         inputs
             .materials
@@ -6053,18 +6085,23 @@ fn display_jt_node_paths(
             .filter(|attribute| in_scene(&attribute.element)),
     );
     let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+    let mut parents_reservation = ctx.reserve_scoped(0, "nx JT parent index")?;
     let mut instance_ids = BTreeMap::new();
+    let mut instances_reservation = ctx.reserve_scoped(0, "nx JT instance index")?;
     for node in inputs.instance_nodes {
         if !by_object.values().any(|base| base.id == node.base_node) {
             continue;
         }
         if instance_ids.contains_key(&node.object_id) {
-            return None;
+            return Ok(None);
         }
-        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT instance index"));
-        let id = propagate_display_refusal!(retain_jt_text_parts(
+        ctx.charge_collection_items(1, "nx JT instance index")?;
+        instances_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, String)>() * 4,
+        ))?;
+        let id = retain_jt_text_parts(
             ctx, &[&node.id], "nx JT instance identity"
-        ));
+        )?;
         instance_ids.insert(node.object_id, id);
     }
     for (object_id, base) in &by_object {
@@ -6075,7 +6112,7 @@ fn display_jt_node_paths(
             .map(|node| node.child_object_ids.as_slice());
         let group = group_children.next();
         if group_children.next().is_some() {
-            return None;
+            return Ok(None);
         }
         let mut instance_children = inputs
             .instance_nodes
@@ -6084,18 +6121,24 @@ fn display_jt_node_paths(
             .map(|node| std::slice::from_ref(&node.child_object_id));
         let instance = instance_children.next();
         if instance_children.next().is_some() || group.is_some() && instance.is_some() {
-            return None;
+            return Ok(None);
         }
         let children = group.or(instance).unwrap_or_default();
         for &child in children {
-            by_object.get(&child)?;
+            if !by_object.contains_key(&child) {
+                return Ok(None);
+            }
             if !parents.contains_key(&child) {
-                propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT parent index"));
+                ctx.charge_collection_items(1, "nx JT parent index")?;
+                parents_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(u32, Vec<u32>)>() * 4,
+                ))?;
             }
             let ids = parents.entry(child).or_default();
-            propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT parent references"));
-            propagate_display_refusal!(ids.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1)));
+            ctx.charge_collection_items(1, "nx JT parent references")?;
+            parents_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))?;
+            ids.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1))?;
             ids.push(*object_id);
         }
     }
@@ -6106,11 +6149,8 @@ fn display_jt_node_paths(
         transforms: &scoped_transforms,
         materials: &scoped_materials,
     };
-    let paths = propagate_display_refusal!(resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new()))?;
-    Some(Ok(paths))
-
-    })();
-    decoded.transpose()
+    let mut visiting_reservation = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
+    resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new(), &mut visiting_reservation)
 }
 
 fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
@@ -6570,6 +6610,69 @@ fn display_jt_tessellation_rows(
 
 #[cfg(test)]
 mod tests {
+    fn scene_node_path_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let compressed = super::DisplayJtCompressedElement {
+            id: "element".into(), segment: "scene".into(), segment_type: 0,
+            ordinal: 0, object_type_id: [0; 16], object_base_type: 0,
+            object_id: 7, body_byte_len: 0,
+            body_sha256: super::Sha256Hex::digest(&[]),
+            inflated_offset: 0, source_offset: 0,
+        };
+        let base = super::DisplayJtBaseNodeData {
+            id: "base".into(), element: compressed.id.clone(),
+            object_type_id: [0; 16], object_id: 7, version: 1,
+            flags: 0, attribute_object_ids: Vec::new(),
+            family_data_byte_len: 0,
+            family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
+            source_offset: 0,
+        };
+        let inputs = super::DisplayJtTessellationInputs {
+            meshes: &[], coordinates: &[], normals: &[], colors: &[],
+            texture_coordinates: &[], vertex_flags: &[], vertex_headers: &[],
+            coordinate_headers: &[], shape_elements: &[], bindings: &[],
+            shape_nodes: &[], base_nodes: &[base], group_nodes: &[],
+            instance_nodes: &[], transforms: &[], materials: &[],
+            compressed_elements: &[compressed],
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::display_jt_node_paths(&ctx, "scene", 7, &inputs)
+            .err().expect("scene node path limit refusal")
+    }
+
+    #[test]
+    fn scene_node_paths_refuse_collection_limit() {
+        let error = scene_node_path_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn scene_node_paths_refuse_scoped_limit() {
+        let error = scene_node_path_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn scene_node_paths_refuse_retained_limit() {
+        let error = scene_node_path_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn scene_node_paths_refuse_work_limit() {
+        let error = scene_node_path_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
     #[test]
     fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
         use std::collections::{BTreeMap, BTreeSet};
@@ -6607,6 +6710,8 @@ mod tests {
             7,
             &lookup,
             &mut BTreeSet::new(),
+            &mut ctx.reserve_scoped(0, "test JT visiting nodes")
+                .expect("empty visiting reservation"),
         )
         .err()
         .expect("node path exceeds the nesting limit");
