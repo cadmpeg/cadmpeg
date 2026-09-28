@@ -5855,31 +5855,34 @@ fn resolve_display_jt_node_paths(
     lookup: &JtPathLookup<'_, '_>,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
-    let decoded: Option<Result<_, CodecError>> = (|| {
-    let _depth = propagate_display_refusal!(ctx.enter_nested("resolve JT node path"));
-    let base = lookup.by_object.get(&object_id)?;
+    let _depth = ctx.enter_nested("resolve JT node path")?;
+    let Some(base) = lookup.by_object.get(&object_id) else {
+        return Ok(None);
+    };
     if base.flags & 1 != 0 {
-        return Some(Ok(Vec::new()));
+        return Ok(Some(Vec::new()));
     }
     if visiting.contains(&object_id) {
-        return None;
+        return Ok(None);
     }
-    propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT visiting nodes"));
+    ctx.charge_collection_items(1, "nx JT visiting nodes")?;
     visiting.insert(object_id);
     let mut parent_states = Vec::new();
     if let Some(ids) = lookup.parents.get(&object_id) {
-        propagate_display_refusal!(ctx.charge_work(
+        ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ids.len()),
             "resolve JT parent paths",
-        ));
+        )?;
         for id in ids {
-            let paths = propagate_display_refusal!(resolve_display_jt_node_paths(ctx, *id, lookup, visiting))?;
+            let Some(paths) = resolve_display_jt_node_paths(ctx, *id, lookup, visiting)? else {
+                return Ok(None);
+            };
             let count = paths.len();
-            propagate_display_refusal!(ctx.charge_collection_items(
+            ctx.charge_collection_items(
                 cadmpeg_core::decode::u64_from_index(count),
                 "nx JT parent path states",
-            ));
-            propagate_display_refusal!(parent_states
+            )?;
+            parent_states
                 .try_reserve(count)
                 .map_err(|_| {
                     ctx.refuse_codec_limit(
@@ -5887,13 +5890,13 @@ fn resolve_display_jt_node_paths(
                         0,
                         cadmpeg_core::decode::u64_from_index(count),
                     )
-                }));
+                })?;
             parent_states.extend(paths);
         }
     } else {
-        propagate_display_refusal!(reserve_jt_retained_vec(
+        reserve_jt_retained_vec(
             ctx, &mut parent_states, 1, "nx JT root path state"
-        ));
+        )?;
         parent_states.push(DisplayJtPath {
             matrix: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -5912,10 +5915,10 @@ fn resolve_display_jt_node_paths(
     visiting.remove(&object_id);
     let mut results = Vec::new();
     for mut path in parent_states {
-        propagate_display_refusal!(ctx.charge_work(
+        ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(base.attribute_object_ids.len()),
             "resolve JT path attributes",
-        ));
+        )?;
         for attribute_id in &base.attribute_object_ids {
             let mut matching_transforms = lookup
                 .transforms
@@ -5934,14 +5937,17 @@ fn resolve_display_jt_node_paths(
                 || matching_materials.next().is_some()
                 || transform.is_some() && material.is_some()
             {
-                return None;
+                return Ok(None);
             }
             if let Some(attribute) = transform {
                 if attribute.state_flags & 0x04 == 0
                     && (!path.final_transform || attribute.state_flags & 0x02 != 0)
                 {
                     let local = attribute.matrix.get().map(|row| row.map(f64::from));
-                    path.matrix = multiply_jt_matrices(local, path.matrix)?;
+                    let Some(matrix) = multiply_jt_matrices(local, path.matrix) else {
+                        return Ok(None);
+                    };
+                    path.matrix = matrix;
                     path.final_transform |= attribute.state_flags & 0x01 != 0;
                 }
             }
@@ -5950,28 +5956,25 @@ fn resolve_display_jt_node_paths(
             }
         }
         if let Some(instance_id) = lookup.instance_ids.get(&object_id) {
-            propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT instance path nodes"));
-            propagate_display_refusal!(path.instance_path
+            ctx.charge_collection_items(1, "nx JT instance path nodes")?;
+            path.instance_path
                 .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1)));
+                .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1))?;
             path.instance_path.push(
-                propagate_display_refusal!(retain_jt_text_parts(
+                retain_jt_text_parts(
                     ctx, &[instance_id], "nx JT instance path identity"
-                )),
+                )?,
             );
         }
-        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT node path nodes"));
-        propagate_display_refusal!(path.node_path
+        ctx.charge_collection_items(1, "nx JT node path nodes")?;
+        path.node_path
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx JT node path nodes", 0, 1)));
+            .map_err(|_| ctx.refuse_codec_limit("nx JT node path nodes", 0, 1))?;
         path.node_path.push(object_id);
-        propagate_display_refusal!(reserve_jt_retained_vec(ctx, &mut results, 1, "nx JT resolved paths"));
+        reserve_jt_retained_vec(ctx, &mut results, 1, "nx JT resolved paths")?;
         results.push(path);
     }
-    Some(Ok(results))
-
-    })();
-    decoded.transpose()
+    Ok(Some(results))
 }
 
 fn display_jt_node_paths(
