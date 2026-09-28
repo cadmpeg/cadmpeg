@@ -279,7 +279,9 @@ pub(super) fn validate_consolidated_edge_runs(
         }
     }
     let expected_nodes = nodes.to_vec();
-    let expected_identities = consolidated_vertex_identities(&expected_nodes);
+    let expected_identities = crate::test_support::with_service_context(|ctx| {
+        consolidated_vertex_identities(ctx, &expected_nodes)
+    })?;
     if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),

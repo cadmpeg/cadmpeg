@@ -9974,7 +9974,7 @@ impl CatiaNative {
             refusal,
         )?;
         let consolidated_vertex_identities =
-            consolidated_vertex_identities(&consolidated_edge_nodes);
+            consolidated_vertex_identities(ctx, &consolidated_edge_nodes)?;
         Ok(Self {
             alias_rows,
             catalogs,
