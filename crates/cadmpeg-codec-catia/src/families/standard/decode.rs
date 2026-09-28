@@ -8192,10 +8192,7 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
         {
             continue;
         }
-        let scores = alternatives
-            .iter()
-            .copied()
-            .map(|face| {
+        let score = |face: usize| {
                 let distinct_circle_carrier = circular_support
                     && face_geometries.is_some_and(|geometries| {
                         geometries
@@ -8224,22 +8221,23 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
                                 })
                                 .count() as u8
                         });
-                (face, (distinct_circle_carrier as u8, overlap_dimension))
-            })
-            .collect::<Vec<_>>();
-        let best = scores
-            .iter()
-            .map(|(_, score)| *score)
-            .max()
-            .unwrap_or((0, 0));
-        if best == (0, 0) || scores.iter().filter(|(_, score)| *score == best).count() != 1 {
+                (distinct_circle_carrier as u8, overlap_dimension)
+            };
+        let mut best = (0, 0);
+        let mut best_count = 0usize;
+        for face in alternatives.iter().copied() {
+            let candidate = score(face);
+            if candidate > best {
+                best = candidate;
+                best_count = 1;
+            } else if candidate == best {
+                best_count += 1;
+            }
+        }
+        if best == (0, 0) || best_count != 1 {
             continue;
         }
-        alternatives.retain(|face| {
-            scores
-                .iter()
-                .any(|(candidate, score)| candidate == face && *score == best)
-        });
+        alternatives.retain(|face| score(*face) == best);
     }
 }
 
@@ -9446,9 +9444,7 @@ fn witnessed_surface_circle_end(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => &[0, 1],
         _ => return None,
     };
-    let candidates = lanes
-        .iter()
-        .filter_map(|lane| {
+    let mut candidates = lanes.iter().filter_map(|lane| {
             let mut candidate = uv[1];
             let (start, short_end, witness) = if *lane == 0 {
                 (uv[0].u, uv[1].u, witness_uv.u)
@@ -9468,9 +9464,9 @@ fn witnessed_surface_circle_end(
             )
             .ok()?;
             ((midpoint.distance_squared(center).sqrt() - radius).abs() <= 2e-3).then_some(candidate)
-        })
-        .collect::<Vec<_>>();
-    <[Point2; 1]>::try_from(candidates).ok().map(|[end]| end)
+        });
+    let end = candidates.next()?;
+    candidates.next().is_none().then_some(end)
 }
 
 fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
@@ -9953,7 +9949,7 @@ fn standard_spline_perpendicular_cylinders(
     let radius = cadmpeg_ir::scalar::PositiveLength::new(radius)?;
     let major_radius = cadmpeg_ir::scalar::PositiveLength::new(major_radius)?;
     let center = FinitePoint3::new(center)?;
-    let branches = [
+    let mut branches = [
         (first_axis - second_axis, first_axis + second_axis),
         (first_axis + second_axis, first_axis - second_axis),
     ]
@@ -9982,12 +9978,9 @@ fn standard_spline_perpendicular_cylinders(
                 .ok()?,
             )),
         )
-    })
-    .collect::<Vec<_>>();
-    let [geometry] = branches.as_slice() else {
-        return None;
-    };
-    Some(geometry.clone())
+    });
+    let geometry = branches.next()?;
+    branches.next().is_none().then_some(geometry)
 }
 
 fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point3> {
