@@ -425,6 +425,18 @@ fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
 }
 
 #[test]
+fn boundary_parameter_loss_refuses_unadmitted_note_storage() {
+    let bytes = subrange_nurbs_surface_boundary_file(2);
+    assert_trimming_collection_refusal(&bytes, "iges entity loss slots");
+    for operation in ["iges entity loss message", "iges entity loss kind"] {
+        assert_trimming_retained_refusal(&bytes, operation);
+    }
+    let result = IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    assert!(result.report().losses.iter().any(|loss|
+        loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind()));
+}
+
+#[test]
 fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
     let result = IgesCodec
         .decode(
