@@ -97,8 +97,8 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 5;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits policy");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         assert!(matches!(
             charged_join(&ctx, "step_test_join", ["one", "two"], ","),
             Err(CodecError::ResourceLimit(refusal))
@@ -112,10 +112,14 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 3;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits policy");
-        let error = charged_format(&ctx, "step_test_format", format_args!("prefix {suffix}", suffix = "input"))
-            .expect_err("formatted text exceeds three bytes");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+        let error = charged_format(
+            &ctx,
+            "step_test_format",
+            format_args!("prefix {suffix}", suffix = "input"),
+        )
+        .expect_err("formatted text exceeds three bytes");
         assert!(matches!(
             error,
             CodecError::ResourceLimit(limit)

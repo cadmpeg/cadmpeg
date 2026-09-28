@@ -45,11 +45,20 @@ macro_rules! dependency_collection_test {
     };
 }
 
-dependency_collection_test!(dependency_documents_refuse_limit, "step_dependency_documents");
+dependency_collection_test!(
+    dependency_documents_refuse_limit,
+    "step_dependency_documents"
+);
 dependency_collection_test!(dependency_sources_refuse_limit, "step_dependency_sources");
 dependency_collection_test!(dependency_claims_refuse_limit, "step_dependency_claims");
-dependency_collection_test!(dependency_note_set_refuses_limit, "step_dependency_note_set");
-dependency_collection_test!(dependency_note_vector_refuses_limit, "step_dependency_note_vector");
+dependency_collection_test!(
+    dependency_note_set_refuses_limit,
+    "step_dependency_note_set"
+);
+dependency_collection_test!(
+    dependency_note_vector_refuses_limit,
+    "step_dependency_note_vector"
+);
 
 #[test]
 fn dependency_note_text_refuses_retained_limit() {
@@ -102,8 +111,8 @@ fn dependency_invalid_string_loss_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(SOURCE, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
     assert!(matches!(
         super::decode(&exchange, &ctx),
         Err(CodecError::ResourceLimit(refusal))

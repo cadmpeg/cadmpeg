@@ -24,6 +24,7 @@ pub(crate) enum StringDecodeFailure {
 }
 
 /// Decode the bytes between a Part 21 string token's apostrophe delimiters.
+#[cfg(test)]
 pub(crate) fn decode(input: &[u8]) -> Result<String, StringError> {
     decode_with_level(input, ImplementationLevel::LegacyEdition1)
 }
@@ -257,9 +258,8 @@ fn decode_wide(
                     let Some(high) = high_surrogate.take() else {
                         return error(start, "wide escape contains an isolated surrogate");
                     };
-                    let scalar = 0x10000
-                        + ((u32::from(high) - 0xd800) << 10)
-                        + (u32::from(unit) - 0xdc00);
+                    let scalar =
+                        0x10000 + ((u32::from(high) - 0xd800) << 10) + (u32::from(unit) - 0xdc00);
                     let Some(character) = char::from_u32(scalar) else {
                         return error(start, "wide escape contains an isolated surrogate");
                     };
@@ -277,9 +277,9 @@ fn decode_wide(
             }
         } else {
             let character = char::from_u32(raw).ok_or_else(|| StringError {
-                    offset: start,
-                    message: "wide escape contains an invalid Unicode scalar".into(),
-                })?;
+                offset: start,
+                message: "wide escape contains an invalid Unicode scalar".into(),
+            })?;
             emit(character);
         }
     }

@@ -23,7 +23,13 @@ fn pmi_result(records: &str, retained_limit: u64) -> Result<(), CodecError> {
     let geometry = crate::reader::geometry::decode(&exchange, &mut ir, &ctx)?;
     let index = crate::reader::index::CarrierIndex::from_ir(&ir, &ctx)?;
     let topology = crate::reader::topology::decode(&exchange, &mut ir, &index, &ctx)?;
-    super::super::decode(&exchange, &geometry.value, &topology.value, &mut ir, Some(&ctx))?;
+    super::super::decode(
+        &exchange,
+        &geometry.value,
+        &topology.value,
+        &mut ir,
+        Some(&ctx),
+    )?;
     Ok(())
 }
 
@@ -41,20 +47,72 @@ macro_rules! pmi_string_limit_test {
     };
 }
 
-pmi_string_limit_test!(datum_identification_refuses_retained_limit, "#1=DATUM('identifier');", 1);
-pmi_string_limit_test!(datum_name_refuses_retained_limit, "#1=(DATUM('') SHAPE_ASPECT('datum name','',#2,.F.));#2=ITEM();", 1);
-pmi_string_limit_test!(datum_target_form_refuses_retained_limit, "#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();", 1);
-pmi_string_limit_test!(datum_target_identification_refuses_retained_limit, "#1=DATUM_TARGET('','',#2,.F.,'identifier');#2=ITEM();", 1);
-pmi_string_limit_test!(datum_target_name_refuses_retained_limit, "#1=DATUM_TARGET('target name','',#2,.F.,'');#2=ITEM();", 1);
-pmi_string_limit_test!(datum_system_name_refuses_retained_limit, "#1=DATUM_SYSTEM('system name','',#2,.F.,());#2=ITEM();", 1);
-pmi_string_limit_test!(dimension_name_refuses_retained_limit, "#1=DIMENSIONAL_SIZE(#2,'dimension name');#2=ITEM();", 1);
-pmi_string_limit_test!(dimension_category_refuses_retained_limit, "#1=DIMENSIONAL_SIZE_WITH_DATUM_FEATURE(#2,'diameter');#2=ITEM();", 8);
-pmi_string_limit_test!(limits_form_variance_refuses_retained_limit, "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('form variance','','','');", 1);
-pmi_string_limit_test!(limits_zone_variance_refuses_retained_limit, "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','zone variance','','');", 1);
-pmi_string_limit_test!(limits_grade_refuses_retained_limit, "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','grade value','');", 1);
-pmi_string_limit_test!(limits_source_refuses_retained_limit, "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','','source value');", 1);
+pmi_string_limit_test!(
+    datum_identification_refuses_retained_limit,
+    "#1=DATUM('identifier');",
+    1
+);
+pmi_string_limit_test!(
+    datum_name_refuses_retained_limit,
+    "#1=(DATUM('') SHAPE_ASPECT('datum name','',#2,.F.));#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    datum_target_form_refuses_retained_limit,
+    "#1=DATUM_TARGET('','rectangle',#2,.F.,'');#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    datum_target_identification_refuses_retained_limit,
+    "#1=DATUM_TARGET('','',#2,.F.,'identifier');#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    datum_target_name_refuses_retained_limit,
+    "#1=DATUM_TARGET('target name','',#2,.F.,'');#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    datum_system_name_refuses_retained_limit,
+    "#1=DATUM_SYSTEM('system name','',#2,.F.,());#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    dimension_name_refuses_retained_limit,
+    "#1=DIMENSIONAL_SIZE(#2,'dimension name');#2=ITEM();",
+    1
+);
+pmi_string_limit_test!(
+    dimension_category_refuses_retained_limit,
+    "#1=DIMENSIONAL_SIZE_WITH_DATUM_FEATURE(#2,'diameter');#2=ITEM();",
+    8
+);
+pmi_string_limit_test!(
+    limits_form_variance_refuses_retained_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('form variance','','','');",
+    1
+);
+pmi_string_limit_test!(
+    limits_zone_variance_refuses_retained_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','zone variance','','');",
+    1
+);
+pmi_string_limit_test!(
+    limits_grade_refuses_retained_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','grade value','');",
+    1
+);
+pmi_string_limit_test!(
+    limits_source_refuses_retained_limit,
+    "#1=PLUS_MINUS_TOLERANCE(#2);#2=LIMITS_AND_FITS('','','','source value');",
+    1
+);
 pmi_string_limit_test!(geometric_tolerance_name_refuses_retained_limit, "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(LENGTH_MEASURE_WITH_UNIT() MEASURE_WITH_UNIT(LENGTH_MEASURE(0.05),#1));#3=ITEM();#4=FLATNESS_TOLERANCE('tol name','',#2,#3);", 1);
-pmi_string_limit_test!(presentation_annotation_name_refuses_retained_limit, "#1=ANNOTATION_TEXT_OCCURRENCE('annotation name',());", 1);
+pmi_string_limit_test!(
+    presentation_annotation_name_refuses_retained_limit,
+    "#1=ANNOTATION_TEXT_OCCURRENCE('annotation name',());",
+    1
+);
 
 #[test]
 fn annotation_text_refuses_retained_limit() {
@@ -150,9 +208,24 @@ macro_rules! annotation_collection_limit_test {
     };
 }
 
-annotation_collection_limit_test!(annotation_text_visited_refuses_collection_limit, 0, false, "step_pmi_annotation_text_visited");
-annotation_collection_limit_test!(annotation_text_candidates_refuse_collection_limit, 1, false, "step_pmi_annotation_text_candidates");
-annotation_collection_limit_test!(annotation_text_used_refuses_collection_limit, 2, true, "step_pmi_annotation_text_used");
+annotation_collection_limit_test!(
+    annotation_text_visited_refuses_collection_limit,
+    0,
+    false,
+    "step_pmi_annotation_text_visited"
+);
+annotation_collection_limit_test!(
+    annotation_text_candidates_refuse_collection_limit,
+    1,
+    false,
+    "step_pmi_annotation_text_candidates"
+);
+annotation_collection_limit_test!(
+    annotation_text_used_refuses_collection_limit,
+    2,
+    true,
+    "step_pmi_annotation_text_used"
+);
 
 #[test]
 fn characteristic_measure_values_refuse_collection_limit() {
@@ -173,7 +246,7 @@ fn characteristic_measure_values_refuse_collection_limit() {
     let value = crate::parse::Value::Real(1.0);
     assert!(matches!(
         super::super::characteristic_measure_values(
-            super::super::MeasureParameters::Items(std::slice::from_ref(&value)),
+            &super::super::MeasureParameters::Items(std::slice::from_ref(&value)),
             &exchange,
             &mut measurements,
             Some(&ctx),
@@ -188,7 +261,8 @@ fn characteristic_measure_values_refuse_collection_limit() {
 fn characteristic_value_map_refuses_collection_limit() {
     const RECORDS: &str = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);#6=SHAPE_ASPECT('feature','',#5,.T.);#10=DIMENSIONAL_SIZE(#6,'width');#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(5.0),#1) REPRESENTATION_ITEM('nominal value'));#14=SHAPE_DIMENSION_REPRESENTATION('value',(#13),#2);#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);#99=ITEM();";
     let source = source(RECORDS);
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid characteristic exchange");
+    let (exchange, _) =
+        crate::parse::parse(source.as_bytes()).expect("valid characteristic exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -213,5 +287,8 @@ fn characteristic_value_map_refuses_collection_limit() {
                     && refusal.operation == "step_pmi_characteristic_values"
         )
     });
-    assert!(refused, "no collection limit refused the characteristic map entry");
+    assert!(
+        refused,
+        "no collection limit refused the characteristic map entry"
+    );
 }

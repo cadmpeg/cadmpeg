@@ -67,7 +67,9 @@ fn copy_parser_text(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut copied = String::new();
-    copied.try_reserve_exact(value.len()).map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied
+        .try_reserve_exact(value.len())
+        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
     copied.push_str(value);
     Ok(copied)
 }
@@ -81,7 +83,9 @@ fn copy_parser_bytes(
         ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
     }
     let mut copied = Vec::new();
-    copied.try_reserve_exact(value.len()).map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied
+        .try_reserve_exact(value.len())
+        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
     copied.extend_from_slice(value);
     Ok(copied)
 }
@@ -102,12 +106,18 @@ fn try_clone_value(
     budget: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<Value, CodecError> {
-    let _depth = budget.map(|ctx| ctx.enter_nested("step_value_copy_depth")).transpose()?;
+    let _depth = budget
+        .map(|ctx| ctx.enter_nested("step_value_copy_depth"))
+        .transpose()?;
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
         Value::ValueReference(id) => Value::ValueReference(*id),
-        Value::ConstantEntity(text) => Value::ConstantEntity(copy_parser_text(text, budget, operation)?),
-        Value::ConstantValue(text) => Value::ConstantValue(copy_parser_text(text, budget, operation)?),
+        Value::ConstantEntity(text) => {
+            Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
+        }
+        Value::ConstantValue(text) => {
+            Value::ConstantValue(copy_parser_text(text, budget, operation)?)
+        }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
         Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
@@ -121,7 +131,9 @@ fn try_clone_value(
                 ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
             }
             let mut copied = Vec::new();
-            copied.try_reserve_exact(values.len()).map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+            copied
+                .try_reserve_exact(values.len())
+                .map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }
@@ -413,7 +425,9 @@ impl Exchange {
 
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
     pub(crate) fn schema_identifiers(&self) -> impl Iterator<Item = &str> {
-        self.schema_identifiers.iter().map(|identifier| identifier.text())
+        self.schema_identifiers
+            .iter()
+            .map(AdmittedSchemaIdentifier::text)
     }
 
     pub(crate) fn joined_schema_identifiers(
@@ -452,7 +466,9 @@ impl Exchange {
     ) -> Result<Option<Vec<u64>>, CodecError> {
         self.schema_identifiers
             .first()
-            .map_or(Ok(None), |identifier| identifier.numeric_object_identifier(ctx))
+            .map_or(Ok(None), |identifier| {
+                identifier.numeric_object_identifier(ctx)
+            })
     }
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
@@ -466,11 +482,9 @@ impl Exchange {
         ctx: Option<&DecodeContext<'_>>,
     ) -> Result<String, crate::strings::StringDecodeFailure> {
         match ctx {
-            Some(ctx) => crate::strings::decode_with_context(
-                bytes,
-                self.implementation_level.level(),
-                ctx,
-            ),
+            Some(ctx) => {
+                crate::strings::decode_with_context(bytes, self.implementation_level.level(), ctx)
+            }
             None => crate::strings::decode_with_level(bytes, self.implementation_level.level())
                 .map_err(crate::strings::StringDecodeFailure::Invalid),
         }
@@ -582,6 +596,7 @@ pub(crate) struct ParseDiagnostic {
 }
 
 /// Parse one complete clear-text exchange structure and resolve DATA references.
+#[cfg(test)]
 pub(crate) fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
     parse_inner(input, None)
 }
@@ -1020,7 +1035,9 @@ impl Parser<'_, '_, '_> {
                 ) {
                     match message {
                         ValidationError::Invalid(message) => return self.err(message),
-                        ValidationError::Resource(error) => return Err(ParseError::Resource(error)),
+                        ValidationError::Resource(error) => {
+                            return Err(ParseError::Resource(error))
+                        }
                     }
                 }
                 parameters
@@ -1351,7 +1368,7 @@ impl Parser<'_, '_, '_> {
             }
             self.next_kind()?;
             let mut canonical_names = Vec::new();
-            for part in parts.iter() {
+            for part in &parts {
                 push_charged(
                     self.budget,
                     &mut canonical_names,
@@ -1760,7 +1777,8 @@ fn validate_header(
         implementation_level_bytes,
         ImplementationLevel::LegacyEdition1,
         budget,
-    )? else {
+    )?
+    else {
         return invalid("FILE_DESCRIPTION has an unsupported implementation level");
     };
     let declaration = DeclaredImplementationLevel::new(implementation_level_text);
@@ -1787,7 +1805,12 @@ fn validate_header(
         return invalid("FILE_DESCRIPTION has invalid string encoding");
     }
     if !string_list_within_limit(Some(description_strings), implementation_level, 256, budget)?
-        || !string_within_limit(implementation_level_value, implementation_level, 256, budget)?
+        || !string_within_limit(
+            implementation_level_value,
+            implementation_level,
+            256,
+            budget,
+        )?
     {
         return invalid("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
@@ -1808,7 +1831,8 @@ fn validate_header(
     {
         return invalid("FILE_NAME has invalid parameters");
     }
-    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level, budget)? else {
+    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level, budget)?
+    else {
         return invalid("FILE_NAME has invalid string encoding");
     };
     if !is_decodable_string(file_name_value, implementation_level, budget)?
@@ -1852,7 +1876,10 @@ fn validate_header(
         };
         let trimmed = identifier.trim();
         if let Some(ctx) = budget {
-            ctx.charge_retained(u64_from_index(trimmed.len()), "step_schema_identifier_normalized")?;
+            ctx.charge_retained(
+                u64_from_index(trimmed.len()),
+                "step_schema_identifier_normalized",
+            )?;
             ctx.charge_collection_items(1, "step_schema_identifier_names")?;
         }
         let normalized = trimmed.to_ascii_uppercase();
@@ -1875,10 +1902,10 @@ fn validate_header(
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
 /// under its schema name alone.
-fn schema_object_identifier_diagnostics<'a, 'arena>(
+fn schema_object_identifier_diagnostics<'a>(
     admitted: &'a [AdmittedSchemaIdentifier],
     offset: usize,
-    budget: Option<&'a DecodeContext<'arena>>,
+    budget: Option<&'a DecodeContext<'_>>,
 ) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
     admitted
         .iter()
@@ -1971,8 +1998,11 @@ fn validate_header_sections(
                 )?;
             }
             "SECTION_LANGUAGE" => {
-                let section = valid_section_language(&record.parameters, implementation_level, budget)
-                    .map_err(|error| error.with_message("SECTION_LANGUAGE has invalid parameters"))?;
+                let section =
+                    valid_section_language(&record.parameters, implementation_level, budget)
+                        .map_err(|error| {
+                            error.with_message("SECTION_LANGUAGE has invalid parameters")
+                        })?;
                 if let Some(ctx) = budget {
                     ctx.charge_collection_items(1, "step_section_language_names")?;
                     ctx.charge_retained(
@@ -1980,9 +2010,11 @@ fn validate_header_sections(
                         "step_section_language_name_copy",
                     )?;
                 }
-                let section_copy = section.as_deref().map(|value| {
-                    copy_parser_text(value, budget, "step_section_language_name_copy")
-                }).transpose().map_err(ValidationError::Resource)?;
+                let section_copy = section
+                    .as_deref()
+                    .map(|value| copy_parser_text(value, budget, "step_section_language_name_copy"))
+                    .transpose()
+                    .map_err(ValidationError::Resource)?;
                 if !language_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
                 }
@@ -1996,8 +2028,11 @@ fn validate_header_sections(
                 }
             }
             "SECTION_CONTEXT" => {
-                let section = valid_section_context(&record.parameters, implementation_level, budget)
-                    .map_err(|error| error.with_message("SECTION_CONTEXT has invalid parameters"))?;
+                let section =
+                    valid_section_context(&record.parameters, implementation_level, budget)
+                        .map_err(|error| {
+                            error.with_message("SECTION_CONTEXT has invalid parameters")
+                        })?;
                 if let Some(ctx) = budget {
                     ctx.charge_collection_items(1, "step_section_context_names")?;
                     ctx.charge_retained(
@@ -2005,9 +2040,11 @@ fn validate_header_sections(
                         "step_section_context_name_copy",
                     )?;
                 }
-                let section_copy = section.as_deref().map(|value| {
-                    copy_parser_text(value, budget, "step_section_context_name_copy")
-                }).transpose().map_err(ValidationError::Resource)?;
+                let section_copy = section
+                    .as_deref()
+                    .map(|value| copy_parser_text(value, budget, "step_section_context_name_copy"))
+                    .transpose()
+                    .map_err(ValidationError::Resource)?;
                 if !context_sections.insert(section_copy) {
                     return invalid("HEADER contains duplicate SECTION_CONTEXT section");
                 }
@@ -2737,11 +2774,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 resolved.try_reserve_exact(values.len()).map_err(|_| {
                     ResolveError::Resource(match self.budget {
                         Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
-                        None => cadmpeg_core::decode::refuse_local_limit(
-                            "step_anchor_list_items",
-                            0,
-                            1,
-                        ),
+                        None => {
+                            cadmpeg_core::decode::refuse_local_limit("step_anchor_list_items", 0, 1)
+                        }
                     })
                 })?;
                 for value in values {
@@ -3098,8 +3133,8 @@ fn value_node_count(
     Ok(limit - remaining)
 }
 
-fn references<'a>(
-    value: &'a Value,
+fn references(
+    value: &Value,
     entity_out: &mut Vec<u64>,
     value_out: &mut Vec<u64>,
     budget: Option<&DecodeContext<'_>>,

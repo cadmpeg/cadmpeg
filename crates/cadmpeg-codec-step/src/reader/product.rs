@@ -215,13 +215,19 @@ pub(super) fn decode(
                 ctx.charge_collection_items(1, "step_product_definition_groups")?;
             }
         }
-        let grouped = definitions_by_product_in_source_order.entry(product).or_default();
+        let grouped = definitions_by_product_in_source_order
+            .entry(product)
+            .or_default();
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "step_product_definition_group_members")?;
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
             Some(ctx) => ctx.refuse_codec_limit("step_product_definition_group_members", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit("step_product_definition_group_members", 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(
+                "step_product_definition_group_members",
+                0,
+                1,
+            ),
         })?;
         grouped.push(definition);
     }
@@ -245,17 +251,22 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let Some(description) = parameters.get(1).map(|value| {
-            decode_text_charged(
-                exchange,
-                value,
-                &mut losses,
-                id,
-                "product definition description",
-                StepLossCode::MetadataStringInvalid,
-                ctx,
-            )
-        }).transpose()?.flatten() else {
+        let Some(description) = parameters
+            .get(1)
+            .map(|value| {
+                decode_text_charged(
+                    exchange,
+                    value,
+                    &mut losses,
+                    id,
+                    "product definition description",
+                    StepLossCode::MetadataStringInvalid,
+                    ctx,
+                )
+            })
+            .transpose()?
+            .flatten()
+        else {
             continue;
         };
         if !description.is_empty() {
@@ -357,7 +368,9 @@ pub(super) fn decode(
             )?;
             let definition_description = definition
                 .and_then(|definition| definition_descriptions.get(&definition))
-                .map(|text| clone_product_text(text, ctx, "step_product_definition_description_copy"))
+                .map(|text| {
+                    clone_product_text(text, ctx, "step_product_definition_description_copy")
+                })
                 .transpose()?;
             let description = if definition_count <= 1 {
                 product_description
@@ -388,7 +401,7 @@ pub(super) fn decode(
                             .iter()
                             .any(|candidate| candidate.id == **body)
                     })
-                    .map(|body| body.as_str()),
+                    .map(cadmpeg_ir::ids::BodyId::as_str),
                 ctx,
                 "step_missing_shape_body_text",
             )?;
@@ -504,11 +517,14 @@ pub(super) fn decode(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "step_product_usage_entries")?;
         }
-        usages.insert(id, Usage {
-            parent_definition,
-            child_definition,
-            name: name.filter(|name| !name.is_empty()),
-        });
+        usages.insert(
+            id,
+            Usage {
+                parent_definition,
+                child_definition,
+                name: name.filter(|name| !name.is_empty()),
+            },
+        );
     }
     let mut child_definitions = BTreeSet::new();
     for usage in usages.values() {
@@ -635,7 +651,9 @@ pub(super) fn decode(
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
             Some(ctx) => ctx.refuse_codec_limit("step_product_usage_parent_members", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit("step_product_usage_parent_members", 0, 1),
+            None => {
+                cadmpeg_core::decode::refuse_local_limit("step_product_usage_parent_members", 0, 1)
+            }
         })?;
         grouped.push(usage_id);
     }
@@ -883,8 +901,8 @@ fn apply_body_placements(
 ) -> Result<(), CodecError> {
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
-        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-            .and_then(ValueExt::reference)
+        if let Some(definition) =
+            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "step_body_placement_shapes")?;
@@ -1121,8 +1139,8 @@ fn shape_bindings(
 ) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
-        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-            .and_then(ValueExt::reference)
+        if let Some(definition) =
+            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "step_shape_binding_shapes")?;
@@ -1244,8 +1262,8 @@ fn occurrence_placements(
 ) -> Result<BTreeMap<u64, Transform>, CodecError> {
     let mut pds = BTreeMap::new();
     for (&id, record) in exchange.records() {
-        if let Some(definition) = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
-            .and_then(ValueExt::reference)
+        if let Some(definition) =
+            named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2).and_then(ValueExt::reference)
         {
             if let Some(ctx) = ctx {
                 ctx.charge_collection_items(1, "step_occurrence_placement_shapes")?;
@@ -1262,7 +1280,9 @@ fn occurrence_placements(
                     ctx.charge_collection_items(1, "step_represented_definition_groups")?;
                 }
             }
-            let definitions = definitions_by_representation.entry(representation).or_default();
+            let definitions = definitions_by_representation
+                .entry(representation)
+                .or_default();
             if !definitions.contains(&definition) {
                 if let Some(ctx) = ctx {
                     ctx.charge_collection_items(1, "step_represented_definition_members")?;

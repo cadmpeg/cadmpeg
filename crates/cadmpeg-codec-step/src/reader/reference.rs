@@ -74,35 +74,6 @@ impl Iterator for References<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::parse::Value;
-
-    use super::references;
-
-    #[test]
-    fn nested_references_keep_source_order_without_a_collection() {
-        let value = Value::List(vec![
-            Value::Reference(1),
-            Value::Typed(
-                "WRAPPER".into(),
-                Box::new(Value::List(vec![Value::Reference(2), Value::Integer(3)])),
-            ),
-            Value::Reference(4),
-        ]);
-        assert_eq!(references(&value).collect::<Vec<_>>(), [1, 2, 4]);
-    }
-
-    #[test]
-    fn admitted_nested_references_reach_the_leaf() {
-        let mut value = Value::Reference(9);
-        for _ in 0..256 {
-            value = Value::Typed("WRAPPER".into(), Box::new(value));
-        }
-        assert_eq!(references(&value).collect::<Vec<_>>(), [9]);
-    }
-}
-
 pub(super) fn visit(value: &Value, visitor: &mut impl FnMut(u64) -> bool) -> bool {
     match value {
         Value::Reference(id) => visitor(*id),
@@ -130,4 +101,33 @@ pub(super) fn first_matching<'a>(
         }
     }
     matched
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::parse::Value;
+
+    use super::references;
+
+    #[test]
+    fn nested_references_keep_source_order_without_a_collection() {
+        let value = Value::List(vec![
+            Value::Reference(1),
+            Value::Typed(
+                "WRAPPER".into(),
+                Box::new(Value::List(vec![Value::Reference(2), Value::Integer(3)])),
+            ),
+            Value::Reference(4),
+        ]);
+        assert_eq!(references(&value).collect::<Vec<_>>(), [1, 2, 4]);
+    }
+
+    #[test]
+    fn admitted_nested_references_reach_the_leaf() {
+        let mut value = Value::Reference(9);
+        for _ in 0..256 {
+            value = Value::Typed("WRAPPER".into(), Box::new(value));
+        }
+        assert_eq!(references(&value).collect::<Vec<_>>(), [9]);
+    }
 }

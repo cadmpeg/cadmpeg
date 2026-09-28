@@ -12,8 +12,8 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
-mod string_limits;
 mod collection_limits;
+mod string_limits;
 
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
@@ -79,7 +79,8 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .iter()
         .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
@@ -230,7 +231,8 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         loss.code == StepLossCode::DraughtingSemanticDefinitionUntyped.kind()
             || loss.code == StepLossCode::DraughtingAssociatedItemUntyped.kind()
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
@@ -491,12 +493,9 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
     )]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source.as_bytes(),
-        &arena,
-        &policy,
-    )
-    .expect("root fits service policy");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits service policy");
     let resolved = super::target_resolution(
         target,
         &identities,

@@ -499,7 +499,10 @@ impl PolylineCurve {
                     .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
             },
         };
-        Ok(Self { samples, chordal_deflection: self.chordal_deflection })
+        Ok(Self {
+            samples,
+            chordal_deflection: self.chordal_deflection,
+        })
     }
 
     /// Build from admitted sample scalars and points, checking only the

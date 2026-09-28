@@ -189,7 +189,9 @@ impl SolvedSurfaceGeometry {
                     depth: value.depth,
                 })
             }
-            Self::Unknown { record } => Self::Unknown { record: record.clone() },
+            Self::Unknown { record } => Self::Unknown {
+                record: record.clone(),
+            },
         })
     }
 
@@ -419,12 +421,16 @@ impl SolvedCurveGeometry {
             Self::Parabola(value) => Self::Parabola(*value),
             Self::Hyperbola(value) => Self::Hyperbola(*value),
             Self::Degenerate(value) => Self::Degenerate(*value),
-            Self::Composite { segments, self_intersect } => {
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
                 ctx.charge_collection_items(u64_from_index(segments.len()), operation)?;
                 let mut copied = Vec::new();
-                copied.try_reserve_exact(segments.len())
-                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len())))?;
-                for segment in segments.iter() {
+                copied.try_reserve_exact(segments.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len()))
+                })?;
+                for segment in segments {
                     copied.push(segment.clone());
                 }
                 Self::Composite {
@@ -442,7 +448,9 @@ impl SolvedCurveGeometry {
                     depth: value.depth,
                 })
             }
-            Self::Unknown { record } => Self::Unknown { record: record.clone() },
+            Self::Unknown { record } => Self::Unknown {
+                record: record.clone(),
+            },
         })
     }
 

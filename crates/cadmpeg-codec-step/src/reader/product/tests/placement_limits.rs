@@ -63,7 +63,10 @@ fn sibling_usage_counts_refuse_collection_limit() {
 #[test]
 fn ambiguous_context_source_copy_refuses_collection_limit() {
     let source = duplicate_context_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_ambiguous_context_source_copy");
+    super::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_ambiguous_context_source_copy",
+    );
 }
 
 #[test]
@@ -75,19 +78,28 @@ fn ambiguous_placement_groups_refuse_collection_limit() {
 #[test]
 fn occurrence_representation_groups_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(source.as_bytes(), "step_occurrence_representation_groups");
+    super::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_occurrence_representation_groups",
+    );
 }
 
 #[test]
 fn occurrence_representation_members_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(source.as_bytes(), "step_occurrence_representation_members");
+    super::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_occurrence_representation_members",
+    );
 }
 
 #[test]
 fn occurrence_placement_candidates_refuse_collection_limit() {
     let source = occurrence_mapped_source(false);
-    super::product_collection_refuses_source(source.as_bytes(), "step_occurrence_placement_candidates");
+    super::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_occurrence_placement_candidates",
+    );
 }
 
 #[test]
@@ -99,7 +111,10 @@ fn ambiguous_mapped_sources_refuse_collection_limit() {
 #[test]
 fn competing_context_source_copy_refuses_collection_limit() {
     let source = competing_source();
-    super::product_collection_refuses_source(source.as_bytes(), "step_competing_context_source_copy");
+    super::product_collection_refuses_source(
+        source.as_bytes(),
+        "step_competing_context_source_copy",
+    );
 }
 
 #[test]
@@ -128,7 +143,10 @@ fn fallback_occurrence_placements_refuse_collection_limit() {
 #[test]
 fn ambiguous_placement_source_text_refuses_retained_limit() {
     let source = duplicate_context_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_ambiguous_placement_source_text");
+    super::product_retained_refuses_source(
+        source.as_bytes(),
+        "step_ambiguous_placement_source_text",
+    );
 }
 
 #[test]
@@ -140,7 +158,10 @@ fn ambiguous_placement_loss_text_refuses_retained_limit() {
 #[test]
 fn competing_placement_source_text_refuses_retained_limit() {
     let source = competing_source();
-    super::product_retained_refuses_source(source.as_bytes(), "step_competing_placement_source_text");
+    super::product_retained_refuses_source(
+        source.as_bytes(),
+        "step_competing_placement_source_text",
+    );
 }
 
 #[test]

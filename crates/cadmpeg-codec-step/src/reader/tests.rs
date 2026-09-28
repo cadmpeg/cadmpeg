@@ -24,8 +24,8 @@ fn record_display_name_refuses_retained_byte_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 9;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits policy");
     assert!(matches!(record.display_name(Some(&ctx)),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
@@ -37,8 +37,8 @@ fn inspect_opaque_offsets_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) = crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE)
-        .expect("valid exchange with one record");
+    let (exchange, _) =
+        crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE).expect("valid exchange with one record");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -57,8 +57,8 @@ fn decode_loss_notes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE)
-        .expect("valid exchange with diagnostic");
+    let (exchange, diagnostics) =
+        crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE).expect("valid exchange with diagnostic");
     assert!(!diagnostics.is_empty());
     let arena = DecodeArena::new();
     let refused = (0..64).any(|limit| {
@@ -81,8 +81,8 @@ fn decode_diagnostic_message_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE)
-        .expect("valid exchange with diagnostic");
+    let (exchange, diagnostics) =
+        crate::parse::parse(DIAGNOSTIC_LOSS_LIMIT_SOURCE).expect("valid exchange with diagnostic");
     assert!(!diagnostics.is_empty());
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
@@ -97,7 +97,10 @@ fn decode_diagnostic_message_refuses_retained_limit() {
                     && refusal.operation == "step_decode_diagnostic_message"
         )
     });
-    assert!(refused, "no retained limit refused decode diagnostic message");
+    assert!(
+        refused,
+        "no retained limit refused decode diagnostic message"
+    );
 }
 
 #[test]
@@ -105,8 +108,8 @@ fn decode_reference_notes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE)
-        .expect("valid reference exchange");
+    let (exchange, diagnostics) =
+        crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE).expect("valid reference exchange");
     let arena = DecodeArena::new();
     let refused = (0..64).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -128,8 +131,8 @@ fn decode_reference_note_text_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, diagnostics) = crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE)
-        .expect("valid reference exchange");
+    let (exchange, diagnostics) =
+        crate::parse::parse(REFERENCE_NOTE_LIMIT_SOURCE).expect("valid reference exchange");
     let arena = DecodeArena::new();
     let refused = (0..512).any(|limit| {
         let mut policy = DecodePolicy::service();
@@ -465,7 +468,8 @@ fn decode_user_defined_entities_as_named_opaque_records() {
         loss.message
             .contains("!VENDOR_ENTITY instance(s) as named opaque STEP records")
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.findings.is_empty(), "{:#?}", validation.findings);
 }
 
@@ -520,7 +524,8 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .iter()
         .any(|link| link.as_str() == "step:data:curve#1"));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
             && finding.entity.as_deref() == Some("step:data:curve#1")
@@ -1078,7 +1083,8 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
             .contains("INTERSECTION_CURVE #57 has no decoded 3D curve")
     }));
 
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -1183,8 +1189,8 @@ fn opaque_kind_name_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 3;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
     let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
         .expect_err("four-byte kind needs more retained bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -1202,8 +1208,8 @@ fn opaque_identity_text_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
-        .expect("root fits retained policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("root fits retained policy");
     let error = super::opaque_record_id(1, &exchange.records()[&1], &ctx)
         .expect_err("the identity text needs more than the kind name");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -1311,15 +1317,28 @@ fn opaque_record_collections_refuse_caller_limits() {
                 observed.insert(refusal.operation);
             }
         }
-        if ["step_opaque_ids", "step_opaque_sources", "step_opaque_records", "step_opaque_links"]
-            .iter()
-            .all(|operation| observed.contains(operation))
+        if [
+            "step_opaque_ids",
+            "step_opaque_sources",
+            "step_opaque_records",
+            "step_opaque_links",
+        ]
+        .iter()
+        .all(|operation| observed.contains(operation))
         {
             break;
         }
     }
-    for operation in ["step_opaque_ids", "step_opaque_sources", "step_opaque_records", "step_opaque_links"] {
-        assert!(observed.contains(operation), "missing refusal at {operation}; observed {observed:?}");
+    for operation in [
+        "step_opaque_ids",
+        "step_opaque_sources",
+        "step_opaque_records",
+        "step_opaque_links",
+    ] {
+        assert!(
+            observed.contains(operation),
+            "missing refusal at {operation}; observed {observed:?}"
+        );
     }
 }
 
@@ -1361,32 +1380,41 @@ fn stage_refuses_at_collection_limit(
 
 #[test]
 fn stage_claims_refuse_collection_limit() {
-    assert!(stage_refuses_at_collection_limit("step_stage_claims", || super::StageOutcome {
-        value: (),
-        claims: HashSet::from([1]),
-        losses: Vec::new(),
-        notes: Vec::new(),
-    }));
+    assert!(stage_refuses_at_collection_limit(
+        "step_stage_claims",
+        || super::StageOutcome {
+            value: (),
+            claims: HashSet::from([1]),
+            losses: Vec::new(),
+            notes: Vec::new(),
+        }
+    ));
 }
 
 #[test]
 fn stage_losses_refuse_collection_limit() {
-    assert!(stage_refuses_at_collection_limit("step_stage_losses", || super::StageOutcome {
-        value: (),
-        claims: HashSet::new(),
-        losses: vec![StepLossCode::DecodeWarning.note("test")],
-        notes: Vec::new(),
-    }));
+    assert!(stage_refuses_at_collection_limit(
+        "step_stage_losses",
+        || super::StageOutcome {
+            value: (),
+            claims: HashSet::new(),
+            losses: vec![StepLossCode::DecodeWarning.note("test")],
+            notes: Vec::new(),
+        }
+    ));
 }
 
 #[test]
 fn stage_notes_refuse_collection_limit() {
-    assert!(stage_refuses_at_collection_limit("step_stage_notes", || super::StageOutcome {
-        value: (),
-        claims: HashSet::new(),
-        losses: Vec::new(),
-        notes: vec!["stage note".into()],
-    }));
+    assert!(stage_refuses_at_collection_limit(
+        "step_stage_notes",
+        || super::StageOutcome {
+            value: (),
+            claims: HashSet::new(),
+            losses: Vec::new(),
+            notes: vec!["stage note".into()],
+        }
+    ));
 }
 
 #[test]
@@ -1462,7 +1490,10 @@ fn dialect_match_copy_refuses_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits collection policy");
         let Ok(session) = super::StepDecodeSession::new(
-            &exchange, &diagnostics, &ctx, super::DecodeMode::Inspect,
+            &exchange,
+            &diagnostics,
+            &ctx,
+            super::DecodeMode::Inspect,
         ) else {
             return false;
         };
@@ -1491,7 +1522,10 @@ fn dialect_match_copy_refuses_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
             .expect("root fits retained policy");
         let Ok(session) = super::StepDecodeSession::new(
-            &exchange, &diagnostics, &ctx, super::DecodeMode::Inspect,
+            &exchange,
+            &diagnostics,
+            &ctx,
+            super::DecodeMode::Inspect,
         ) else {
             return false;
         };
@@ -1502,7 +1536,10 @@ fn dialect_match_copy_refuses_retained_limit() {
                     && refusal.operation == "step_dialect_match_copy_text"
         )
     });
-    assert!(refused, "dialect declaration copy must charge retained text");
+    assert!(
+        refused,
+        "dialect declaration copy must charge retained text"
+    );
 }
 
 #[test]
@@ -1516,12 +1553,8 @@ fn owned_pcurve_identity_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"pcurve", &arena, &policy)
         .expect("root fits collection policy");
-    let error = super::insert_retained_identity(
-        &mut BTreeSet::new(),
-        "step:data:pcurve#1",
-        &ctx,
-    )
-    .expect_err("owned ID needs one set item");
+    let error = super::insert_retained_identity(&mut BTreeSet::new(), "step:data:pcurve#1", &ctx)
+        .expect_err("owned ID needs one set item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "step_owned_pcurve_ids"));
@@ -1538,12 +1571,8 @@ fn owned_pcurve_identity_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(b"pcurve", &arena, &policy)
         .expect("root fits retained policy");
-    let error = super::insert_retained_identity(
-        &mut BTreeSet::new(),
-        "step:data:pcurve#1",
-        &ctx,
-    )
-    .expect_err("owned identity text exceeds three bytes");
+    let error = super::insert_retained_identity(&mut BTreeSet::new(), "step:data:pcurve#1", &ctx)
+        .expect_err("owned identity text exceeds three bytes");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "step_owned_pcurve_identity"));
@@ -1576,8 +1605,8 @@ fn unowned_pcurve_set_refuses_collection_limit() {
 
 fn point_ir(with_source: bool) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let identity = cadmpeg_ir::ids::Identity::new("step:data:point#1")
-        .expect("valid point identity");
+    let identity =
+        cadmpeg_ir::ids::Identity::new("step:data:point#1").expect("valid point identity");
     let point = cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::from(identity),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
@@ -1601,7 +1630,11 @@ fn unowned_direct_carriers_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
-        &exchange, &mut point_ir(false), &mut HashSet::new(), &mut Vec::new(), &ctx,
+        &exchange,
+        &mut point_ir(false),
+        &mut HashSet::new(),
+        &mut Vec::new(),
+        &ctx,
     )
     .expect_err("free point needs one carrier set item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -1622,7 +1655,11 @@ fn protected_roots_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
-        &exchange, &mut point_ir(true), &mut HashSet::new(), &mut Vec::new(), &ctx,
+        &exchange,
+        &mut point_ir(true),
+        &mut HashSet::new(),
+        &mut Vec::new(),
+        &ctx,
     )
     .expect_err("protected root needs an additional set item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -1643,7 +1680,11 @@ fn protected_root_copy_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
         .expect("root fits collection policy");
     let error = super::retain_unowned_carriers(
-        &exchange, &mut point_ir(true), &mut HashSet::new(), &mut Vec::new(), &ctx,
+        &exchange,
+        &mut point_ir(true),
+        &mut HashSet::new(),
+        &mut Vec::new(),
+        &ctx,
     )
     .expect_err("protected root copy needs an additional set item");
     assert!(matches!(error, CodecError::ResourceLimit(limit)

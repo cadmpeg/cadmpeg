@@ -156,9 +156,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         });
         for entry in exchange.references() {
             ctx.charge_collection_items(1, "step_decode_reference_notes")?;
-            body.notes.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("step_decode_reference_notes", 0, 1)
-            })?;
+            body.notes
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("step_decode_reference_notes", 0, 1))?;
             body.notes.push(crate::decode_alloc::charged_format(
                 ctx,
                 "step_decode_reference_note_text",
@@ -236,32 +236,35 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         self.ctx
             .charge_collection_items(u64_from_index(new_claims), "step_stage_claims")?;
         self.typed_records.try_reserve(new_claims).map_err(|_| {
-            self.ctx.refuse_codec_limit("step_stage_claims", 0, u64_from_index(new_claims))
+            self.ctx
+                .refuse_codec_limit("step_stage_claims", 0, u64_from_index(new_claims))
         })?;
         self.typed_records.extend(outcome.claims.drain());
-        self.ctx.charge_collection_items(
-            u64_from_index(outcome.losses.len()),
-            "step_stage_losses",
-        )?;
-        self.body.losses.try_reserve(outcome.losses.len()).map_err(|_| {
-            self.ctx.refuse_codec_limit(
-                "step_stage_losses",
-                0,
-                u64_from_index(outcome.losses.len()),
-            )
-        })?;
+        self.ctx
+            .charge_collection_items(u64_from_index(outcome.losses.len()), "step_stage_losses")?;
+        self.body
+            .losses
+            .try_reserve(outcome.losses.len())
+            .map_err(|_| {
+                self.ctx.refuse_codec_limit(
+                    "step_stage_losses",
+                    0,
+                    u64_from_index(outcome.losses.len()),
+                )
+            })?;
         self.body.losses.append(&mut outcome.losses);
-        self.ctx.charge_collection_items(
-            u64_from_index(outcome.notes.len()),
-            "step_stage_notes",
-        )?;
-        self.body.notes.try_reserve(outcome.notes.len()).map_err(|_| {
-            self.ctx.refuse_codec_limit(
-                "step_stage_notes",
-                0,
-                u64_from_index(outcome.notes.len()),
-            )
-        })?;
+        self.ctx
+            .charge_collection_items(u64_from_index(outcome.notes.len()), "step_stage_notes")?;
+        self.body
+            .notes
+            .try_reserve(outcome.notes.len())
+            .map_err(|_| {
+                self.ctx.refuse_codec_limit(
+                    "step_stage_notes",
+                    0,
+                    u64_from_index(outcome.notes.len()),
+                )
+            })?;
         self.body.notes.append(&mut outcome.notes);
         Ok(())
     }
@@ -277,12 +280,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             let bytes = u64_from_index(name.as_str().len())
                 .checked_add(u64_from_index(value.len()))
                 .ok_or_else(|| {
-                    self.ctx.refuse_codec_limit("step_dialect_match_copy_text", 0, u64::MAX)
+                    self.ctx
+                        .refuse_codec_limit("step_dialect_match_copy_text", 0, u64::MAX)
                 })?;
-            self.ctx.charge_retained(
-                bytes,
-                "step_dialect_match_copy_text",
-            )?;
+            self.ctx
+                .charge_retained(bytes, "step_dialect_match_copy_text")?;
         }
         if let Some(instance) = self.matched.instance() {
             self.ctx.charge_retained(
@@ -399,7 +401,8 @@ fn decode_exchange_mode(
     )?;
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx)?;
-    let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx)?;
+    let owned_carriers =
+        geometry::topology_owned_carriers(&session.ir, &carrier_index, session.ctx)?;
     session.charge_stage("step_topology_association")?;
     geometry::associate_topology_carriers(
         exchange,
@@ -480,7 +483,8 @@ fn decode_exchange_mode(
         Some(session.ctx),
     )?;
     session.charge_stage("step_validation_decode")?;
-    let mut validation = validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
+    let mut validation =
+        validation::decode(exchange, &geometry.value, &mut session.ir, session.ctx)?;
     if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()
@@ -523,19 +527,25 @@ fn decode_exchange_mode(
         u64_from_index(post_decode_losses.len()),
         "step_carrier_retention_losses",
     )?;
-    session.body.losses.try_reserve(post_decode_losses.len()).map_err(|_| {
-        session.ctx.refuse_codec_limit(
-            "step_carrier_retention_losses",
-            0,
-            u64_from_index(post_decode_losses.len()),
-        )
-    })?;
+    session
+        .body
+        .losses
+        .try_reserve(post_decode_losses.len())
+        .map_err(|_| {
+            session.ctx.refuse_codec_limit(
+                "step_carrier_retention_losses",
+                0,
+                u64_from_index(post_decode_losses.len()),
+            )
+        })?;
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
-        DecodeMode::Inspect => inspect_opaque_offsets(exchange, &session.typed_records, session.ctx)?,
+        DecodeMode::Inspect => {
+            inspect_opaque_offsets(exchange, &session.typed_records, session.ctx)?
+        }
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
@@ -551,17 +561,18 @@ fn decode_exchange_mode(
             session.ctx.charge_collection_items(1, "step_opaque_ids")?;
             opaque_ids.insert(id, unknown_id);
         }
-        session.ctx.charge_collection_items(
-            u64_from_index(opaque_ids.len()),
-            "step_opaque_sources",
-        )?;
-        opaque_sources.try_reserve_exact(opaque_ids.len()).map_err(|_| {
-            session.ctx.refuse_codec_limit(
-                "step_opaque_sources",
-                0,
-                u64_from_index(opaque_ids.len()),
-            )
-        })?;
+        session
+            .ctx
+            .charge_collection_items(u64_from_index(opaque_ids.len()), "step_opaque_sources")?;
+        opaque_sources
+            .try_reserve_exact(opaque_ids.len())
+            .map_err(|_| {
+                session.ctx.refuse_codec_limit(
+                    "step_opaque_sources",
+                    0,
+                    u64_from_index(opaque_ids.len()),
+                )
+            })?;
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
@@ -592,9 +603,14 @@ fn decode_exchange_mode(
             });
         }
         let mut target_ids = BTreeSet::new();
-        for id in opaque_sources.iter().flat_map(|source| source.links.iter().copied()) {
+        for id in opaque_sources
+            .iter()
+            .flat_map(|source| source.links.iter().copied())
+        {
             if !target_ids.contains(&id) {
-                session.ctx.charge_collection_items(1, "step_opaque_target_ids_index")?;
+                session
+                    .ctx
+                    .charge_collection_items(1, "step_opaque_target_ids_index")?;
                 target_ids.insert(id);
             }
         }
@@ -622,13 +638,22 @@ fn decode_exchange_mode(
     };
     if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = exchange.release_source_graph();
-        let opaque_count = opaque_sources.len().checked_add(signature_spans.len()).ok_or_else(|| {
-            session.ctx.refuse_codec_limit("step_opaque_records", 0, u64::MAX)
-        })?;
-        session.ctx.charge_collection_items(u64_from_index(opaque_count), "step_opaque_records")?;
+        let opaque_count = opaque_sources
+            .len()
+            .checked_add(signature_spans.len())
+            .ok_or_else(|| {
+                session
+                    .ctx
+                    .refuse_codec_limit("step_opaque_records", 0, u64::MAX)
+            })?;
+        session
+            .ctx
+            .charge_collection_items(u64_from_index(opaque_count), "step_opaque_records")?;
         let mut opaque = Vec::new();
         opaque.try_reserve_exact(opaque_count).map_err(|_| {
-            session.ctx.refuse_codec_limit("step_opaque_records", 0, u64_from_index(opaque_count))
+            session
+                .ctx
+                .refuse_codec_limit("step_opaque_records", 0, u64_from_index(opaque_count))
         })?;
         for source in opaque_sources {
             session
@@ -660,7 +685,9 @@ fn decode_exchange_mode(
                 .ctx
                 .copy_retained(&input[signature.clone()], "step_signature_record")?;
             if !counts.contains_key("SIGNATURE") {
-                session.ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
+                session
+                    .ctx
+                    .charge_collection_items(1, "step_opaque_kind_counts")?;
             }
             *counts.entry("SIGNATURE".into()).or_default() += 1;
             opaque.push(UnknownRecord::retained(
@@ -702,9 +729,13 @@ fn decode_exchange_mode(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     );
-    session.ctx.charge_collection_items(1, "step_byte_accounting_note")?;
+    session
+        .ctx
+        .charge_collection_items(1, "step_byte_accounting_note")?;
     session.body.notes.try_reserve(1).map_err(|_| {
-        session.ctx.refuse_codec_limit("step_byte_accounting_note", 0, 1)
+        session
+            .ctx
+            .refuse_codec_limit("step_byte_accounting_note", 0, 1)
     })?;
     session.body.notes.push(accounting_note);
     for (name, count) in counts {
@@ -868,7 +899,10 @@ fn retain_unowned_carriers(
     }
     let mut unowned_pcurves = BTreeSet::new();
     for (&id, record) in exchange.records() {
-        if record.partials.iter().any(|partial| partial.name == "PCURVE")
+        if record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "PCURVE")
             && !owned.contains(ids::data(kind!("pcurve"), id).as_str())
         {
             ctx.charge_collection_items(1, "step_unowned_pcurves")?;
@@ -1118,7 +1152,11 @@ fn record_closure(
     ctx.charge_collection_items(u64_from_index(roots.len()), "step_record_closure_pending")?;
     let mut pending = Vec::new();
     pending.try_reserve_exact(roots.len()).map_err(|_| {
-        ctx.refuse_codec_limit("step_record_closure_pending", 0, u64_from_index(roots.len()))
+        ctx.refuse_codec_limit(
+            "step_record_closure_pending",
+            0,
+            u64_from_index(roots.len()),
+        )
     })?;
     pending.extend(roots.iter().copied());
     while let Some(id) = pending.pop() {
@@ -1138,16 +1176,26 @@ fn record_closure(
         {
             collect_references(value, &mut references, ctx)?;
         }
-        ctx.charge_collection_items(u64_from_index(references.len()), "step_record_closure_pending")?;
+        ctx.charge_collection_items(
+            u64_from_index(references.len()),
+            "step_record_closure_pending",
+        )?;
         pending.try_reserve(references.len()).map_err(|_| {
-            ctx.refuse_codec_limit("step_record_closure_pending", 0, u64_from_index(references.len()))
+            ctx.refuse_codec_limit(
+                "step_record_closure_pending",
+                0,
+                u64_from_index(references.len()),
+            )
         })?;
         pending.extend(references);
     }
     Ok(closure)
 }
 
-fn referenced_record_ids(exchange: &Exchange, ctx: &DecodeContext<'_>) -> Result<BTreeSet<u64>, CodecError> {
+fn referenced_record_ids(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
     let mut references = BTreeSet::new();
     for record in exchange.records().values() {
         for parameter in record
@@ -1252,13 +1300,13 @@ fn record_targets(
         if !include_record(record_id) {
             continue;
         }
-        if !targets.contains_key(&record_id) {
+        if let std::collections::btree_map::Entry::Vacant(entry) = targets.entry(record_id) {
             ctx.charge_collection_items(1, "step_opaque_target_records")?;
-            targets.insert(record_id, BTreeSet::new());
+            entry.insert(BTreeSet::new());
         }
-        let values = targets.get_mut(&record_id).ok_or_else(|| {
-            ctx.refuse_codec_limit("step_opaque_target_records", 0, 1)
-        })?;
+        let values = targets
+            .get_mut(&record_id)
+            .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
         if !values.contains(identity) {
             ctx.charge_collection_items(1, "step_opaque_target_ids")?;
             values.insert(crate::decode_alloc::charged_format(
@@ -1482,7 +1530,9 @@ fn decode_text_charged(
             }
             losses.try_reserve(1).map_err(|_| match ctx {
                 Some(ctx) => ctx.refuse_codec_limit("step_invalid_string_losses", 0, 1),
-                None => cadmpeg_core::decode::refuse_local_limit("step_invalid_string_losses", 0, 1),
+                None => {
+                    cadmpeg_core::decode::refuse_local_limit("step_invalid_string_losses", 0, 1)
+                }
             })?;
             losses.push(code.note(message));
             Ok(None)
@@ -1531,12 +1581,9 @@ impl RecordExt for RawRecord {
     fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
         let names = self.partials.iter().map(|partial| partial.name.as_str());
         match ctx {
-            Some(ctx) => crate::decode_alloc::charged_join(
-                ctx,
-                "step_record_display_name",
-                names,
-                "+",
-            ),
+            Some(ctx) => {
+                crate::decode_alloc::charged_join(ctx, "step_record_display_name", names, "+")
+            }
             None => Ok(names.collect::<Vec<_>>().join("+")),
         }
     }
