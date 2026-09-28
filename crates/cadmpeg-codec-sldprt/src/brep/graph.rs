@@ -1676,15 +1676,24 @@ fn decode_graph(
     let mut faces = Vec::new();
     let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
     for bridge in t.bridges().values() {
+        ctx.charge_work(1, "walk Parasolid face bridges")?;
         let face = walk_face(ctx, bridge, t)?;
         if let Some(owner) = bridge.owner {
-            owned_faces.entry(owner).or_default().push((bridge, face));
+            reserve_graph_map_key(ctx, &mut owned_faces, &owner, "index Parasolid face owners")?;
+            let uses = owned_faces.entry(owner).or_default();
+            ctx.reserve_collection_vec(uses, 1, "collect Parasolid face uses")?;
+            uses.push((bridge, face));
         } else {
+            ctx.reserve_collection_vec(&mut faces, 1, "collect Parasolid faces")?;
             faces.push(face);
         }
     }
     let mut ambiguous_face_owners = 0;
     for mut uses in owned_faces.into_values() {
+        let work = u64::try_from(uses.len()).map_err(|_| {
+            ctx.refuse_codec_limit("resolve Parasolid face owners", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_work(work, "resolve Parasolid face owners")?;
         uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
         let Some((first_bridge, first_face)) = uses.first() else {
             continue;
@@ -1697,7 +1706,10 @@ fn decode_graph(
                 && face.loops == first_face.loops
         });
         if equivalent {
-            faces.push(first_face.clone());
+            if let Some((_, first_face)) = uses.into_iter().next() {
+                ctx.reserve_collection_vec(&mut faces, 1, "collect Parasolid faces")?;
+                faces.push(first_face);
+            }
         } else {
             ambiguous_face_owners += 1;
         }
