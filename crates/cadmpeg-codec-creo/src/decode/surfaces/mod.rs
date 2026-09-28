@@ -48,14 +48,17 @@ fn apex_cone(
     )
 }
 
-/// Resolve the IR surface identity for a native topology surface identifier.
+/// Select the IR surface namespace and its canonical prefix for a native ID.
 ///
 /// Visible geometry, non-visible geometry, and active-datum rows share the
 /// compact native identifier space used by topology links. Keep their source
 /// namespaces distinct when only one namespace owns the identifier; visible
 /// geometry remains the default for the existing and rowless feature-carrier
 /// paths.
-pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> SurfaceId {
+fn native_surface_namespace(
+    scan: &ContainerScan,
+    surface_id: u32,
+) -> (cadmpeg_ir::ids::IdentityNamespace, &'static str) {
     let visible_present = scan.surfaces.rows.iter().any(|row| row.id == surface_id);
     let nonvisible_present = scan
         .surfaces
@@ -68,14 +71,19 @@ pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> Surfac
         .iter()
         .any(|cylinder| cylinder.id == surface_id);
     if visible_present {
-        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
+        (crate::identity::VISIBGEOM_SURFACE, "creo:visibgeom:surface#")
     } else if nonvisible_present {
-        SurfaceId::compose(&crate::identity::NOVISGEOM_SURFACE, surface_id)
+        (crate::identity::NOVISGEOM_SURFACE, "creo:novisgeom:surface#")
     } else if active_datum_present {
-        SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, surface_id)
+        (crate::identity::ACTDATUM_SURFACE, "creo:actdatums:surface#")
     } else {
-        SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id)
+        (crate::identity::VISIBGEOM_SURFACE, "creo:visibgeom:surface#")
     }
+}
+
+/// Construct the selected surface identity for a native topology identifier.
+pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> SurfaceId {
+    SurfaceId::compose(&native_surface_namespace(scan, surface_id).0, surface_id)
 }
 
 /// Return a native surface row only when its compact identifier is unique
@@ -96,7 +104,7 @@ pub(super) fn unique_native_surface_row<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{native_surface_id, transfer_part_product};
+    use super::{native_surface_id, native_surface_namespace, transfer_part_product};
     use crate::container::scan_bytes_ok;
     use crate::surface::{SurfaceKind, SurfaceRow};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -200,6 +208,17 @@ mod tests {
             native_surface_id(&scan, 17).as_str(),
             "creo:novisgeom:surface#17"
         );
+        let prefix = native_surface_namespace(&scan, 17).1;
+        assert!(crate::identity::matches_numbered_identity(
+            native_surface_id(&scan, 17).as_str(), prefix, 17,
+        ));
+        let visible = cadmpeg_ir::ids::SurfaceId::compose(
+            &crate::identity::VISIBGEOM_SURFACE,
+            17,
+        );
+        assert!(!crate::identity::matches_numbered_identity(
+            visible.as_str(), prefix, 17,
+        ));
     }
 }
 
