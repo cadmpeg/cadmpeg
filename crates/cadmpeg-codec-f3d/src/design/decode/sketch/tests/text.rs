@@ -129,6 +129,74 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
 }
 
 #[test]
+fn sketch_text_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use crate::metastream::{MetaStream, RecordIndexEntry};
+    use crate::records::entity_header::{BaseTypeGuid, SegmentType};
+    use crate::records::identity::{Located, ReferenceRun};
+
+    let bytes = indexed_sketch_text_record(1);
+    let types = (0..32)
+        .map(|ordinal| SegmentType {
+            id: String::new(),
+            byte_offset: 0,
+            type_guid: (if ordinal == 31 {
+                "E0618268-3A06-450E-9E94-7CF4C2E66802"
+            } else {
+                "00000000-0000-0000-0000-000000000000"
+            })
+            .to_owned()
+            .try_into()
+            .unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 3,
+            version_offset: 0,
+            module: "Geometry".into(),
+            entities: ReferenceRun::located(if ordinal == 31 {
+                vec![Located { value: 304, offset: 0 }]
+            } else {
+                Vec::new()
+            }),
+        })
+        .collect();
+    let meta = MetaStream {
+        types,
+        records: vec![RecordIndexEntry {
+            entity_id: 304,
+            bulk_offset: 0,
+        }],
+        secondary_records: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    assert_eq!(
+        crate::design::decode::sketch::decode_sketch_texts_from_stream(&ctx, &bytes, &meta, "Design/BulkStream.dat")
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_texts_from_stream(
+        &ctx,
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d sketch text records"
+    ));
+}
+
+#[test]
 fn sketch_records_use_the_primary_index_live_copy() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::{entity_header::SegmentType, sketch_geometry::SketchCurveGeometry};
