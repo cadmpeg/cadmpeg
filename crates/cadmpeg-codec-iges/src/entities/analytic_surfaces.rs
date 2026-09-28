@@ -21,6 +21,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 fn admit_analytic<T>(
     result: Result<T, &str>,
@@ -37,13 +38,58 @@ fn admit_analytic<T>(
     }
 }
 
-fn point(ir: &CadIr, sequence: u32, ctx: Option<&DecodeContext<'_>>) -> Result<Option<Point3>, CodecError> {
-    let id = crate::ids::point_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
-    Ok(ir.model
+fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
+    let mut storage = [0_u8; 64];
+    let id = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage)?;
+    ir.model
         .points
         .iter()
-        .find(|point| point.id == id)
-        .map(|point| point.position().get()))
+        .find(|point| point.id.as_str() == id)
+        .map(|point| point.position().get())
+}
+
+#[derive(Debug)]
+enum DirectionError {
+    MissingEntry(u32),
+    WrongTypeForm { sequence: u32, entity_type: i64, form: i64 },
+    NotDependent(u32),
+    Transformed(u32),
+    MissingParameters(u32),
+    NonNumeric(u32),
+    ZeroOrNonFinite(u32),
+}
+
+impl fmt::Display for DirectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingEntry(sequence) => write!(formatter, "points to missing Directory entry D{sequence}"),
+            Self::WrongTypeForm { sequence, entity_type, form } => write!(formatter, "points to type {entity_type} form {form} at D{sequence}, not type 123 form 0"),
+            Self::NotDependent(sequence) => write!(formatter, "points to D{sequence}, which is not physically dependent"),
+            Self::Transformed(sequence) => write!(formatter, "points to D{sequence}, which has a prohibited transformation"),
+            Self::MissingParameters(sequence) => write!(formatter, "points to D{sequence}, whose Parameter Data record is missing"),
+            Self::NonNumeric(sequence) => write!(formatter, "points to D{sequence}, whose direction components are not numeric"),
+            Self::ZeroOrNonFinite(sequence) => write!(formatter, "points to D{sequence}, whose direction is zero or non-finite"),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum AnalyticDirectionError {
+    MissingPointer(&'static str),
+    Pointed { role: &'static str, reason: DirectionError },
+    Collapse(&'static str),
+    SphereAxisCollapse,
+}
+
+impl fmt::Display for AnalyticDirectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingPointer(role) => write!(formatter, "{role} pointer is missing, even, or non-integer"),
+            Self::Pointed { role, reason } => write!(formatter, "{role} {reason}"),
+            Self::Collapse(role) => write!(formatter, "{role} collapses under the surface transformation"),
+            Self::SphereAxisCollapse => formatter.write_str("sphere axis collapses under its transformation"),
+        }
+    }
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -51,78 +97,69 @@ fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<UnitVector3, String> {
+) -> Result<UnitVector3, DirectionError> {
     let entry = entries
         .get(&sequence)
         .copied()
-        .ok_or_else(|| format!("points to missing Directory entry D{sequence}"))?;
+        .ok_or(DirectionError::MissingEntry(sequence))?;
     if entry.entity_type != 123 || entry.form != 0 {
-        return Err(format!(
-            "points to type {} form {} at D{sequence}, not type 123 form 0",
-            entry.entity_type, entry.form
-        ));
+        return Err(DirectionError::WrongTypeForm { sequence, entity_type: entry.entity_type, form: entry.form });
     }
     if !entry.status.is_physically_dependent() {
-        return Err(format!(
-            "points to D{sequence}, which is not physically dependent"
-        ));
+        return Err(DirectionError::NotDependent(sequence));
     }
     if entry.transform != 0 {
-        return Err(format!(
-            "points to D{sequence}, which has a prohibited transformation"
-        ));
+        return Err(DirectionError::Transformed(sequence));
     }
     let record = records
         .get(&sequence)
         .copied()
-        .ok_or_else(|| format!("points to D{sequence}, whose Parameter Data record is missing"))?;
+        .ok_or(DirectionError::MissingParameters(sequence))?;
     let components = [record.number(1), record.number(2), record.number(3)];
     let [Some(x), Some(y), Some(z)] = components else {
-        return Err(format!(
-            "points to D{sequence}, whose direction components are not numeric"
-        ));
+        return Err(DirectionError::NonNumeric(sequence));
     };
     FiniteVector3::new(Vector3::new(x, y, z))
         .and_then(UnitVector3::normalized_nonzero)
-        .ok_or_else(|| format!("points to D{sequence}, whose direction is zero or non-finite"))
+        .ok_or(DirectionError::ZeroOrNonFinite(sequence))
 }
 
 fn required_direction(
     record: &ParameterRecord,
     index: usize,
-    role: &str,
+    role: &'static str,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<UnitVector3, String> {
+) -> Result<UnitVector3, AnalyticDirectionError> {
     let sequence = pointer(record, index)
-        .ok_or_else(|| format!("{role} pointer is missing, even, or non-integer"))?;
-    direction(sequence, entries, records).map_err(|message| format!("{role} {message}"))
+        .ok_or(AnalyticDirectionError::MissingPointer(role))?;
+    direction(sequence, entries, records).map_err(|reason| AnalyticDirectionError::Pointed { role, reason })
 }
 
 fn transformed_direction(
     record: &ParameterRecord,
     index: usize,
-    role: &str,
+    role: &'static str,
     transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<UnitVector3, String> {
+) -> Result<UnitVector3, AnalyticDirectionError> {
     let direction = required_direction(record, index, role, entries, records)?;
     transform
         .apply_vector(*direction.as_raw())
         .and_then(UnitVector3::normalized_nonzero)
-        .ok_or_else(|| format!("{role} collapses under the surface transformation"))
+        .ok_or(AnalyticDirectionError::Collapse(role))
 }
 
 fn form_reference_direction(
     form: i64,
     record: &ParameterRecord,
     index: usize,
-    role: &str,
+    role: &'static str,
     transform: Transform,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Result<Option<UnitVector3>, String> {
+) -> Result<Option<UnitVector3>, AnalyticDirectionError> {
     if form == 0 {
         Ok(None)
     } else {
@@ -227,7 +264,7 @@ pub(super) fn project(
             }
         };
         let location_index = pointer(record, 1);
-        let Some(location) = location_index.map(|sequence| point(ir, sequence, ctx)).transpose()?.flatten() else {
+        let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
             push_optional_entity_loss(ctx, &mut losses, entry, format_args!("analytic surface location point is missing"))?;
             continue;
         };
@@ -431,7 +468,7 @@ pub(super) fn project(
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))
                         .and_then(UnitVector3::normalized_nonzero)
-                        .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
+                        .ok_or(AnalyticDirectionError::SphereAxisCollapse)
                 };
                 let axis = match axis {
                     Ok(axis) => axis,
