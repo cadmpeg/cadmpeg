@@ -2490,26 +2490,29 @@ pub(crate) fn unique_outline_plane(
 
 /// Derive axis-aligned plane equations from complete, non-degenerate outline
 /// corner pairs. Ambiguous pairs with zero or multiple held axes are withheld.
-fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
+fn outline_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    envelopes: &[PlaneEnvelopeRecord],
+) -> Result<Vec<OutlinePlane>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     for record in envelopes {
         let corners = match &record.envelope {
             PlaneEnvelope::Standard { corners_3d, .. }
             | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
         };
-        let held = (0..3)
-            .filter(|axis| record.corner_coordinate_equal[*axis] == Some(true))
-            .collect::<Vec<_>>();
-        if held.len() != 1
+        let mut held = (0..3).filter(|axis| record.corner_coordinate_equal[*axis] == Some(true));
+        let Some(axis) = held.next() else {
+            continue;
+        };
+        if held.next().is_some()
             || record
                 .corner_coordinate_equal
                 .iter()
                 .enumerate()
-                .any(|(axis, equal)| axis != held[0] && *equal != Some(false))
+                .any(|(candidate, equal)| candidate != axis && *equal != Some(false))
         {
             continue;
         }
-        let axis = held[0];
         let Some(coordinate) = corners[0][axis] else {
             continue;
         };
@@ -2525,6 +2528,7 @@ fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
         } else {
             UnitVector3::X_AXIS
         };
+        ctx.try_reserve_items(&mut result, 1, "creo held-coordinate outline planes")?;
         result.push(OutlinePlane {
             surface_id: record.surface_id,
             origin,
@@ -2534,7 +2538,7 @@ fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
         });
     }
     result.sort_by_key(|plane| plane.offset);
-    result
+    Ok(result)
 }
 
 /// Derive axis-aligned plane equations from complete positional corner frames
@@ -2801,29 +2805,36 @@ pub(crate) fn frame_bound_outline_planes(
 /// for carrier constructions when available.
 #[must_use]
 pub(crate) fn placed_outline_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     envelopes: &[PlaneEnvelopeRecord],
     frames: &[PlaneLocalSystem],
-) -> Vec<OutlinePlane> {
+) -> Result<Vec<OutlinePlane>, cadmpeg_core::CodecError> {
     let frame_bound = frame_bound_outline_planes(envelopes, frames);
-    let frame_bound_ids = frame_bound
-        .iter()
-        .map(|plane| plane.surface_id)
-        .collect::<BTreeSet<_>>();
-    let matrix_frame_ids = frames
-        .iter()
-        .filter(|frame| uses_matrix_column_frame(frame))
-        .map(|frame| frame.surface_id)
-        .collect::<BTreeSet<_>>();
-    let mut result = outline_planes(envelopes)
-        .into_iter()
-        .filter(|plane| {
+    let mut frame_bound_ids = BTreeSet::new();
+    for plane in &frame_bound {
+        if !frame_bound_ids.contains(&plane.surface_id) {
+            ctx.charge_collection_items(1, "creo frame-bound outline ID nodes")?;
+            frame_bound_ids.insert(plane.surface_id);
+        }
+    }
+    let mut matrix_frame_ids = BTreeSet::new();
+    for frame in frames.iter().filter(|frame| uses_matrix_column_frame(frame)) {
+        if !matrix_frame_ids.contains(&frame.surface_id) {
+            ctx.charge_collection_items(1, "creo matrix frame ID nodes")?;
+            matrix_frame_ids.insert(frame.surface_id);
+        }
+    }
+    let mut result = outline_planes(ctx, envelopes)?;
+    result.retain(|plane| {
             !frame_bound_ids.contains(&plane.surface_id)
                 && !matrix_frame_ids.contains(&plane.surface_id)
-        })
-        .collect::<Vec<_>>();
-    result.extend(frame_bound);
+    });
+    for plane in frame_bound {
+        ctx.try_reserve_items(&mut result, 1, "creo placed outline planes")?;
+        result.push(plane);
+    }
     result.sort_by_key(|plane| plane.offset);
-    result
+    Ok(result)
 }
 
 const BOUNDARY_TYPES: &[BoundaryType] = &[

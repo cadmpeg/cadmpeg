@@ -17,7 +17,6 @@ use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
-use crate::surface::outline_planes;
 use crate::surface::plane_envelopes_for_rows;
 use crate::surface::positional_body_start;
 use crate::surface::prototype_count;
@@ -339,7 +338,9 @@ fn cross_section_plane_envelope_retains_its_namespace_geometry() {
 
     let envelopes = cross_section_plane_envelopes(payload);
     assert_eq!(envelopes.len(), 1);
-    let planes = outline_planes(&envelopes);
+    let planes = super::with_decode_ctx(payload, |ctx| {
+        crate::surface::outline_planes(ctx, &envelopes)
+    });
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].surface_id, 7);
     assert_eq!(planes[0].origin, [0.0, 0.0, 0.0]);
