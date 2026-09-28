@@ -382,6 +382,23 @@ fn charged_map<K: Ord, V>(
     Ok(map)
 }
 
+fn charged_vec<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut result = Vec::new();
+    for value in values {
+        ctx.charge_work(1, operation)?;
+        ctx.charge_collection_items(1, operation)?;
+        result.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        result.push(value);
+    }
+    Ok(result)
+}
+
 fn charged_set<'a, T: Eq + Hash + 'a>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = &'a T>,
@@ -851,10 +868,9 @@ fn append_design_losses(
         .iter()
         .any(|configuration| !configuration.feature_states.is_empty())
     {
-        ir.model
-            .configurations
-            .iter()
-            .flat_map(|configuration| {
+        charged_vec(
+            ctx,
+            ir.model.configurations.iter().flat_map(|configuration| {
                 ir.model.features.iter().filter_map(move |feature| {
                     configuration.feature_states.get(&feature.id).map(|state| {
                         EvaluatedFeatureState {
@@ -865,19 +881,20 @@ fn append_design_losses(
                         }
                     })
                 })
-            })
-            .collect::<Vec<_>>()
+            }),
+            "collect SLDPRT configured feature states",
+        )?
     } else {
-        ir.model
-            .features
-            .iter()
-            .map(|feature| EvaluatedFeatureState {
+        charged_vec(
+            ctx,
+            ir.model.features.iter().map(|feature| EvaluatedFeatureState {
                 feature,
                 dependencies: &feature.dependencies,
                 outputs: feature.evaluation.outputs(),
                 definition: feature.evaluation.definition(),
-            })
-            .collect::<Vec<_>>()
+            }),
+            "collect SLDPRT feature states",
+        )?
     };
     let incoherent_feature_edges = evaluated_feature_states
         .iter()
