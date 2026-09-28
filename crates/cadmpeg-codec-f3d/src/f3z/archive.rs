@@ -165,7 +165,7 @@ pub(super) fn classify_members<'a>(
             ClassifiedMember::Scanned(Box::new(member_scan)),
         );
     }
-    losses.extend(crate::dialect::dialect_losses(&layers));
+    losses.extend(crate::dialect::dialect_losses(ctx, &layers)?);
     Ok(ArchiveSession {
         members,
         layers,
