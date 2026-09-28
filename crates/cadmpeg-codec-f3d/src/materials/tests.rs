@@ -384,19 +384,21 @@ fn definition_catalog_uses_asset_and_schema_identity() {
         }
     }
 
-    let mut definitions = std::collections::HashMap::new();
-    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
-    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
-    assert_eq!(definitions.len(), 1);
+    crate::test_support::with_decode_context(|ctx| {
+        let mut definitions = std::collections::HashMap::new();
+        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Steel")).unwrap();
+        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Steel")).unwrap();
+        assert_eq!(definitions.len(), 1);
 
-    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
-    let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
-    assert_eq!(definitions[&key].category, None);
+        merge_definition_catalog_record(ctx, &mut definitions, definition("Prism-256", "Metal/Stainless")).unwrap();
+        let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
+        assert_eq!(definitions[&key].category, None);
 
-    let mut second_schema = definition("Prism-256", "Metal/Steel");
-    second_schema.schema = "GenericSchema".into();
-    merge_definition_catalog_record(&mut definitions, second_schema);
-    assert_eq!(definitions.len(), 2);
+        let mut second_schema = definition("Prism-256", "Metal/Steel");
+        second_schema.schema = "GenericSchema".into();
+        merge_definition_catalog_record(ctx, &mut definitions, second_schema).unwrap();
+        assert_eq!(definitions.len(), 2);
+    });
 }
 
 #[test]
