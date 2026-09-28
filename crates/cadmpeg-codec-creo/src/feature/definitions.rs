@@ -6380,18 +6380,17 @@ fn admitted_interpolation_point_count(declared: u32, remaining: usize) -> Option
 }
 
 fn saved_spline_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
     const POINTS_LABEL: &[u8] = b"\xe0\x02i_pnts\0";
     const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
     const TANGENTS_LABEL: &[u8] = b"\xe0\x02end_tangts\0";
     const TANGENTS: &[u8] = b"\xe0\x02end_tangts\0\xf9\x02\x03";
-    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
-    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
     let mut entities = Vec::new();
     let mut search = start;
     while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
@@ -6402,7 +6401,7 @@ fn saved_spline_entities(
         let mut declared_point_count = None;
         let mut point_count = None;
         let mut points = Vec::new();
-        let mut interpolation_points_body = Vec::new();
+        let mut interpolation_body_range = None;
         let mut fields_start = body_start;
         if let Some(points_label) = points_label {
             let value_start = points_label + POINTS_LABEL.len();
@@ -6411,12 +6410,12 @@ fn saved_spline_entities(
             let (coordinate_count, mut cursor) = psb::compact_int(payload, dimensions_end);
             if dimensions_end > extents_start && cursor > dimensions_end && coordinate_count == 3 {
                 declared_point_count = Some(declared);
-                interpolation_points_body = payload[value_start..cursor].to_vec();
+                interpolation_body_range = Some((value_start, cursor));
                 point_count = payload.get(cursor..body_end).and_then(|remaining| {
                     admitted_interpolation_point_count(declared, remaining.len())
                 });
                 if let Some(point_count) = point_count {
-                    points.reserve(point_count);
+                    ctx.try_reserve_items(&mut points, point_count, "creo saved spline points")?;
                     for _ in 0..point_count {
                         let mut point = [0.0; 3];
                         let mut next_cursor = cursor;
@@ -6439,10 +6438,17 @@ fn saved_spline_entities(
                         cursor = next_cursor;
                     }
                     fields_start = cursor;
-                    interpolation_points_body = payload[value_start..cursor].to_vec();
+                    interpolation_body_range = Some((value_start, cursor));
                 }
             }
         }
+        let interpolation_points_body = match interpolation_body_range {
+            Some((body_start, body_end)) => ctx.copy_retained(
+                &payload[body_start..body_end],
+                "creo saved spline point body",
+            )?,
+            None => Vec::new(),
+        };
         let endpoint_tangents =
             find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
                 let value_start = label + TANGENTS_LABEL.len();
@@ -6456,30 +6462,31 @@ fn saved_spline_entities(
                         at = next;
                     }
                 }
-                Some(DecodedField {
-                    value: tangents,
-                    body: payload[value_start..at].to_vec(),
-                })
+                Some((tangents, value_start, at))
             });
-        let parameters = point_count.and_then(|point_count| {
-            find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
-                let value_start = label + PARAMETERS_LABEL.len();
-                let count_at = label + PARAMETERS.len();
-                let (count, mut at) = psb::compact_int(payload, count_at);
-                (usize::try_from(count).ok() == Some(point_count) && at > count_at).then_some(())?;
-                let mut values = Vec::with_capacity(point_count);
-                for _ in 0..count {
-                    let (value, next) = saved_spline_parameter(payload, at, cache)?;
-                    (next <= body_end).then_some(())?;
-                    values.push(value);
-                    at = next;
-                }
-                Some(DecodedField {
-                    value: values,
-                    body: payload[value_start..at].to_vec(),
+        let endpoint_tangents = endpoint_tangents
+            .map(|(value, body_start, body_end)| -> Result<_, CodecError> {
+                Ok(DecodedField {
+                    value,
+                    body: ctx.copy_retained(
+                        &payload[body_start..body_end],
+                        "creo saved spline tangent body",
+                    )?,
                 })
             })
-        });
+            .transpose()?;
+        let parameters = match point_count {
+            Some(point_count) => saved_spline_parameters(
+                ctx,
+                payload,
+                fields_start,
+                body_end,
+                point_count,
+                cache,
+            )?,
+            None => None,
+        };
+        ctx.try_reserve_items(&mut entities, 1, "creo saved spline entities")?;
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
@@ -6491,7 +6498,47 @@ fn saved_spline_entities(
         }));
         search = body_start;
     }
-    entities
+    Ok(entities)
+}
+
+fn saved_spline_parameters(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    point_count: usize,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<DecodedField<Vec<f64>>>, CodecError> {
+    const PARAMETERS_LABEL: &[u8] = b"\xe0\x02params\0";
+    const PARAMETERS: &[u8] = b"\xe0\x02params\0\xf8";
+    let Some(label) = find_bytes(payload, PARAMETERS, start, end) else {
+        return Ok(None);
+    };
+    let value_start = label + PARAMETERS_LABEL.len();
+    let count_at = label + PARAMETERS.len();
+    let (count, mut cursor) = psb::compact_int(payload, count_at);
+    if usize::try_from(count).ok() != Some(point_count) || cursor <= count_at {
+        return Ok(None);
+    }
+    let mut values = Vec::new();
+    ctx.try_reserve_items(&mut values, point_count, "creo saved spline parameters")?;
+    for _ in 0..count {
+        let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
+            return Ok(None);
+        };
+        if next > end {
+            return Ok(None);
+        }
+        values.push(value);
+        cursor = next;
+    }
+    Ok(Some(DecodedField {
+        value: values,
+        body: ctx.copy_retained(
+            &payload[value_start..cursor],
+            "creo saved spline parameter body",
+        )?,
+    }))
 }
 
 fn saved_spline_parameter(
@@ -6534,34 +6581,45 @@ pub(crate) fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
 }
 
 fn saved_section(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
     order_table: Option<&FeatureOrderTable>,
     segments: Option<&FeatureSegmentTable>,
-) -> Option<FeatureSavedSection> {
-    let table = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end)?;
+) -> Result<Option<FeatureSavedSection>, CodecError> {
+    let Some(table) = find_bytes(payload, b"\xe0\x00p_saved_result\0", start, end) else {
+        return Ok(None);
+    };
     let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
         .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
         .unwrap_or(end);
     let mut entities = saved_line_entities(payload, table, table_end, cache);
-    entities.extend(saved_circular_entities(
+    let circular = saved_circular_entities(
         payload,
         table,
         table_end,
         cache,
         order_table,
         segments,
-    ));
-    entities.extend(saved_conic_entities(payload, table, end, cache));
-    entities.extend(saved_dummy_entities(payload, table, table_end));
-    entities.extend(saved_spline_entities(payload, start, end, cache));
+    );
+    ctx.try_reserve_items(&mut entities, circular.len(), "creo saved section entities")?;
+    entities.extend(circular);
+    let conic = saved_conic_entities(payload, table, end, cache);
+    ctx.try_reserve_items(&mut entities, conic.len(), "creo saved section entities")?;
+    entities.extend(conic);
+    let dummy = saved_dummy_entities(payload, table, table_end);
+    ctx.try_reserve_items(&mut entities, dummy.len(), "creo saved section entities")?;
+    entities.extend(dummy);
+    let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
+    ctx.try_reserve_items(&mut entities, spline.len(), "creo saved section entities")?;
+    entities.extend(spline);
     entities.sort_by_key(saved_entity_offset);
-    Some(FeatureSavedSection {
+    Ok(Some(FeatureSavedSection {
         entities,
         offset: table,
-    })
+    }))
 }
 
 fn positional_saved_section(
@@ -6875,13 +6933,14 @@ fn definitions_in_ranges(
             }
         }
         let saved_section = saved_section(
+            ctx,
             payload,
             start,
             end,
             &cache,
             order_table.as_ref(),
             segments.as_ref(),
-        )
+        )?
         .or_else(|| {
             if positional {
                 positional_saved_section(
