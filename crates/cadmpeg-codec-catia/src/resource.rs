@@ -185,6 +185,22 @@ pub(crate) fn copy_retained_str(
     Ok(text)
 }
 
+pub(crate) fn extend_retained_bytes(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<u8>,
+    source: &[u8],
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(count, operation)?;
+    target.try_reserve(source.len())
+        .map_err(|_| allocation_failed(target.len(), target.capacity(), source.len(), operation))?;
+    target.extend_from_slice(source);
+    Ok(())
+}
+
 pub(crate) fn format_usize_id(
     ctx: &DecodeContext<'_>,
     prefix: &'static str,

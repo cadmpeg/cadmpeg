@@ -3790,7 +3790,7 @@ pub(super) fn standard_object_evidence_from_streams(
             &records,
             refusal,
         )?;
-        for population in crate::families::b5::graph::object_stream_populations(&stream) {
+        for population in crate::families::b5::graph::object_stream_populations(ctx, &stream)? {
             crate::resource::push(ctx, &mut populations, population,
                 "catia_standard_object_populations")?;
         }
@@ -3844,7 +3844,7 @@ pub(super) fn standard_object_evidence_from_streams(
         }
     }
     for stream in populations {
-        let frames = crate::families::b5::graph::object_stream_frames(&stream);
+        let frames = crate::families::b5::graph::collect_object_stream_frames(ctx, &stream)?;
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
         let mut surface_bindings = Vec::new();

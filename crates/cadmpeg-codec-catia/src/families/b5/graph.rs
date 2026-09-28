@@ -873,7 +873,7 @@ fn topology_runs(
     };
     let mut graphs = Vec::new();
     for range in candidates {
-        let population = owned_object_stream_population(bytes, range.clone());
+        let population = owned_object_stream_population(ctx, bytes, range.clone())?;
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
             ctx.charge_collection_items(1, "catia B5 topology runs")?;
             graphs.push((range, graph));
@@ -887,7 +887,7 @@ fn parse_flat(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let frames = object_stream_frames(bytes);
+    let frames = collect_object_stream_frames(ctx, bytes)?;
     let records = records_from_frames(bytes, &frames);
     parse_from_records(ctx, bytes, &records, &frames, true, refusal)
 }
@@ -1579,7 +1579,7 @@ fn object_stream_pcurve_candidate(
 
 #[cfg(test)]
 fn a8_class21_pcurves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B5Pcurve>, CodecError> {
-    let frames = object_stream_frames(bytes);
+    let frames = collect_object_stream_frames(ctx, bytes)?;
     a8_class21_pcurves_from_frames(ctx, bytes, &frames)
 }
 
@@ -1818,7 +1818,7 @@ fn edge_support_pcurve_references(
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, [u32; 2]> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
 }
 
@@ -1960,7 +1960,7 @@ fn targeted_geometry_graph(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Option<B5Graph>, CodecError> {
-    let frames = object_stream_frames(bytes);
+    let frames = collect_object_stream_frames(ctx, bytes)?;
     targeted_geometry_graph_from_frames(ctx, bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
 
@@ -4894,7 +4894,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 
 #[cfg(test)]
 fn records(bytes: &[u8]) -> Vec<B5Record> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     records_from_frames(bytes, &frames)
 }
 
@@ -5178,71 +5178,84 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 
 /// Return complete byte ranges for length-closed object-stream records.
 #[must_use]
-pub(in crate::families) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
-    object_stream_frames(bytes)
-        .into_iter()
-        .map(|frame| frame.start..frame.end)
-        .collect()
+pub(in crate::families) fn framed_ranges(bytes: &[u8]) -> impl Iterator<Item = Range<usize>> + '_ {
+    object_stream_frames(bytes).map(|frame| frame.start..frame.end)
 }
 
-pub(in crate::families) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
-    fn walk_b5_run(bytes: &[u8], base: usize, frames: &mut Vec<ObjectFrame>) {
-        let mut position = 0usize;
-        while position + 8 <= bytes.len() {
-            let Some((end, family, class, object_id)) = object_frame(bytes, position) else {
-                break;
-            };
-            if family != 0xb5 {
-                break;
+struct ObjectFrames<'a> {
+    bytes: &'a [u8],
+    position: usize,
+    child: Option<(usize, usize, usize)>,
+}
+
+impl Iterator for ObjectFrames<'_> {
+    type Item = ObjectFrame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((start, end, position)) = self.child {
+                let child = &self.bytes[start..end];
+                let relative = position - start;
+                if relative.checked_add(8).is_some_and(|next| next <= child.len()) {
+                    if let Some((frame_end, family, class, object_id)) = object_frame(child, relative) {
+                        if family == 0xb5 {
+                            self.child = Some((start, end, start + frame_end));
+                            return Some(ObjectFrame {
+                                start: position,
+                                end: start + frame_end,
+                                family,
+                                class,
+                                object_id,
+                            });
+                        }
+                    }
+                }
+                self.child = None;
             }
-            frames.push(ObjectFrame {
-                start: base + position,
-                end: base + end,
+            if self.position.checked_add(8).is_none_or(|next| next > self.bytes.len()) {
+                return None;
+            }
+            let position = self.position;
+            let Some((end, family, class, object_id)) = object_frame(self.bytes, position) else {
+                self.position += 1;
+                continue;
+            };
+            match family {
+                0xa8 => {
+                    self.position = end;
+                    if let Some(child_start) =
+                        crate::families::a5a8::records::a8_nested_b5_run_start(self.bytes, position, end)
+                    {
+                        self.child = Some((child_start, end, child_start));
+                    }
+                }
+                0xb5 => self.position = end,
+                _ => {
+                    self.position += 1;
+                    continue;
+                }
+            }
+            return Some(ObjectFrame {
+                start: position,
+                end,
                 family,
                 class,
                 object_id,
             });
-            position = end;
         }
     }
+}
 
-    fn walk(bytes: &[u8], base: usize, frames: &mut Vec<ObjectFrame>) {
-        let mut position = 0usize;
-        while position + 8 <= bytes.len() {
-            let Some(frame) = object_frame(bytes, position) else {
-                position += 1;
-                continue;
-            };
-            let (end, family, class, object_id) = frame;
-            let absolute = ObjectFrame {
-                start: base + position,
-                end: base + end,
-                family,
-                class,
-                object_id,
-            };
-            match family {
-                0xa8 => {
-                    frames.push(absolute);
-                    if let Some(child_start) =
-                        crate::families::a5a8::records::a8_nested_b5_run_start(bytes, position, end)
-                    {
-                        walk_b5_run(&bytes[child_start..end], base + child_start, frames);
-                    }
-                    position = end;
-                }
-                0xb5 => {
-                    frames.push(absolute);
-                    position = end;
-                }
-                _ => position += 1,
-            }
-        }
-    }
+/// Scan frames without allocating a frame index.
+pub(in crate::families) fn object_stream_frames(bytes: &[u8]) -> impl Iterator<Item = ObjectFrame> + '_ {
+    ObjectFrames { bytes, position: 0, child: None }
+}
 
-    let mut frames = Vec::new();
-    walk(bytes, 0, &mut frames);
-    frames
+pub(in crate::families) fn collect_object_stream_frames(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<ObjectFrame>, CodecError> {
+    crate::resource::collect_vec(ctx, object_stream_frames(bytes), "catia_b5_object_frames")
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
@@ -5291,8 +5304,7 @@ fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
         .into_iter()
         .filter(|range| {
             let run = &bytes[range.clone()];
-            let frames = object_stream_frames(run);
-            frames.iter().copied().any(is_topology_root_frame)
+            object_stream_frames(run).any(is_topology_root_frame)
         })
         .collect()
 }
@@ -5303,29 +5315,36 @@ fn is_topology_root_frame(frame: ObjectFrame) -> bool {
 }
 
 /// Partition one logical stream into independently resolved object populations.
-pub(in crate::families) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u8>> {
+pub(in crate::families) fn object_stream_populations(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+) -> Result<Vec<Vec<u8>>, CodecError> {
     let runs = object_stream_run_ranges(stream);
     let topology_runs = topology_root_run_ranges(stream);
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
-        let root_ids = object_stream_frames(&stream[range.clone()])
-            .into_iter()
-            .map(|frame| frame.object_id)
-            .collect::<HashSet<_>>();
-        let population = owned_object_stream_population(stream, range.clone());
-        claimed_isolated_ids.extend(
-            object_stream_frames(&population)
-                .into_iter()
-                .map(|frame| frame.object_id)
-                .filter(|object_id| !root_ids.contains(object_id)),
-        );
-        owned_populations.insert(range.start, population);
+        let mut root_ids = HashSet::new();
+        for frame in object_stream_frames(&stream[range.clone()]) {
+            crate::resource::insert_set(ctx, &mut root_ids, frame.object_id,
+                "catia_b5_population_root_ids")?;
+        }
+        let population = owned_object_stream_population(ctx, stream, range.clone())?;
+        for frame in object_stream_frames(&population) {
+            if !root_ids.contains(&frame.object_id) {
+                crate::resource::insert_set(ctx, &mut claimed_isolated_ids, frame.object_id,
+                    "catia_b5_claimed_isolated_ids")?;
+            }
+        }
+        crate::resource::insert_map(ctx, &mut owned_populations, range.start, population,
+            "catia_b5_owned_populations")?;
     }
-    runs.into_iter()
-        .filter_map(|range| {
+    let mut populations = Vec::new();
+    for range in runs {
             if let Some(population) = owned_populations.remove(&range.start) {
-                return Some(population);
+                crate::resource::push(ctx, &mut populations, population,
+                    "catia_b5_object_populations")?;
+                continue;
             }
             let claimed =
                 object_frame(stream, range.start).is_some_and(|(end, family, class, object_id)| {
@@ -5333,9 +5352,14 @@ pub(in crate::families) fn object_stream_populations(stream: &[u8]) -> Vec<Vec<u
                         && is_referenced_geometry_class(family, class)
                         && claimed_isolated_ids.contains(&object_id)
                 });
-            (!claimed).then(|| stream[range].to_vec())
-        })
-        .collect()
+            if !claimed {
+                let population = crate::resource::copy_retained_slice(ctx, &stream[range],
+                    "catia_b5_unclaimed_population_bytes")?;
+                crate::resource::push(ctx, &mut populations, population,
+                    "catia_b5_object_populations")?;
+            }
+    }
+    Ok(populations)
 }
 
 /// Unique object population selected across reconstructed logical streams.
@@ -5419,21 +5443,25 @@ struct IndexedObjectRun {
 /// Select one topology-root population, or one unrooted run when it is the
 /// only object run in the reconstructed logical streams.
 pub(in crate::families) fn select_object_stream_population(
+    ctx: &DecodeContext<'_>,
     streams: &[Vec<u8>],
     budget: Option<&WorkBudget<'_>>,
-) -> ObjectStreamSelection {
-    let stream_ranges = streams
-        .iter()
-        .map(|stream| object_stream_run_ranges(stream))
-        .collect::<Vec<_>>();
+) -> Result<ObjectStreamSelection, CodecError> {
+    let mut stream_ranges = Vec::new();
+    for stream in streams {
+        crate::resource::push(ctx, &mut stream_ranges, object_stream_run_ranges(stream),
+            "catia_b5_selected_stream_ranges")?;
+    }
     let run_count = stream_ranges.iter().map(Vec::len).sum();
     let exhausted = || ObjectStreamSelection::Exhausted { run_count };
-    let mut stream_frames = Vec::with_capacity(streams.len());
+    let mut stream_frames = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut stream_frames, streams.len(),
+        "catia_b5_selected_stream_frames")?;
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
-        let frames = object_stream_frames(stream);
+        let frames = collect_object_stream_frames(ctx, stream)?;
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-            return exhausted();
+            return Ok(exhausted());
         }
         let mut frame_cursor = 0;
         for range in ranges {
@@ -5449,21 +5477,22 @@ pub(in crate::families) fn select_object_stream_population(
                 .iter()
                 .copied()
                 .any(is_topology_root_frame);
-            runs.push(IndexedObjectRun {
+            crate::resource::push(ctx, &mut runs, IndexedObjectRun {
                 stream_index,
                 range,
                 frame_range,
                 topology,
-            });
+            }, "catia_b5_indexed_runs")?;
         }
         stream_frames.push(frames);
     }
-    let topology_runs = runs
-        .iter()
-        .enumerate()
-        .filter(|(_, run)| run.topology)
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
+    let mut topology_runs = Vec::new();
+    for (index, run) in runs.iter().enumerate() {
+        if run.topology {
+            crate::resource::push(ctx, &mut topology_runs, index,
+                "catia_b5_topology_run_indices")?;
+        }
+    }
     let selected_run = match topology_runs.as_slice() {
         [index] => Some((*index, true)),
         [] if runs.len() == 1 => Some((0, false)),
@@ -5475,14 +5504,16 @@ pub(in crate::families) fn select_object_stream_population(
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
             if budget.is_some_and(WorkBudget::exhausted) {
-                return exhausted();
+                return Ok(exhausted());
             }
+            crate::resource::reserve_vec(ctx, &mut census_records, records.len(),
+                "catia_b5_unselected_census_records")?;
             census_records.extend(records);
         }
-        return ObjectStreamSelection::Unselected {
+        return Ok(ObjectStreamSelection::Unselected {
             run_count,
             census_records,
-        };
+        });
     };
     let selected = &runs[selected_index];
     let selected_stream = &streams[selected.stream_index];
@@ -5490,9 +5521,20 @@ pub(in crate::families) fn select_object_stream_population(
     let Some(selected_records) =
         records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
     else {
-        return exhausted();
+        return Ok(exhausted());
     };
-    let mut census_records = selected_records.clone();
+    let mut census_records = Vec::new();
+    for record in &selected_records {
+        let payload = crate::resource::copy_retained_slice(ctx, &record.payload,
+            "catia_b5_census_record_payload")?;
+        crate::resource::push(ctx, &mut census_records, B5Record {
+            offset: record.offset,
+            family: record.family,
+            class: record.class,
+            object_id: record.object_id,
+            payload,
+        }, "catia_b5_census_records")?;
+    }
     for (index, run) in runs.iter().enumerate() {
         if index == selected_index {
             continue;
@@ -5500,34 +5542,32 @@ pub(in crate::families) fn select_object_stream_population(
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
         let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
         if budget.is_some_and(WorkBudget::exhausted) {
-            return exhausted();
+            return Ok(exhausted());
         }
+        crate::resource::reserve_vec(ctx, &mut census_records, records.len(),
+            "catia_b5_census_records")?;
         census_records.extend(records);
     }
-    let mut source = selected_stream[selected.range.clone()].to_vec();
-    let mut frames = selected_frames
-        .iter()
-        .copied()
-        .map(|mut frame| {
+    let mut source = crate::resource::copy_retained_slice(ctx,
+        &selected_stream[selected.range.clone()], "catia_b5_selected_source_bytes")?;
+    let mut frames = Vec::new();
+    for frame in selected_frames {
+        let mut frame = *frame;
             frame.start -= selected.range.start;
             frame.end -= selected.range.start;
-            frame
-        })
-        .collect::<Vec<_>>();
-    let mut records = selected_records
-        .iter()
-        .cloned()
-        .map(|mut record| {
-            record.offset -= selected.range.start;
-            record
-        })
-        .collect::<Vec<_>>();
+        crate::resource::push(ctx, &mut frames, frame, "catia_b5_selected_frames")?;
+    }
+    let mut records = selected_records;
+    for record in &mut records {
+        record.offset -= selected.range.start;
+    }
     if topology {
-        let referenced = topology_surface_references(&selected_records);
-        let owned_ids = selected_records
-            .iter()
-            .map(|record| record.object_id)
-            .collect::<HashSet<_>>();
+        let referenced = topology_surface_references(&records);
+        let mut owned_ids = HashSet::new();
+        for record in &records {
+            crate::resource::insert_set(ctx, &mut owned_ids, record.object_id,
+                "catia_b5_selected_owned_ids")?;
+        }
         let mut isolated = HashMap::<u32, Option<usize>>::new();
         for (index, run) in runs.iter().enumerate() {
             if index == selected_index || run.stream_index != selected.stream_index {
@@ -5545,6 +5585,8 @@ pub(in crate::families) fn select_object_stream_population(
             {
                 continue;
             }
+            crate::resource::admit_map_entry(ctx, &mut isolated, &object_id,
+                "catia_b5_selected_isolated_candidates")?;
             isolated
                 .entry(object_id)
                 .and_modify(|stored| {
@@ -5558,7 +5600,12 @@ pub(in crate::families) fn select_object_stream_population(
                 })
                 .or_insert(Some(index));
         }
-        let mut isolated = isolated.into_values().flatten().collect::<Vec<_>>();
+        let mut isolated_values = Vec::new();
+        for value in isolated.into_values().flatten() {
+            crate::resource::push(ctx, &mut isolated_values, value,
+                "catia_b5_selected_isolated_order")?;
+        }
+        let mut isolated = isolated_values;
         isolated.sort_unstable_by_key(|index| {
             let run = &runs[*index];
             (run.stream_index, run.range.start)
@@ -5568,37 +5615,45 @@ pub(in crate::families) fn select_object_stream_population(
             let stream = &streams[run.stream_index];
             let run_frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let destination = source.len();
-            source.extend_from_slice(&stream[run.range.clone()]);
-            frames.extend(run_frames.iter().copied().map(|mut frame| {
+            crate::resource::extend_retained_bytes(ctx, &mut source,
+                &stream[run.range.clone()], "catia_b5_selected_isolated_bytes")?;
+            for frame in run_frames {
+                let mut frame = *frame;
                 frame.start = destination + frame.start - run.range.start;
                 frame.end = destination + frame.end - run.range.start;
-                frame
-            }));
+                crate::resource::push(ctx, &mut frames, frame,
+                    "catia_b5_selected_isolated_frames")?;
+            }
         }
         if source.len() != selected.range.len() {
             records = records_from_frames(&source, &frames);
         }
     }
-    ObjectStreamSelection::Selected {
+    Ok(ObjectStreamSelection::Selected {
         source,
         frames,
         records,
         census_records,
         run_count,
-    }
+    })
 }
 
 /// Build one topology population from its owning run and uniquely referenced
 /// isolated geometry frames in the same logical stream.
-fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> Vec<u8> {
+fn owned_object_stream_population(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    topology_run: Range<usize>,
+) -> Result<Vec<u8>, CodecError> {
     let run = &stream[topology_run.clone()];
-    let run_frames = object_stream_frames(run);
+    let run_frames = collect_object_stream_frames(ctx, run)?;
     let run_records = records_from_frames(run, &run_frames);
     let referenced = topology_surface_references(&run_records);
-    let owned_ids = run_records
-        .iter()
-        .map(|record| record.object_id)
-        .collect::<HashSet<_>>();
+    let mut owned_ids = HashSet::new();
+    for record in &run_records {
+        crate::resource::insert_set(ctx, &mut owned_ids, record.object_id,
+            "catia_b5_population_owned_ids")?;
+    }
     let mut isolated = HashMap::<u32, Option<(usize, u8, u8, Vec<u8>)>>::new();
     for range in object_stream_run_ranges(stream) {
         if range == topology_run {
@@ -5615,7 +5670,10 @@ fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> 
         {
             continue;
         }
-        let bytes = stream[range.clone()].to_vec();
+        let bytes = crate::resource::copy_retained_slice(ctx, &stream[range.clone()],
+            "catia_b5_population_isolated_bytes")?;
+        crate::resource::admit_map_entry(ctx, &mut isolated, &object_id,
+            "catia_b5_population_isolated_frames")?;
         isolated
             .entry(object_id)
             .and_modify(|stored| {
@@ -5627,14 +5685,21 @@ fn owned_object_stream_population(stream: &[u8], topology_run: Range<usize>) -> 
             })
             .or_insert(Some((range.start, frame_family, frame_class, bytes)));
     }
-    let mut isolated = isolated.into_values().flatten().collect::<Vec<_>>();
+    let mut isolated_values = Vec::new();
+    for value in isolated.into_values().flatten() {
+        crate::resource::push(ctx, &mut isolated_values, value,
+            "catia_b5_population_isolated_order")?;
+    }
+    let mut isolated = isolated_values;
     isolated.sort_by_key(|(offset, _, _, _)| *offset);
 
-    let mut population = run.to_vec();
+    let mut population = crate::resource::copy_retained_slice(ctx, run,
+        "catia_b5_topology_run_bytes")?;
     for (_, _, _, frame) in isolated {
-        population.extend(frame);
+        crate::resource::extend_retained_bytes(ctx, &mut population, &frame,
+            "catia_b5_attached_isolated_bytes")?;
     }
-    population
+    Ok(population)
 }
 
 fn record_references(record: &B5Record) -> Vec<u32> {
@@ -5801,7 +5866,7 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 /// resolution.
 #[cfg(test)]
 fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_face_records_from_records(&records)
 }
@@ -5819,7 +5884,7 @@ pub(in crate::families) fn typed_face_records_from_records(
 /// resolution.
 #[cfg(test)]
 fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_loop_records_from_records(&records)
 }
@@ -5837,7 +5902,7 @@ pub(in crate::families) fn typed_loop_records_from_records(
 /// topology resolution.
 #[cfg(test)]
 fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_edge_records_from_records(&records)
 }
@@ -5855,7 +5920,7 @@ pub(in crate::families) fn typed_edge_records_from_records(
 /// topology resolution.
 #[cfg(test)]
 fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_vertex_incidence_links_from_records(&records)
 }
@@ -5875,7 +5940,7 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
 /// support and topology resolution.
 #[cfg(test)]
 fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_class_21_pcurves_from_records(&records)
 }
@@ -5893,7 +5958,7 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 /// curve, edge, and topology resolution.
 #[cfg(test)]
 fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_parameter_incidences_from_records(&records)
 }
@@ -5913,7 +5978,7 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 /// member and topology resolution.
 #[cfg(test)]
 fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
     typed_vertex_incidence_rosters_from_records(&records)
 }
@@ -5932,7 +5997,7 @@ pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
 /// Read each face's leading surface reference independently of its loop grammar.
 #[cfg(test)]
 fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
-    let frames = object_stream_frames(bytes);
+    let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     face_surface_references_from_frames(bytes, &frames)
 }
 
