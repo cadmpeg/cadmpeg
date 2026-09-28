@@ -625,11 +625,15 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     );
     assert_eq!(
         typed_edge_records(&bytes),
-        typed_edge_records_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_edge_records_from_records(ctx, &records).expect("service budget")
+        })
     );
     assert_eq!(
         typed_vertex_incidence_links(&bytes),
-        typed_vertex_incidence_links_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_vertex_incidence_links_from_records(ctx, &records).expect("service budget")
+        })
     );
     assert_eq!(
         typed_class_21_pcurves(&bytes),
@@ -643,6 +647,44 @@ fn indexed_frame_parse_matches_one_shot_parse() {
         typed_vertex_incidence_rosters(&bytes),
         typed_vertex_incidence_rosters_from_records(&records)
     );
+}
+
+#[test]
+fn typed_edge_record_index_refuses_collection_limit() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5e,
+        object_id: 17,
+        payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
+    }];
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        typed_edge_records_from_records(ctx, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let edges = crate::test_support::with_service_context(|ctx| {
+        typed_edge_records_from_records(ctx, &records)
+    }).expect("service budget");
+    assert!(!edges.is_empty());
+}
+
+#[test]
+fn typed_vertex_incidence_link_index_refuses_collection_limit() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5d,
+        object_id: 17,
+        payload: vec![0x81, 0x92, 0x04],
+    }];
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        typed_vertex_incidence_links_from_records(ctx, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let links = crate::test_support::with_service_context(|ctx| {
+        typed_vertex_incidence_links_from_records(ctx, &records)
+    }).expect("service budget");
+    assert!(!links.is_empty());
 }
 
 #[test]

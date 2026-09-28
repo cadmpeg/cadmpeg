@@ -2140,11 +2140,13 @@ fn resolve_targeted_analytic_offset(
 fn parse_edge(record: &B5Record) -> Option<B5Edge> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
-    let references: [u32; 5] = (0..5)
-        .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let references = [
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+        wire::tokens::object_ref(&record.payload, &mut position, true)?,
+    ];
     let &[terminal_control] = record.payload.get(position..)? else {
         return None;
     };
@@ -5912,16 +5914,23 @@ pub(in crate::families) fn typed_loop_records_from_records(
 fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_edge_records_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_edge_records_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_edge_records_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5Edge> {
-    records
-        .iter()
-        .filter_map(|record| parse_edge(record).map(|edge| (record.object_id, edge)))
-        .collect()
+) -> Result<BTreeMap<u32, B5Edge>, CodecError> {
+    let mut edges = BTreeMap::new();
+    for record in records {
+        if let Some(edge) = parse_edge(record) {
+            crate::resource::insert_btree_map(ctx, &mut edges, record.object_id, edge,
+                "catia_b5_typed_edge_records")?;
+        }
+    }
+    Ok(edges)
 }
 
 /// Read every structurally complete vertex-incidence link independently of
@@ -5930,18 +5939,23 @@ pub(in crate::families) fn typed_edge_records_from_records(
 fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_vertex_incidence_links_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_vertex_incidence_links_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_vertex_incidence_links_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5VertexIncidenceLink> {
-    records
-        .iter()
-        .filter_map(|record| {
-            parse_vertex_incidence_link(record).map(|link| (record.object_id, link))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, B5VertexIncidenceLink>, CodecError> {
+    let mut links = BTreeMap::new();
+    for record in records {
+        if let Some(link) = parse_vertex_incidence_link(record) {
+            crate::resource::insert_btree_map(ctx, &mut links, record.object_id, link,
+                "catia_b5_typed_vertex_incidence_links")?;
+        }
+    }
+    Ok(links)
 }
 
 /// Read every structurally complete class-`21` pcurve independently of
