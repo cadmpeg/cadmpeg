@@ -1,4 +1,4 @@
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{fixed_guid_ascii, fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
@@ -102,14 +102,8 @@ fn exact_base_feature_scope_tail(
     {
         return None;
     }
-    let kind_code_units = usize::try_from(class_377::KIND_LENGTH_VALUE).ok()?;
-    let (kind_text, kind_end) = lp_utf16_bounded(
-        bytes,
-        start + layout.kind_length,
-        kind_code_units..=kind_code_units,
-    )?;
-    if kind_text != "Base Feature"
-        || kind_end != start + layout.feature_ordinal
+    let kind_end = fixed_utf16_ascii_eq(bytes, start + layout.kind_length, "Base Feature")?;
+    if kind_end != start + layout.feature_ordinal
         || View::u32_le_at(bytes, start + layout.feature_ordinal)? != scope.feature_ordinal.get()
     {
         return None;
@@ -230,15 +224,12 @@ fn exact_base_feature_legacy_compact(
     {
         return None;
     }
-    let guid_code_units =
-        usize::try_from(class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT_VALUE).ok()?;
-    let (envelope_guid, guid_end) = lp_utf16_bounded(
-        bytes,
-        start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT,
-        guid_code_units..=guid_code_units,
-    )?;
-    let envelope_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let (envelope_guid, guid_end) =
+        fixed_guid_ascii(bytes, start + class_452_compact::ENVELOPE_GUID_CODE_UNIT_COUNT)?;
+    let envelope_guid = crate::records::mesh::DesignRelaxedGuidText::try_from(
+        String::from_utf8(envelope_guid.to_vec()).ok()?,
+    )
+    .ok()?;
     if guid_end != start + class_452_compact::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_compact::ZERO_RUN_AFTER_GUID
@@ -402,15 +393,12 @@ fn exact_base_feature_legacy_expanded(
     {
         return None;
     }
-    let guid_code_units =
-        usize::try_from(class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT_VALUE).ok()?;
-    let (envelope_guid, guid_end) = lp_utf16_bounded(
-        bytes,
-        start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT,
-        guid_code_units..=guid_code_units,
-    )?;
-    let envelope_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let (envelope_guid, guid_end) =
+        fixed_guid_ascii(bytes, start + class_452_expanded::ENVELOPE_GUID_CODE_UNIT_COUNT)?;
+    let envelope_guid = crate::records::mesh::DesignRelaxedGuidText::try_from(
+        String::from_utf8(envelope_guid.to_vec()).ok()?,
+    )
+    .ok()?;
     if guid_end != start + class_452_expanded::ZERO_RUN_AFTER_GUID
         || bytes.get(
             start + class_452_expanded::ZERO_RUN_AFTER_GUID
@@ -605,20 +593,18 @@ fn exact_base_feature_direct_body_based_on_faces(
     {
         return None;
     }
-    let guid_code_units = usize::try_from(class_377::ENVELOPE_GUID_CODE_UNIT_COUNT_VALUE).ok()?;
-    let (envelope_guid, guid_end) = lp_utf16_bounded(
-        bytes,
-        start + class_377::ENVELOPE_GUID_CODE_UNIT_COUNT,
-        guid_code_units..=guid_code_units,
-    )?;
+    let (envelope_guid, guid_end) =
+        fixed_guid_ascii(bytes, start + class_377::ENVELOPE_GUID_CODE_UNIT_COUNT)?;
     let previous_history_state_id =
         View::u32_le_at(bytes, start + class_377::PREVIOUS_HISTORY_STATE_ID)?;
     let previous_history_state_matches = match scope.previous_history_state_id() {
         Some(id) => u32::try_from(id).ok() == Some(previous_history_state_id),
         None => previous_history_state_id == u32::MAX,
     };
-    let envelope_guid =
-        crate::records::mesh::DesignRelaxedGuidText::try_from(envelope_guid).ok()?;
+    let envelope_guid = crate::records::mesh::DesignRelaxedGuidText::try_from(
+        String::from_utf8(envelope_guid.to_vec()).ok()?,
+    )
+    .ok()?;
     if guid_end != start + class_377::ZERO_RUN_3
         || bytes.get(start + class_377::ZERO_RUN_3..start + class_377::REFERENCE_COUNT)? != [0; 3]
         || View::u32_le_at(bytes, start + class_377::REFERENCE_COUNT)?
@@ -634,14 +620,8 @@ fn exact_base_feature_direct_body_based_on_faces(
     {
         return None;
     }
-    let kind_code_units = usize::try_from(class_377::KIND_LENGTH_VALUE).ok()?;
-    let (kind, kind_end) = lp_utf16_bounded(
-        bytes,
-        start + class_377::KIND_LENGTH,
-        kind_code_units..=kind_code_units,
-    )?;
-    if kind != "Base Feature"
-        || kind_end != start + class_377::FEATURE_ORDINAL
+    let kind_end = fixed_utf16_ascii_eq(bytes, start + class_377::KIND_LENGTH, "Base Feature")?;
+    if kind_end != start + class_377::FEATURE_ORDINAL
         || View::u32_le_at(bytes, start + class_377::FEATURE_ORDINAL)?
             != scope.feature_ordinal.get()
     {
@@ -665,7 +645,6 @@ fn exact_base_feature_direct_body_based_on_faces(
     })
 }
 
-use crate::bytes::is_guid_relaxed;
 use crate::layout::base_feature_body_snapshot_body_entry as snapshot_entry;
 use crate::layout::base_feature_body_snapshot_compact_preamble as snapshot_compact_preamble;
 use crate::layout::base_feature_body_snapshot_expanded_preamble as snapshot_expanded_preamble;
@@ -830,13 +809,7 @@ pub(super) fn exact_base_feature_construction(
             start + legacy_444_zero_body::SHARED_METADATA_RECORD,
         )?)
         .ok()?;
-        let guid_code_units =
-            usize::try_from(legacy_444_zero_body::GUID_CODE_UNIT_COUNT_VALUE).ok()?;
-        let (guid, guid_end) = lp_utf16_bounded(
-            bytes,
-            start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
-            guid_code_units..=guid_code_units,
-        )?;
+        let guid_end = fixed_guid_end(bytes, start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT)?;
         if bytes.get(
             start + legacy_444_zero_body::ZERO_RUN_9
                 ..start + legacy_444_zero_body::ZERO_BODY_MARKER,
@@ -858,7 +831,6 @@ pub(super) fn exact_base_feature_construction(
                 start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
                     ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
             )? != [0; 14]
-            || !is_guid_relaxed(&guid)
             || guid_end != start + legacy_444_zero_body::ZERO_RUN_3
             || bytes.get(
                 start + legacy_444_zero_body::ZERO_RUN_3
@@ -1159,9 +1131,12 @@ fn exact_base_feature_body_snapshot(
         snapshot_compact_preamble::LEN
     };
     let parse_guid = |at: usize| {
-        let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
+        let (guid, end) = fixed_guid_ascii(bytes, at)?;
         Some((
-            crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?,
+            crate::records::mesh::DesignRelaxedGuidText::try_from(
+                String::from_utf8(guid.to_vec()).ok()?,
+            )
+            .ok()?,
             end,
             at + snapshot_guid::GUID_UTF16,
         ))

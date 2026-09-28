@@ -78,19 +78,29 @@ pub(in crate::design::decode) fn design_record_id_charged(
     Ok(id)
 }
 
-/// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
-pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
+/// Validate an exact 36-code-unit relaxed GUID into a fixed ASCII array.
+pub(in crate::design::decode) fn fixed_guid_ascii(
+    bytes: &[u8],
+    count_at: usize,
+) -> Option<([u8; 36], usize)> {
     (View::u32_le_at(bytes, count_at)? == 36).then_some(())?;
     let start = count_at.checked_add(4)?;
     let end = start.checked_add(72)?;
-    bytes
-        .get(start..end)?
-        .chunks_exact(2)
-        .all(|unit| {
-            unit[1] == 0
-                && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
-        })
-        .then_some(end)
+    let mut guid = [0; 36];
+    for (slot, unit) in guid.iter_mut().zip(bytes.get(start..end)?.chunks_exact(2)) {
+        if unit[1] != 0
+            || !(unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_'))
+        {
+            return None;
+        }
+        *slot = unit[0];
+    }
+    Some((guid, end))
+}
+
+/// Validate an exact 36-code-unit relaxed GUID in UTF-16LE without copying it.
+pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
+    fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
 }
 
 /// Match an ASCII literal encoded as a counted UTF-16LE field without copying it.
@@ -216,7 +226,30 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{class_tag_from_view, fixed_utf16_ascii_eq, lp_ascii_filtered_view};
+    use super::{class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, lp_ascii_filtered_view};
+
+    #[test]
+    fn fixed_guid_ascii_preserves_decoded_text() {
+        for value in [
+            "ABCDEF12-3456-7890-ABCD-EF1234567890",
+            "00000000-0000-0000-0000-000000000000",
+            "00000000-0000-0000-0000-00000000000!",
+            "é0000000-0000-0000-0000-000000000000",
+        ] {
+            let mut bytes = u32::try_from(value.encode_utf16().count())
+                .unwrap()
+                .to_le_bytes()
+                .to_vec();
+            for unit in value.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            let prior = crate::bytes::lp_utf16_bounded(&bytes, 0, 36..=36)
+                .filter(|(text, _)| crate::bytes::is_guid_relaxed(text));
+            let current = fixed_guid_ascii(&bytes, 0)
+                .map(|(guid, end)| (String::from_utf8(guid.to_vec()).unwrap(), end));
+            assert_eq!(current, prior);
+        }
+    }
 
     #[test]
     fn fixed_utf16_ascii_match_agrees_with_decoded_text() {
