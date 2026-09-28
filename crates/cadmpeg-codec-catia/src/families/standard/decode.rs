@@ -1263,34 +1263,34 @@ fn attach_free_vertices(
         );
     }
     admission.reserve_entity(&mut ir.model.bodies, "catia_standard_free_vertex_bodies")?;
+    let body_id_copy = crate::resource::copy_id(
+        ctx,
+        body_id.as_str(),
+        BodyId::mint,
+        "catia_standard_free_body_id_copy",
+    )?;
+    let mut body_regions = Vec::new();
+    crate::resource::push(ctx, &mut body_regions,
+        crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint,
+            "catia_standard_free_body_region_copy")?,
+        "catia_standard_free_body_regions")?;
     ir.model.bodies.push(Body {
-        id: crate::resource::copy_id(
-            ctx,
-            body_id.as_str(),
-            BodyId::mint,
-            "catia_standard_free_body_id_copy",
-        )?,
+        id: body_id_copy,
         kind: BodyKind::Wire,
-        regions: ctx.alloc_filled(
-            1,
-            crate::resource::copy_id(
-                ctx,
-                region_id.as_str(),
-                RegionId::mint,
-                "catia_standard_free_body_region_copy",
-            )?,
-            "catia_standard_free_body_regions",
-        )?,
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     admission.reserve_entity(&mut ir.model.regions, "catia_standard_free_vertex_regions")?;
+    let mut region_shells = Vec::new();
+    crate::resource::push(ctx, &mut region_shells, shell_id,
+        "catia_standard_free_region_shells")?;
     ir.model.regions.push(Region {
         id: region_id,
         body: body_id,
-        shells: ctx.alloc_filled(1, shell_id, "catia_standard_free_region_shells")?,
+        shells: region_shells,
     });
     ir.model.shells.push(shell);
     Ok(())
@@ -7070,7 +7070,10 @@ fn emit_standard_topology(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 let pcurves = match pcurve_use {
                     Some(pcurve) => {
-                        ctx.alloc_filled(1, pcurve, "catia_standard_coedge_pcurve_use")?
+                        let mut pcurves = Vec::new();
+                        crate::resource::push(ctx, &mut pcurves, pcurve,
+                            "catia_standard_coedge_pcurve_use")?;
+                        pcurves
                     }
                     None => Vec::new(),
                 };
