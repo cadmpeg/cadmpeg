@@ -579,11 +579,15 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         block("nx:om-data-blocks-1:block#72", 1, 72),
         block("nx:om-data-blocks-2:block#72", 2, 72),
     ];
-    let uses = feature_body_data_block_uses(
-        std::slice::from_ref(&reference),
-        std::slice::from_ref(&input),
-        &blocks,
-    );
+    let uses = crate::test_support::with_decode_context(|ctx| {
+        feature_body_data_block_uses(
+            ctx,
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&input),
+            &blocks,
+        )
+    })
+    .unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].data_block, blocks[2].id);
     let duplicate_reference = FeatureBodyReference {
@@ -594,9 +598,74 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
         source_offset: 91,
     };
     assert!(
-        feature_body_data_block_uses(&[reference, duplicate_reference], &[input], &blocks,)
-            .is_empty()
+        crate::test_support::with_decode_context(|ctx| {
+            feature_body_data_block_uses(ctx, &[reference, duplicate_reference], &[input], &blocks)
+        })
+        .unwrap()
+        .is_empty()
     );
+}
+
+#[test]
+fn feature_body_data_block_uses_refuse_collection_at_caller_limit() {
+    use crate::native::features::{feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock};
+    use crate::native::om::{DataBlock, DataBlockRole};
+
+    let reference = FeatureBodyReference {
+        ordinal: None,
+        id: "nx:feature-history:body-reference#0".into(),
+        operation_label: "operation#0".into(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(72, &[72]).unwrap(),
+        source_offset: 90,
+    };
+    let input = FeatureInputBlock {
+        id: "input#0".into(),
+        operation_label: "operation#0".into(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(3, &[3]).unwrap(),
+        data_block: "nx:om-data-blocks-2:block#3".into(),
+        source_offset: 80,
+    };
+    let blocks = [
+        DataBlock {
+            id: "nx:om-data-blocks-2:block#3".into(),
+            section_ordinal: 2,
+            block_ordinal: 3,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: crate::native::hex::Sha256Hex::digest(&[0]),
+            stable_identity: None,
+            source_entry: "part".into(),
+            source_offset: 20,
+        },
+        DataBlock {
+            id: "nx:om-data-blocks-2:block#72".into(),
+            section_ordinal: 2,
+            block_ordinal: 72,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: crate::native::hex::Sha256Hex::digest(&[0]),
+            stable_identity: None,
+            source_entry: "part".into(),
+            source_offset: 20,
+        },
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = feature_body_data_block_uses(&ctx, &[reference], &[input], &blocks)
+        .err()
+        .expect("body block use needs one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "NX feature body block uses"
+    ));
 }
 
 #[test]

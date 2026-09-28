@@ -4872,47 +4872,102 @@ fn feature_input_store_sections(
 
 /// Resolve primary feature body fields in an unambiguous operation input store.
 pub(super) fn feature_body_data_block_uses(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
-) -> Vec<FeatureBodyDataBlockUse> {
-    let unique_references = unique_feature_body_references(references);
-    let store_sections = feature_input_store_sections(inputs, blocks);
-    references
-        .iter()
-        .filter_map(|reference| {
-            if unique_references
-                .get(reference.operation_label.as_str())
-                .is_none_or(|unique| unique.id != reference.id)
-            {
-                return None;
-            }
-            let section_ordinals = store_sections
-                .get(reference.operation_label.as_str())
-                .map(|sections| sections.iter().copied().collect::<Vec<_>>())
-                .unwrap_or_default();
-            let [section_ordinal] = section_ordinals.as_slice() else {
-                return None;
-            };
-            let matches = blocks
-                .iter()
-                .filter(|block| {
-                    block.section_ordinal == *section_ordinal
-                        && block.block_ordinal == reference.body.value()
-                })
-                .collect::<Vec<_>>();
-            let [block] = matches.as_slice() else {
-                return None;
-            };
-            Some(FeatureBodyDataBlockUse {
-                id: reference
-                    .id
-                    .replacen("body-reference", "body-data-block-use", 1),
-                feature_body_reference: reference.id.clone(),
-                data_block: block.id.clone(),
-            })
+) -> Result<Vec<FeatureBodyDataBlockUse>, CodecError> {
+    let work = references.len()
+        .checked_mul(references.len())
+        .and_then(|work| {
+            references.len()
+                .checked_mul(inputs.len())?
+                .checked_mul(blocks.len())?
+                .checked_add(work)
         })
-        .collect()
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX feature body block uses", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan NX feature body block uses",
+    )?;
+    let mut uses = Vec::new();
+    for reference in references {
+        if references
+            .iter()
+            .filter(|candidate| candidate.operation_label == reference.operation_label)
+            .take(2)
+            .count()
+            != 1
+        {
+            continue;
+        }
+        let mut section_ordinal = None;
+        let mut ambiguous_section = false;
+        for input in inputs
+            .iter()
+            .filter(|input| input.operation_label == reference.operation_label)
+        {
+            let Some(block) = blocks.iter().rev().find(|block| block.id == input.data_block) else {
+                continue;
+            };
+            match section_ordinal {
+                None => section_ordinal = Some(block.section_ordinal),
+                Some(section) if section != block.section_ordinal => ambiguous_section = true,
+                Some(_) => {}
+            }
+        }
+        let Some(section_ordinal) = section_ordinal.filter(|_| !ambiguous_section) else {
+            continue;
+        };
+        let mut matches = blocks.iter().filter(|block| {
+            block.section_ordinal == section_ordinal
+                && block.block_ordinal == reference.body.value()
+        });
+        let Some(block) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        let old = "body-reference";
+        let new = "body-data-block-use";
+        let (prefix, suffix) = if let Some(position) = reference.id.find(old) {
+            (&reference.id[..position], &reference.id[position + old.len()..])
+        } else {
+            (reference.id.as_str(), "")
+        };
+        let id_len = prefix.len()
+            .checked_add(suffix.len())
+            .and_then(|length| length.checked_add(if prefix.len() == reference.id.len() { 0 } else { new.len() }))
+            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature body block use id", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "retain NX feature body block use id",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX feature body block use id", 0, 1)
+        })?;
+        id.push_str(prefix);
+        if prefix.len() != reference.id.len() {
+            id.push_str(new);
+        }
+        id.push_str(suffix);
+        ctx.charge_collection_items(1, "NX feature body block uses")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureBodyDataBlockUse>()),
+            "retain NX feature body block uses",
+        )?;
+        uses.try_reserve_exact(1).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX feature body block uses", 0, 1)
+        })?;
+        uses.push(FeatureBodyDataBlockUse {
+            id,
+            feature_body_reference: copy_operation_text(ctx, &reference.id, "retain NX feature body reference id")?,
+            data_block: copy_operation_text(ctx, &block.id, "retain NX feature body block id")?,
+        });
+    }
+    Ok(uses)
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.

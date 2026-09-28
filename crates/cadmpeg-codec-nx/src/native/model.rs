@@ -596,7 +596,7 @@ pub(crate) fn extract_segment_lineage(
     let references = feature_body_references(ctx, container)?;
     let blocks = data_blocks(ctx, container)?;
     let inputs = feature_input_blocks(ctx, container)?;
-    let body_data_block_uses = feature_body_data_block_uses(&references, &inputs, &blocks);
+    let body_data_block_uses = feature_body_data_block_uses(ctx, &references, &inputs, &blocks)?;
     let body_reference_occurrences = feature_body_reference_occurrences(ctx, container)?;
     let members = feature_operation_body_members(ctx, container)?;
     let operands = feature_operation_body_operands(
