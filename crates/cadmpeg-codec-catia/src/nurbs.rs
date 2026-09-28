@@ -749,13 +749,8 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         .len()
         .checked_mul(6)
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
-    let mut controls = Vec::new();
-    crate::resource::reserve_vec(
-        ctx,
-        &mut controls,
-        control_count,
-        "catia quintic jet controls",
-    )?;
+    let (mut controls, _controls_reservation) = crate::resource::temporary_vec(
+        ctx, control_count, "catia quintic jet controls")?;
     let mut full_knots = Vec::new();
     crate::resource::reserve_vec(
         ctx,
@@ -852,6 +847,21 @@ mod tests {
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
     const DOMAIN_ROUNDING: f64 = 1.0e-12;
+
+    #[test]
+    fn quintic_jet_control_workspace_refuses_materialized_limit() {
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            quintic_jet_bspline(ctx, 5, &[0.0, 1.0],
+                &[[0.0, 0.0], [1.0, 0.0]],
+                &[[1.0, 0.0], [1.0, 0.0]],
+                &[[0.0, 0.0], [0.0, 0.0]])
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service profile admits jet workspace").is_some());
+        assert!(matches!(crate::test_support::with_materialized_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia quintic jet controls"));
+    }
 
     #[test]
     fn annotation_collision_note_refuses_retained_and_collection_limits() {

@@ -67,3 +67,15 @@ pub(crate) fn with_retained_limit<T>(
         .expect("empty test root fits the retained limit");
     run(&ctx)
 }
+
+pub(crate) fn with_materialized_limit<T>(
+    max_materialized_bytes: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root fits the materialized limit");
+    run(&ctx)
+}
