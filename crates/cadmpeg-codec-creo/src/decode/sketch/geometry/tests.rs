@@ -48,6 +48,26 @@ fn saved_profile_collections_preserve_circle_and_line_order() {
     assert_eq!(profiles[1][0].entity.as_str(), "creo:featdefs:sketch_entity#917:10");
 }
 
+#[test]
+fn saved_profile_entity_identity_refuses_retained_limit() {
+    let (sketch, geometries) = saved_profile_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::saved_profile_chains(&ctx, &sketch, &geometries)
+        .expect_err("sketch entity identity exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo sketch entity identity"
+            && resource.dimension == ResourceDimension::RetainedBytes));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let checked = crate::decode::sketch_ids::sketch_entity_id_admitted(ctx, &sketch, 30)
+            .expect("identity resources");
+        assert_eq!(checked, crate::decode::sketch_ids::sketch_entity_id(&sketch, 30));
+    });
+}
+
 fn saved_profile_refuses_at_collection_boundary(operation: &'static str) {
     let mut last_refusal = None;
     for limit in 0..128 {
