@@ -6957,14 +6957,18 @@ pub(super) fn feature_swp104_leading_branches(ctx: &cadmpeg_core::decode::Decode
             else {
                 return;
             };
-            if let Some(branch) = FeatureSwp104LeadingBranch::from_source(
+            let resolved = FeatureSwp104LeadingBranch::from_source(
+                ctx,
                 format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
                 format!("nx:feature-history:operation-label#{operation_key}"),
                 source_offset,
                 branch,
                 |token| unique_offset_data_block(&indexed, token.value()),
-            ) {
-                branches.push(branch);
+            );
+            match resolved {
+                Ok(Some(branch)) => branches.push(branch),
+                Ok(None) => {},
+                Err(error) => { failure = Some(error); }
             }
         },
     )?;
@@ -7558,9 +7562,10 @@ pub(super) fn feature_extrude_payload_32_branches(ctx: &cadmpeg_core::decode::De
 
 /// Join exact profile fields to self-witnessed structured extrusion branches.
 pub(super) fn feature_extrude_32_constructions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     references: &[FeatureExtrudeProfileReference],
     branches: &[FeatureExtrudePayload32Branch],
-) -> Vec<FeatureExtrude32Construction> {
+) -> Result<Vec<FeatureExtrude32Construction>, cadmpeg_core::CodecError> {
     let mut branches_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudePayload32Branch>>::new();
     for branch in branches {
         branches_by_operation
@@ -7590,13 +7595,13 @@ pub(super) fn feature_extrude_32_constructions(
             continue;
         }
         let Some(profiles) = profile
-            .map_indexed(|_, reference| {
+            .map_indexed_charged(ctx, |_, reference| {
                 Some(FeatureConstructionMember {
                     reference: reference.id.clone(),
                     data_block: reference.data_block.clone()?,
                 })
-            })
-            .transpose()
+            })?
+            .transpose_charged(ctx)?
         else {
             continue;
         };
@@ -7604,8 +7609,8 @@ pub(super) fn feature_extrude_32_constructions(
             .frame
             .atom_members()
             .clone()
-            .map_indexed(|_, (_, binding)| binding)
-            .transpose()
+            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
+            .transpose_charged(ctx)?
         else {
             continue;
         };
@@ -7613,8 +7618,8 @@ pub(super) fn feature_extrude_32_constructions(
             .frame
             .first_members()
             .clone()
-            .map_indexed(|_, (_, binding)| binding)
-            .transpose()
+            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
+            .transpose_charged(ctx)?
         else {
             continue;
         };
@@ -7622,8 +7627,8 @@ pub(super) fn feature_extrude_32_constructions(
             .frame
             .second_members()
             .clone()
-            .map_indexed(|_, (_, binding)| binding)
-            .transpose()
+            .map_indexed_charged(ctx, |_, (_, binding)| binding)?
+            .transpose_charged(ctx)?
         else {
             continue;
         };
@@ -7640,7 +7645,7 @@ pub(super) fn feature_extrude_32_constructions(
             second_data_blocks,
         });
     }
-    constructions
+    Ok(constructions)
 }
 
 /// Decode and resolve ordered construction references in `BLOCK` payloads.

@@ -82,6 +82,8 @@ impl Serialize for FeatureSwp104LeadingBranch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
@@ -96,13 +98,15 @@ mod tests {
         let record =
             crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
         let source = crate::test_support::with_decode_context(|ctx| crate::om::swp104_payload_leading_branch(ctx, record)).unwrap().unwrap();
-        let branch = FeatureSwp104LeadingBranch::from_source(
+        let branch = crate::test_support::with_decode_context(|ctx| FeatureSwp104LeadingBranch::from_source(
+            ctx,
             "nx:feature:swp104#0".to_owned(),
             "operation".to_owned(),
             1200,
             source,
             |token| Some(format!("block#{}", token.value())),
-        )
+        ))
+        .unwrap()
         .unwrap();
         let borrowed = serde_json::to_vec(&branch).unwrap();
         let owned = serde_json::to_vec(&super::super::FeatureSwp104LeadingBranchWire::from(
@@ -111,5 +115,34 @@ mod tests {
         .unwrap();
         assert_eq!(borrowed, owned);
         assert_native_limit(&branch, serde_json::to_value(&branch).unwrap());
+    }
+
+    fn mapped_branch_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+        let mut payload = vec![33, 0, 0, 1, 0];
+        for _ in 0..4 {
+            payload.extend([47, 164, 122, 225, 71, 174, 20, 123]);
+        }
+        payload.extend([35, 1, 2, 240, 1]);
+        payload.extend([0; 5]);
+        payload.extend([255, 1, 2, 241, 1, 0, 0]);
+        let record = crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
+        let source = crate::test_support::with_decode_context(|ctx| crate::om::swp104_payload_leading_branch(ctx, record)).unwrap().unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+        FeatureSwp104LeadingBranch::from_source(&ctx, "branch".to_owned(), "operation".to_owned(), 1200, source, |_| None).unwrap_err()
+    }
+
+    #[test]
+    fn swp104_mapped_branch_refuses_collection_limit() {
+        let error = mapped_branch_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn swp104_mapped_branch_refuses_retained_limit() {
+        let error = mapped_branch_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
     }
 }
