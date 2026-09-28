@@ -225,9 +225,10 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         surface_ids.insert(row.id);
     }
     let Some(frame_records) = unique_available_positional_cylinder_frame_records(
+        ctx,
         &surface_ids,
         &scan.surfaces.parameters,
-    ) else {
+    )? else {
         return Ok(None);
     };
     if frame_records.is_empty() || !frame_records
@@ -371,9 +372,10 @@ pub(in super::super) fn generated_cap_plane_extent(
 }
 
 pub(in super::super) fn unique_available_positional_cylinder_frame_records(
+    ctx: &DecodeContext<'_>,
     surface_ids: &BTreeSet<u32>,
     parameters: &[crate::surface::SurfaceParameterRecord],
-) -> Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>> {
+) -> Result<Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>>, CodecError> {
     let mut frames = Vec::new();
     for surface_id in surface_ids {
         let mut matching = parameters
@@ -381,13 +383,14 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
             .filter(|record| record.surface_id == *surface_id);
         let first = matching.next();
         if matching.next().is_some() {
-            return None;
+            return Ok(None);
         }
         if let Some(frame) = first.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
+            ctx.try_reserve_items(&mut frames, 1, "creo available positional cylinder frames")?;
             frames.push((*surface_id, frame));
         }
     }
-    Some(frames)
+    Ok(Some(frames))
 }
 
 pub(in super::super) fn agreed_generated_cylinder_extent<'a>(

@@ -1543,13 +1543,17 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
     let surface_ids = BTreeSet::from([1, 2, 3]);
     let parameters = [parameter(1, Some(frame)), parameter(2, None)];
     assert_eq!(
-        unique_available_positional_cylinder_frame_records(&surface_ids, &parameters),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &parameters)
+        }).expect("service resources"),
         Some(vec![(1, frame)])
     );
 
     let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
     assert!(
-        unique_available_positional_cylinder_frame_records(&surface_ids, &duplicates).is_none()
+        crate::decode::with_test_decode_ctx(|ctx| {
+            unique_available_positional_cylinder_frame_records(ctx, &surface_ids, &duplicates)
+        }).expect("service resources").is_none()
     );
 }
 
