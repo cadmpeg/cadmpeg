@@ -770,10 +770,9 @@ pub(super) fn emit_surfaces(
                 )?;
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
-                let directrix_id = CurveId::compose(
+                let directrix_id = crate::resource::compose_u32_id(admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "profile"),
-                    object_id,
-                );
+                    object_id, CurveId::mint, "catia_b5_profile_id")?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -786,16 +785,16 @@ pub(super) fn emit_surfaces(
                     directrix_id.as_str(), "geometry", "catia_b5_profile_annotation")?;
                 admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
                 ir.model.curves.push(Curve {
-                    id: directrix_id.clone(),
+                    id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
+                        CurveId::mint, "catia_b5_profile_curve_record_id")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         revolution.directrix,
                     )),
                     source_object: None,
                 });
-                let procedural_id = ProceduralSurfaceId::compose(
+                let procedural_id = crate::resource::compose_u32_id(admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "procedural-surface"),
-                    object_id,
-                );
+                    object_id, ProceduralSurfaceId::mint, "catia_b5_procedural_surface_id")?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -833,10 +832,9 @@ pub(super) fn emit_surfaces(
                 .canonical_surface_id(object_id)
                 .is_some_and(|id| !graph.offset_surfaces.contains_key(&id)) =>
             {
-                let procedural_id = ProceduralSurfaceId::compose(
+                let procedural_id = crate::resource::compose_u32_id(admission.context(),
                     &cadmpeg_ir::identity_namespace!("catia", "b5", "rolling-ball"),
-                    object_id,
-                );
+                    object_id, ProceduralSurfaceId::mint, "catia_b5_rolling_ball_id")?;
                 let carrier_tag = crate::resource::format_retained(admission.context(),
                     format_args!("result_carrier:{carrier_object_id:08x}"),
                     "catia_b5_rolling_ball_carrier_tag")?;
@@ -870,10 +868,9 @@ pub(super) fn emit_surfaces(
         ) else {
             continue;
         };
-        let procedural_id = ProceduralSurfaceId::compose(
+        let procedural_id = crate::resource::compose_u32_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "offset"),
-            object_id,
-        );
+            object_id, ProceduralSurfaceId::mint, "catia_b5_offset_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -917,25 +914,30 @@ fn emit_extrusion_procedure(
     extrusion: super::ResolvedExtrusionSurface,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let directrix_id = CurveId::compose(
+    let directrix_id = crate::resource::compose_u32_id(admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix"),
-        extrusion.directrix_object_id,
-    );
+        extrusion.directrix_object_id, CurveId::mint, "catia_b5_extrusion_directrix_id")?;
     match extrusion.directrix {
         super::ResolvedExtrusionDirectrix::Intersection {
             supports,
             cache_fit_tolerance,
         } => {
-            let sides = (*supports).map(|side| IntcurveSupportSide {
-                surface: Some(surface_ids[&side.surface_object_id].clone()),
-                pcurve: Some(SupportPcurve::new(
-                    side.pcurve,
-                    (side.pcurve_parameter_range
-                        != extrusion.directrix_parameter_range.endpoints())
-                    .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                    .flatten(),
-                )),
-            });
+            let make_side = |side: super::ResolvedExtrusionSupport| {
+                Ok::<_, cadmpeg_core::CodecError>(IntcurveSupportSide {
+                    surface: Some(crate::resource::copy_id(admission.context(),
+                        surface_ids[&side.surface_object_id].as_str(), SurfaceId::mint,
+                        "catia_b5_extrusion_support_surface_id")?),
+                    pcurve: Some(SupportPcurve::new(
+                        side.pcurve,
+                        (side.pcurve_parameter_range
+                            != extrusion.directrix_parameter_range.endpoints())
+                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                        .flatten(),
+                    )),
+                })
+            };
+            let [first, second] = *supports;
+            let sides = [make_side(first)?, make_side(second)?];
             annotate(
                 admission.context(),
                 annotations,
@@ -946,14 +948,14 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: directrix_id.clone(),
+                id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
+                    CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId::compose(
+            let procedure_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
-                extrusion.directrix_object_id,
-            );
+                extrusion.directrix_object_id, ProceduralCurveId::mint, "catia_b5_extrusion_directrix_procedure_id")?;
             annotate(
                 admission.context(),
                 annotations,
@@ -979,7 +981,9 @@ fn emit_extrusion_procedure(
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
             let _attached = ir
                 .model
-                .add_procedural_curve(directrix_id.clone(), procedure);
+                .add_procedural_curve(crate::resource::copy_id(admission.context(),
+                    directrix_id.as_str(), CurveId::mint,
+                    "catia_b5_extrusion_procedure_owner_id")?, procedure);
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
@@ -992,7 +996,8 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: directrix_id.clone(),
+                id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
+                    CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: curve,
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
@@ -1005,10 +1010,9 @@ fn emit_extrusion_procedure(
             distance,
             direction,
         } => {
-            let source_id = CurveId::compose(
+            let source_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-source"),
-                source_object_id,
-            );
+                source_object_id, CurveId::mint, "catia_b5_extrusion_directrix_source_id")?;
             annotate(
                 admission.context(),
                 annotations,
@@ -1019,7 +1023,8 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: source_id.clone(),
+                id: crate::resource::copy_id(admission.context(), source_id.as_str(),
+                    CurveId::mint, "catia_b5_extrusion_source_record_id")?,
                 geometry: source_curve,
                 source_object: Some(cgm_source("curve", source_object_id)),
             });
@@ -1033,14 +1038,14 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
-                id: directrix_id.clone(),
+                id: crate::resource::copy_id(admission.context(), directrix_id.as_str(),
+                    CurveId::mint, "catia_b5_extrusion_directrix_record_id")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                 source_object: Some(cgm_source("curve", extrusion.directrix_object_id)),
             });
-            let procedure_id = ProceduralCurveId::compose(
+            let procedure_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix-procedure"),
-                extrusion.directrix_object_id,
-            );
+                extrusion.directrix_object_id, ProceduralCurveId::mint, "catia_b5_extrusion_directrix_procedure_id")?;
             annotate(
                 admission.context(),
                 annotations,
@@ -1051,7 +1056,8 @@ fn emit_extrusion_procedure(
             )?;
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
             let _attached = ir.model.add_procedural_curve(
-                directrix_id.clone(),
+                crate::resource::copy_id(admission.context(), directrix_id.as_str(),
+                    CurveId::mint, "catia_b5_extrusion_procedure_owner_id")?,
                 ProceduralCurve::new(
                     procedure_id,
                     ProceduralCurveDefinition::Offset(
@@ -1059,7 +1065,9 @@ fn emit_extrusion_procedure(
                             source_id,
                             distance,
                             direction,
-                            Some(surface_ids[&support.surface_object_id].clone()),
+                            Some(crate::resource::copy_id(admission.context(),
+                                surface_ids[&support.surface_object_id].as_str(),
+                                SurfaceId::mint, "catia_b5_extrusion_support_surface_id")?),
                             source_parameter_range,
                         ),
                     ),
@@ -1067,10 +1075,9 @@ fn emit_extrusion_procedure(
             );
         }
     }
-    let procedure_id = ProceduralSurfaceId::compose(
+    let procedure_id = crate::resource::compose_u32_id(admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion"),
-        surface_object_id,
-    );
+        surface_object_id, ProceduralSurfaceId::mint, "catia_b5_extrusion_id")?;
     annotate(
         admission.context(),
         annotations,

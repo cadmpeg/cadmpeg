@@ -162,12 +162,16 @@ pub(super) fn orient_loop_members(
 ) -> Result<Option<BTreeMap<u32, OrientedLoop>>, CodecError> {
     charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop ids")?;
     charge_collection(ctx, graph.loops.len(), "catia b5 orientation loop index")?;
-    let loop_ids: Vec<u32> = graph.loops.keys().copied().collect();
-    let node_by_loop: HashMap<u32, usize> = loop_ids
-        .iter()
-        .enumerate()
-        .map(|(node, loop_id)| (*loop_id, node))
-        .collect();
+    let mut loop_ids = Vec::new();
+    crate::resource::reserve_admitted_vec(&mut loop_ids, graph.loops.len(),
+        "catia b5 orientation loop ids")?;
+    loop_ids.extend(graph.loops.keys().copied());
+    let mut node_by_loop = HashMap::new();
+    crate::resource::reserve_admitted_map(&mut node_by_loop, loop_ids.len(),
+        "catia b5 orientation loop index")?;
+    for (node, loop_id) in loop_ids.iter().enumerate() {
+        node_by_loop.insert(*loop_id, node);
+    }
     if reversed.len() != loop_ids.len()
         || loop_ids.iter().any(|loop_id| {
             reversed

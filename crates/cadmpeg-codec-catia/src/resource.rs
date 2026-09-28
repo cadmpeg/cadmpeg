@@ -330,8 +330,39 @@ pub(crate) fn compose_index_id<T>(
     construct(id).map_err(CodecError::malformed)
 }
 
+pub(crate) fn compose_u32_id<T>(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::ids::IdentityNamespace,
+    value: u32,
+    construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let index = usize::try_from(value)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    compose_index_id(ctx, namespace, index, construct, operation)
+}
+
 #[cfg(test)]
 mod id_format_tests {
+    #[test]
+    fn b5_numeric_identity_refuses_retained_limit_and_preserves_spelling() {
+        use cadmpeg_ir::ids::CurveId;
+
+        let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "profile");
+        let limited = crate::test_support::with_retained_limit(1, |ctx| {
+            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint,
+                "catia_b5_profile_id")
+        });
+        assert!(matches!(limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia_b5_profile_id"));
+        let id = crate::test_support::with_service_context(|ctx| {
+            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint,
+                "catia_b5_profile_id")
+        }).expect("service budget admits the identity");
+        assert_eq!(id.as_str(), "catia:b5:profile#42");
+    }
+
     #[test]
     fn native_owner_id_format_refuses_retained_limit() {
         let limited = crate::test_support::with_retained_limit(39, |ctx| {
