@@ -36,6 +36,7 @@ use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
 
 use crate::brep::graph::{decode_bodies, Brep};
+use crate::brep::feature_source::FeatureSourceId;
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
@@ -2144,7 +2145,7 @@ fn conflicting_display_reference(
     ctx: &DecodeContext<'_>,
     stream: &str,
     table_index: usize,
-    candidates: &BTreeSet<crate::brep::feature_source::FeatureSourceId>,
+    candidates: &BTreeSet<FeatureSourceId>,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "retain SLDPRT conflicting display reference";
     let index_text = table_index.to_string();
@@ -2174,6 +2175,80 @@ fn conflicting_display_reference(
     }
     message.push(')');
     Ok(message)
+}
+
+fn appearance_assignment_loss_message(
+    ctx: &DecodeContext<'_>,
+    assigned: &BTreeSet<FeatureSourceId>,
+    matched: &BTreeSet<FeatureSourceId>,
+    conflicts: &[String],
+) -> Result<Option<String>, CodecError> {
+    const OPERATION: &str = "retain SLDPRT appearance assignment loss";
+    const PREFIX: &str = "VisualStates feature appearance assignment unresolved: ";
+    const MISSING_PREFIX: &str = "feature source ID(s) ";
+    const MISSING_SUFFIX: &str = " have no agreeing DisplayFace persistent reference";
+    const CONFLICT_PREFIX: &str = "conflicting references rejected for ";
+    let has_unmatched = assigned.difference(matched).next().is_some();
+    if !has_unmatched && conflicts.is_empty() {
+        return Ok(None);
+    }
+    let mut bytes = PREFIX.len();
+    let add = |bytes: &mut usize, part: usize| -> Result<(), CodecError> {
+        *bytes = bytes.checked_add(part).ok_or_else(|| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        Ok(())
+    };
+    add(&mut bytes, 1)?;
+    if has_unmatched {
+        add(&mut bytes, MISSING_PREFIX.len())?;
+        add(&mut bytes, MISSING_SUFFIX.len())?;
+        for (position, source) in assigned.difference(matched).enumerate() {
+            add(&mut bytes, source.value().ilog10() as usize + 1)?;
+            if position > 0 {
+                add(&mut bytes, ", ".len())?;
+            }
+        }
+    }
+    if !conflicts.is_empty() {
+        if has_unmatched {
+            add(&mut bytes, "; ".len())?;
+        }
+        add(&mut bytes, CONFLICT_PREFIX.len())?;
+        for (position, conflict) in conflicts.iter().enumerate() {
+            add(&mut bytes, conflict.len())?;
+            if position > 0 {
+                add(&mut bytes, "; ".len())?;
+            }
+        }
+    }
+    let mut message = String::new();
+    ctx.reserve_retained_string(&mut message, bytes, OPERATION)?;
+    message.push_str(PREFIX);
+    if has_unmatched {
+        message.push_str(MISSING_PREFIX);
+        for (position, source) in assigned.difference(matched).enumerate() {
+            if position > 0 {
+                message.push_str(", ");
+            }
+            message.push_str(&source.value().to_string());
+        }
+        message.push_str(MISSING_SUFFIX);
+    }
+    if !conflicts.is_empty() {
+        if has_unmatched {
+            message.push_str("; ");
+        }
+        message.push_str(CONFLICT_PREFIX);
+        for (position, conflict) in conflicts.iter().enumerate() {
+            if position > 0 {
+                message.push_str("; ");
+            }
+            message.push_str(conflict);
+        }
+    }
+    message.push('.');
+    Ok(Some(message))
 }
 
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
@@ -3294,32 +3369,14 @@ fn build_geometry_ir(
             display_links,
         ));
     }
-    let unmatched_feature_sources = feature_appearance_sources
-        .difference(&matched_feature_sources)
-        .copied()
-        .collect::<Vec<_>>();
-    if !unmatched_feature_sources.is_empty() || !conflicting_display_references.is_empty() {
-        let mut reasons = Vec::new();
-        if !unmatched_feature_sources.is_empty() {
-            reasons.push(format!(
-                "feature source ID(s) {} have no agreeing DisplayFace persistent reference",
-                unmatched_feature_sources
-                    .iter()
-                    .map(|source| source.value().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        if !conflicting_display_references.is_empty() {
-            reasons.push(format!(
-                "conflicting references rejected for {}",
-                conflicting_display_references.join("; ")
-            ));
-        }
-        pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(format!(
-            "VisualStates feature appearance assignment unresolved: {}.",
-            reasons.join("; ")
-        )));
+    if let Some(message) = appearance_assignment_loss_message(
+        ctx,
+        &feature_appearance_sources,
+        &matched_feature_sources,
+        &conflicting_display_references,
+    )? {
+        ctx.reserve_collection_vec(&mut pmi_losses, 1, "append SLDPRT appearance loss")?;
+        pmi_losses.push(SldprtLossCode::AppearanceAssignmentUnresolved.note(message));
     }
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
         ctx,

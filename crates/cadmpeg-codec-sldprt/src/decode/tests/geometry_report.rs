@@ -29,6 +29,47 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
+fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let assigned = [
+        crate::brep::feature_source::FeatureSourceId::try_from(300).unwrap(),
+        crate::brep::feature_source::FeatureSourceId::try_from(2).unwrap(),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let matched = BTreeSet::new();
+    let conflicts = vec!["first".to_string(), "second".to_string()];
+    let expected = "VisualStates feature appearance assignment unresolved: feature source ID(s) 2, 300 have no agreeing DisplayFace persistent reference; conflicting references rejected for first; second.";
+    let message = super::super::appearance_assignment_loss_message(
+        &cadmpeg_test_support::service_decode_context(),
+        &assigned,
+        &matched,
+        &conflicts,
+    )
+    .unwrap();
+    assert_eq!(message.as_deref(), Some(expected));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::appearance_assignment_loss_message(
+        &ctx,
+        &assigned,
+        &matched,
+        &conflicts,
+    )
+    .expect_err("one byte below the exact message length must refuse");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT appearance assignment loss"
+    ));
+}
+
+#[test]
 fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
