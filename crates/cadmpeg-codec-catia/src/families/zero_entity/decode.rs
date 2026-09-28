@@ -1157,12 +1157,15 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
+    let mut losses = Vec::new();
+    admitted!(crate::resource::push_loss(ctx, &mut losses, topology_loss,
+        format_args!("{topology_message}"), "catia_zero_entity_topology_loss"));
     Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
             coverage,
-            losses: vec![topology_loss.note(topology_message)],
+            losses,
             notes: Vec::new(),
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },

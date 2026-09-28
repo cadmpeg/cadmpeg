@@ -344,7 +344,8 @@ pub(in crate::families) fn try_decode_e5(
                 return Some(Err(error));
             }
         }
-        let mut losses = if topology_transferred {
+        let mut losses = Vec::new();
+        let (loss_code, message) = if topology_transferred {
             let message = if topology
                 .as_ref()
                 .is_some_and(|topology| topology.bodies.is_empty())
@@ -353,12 +354,15 @@ pub(in crate::families) fn try_decode_e5(
             } else {
                 "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
             };
-            vec![CatiaLossCode::TopologyE5GaugeSubstituted.note(message)]
+            (CatiaLossCode::TopologyE5GaugeSubstituted, message)
         } else {
-            vec![CatiaLossCode::TopologyE5GraphUnclosed.note(
-            "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
-        )]
+            (CatiaLossCode::TopologyE5GraphUnclosed,
+                "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.")
         };
+        if let Err(error) = crate::resource::push_loss(ctx, &mut losses, loss_code,
+            format_args!("{message}"), "catia_e5_topology_loss") {
+            return Some(Err(error));
+        }
         if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
             return Some(Err(error));
         }
