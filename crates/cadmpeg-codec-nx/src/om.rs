@@ -1698,8 +1698,9 @@ fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
 
 /// Decode the unique exactly counted transform lane in a bounded pattern payload.
 pub(crate) fn pattern_payload_transform_lane(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<PatternPayloadTransformLane> {
+) -> Result<Option<PatternPayloadTransformLane>, CodecError> {
     const FEATURE_PREFIX_TAIL: [u8; 3] = [0x01, 0x00, 0x00];
     const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
         0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
@@ -1717,9 +1718,12 @@ pub(crate) fn pattern_payload_transform_lane(
             GEOMETRY_PREFIX_TAIL.as_slice(),
             GEOMETRY_SCALAR_SUFFIX.as_slice(),
         ),
-        _ => return None,
+        _ => return Ok(None),
     };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX pattern transform lanes")?;
+    let failure = std::cell::RefCell::new(None);
     let decode = |start: usize| {
+        if failure.borrow().is_some() { return None; }
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(start + 1)? else {
             return None;
@@ -1749,6 +1753,10 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
+            if let Err(error) = reserve_om_retained_item(ctx, &mut rows, "nx pattern transform rows") {
+                *failure.borrow_mut() = Some(error);
+                return None;
+            }
             rows.push(PatternRow {
                 values: value,
                 selector,
@@ -1771,6 +1779,7 @@ pub(crate) fn pattern_payload_transform_lane(
         })
     };
     let decode_wide = |start: usize| {
+        if failure.borrow().is_some() { return None; }
         (record.name() == "Pattern Feature").then_some(())?;
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
         let declared_count @ 2.. = *record.payload().get(start + 1)? else {
@@ -1822,6 +1831,10 @@ pub(crate) fn pattern_payload_transform_lane(
                 atom,
                 offset: record.payload_offset() + selector_offset,
             };
+            if let Err(error) = reserve_om_retained_item(ctx, &mut rows, "nx pattern wide transform rows") {
+                *failure.borrow_mut() = Some(error);
+                return None;
+            }
             rows.push(PatternRow {
                 values: PatternWideValues { first, terminal },
                 selector,
@@ -1842,11 +1855,13 @@ pub(crate) fn pattern_payload_transform_lane(
             rows: PatternRows::Wide(BranchItems::new(rows).ok()?),
         })
     };
-    unique_candidate(
+    let candidate = unique_candidate(
         (0..record.payload().len().saturating_sub(1))
             .filter_map(decode)
             .chain((0..record.payload().len().saturating_sub(1)).filter_map(decode_wide)),
-    )
+    );
+    if let Some(error) = failure.into_inner() { return Err(error); }
+    Ok(candidate)
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.

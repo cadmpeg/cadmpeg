@@ -2,6 +2,8 @@
 //! Pattern row layouts with their exact scalar families.
 
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use super::branch_items::BranchItems;
@@ -84,20 +86,21 @@ impl<I, O> PatternRows<I, O> {
         }
     }
 
-    pub(crate) fn map<J, P>(
+    pub(crate) fn map_charged<J, P>(
         self,
+        ctx: &DecodeContext<'_>,
         mut selector: impl FnMut(I) -> J,
         mut offset: impl FnMut(O) -> P,
-    ) -> PatternRows<J, P> {
+    ) -> Result<PatternRows<J, P>, CodecError> {
         match self {
-            Self::Scalar(rows) => PatternRows::Scalar(rows.map_indexed(|_, row| PatternRow {
+            Self::Scalar(rows) => Ok(PatternRows::Scalar(rows.map_indexed_charged(ctx, |_, row| PatternRow {
                 values: PatternValue {
                     scalar: row.values.scalar,
                     offset: offset(row.values.offset),
                 },
                 selector: selector(row.selector),
-            })),
-            Self::Wide(rows) => PatternRows::Wide(rows.map_indexed(|_, row| PatternRow {
+            })?)),
+            Self::Wide(rows) => Ok(PatternRows::Wide(rows.map_indexed_charged(ctx, |_, row| PatternRow {
                 values: PatternWideValues {
                     first: row.values.first.map(|value| PatternValue {
                         scalar: value.scalar,
@@ -109,7 +112,7 @@ impl<I, O> PatternRows<I, O> {
                     },
                 },
                 selector: selector(row.selector),
-            })),
+            })?)),
         }
     }
 }
