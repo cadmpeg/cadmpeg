@@ -82,6 +82,10 @@ fn constraint_attribute_refuses_at_retained_limit() {
 
 #[test]
 fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is within policy");
     let mut attributes = std::collections::BTreeMap::from([
         ("CenterX".to_owned(), "1".to_owned()),
         ("CenterY".to_owned(), "2".to_owned()),
@@ -90,7 +94,7 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
         ("StartAngle".to_owned(), "0.2".to_owned()),
         ("EndAngle".to_owned(), "1.2".to_owned()),
     ]);
-    let arc = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("finite arc");
+    let arc = super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("finite arc");
     assert!(
         matches!(arc.definition(), cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
         center,
@@ -104,11 +108,20 @@ fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
     );
 
     attributes.insert("CenterX".to_owned(), "NaN".to_owned());
-    let native = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("native arc");
+    let native = super::super::sketch_geometry(&ctx, "ArcOfCircle", &attributes).expect("native arc");
     assert!(matches!(
         native.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
     ));
+}
+
+#[test]
+fn native_sketch_geometry_refuses_at_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd native sketch geometry kind", |ctx| {
+            super::super::sketch_geometry(ctx, "UnknownGeometry", &Default::default())
+        },
+    );
 }
 
 #[test]
