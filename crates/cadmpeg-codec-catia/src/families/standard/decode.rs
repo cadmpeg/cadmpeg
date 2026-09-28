@@ -10134,21 +10134,30 @@ fn standard_oriented_analytic_curve_parameter_range(
 }
 
 fn standard_oriented_native_support_pcurves(
+    ctx: &DecodeContext<'_>,
     native: &StandardEdgeSupport,
     points: &[Point],
     endpoint_pair: [usize; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<[PcurveGeometry; 2]> {
+) -> Result<Option<[PcurveGeometry; 2]>, cadmpeg_core::CodecError> {
+    let copy_native = || -> Result<[PcurveGeometry; 2], cadmpeg_core::CodecError> {
+        Ok([
+            crate::resource::copy_pcurve_geometry(ctx, &native.pcurves[0],
+                "catia_standard_native_support_pcurve_copy")?,
+            crate::resource::copy_pcurve_geometry(ctx, &native.pcurves[1],
+                "catia_standard_native_support_pcurve_copy")?,
+        ])
+    };
     let Some(native_pair) =
         standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
     else {
-        return Some(native.pcurves.clone());
+        return Ok(Some(copy_native()?));
     };
     if native_pair == endpoint_pair {
-        return Some(native.pcurves.clone());
+        return Ok(Some(copy_native()?));
     }
-    Some([
-        crate::nurbs::reverse_pcurve_geometry(
+    let Some(first) = crate::nurbs::reverse_pcurve_geometry(
+            ctx,
             &native.pcurves[0],
             native.parameter_range,
             refusal,
@@ -10157,8 +10166,9 @@ fn standard_oriented_native_support_pcurves(
                  reversed onto its edge",
                 endpoint_pair[0], endpoint_pair[1]
             ),
-        )?,
-        crate::nurbs::reverse_pcurve_geometry(
+        )? else { return Ok(None) };
+    let Some(second) = crate::nurbs::reverse_pcurve_geometry(
+            ctx,
             &native.pcurves[1],
             native.parameter_range,
             refusal,
@@ -10167,8 +10177,8 @@ fn standard_oriented_native_support_pcurves(
                  reversed onto its edge",
                 endpoint_pair[0], endpoint_pair[1]
             ),
-        )?,
-    ])
+        )? else { return Ok(None) };
+    Ok(Some([first, second]))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10404,11 +10414,12 @@ fn build_standard_edge_curve(
         match native_support {
             Some(native) => {
                 match standard_oriented_native_support_pcurves(
+                    ctx,
                     native,
                     &ir.model.points,
                     points,
                     refusal,
-                ) {
+                )? {
                     Some(pcurves) => Some(pcurves),
                     None => return Ok((None, None)),
                 }

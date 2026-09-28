@@ -112,14 +112,19 @@ impl LaneRefusals {
 
     /// Record a refused source-stated parameter range against the record that
     /// stated it.
-    fn push_range(&mut self, record: impl std::fmt::Display, range: [f64; 2]) {
-        self.notes.push(
-            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid.note(format!(
+    fn push_range(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        record: impl std::fmt::Display,
+        range: [f64; 2],
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(ctx, &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryParameterRangeInvalid,
+            format_args!(
                 "A CATIA record states a parameter range the reader refuses: \
                  {record} states [{}, {}]",
                 range[0], range[1]
-            )),
-        );
+            ), "catia_range_refusal_loss")
     }
 }
 
@@ -129,17 +134,20 @@ impl LaneRefusals {
 /// The range is a value the record states, so a non-finite bound or a bound pair
 /// that does not increase is a refused record. `strict` states whether the two
 /// bounds must differ.
-fn readable_range(range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, record: &str) -> bool {
+fn readable_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, record: &str,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let ordered = if strict {
         range[0] < range[1]
     } else {
         range[0] <= range[1]
     };
     if range.into_iter().all(f64::is_finite) && ordered {
-        return true;
+        return Ok(true);
     }
-    refusal.push_range(record, range);
-    false
+    refusal.push_range(ctx, record, range)?;
+    Ok(false)
 }
 
 /// Record a carrier refusal against the record that stated it, and answer
@@ -168,15 +176,16 @@ pub(crate) fn note_refusal<T>(
 /// Other failures return `None` for unsupported geometry or a non-finite
 /// analytic reconstruction.
 pub(crate) fn reverse_pcurve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &PcurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Option<PcurveGeometry> {
-    if !readable_range(range, true, refusal, record) {
-        return None;
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, true, refusal, record)? {
+        return Ok(None);
     }
-    match geometry {
+    Ok((|| match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
@@ -204,7 +213,7 @@ pub(crate) fn reverse_pcurve_geometry(
             }
         }
         _ => None,
-    }
+    })())
 }
 
 /// Reverse a supported model-space curve over an increasing native range.
@@ -213,23 +222,24 @@ pub(crate) fn reverse_pcurve_geometry(
 /// as in [`reverse_pcurve_geometry`]. Unsupported geometry and non-finite
 /// analytic reconstructions return `None`.
 pub(crate) fn reverse_curve_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Option<(CurveGeometry, [f64; 2])> {
-    if !readable_range(range, false, refusal, record) {
-        return None;
+) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, false, refusal, record)? {
+        return Ok(None);
     }
     if matches!(
         geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
     ) && !(range[1] - range[0]).is_finite()
     {
-        refusal.push_range(record, range);
-        return None;
+        refusal.push_range(ctx, record, range)?;
+        return Ok(None);
     }
-    match geometry {
+    Ok((|| match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = line_curve.direction();
@@ -274,7 +284,7 @@ pub(crate) fn reverse_curve_geometry(
             }
         }
         _ => None,
-    }
+    })())
 }
 
 /// Reflect knots without summing the interval endpoints. Subtracting from
@@ -347,22 +357,24 @@ fn domain_endpoint(parameter: f64, [lower, upper]: [f64; 2], tolerance: f64) -> 
 /// another kind. The remaining `None` exits re-read a domain the IR carrier
 /// already refined.
 pub(crate) fn canonical_model_curve_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Option<[f64; 2]> {
-    if !readable_range(range, false, refusal, record) {
-        return None;
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    if !readable_range(ctx, range, false, refusal, record)? {
+        return Ok(None);
     }
-    match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
-            let normalized = canonical_periodic_range(range);
-            if normalized.is_none() {
-                refusal.push_range(record, range);
-            }
-            normalized
+    if matches!(geometry, CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) |
+        SolvedCurveGeometry::Ellipse(_))) {
+        let normalized = canonical_periodic_range(range);
+        if normalized.is_none() {
+            refusal.push_range(ctx, record, range)?;
         }
+        return Ok(normalized);
+    }
+    Ok((|| match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
             let domain_span = upper - lower;
@@ -390,7 +402,7 @@ pub(crate) fn canonical_model_curve_range(
             }
         }
         _ => Some(range),
-    }
+    })())
 }
 
 /// Reverse a cone-helix construction over its complete angular domain.
@@ -401,21 +413,23 @@ pub(crate) fn canonical_model_curve_range(
 /// curve families require family-specific support-side mappings and are not
 /// admitted here.
 pub(crate) fn reverse_helix_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &ProceduralCurveDefinition,
     range: [f64; 2],
     refusal: &mut LaneRefusals,
     record: &str,
-) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
+) -> Result<Option<(ProceduralCurveDefinition, [f64; 2])>, cadmpeg_core::CodecError> {
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
-        return None;
+        return Ok(None);
     };
-    if !readable_range(range, true, refusal, record) {
-        return None;
+    if !readable_range(ctx, range, true, refusal, record)? {
+        return Ok(None);
     }
     if !(range[1] - range[0]).is_finite() {
-        refusal.push_range(record, range);
-        return None;
+        refusal.push_range(ctx, record, range)?;
+        return Ok(None);
     }
+    Ok((|| {
     let angle_range = helix_payload.angle_range();
     let center = helix_payload.center().as_raw();
     let major = helix_payload.major();
@@ -473,6 +487,7 @@ pub(crate) fn reverse_helix_definition(
         ),
         range,
     ))
+    })())
 }
 
 /// Normalize an increasing circular interval to the canonical one-turn domain.
@@ -514,12 +529,12 @@ pub(crate) fn circular_helix_cache(
         return Ok(None);
     };
     let angle_range = helix_payload.angle_range();
-    if !readable_range(angle_range.get(), true, refusal, record) {
+    if !readable_range(ctx, angle_range.get(), true, refusal, record)? {
         return Ok(None);
     }
     let [angle_start, angle_end] = angle_range.get();
     if !(angle_end - angle_start).is_finite() {
-        refusal.push_range(record, angle_range.get());
+        refusal.push_range(ctx, record, angle_range.get())?;
         return Ok(None);
     }
     let major = helix_payload.major();
@@ -869,6 +884,27 @@ mod tests {
     }
 
     #[test]
+    fn range_refusal_note_refuses_retained_and_collection_limits() {
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_range_refusal_loss"));
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            LaneRefusals::new().push_range(ctx, "source range", [2.0, 1.0])
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_range_refusal_loss"));
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            refusal.push_range(ctx, "source range", [2.0, 1.0])?;
+            Ok::<_, cadmpeg_core::CodecError>(refusal.take_notes())
+        }).expect("service profile admits range note");
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("source range states [2, 1]"));
+    }
+
+    #[test]
     // These checked constructors must accept the explicit test fixtures.
     #[allow(clippy::unwrap_used)]
     fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
@@ -885,12 +921,12 @@ mod tests {
 
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            canonical_model_curve_range(
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(ctx,
                 &geometry,
                 [-DOMAIN_ROUNDING, 1.0 + DOMAIN_ROUNDING],
                 &mut refusal,
                 "test curve"
-            ),
+            )).expect("service profile admits range operation"),
             Some([0.0, 1.0])
         );
         for (range, expected) in [
@@ -907,18 +943,18 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
+                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(ctx, &geometry, range, &mut refusal, "test curve")).expect("service profile admits range operation"),
                 Some(expected)
             );
         }
         for range in [[-1.0e-4, 0.5], [0.5, 1.0 + 1.0e-4]] {
             assert_eq!(
-                canonical_model_curve_range(&geometry, range, &mut refusal, "test curve"),
+                crate::test_support::with_service_context(|ctx| canonical_model_curve_range(ctx, &geometry, range, &mut refusal, "test curve")).expect("service profile admits range operation"),
                 None
             );
         }
         assert_eq!(
-            canonical_model_curve_range(&geometry, [-1.0e-4, 1.0], &mut refusal, "test curve"),
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(ctx, &geometry, [-1.0e-4, 1.0], &mut refusal, "test curve")).expect("service profile admits range operation"),
             None
         );
         // Domain corrections do not add a refused source range.
@@ -926,7 +962,7 @@ mod tests {
 
         // A source-stated interval that does not increase is a refused record.
         assert_eq!(
-            canonical_model_curve_range(&geometry, [1.0, 0.0], &mut refusal, "test curve"),
+            crate::test_support::with_service_context(|ctx| canonical_model_curve_range(ctx, &geometry, [1.0, 0.0], &mut refusal, "test curve")).expect("service profile admits range operation"),
             None
         );
         let notes = refusal.take_notes();
@@ -948,12 +984,12 @@ mod tests {
             .expect("valid LinePcurve fixture"),
         );
         let range = [5.0, 9.0];
-        let reversed = reverse_pcurve_geometry(
+        let reversed = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx,
             &geometry,
             range,
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
-        )
+        )).expect("service profile admits range operation")
         .expect("reversible line");
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
@@ -984,12 +1020,12 @@ mod tests {
             .expect("valid CircleCurve fixture"),
         ));
         for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
-            let (reversed, reversed_range) = reverse_curve_geometry(
+            let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx,
                 &geometry,
                 range,
                 &mut crate::nurbs::LaneRefusals::new(),
                 "test record",
-            )
+            )).expect("service profile admits range operation")
             .expect("reversible model curve");
             for (parameter, source_parameter) in
                 [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
@@ -1016,12 +1052,12 @@ mod tests {
             .unwrap(),
         ));
         let range = [0.2, 0.8];
-        let (reversed, reversed_range) = reverse_curve_geometry(
+        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx,
             &geometry,
             range,
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
-        )
+        )).expect("service profile admits range operation")
         .expect("reversible NURBS");
         for parameter in [range[0], 0.5, range[1]] {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
@@ -1052,7 +1088,7 @@ mod tests {
         );
         let mut refusal = LaneRefusals::new();
         let (reversed, reversed_range) =
-            reverse_helix_definition(&definition, range, &mut refusal, "test helix")
+            crate::test_support::with_service_context(|ctx| reverse_helix_definition(ctx, &definition, range, &mut refusal, "test helix")).expect("service profile admits range operation")
                 .expect("reversible helix");
         assert!(refusal.take_notes().is_empty());
         let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
@@ -1461,12 +1497,12 @@ mod tests {
             )
             .unwrap(),
         );
-        assert!(reverse_pcurve_geometry(
+        assert!(crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx,
             &pcurve_line,
             [f64::MAX / 2.0, f64::MAX],
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
-        )
+        )).expect("service profile admits range operation")
         .is_none());
 
         let model_line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1476,12 +1512,12 @@ mod tests {
             )
             .unwrap(),
         ));
-        assert!(reverse_curve_geometry(
+        assert!(crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx,
             &model_line,
             [0.0, f64::MAX],
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
-        )
+        )).expect("service profile admits range operation")
         .is_none());
 
         let pcurve_nurbs = PcurveGeometry::Nurbs {
@@ -1494,12 +1530,12 @@ mod tests {
             )
             .unwrap(),
         };
-        assert!(reverse_pcurve_geometry(
+        assert!(crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx,
             &pcurve_nurbs,
             [0.0, f64::MAX],
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
-        )
+        )).expect("service profile admits range operation")
         .is_none());
     }
 
@@ -1561,7 +1597,7 @@ mod tests {
         );
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            reverse_pcurve_geometry(&geometry, [9.0, 5.0], &mut refusal, "e5 pcurve at byte 64"),
+            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &geometry, [9.0, 5.0], &mut refusal, "e5 pcurve at byte 64")).expect("service profile admits range operation"),
             None,
             "a range that does not increase is refused"
         );
@@ -1580,7 +1616,7 @@ mod tests {
 
         let mut refusal = LaneRefusals::new();
         assert_eq!(
-            reverse_curve_geometry(
+            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx,
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                         Point3::new(0.0, 0.0, 0.0),
@@ -1593,7 +1629,7 @@ mod tests {
                 [f64::NAN, 1.0],
                 &mut refusal,
                 "e5 curve at byte 128",
-            ),
+            )).expect("service profile admits range operation"),
             None,
             "a non-finite range bound is refused"
         );

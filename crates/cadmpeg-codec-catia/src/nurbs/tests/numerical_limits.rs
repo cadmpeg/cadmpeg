@@ -40,7 +40,7 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         let model = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source));
         let mut refusal = LaneRefusals::new();
         let (reversed, reversed_range) =
-            reverse_curve_geometry(&model, range, &mut refusal, "offset curve")
+            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx, &model, range, &mut refusal, "offset curve")).expect("service profile admits range operation")
                 .expect("reversed curve");
         assert_eq!(reversed_range, range);
         let pcurve = PcurveGeometry::Nurbs {
@@ -54,7 +54,7 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
             .expect("linear pcurve"),
         };
         let reversed_pcurve =
-            reverse_pcurve_geometry(&pcurve, range, &mut refusal, "offset pcurve")
+            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "offset pcurve")).expect("service profile admits range operation")
                 .expect("reversed pcurve");
         for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
             assert_eq!(
@@ -98,14 +98,14 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     };
     let mut refusal = LaneRefusals::new();
     assert_eq!(
-        crate::nurbs::canonical_model_curve_range(&curve, range, &mut refusal, "wide curve"),
+        crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(ctx, &curve, range, &mut refusal, "wide curve")).expect("service profile admits range operation"),
         Some(range)
     );
     let (reversed, reversed_range) =
-        reverse_curve_geometry(&curve, range, &mut refusal, "wide curve")
+        crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx, &curve, range, &mut refusal, "wide curve")).expect("service profile admits range operation")
             .expect("wide model curve reversal");
     assert_eq!(reversed_range, range);
-    let reversed_pcurve = reverse_pcurve_geometry(&pcurve, range, &mut refusal, "wide pcurve")
+    let reversed_pcurve = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "wide pcurve")).expect("service profile admits range operation")
         .expect("wide pcurve reversal");
     for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
         assert_eq!(
@@ -131,7 +131,7 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
         .expect("finite line pcurve"),
     );
     let mut refusal = LaneRefusals::new();
-    let reversed = reverse_pcurve_geometry(&line, range, &mut refusal, "wide line")
+    let reversed = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &line, range, &mut refusal, "wide line")).expect("service profile admits range operation")
         .expect("finite wide line reversal");
     let PcurveGeometry::Line(reversed) = reversed else {
         panic!("line carrier");
@@ -166,7 +166,7 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
         .expect("line pcurve"),
     );
     let range = [1e308, 1.1e308];
-    let reversed = reverse_pcurve_geometry(&source, range, &mut LaneRefusals::new(), "large line")
+    let reversed = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &source, range, &mut LaneRefusals::new(), "large line")).expect("service profile admits range operation")
         .expect("finite reflected origin");
     for (from, to) in [(range[0], range[1]), (range[1], range[0])] {
         let original = cadmpeg_ir::eval::pcurve_uv(&source, from).expect("source point");

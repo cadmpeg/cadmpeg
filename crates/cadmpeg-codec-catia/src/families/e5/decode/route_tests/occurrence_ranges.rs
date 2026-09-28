@@ -265,12 +265,12 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
         )
         .expect("valid tiny-domain NURBS"),
     ));
-    let (reversed, range) = crate::nurbs::reverse_curve_geometry(
+    let (reversed, range) = crate::test_support::with_service_context(|ctx| crate::nurbs::reverse_curve_geometry(ctx,
         &curve,
         [tiny, 2.0 * tiny],
         &mut crate::nurbs::LaneRefusals::new(),
         "test record",
-    )
+    )).expect("service profile admits range operation")
     .expect("reversed NURBS");
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(reversed)) = reversed else {
         panic!("expected NURBS");
