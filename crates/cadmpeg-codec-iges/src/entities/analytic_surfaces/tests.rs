@@ -13,6 +13,30 @@ use crate::test_support::test_surface_fixtures::{
     pointer_defined_surface_file, pointer_defined_surface_with_reference,
 };
 use crate::IgesCodec;
+use super::{AnalyticDirectionError, DirectionError};
+
+#[test]
+fn analytic_direction_refusals_render_without_intermediate_strings() {
+    let reasons = [
+        (DirectionError::MissingEntry(7), "points to missing Directory entry D7"),
+        (DirectionError::WrongTypeForm { sequence: 7, entity_type: 124, form: 1 }, "points to type 124 form 1 at D7, not type 123 form 0"),
+        (DirectionError::NotDependent(7), "points to D7, which is not physically dependent"),
+        (DirectionError::Transformed(7), "points to D7, which has a prohibited transformation"),
+        (DirectionError::MissingParameters(7), "points to D7, whose Parameter Data record is missing"),
+        (DirectionError::NonNumeric(7), "points to D7, whose direction components are not numeric"),
+        (DirectionError::ZeroOrNonFinite(7), "points to D7, whose direction is zero or non-finite"),
+    ];
+    for (reason, expected) in reasons {
+        assert_eq!(reason.to_string(), expected);
+        assert_eq!(
+            AnalyticDirectionError::Pointed { role: "plane axis", reason }.to_string(),
+            format!("plane axis {expected}")
+        );
+    }
+    assert_eq!(AnalyticDirectionError::MissingPointer("plane axis").to_string(), "plane axis pointer is missing, even, or non-integer");
+    assert_eq!(AnalyticDirectionError::Collapse("plane axis").to_string(), "plane axis collapses under the surface transformation");
+    assert_eq!(AnalyticDirectionError::SphereAxisCollapse.to_string(), "sphere axis collapses under its transformation");
+}
 
 fn assert_analytic_refusal(bytes: &[u8], operation: &str, retained: bool) {
     let mut cap = 0_u64;
