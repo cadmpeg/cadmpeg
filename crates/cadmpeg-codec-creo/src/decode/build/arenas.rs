@@ -109,7 +109,7 @@ pub(super) fn emit_geometry_arenas(
     annotations: &mut AnnotationBuilder,
     brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
-    let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
+    let surface_rows = surface_row_records(ctx, scan, &scan.surfaces.rows, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -123,7 +123,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_surface_rows =
-        surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
+        surface_row_records(ctx, scan, &scan.surfaces.nonvisible_rows, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -137,10 +137,11 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let cross_section_surface_rows = surface_row_records(
+        ctx,
         scan,
         &scan.surfaces.cross_section_rows,
         "cross_section_geometry",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -153,7 +154,7 @@ pub(super) fn emit_geometry_arenas(
         "cross_section_surface_namespace_row",
         Exactness::ByteExact,
     )?;
-    let surface_contours = surface_contour_records(scan, &scan.surfaces.contours, "visibgeom");
+    let surface_contours = surface_contour_records(ctx, scan, &scan.surfaces.contours, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -167,7 +168,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_surface_contours =
-        surface_contour_records(scan, &scan.surfaces.nonvisible_contours, "novisgeom");
+        surface_contour_records(ctx, scan, &scan.surfaces.nonvisible_contours, "novisgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -181,10 +182,11 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let cross_section_surface_contours = surface_contour_records(
+        ctx,
         scan,
         &scan.surfaces.cross_section_contours,
         "cross_section_geometry",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -198,7 +200,7 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let surface_prototypes =
-        surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
+        surface_prototype_records(ctx, scan, &scan.surfaces.prototype_records, "visibgeom")?;
     emit_uniform(
         ctx,
         ir,
@@ -212,10 +214,11 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_surface_prototypes = surface_prototype_records(
+        ctx,
         scan,
         &scan.surfaces.nonvisible_prototype_records,
         "novisgeom",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,

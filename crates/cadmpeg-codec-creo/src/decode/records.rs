@@ -21,10 +21,7 @@ use crate::container::ContainerScan;
 use crate::feature::definitions::{FeatureRelationTable, VariableType};
 use crate::feature::schema::SchemaClass;
 
-use super::coverage::{
-    source_section, source_section_ref, surface_family, surface_named_parameter_record,
-    surface_prototype_family_name, surface_variant,
-};
+use super::coverage::{source_section, source_section_ref, surface_family, surface_variant};
 use super::curve_expressions::curve_expression_record_id;
 use super::expanded::{affected_kind, extent_source, half_edge_ref};
 use super::feature_history::round::replayed_torus_minor_radius;
@@ -2362,7 +2359,7 @@ pub(super) struct CreoSurfaceParameterRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfaceRowRecord {
+pub(super) struct CreoSurfaceRowRecord<'a> {
     pub(super) id: String,
     surface_id: u32,
     type_byte: u8,
@@ -2373,11 +2370,11 @@ pub(super) struct CreoSurfaceRowRecord {
     boundary_type: u8,
     next_surface: u32,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfaceContourRecord {
+pub(super) struct CreoSurfaceContourRecord<'a> {
     pub(super) id: String,
     surface_id: u32,
     chain_index: usize,
@@ -2385,130 +2382,131 @@ pub(super) struct CreoSurfaceContourRecord {
     trv: u8,
     parameter_envelope: [Option<f64>; 4],
     separator_reference: Option<u32>,
-    body: Vec<u8>,
+    body: &'a [u8],
     pub(super) offset: usize,
     envelope_offset: usize,
     surface_row_offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfacePrototypeRecord {
+pub(super) struct CreoSurfacePrototypeRecord<'a> {
     pub(super) id: String,
-    declared_family: String,
-    family: String,
-    parameters: Vec<CreoSurfaceNamedParameterRecord>,
+    declared_family: &'a str,
+    family: std::borrow::Cow<'a, str>,
+    parameters: Vec<CreoSurfaceNamedParameterRecord<'a>>,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSurfaceNamedParameterRecord {
-    pub(super) name: String,
+pub(super) struct CreoSurfaceNamedParameterRecord<'a> {
+    pub(super) name: &'a str,
     #[serde(flatten, serialize_with = "serialize_surface_named_value")]
-    pub(super) value: crate::surface::SurfaceNamedValue,
-    pub(super) body: Vec<u8>,
+    pub(super) value: &'a crate::surface::SurfaceNamedValue,
+    pub(super) body: &'a [u8],
     pub(super) offset: usize,
     pub(super) value_offset: usize,
+}
+
+enum CompactValues<'a> {
+    Empty,
+    One(u32),
+    Many(&'a [u32]),
+}
+
+impl Serialize for CompactValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Empty => serializer.collect_seq(std::iter::empty::<u32>()),
+            Self::One(value) => serializer.collect_seq(std::iter::once(value)),
+            Self::Many(values) => serializer.collect_seq(values.iter()),
+        }
+    }
+}
+
+enum ScalarValues<'a> {
+    Empty,
+    Optional(&'a [Option<f64>]),
+    Sequence(&'a [f64]),
+}
+
+impl Serialize for ScalarValues<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Empty => serializer.collect_seq(std::iter::empty::<Option<f64>>()),
+            Self::Optional(values) => serializer.collect_seq(values.iter()),
+            Self::Sequence(values) => serializer.collect_seq(values.iter().copied().map(Some)),
+        }
+    }
+}
+
+enum ScalarTokens<'a> {
+    Empty,
+    Present(&'a [Vec<u8>]),
+    Missing(usize),
+}
+
+impl Serialize for ScalarTokens<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Empty => serializer.collect_seq(std::iter::empty::<&[u8]>()),
+            Self::Present(tokens) => serializer.collect_seq(tokens.iter()),
+            Self::Missing(count) => serializer.collect_seq(std::iter::repeat_n(&[] as &[u8], *count)),
+        }
+    }
 }
 
 fn serialize_surface_named_value<S: serde::Serializer>(
     value: &crate::surface::SurfaceNamedValue,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
+    use crate::surface::SurfaceNamedValue;
     use serde::ser::SerializeMap;
-    let (
-        value_kind,
-        compact_values,
-        scalar_dimensions,
-        scalar_count,
-        scalar_values,
-        scalar_tokens,
-        opaque,
-    ) = match value {
-        crate::surface::SurfaceNamedValue::Empty => (
-            "empty",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+    let (kind, compact, dimensions, count, scalars, tokens, opaque) = match value {
+        SurfaceNamedValue::Empty => (
+            "empty", CompactValues::Empty, None, None,
+            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
         ),
-        crate::surface::SurfaceNamedValue::CompactInt(value) => (
-            "compact_int",
-            vec![*value],
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        SurfaceNamedValue::CompactInt(value) => (
+            "compact_int", CompactValues::One(*value), None, None,
+            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
         ),
-        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
-            "compact_int_array",
-            values.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        SurfaceNamedValue::CompactIntArray(values) => (
+            "compact_int_array", CompactValues::Many(values), None, None,
+            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
         ),
-        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
-            "contiguous_entity_references",
-            entity_ids.clone(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+        SurfaceNamedValue::ContiguousEntityReferences(ids) => (
+            "contiguous_entity_references", CompactValues::Many(ids), None, None,
+            ScalarValues::Empty, ScalarTokens::Empty, &[][..],
         ),
-        crate::surface::SurfaceNamedValue::ScalarArray(array) => (
-            "scalar_array",
-            Vec::new(),
-            Some(array.dimensions()),
-            Some(array.count()),
-            array.values().to_vec(),
-            array.tokens().unwrap_or_default().to_vec(),
-            Vec::new(),
+        SurfaceNamedValue::ScalarArray(array) => (
+            "scalar_array", CompactValues::Empty, Some(array.dimensions()), Some(array.count()),
+            ScalarValues::Optional(array.values()),
+            array.tokens().map_or(ScalarTokens::Empty, ScalarTokens::Present), &[][..],
         ),
-        crate::surface::SurfaceNamedValue::CountedScalarArray(array) => (
-            "counted_scalar_array",
-            Vec::new(),
-            None,
-            Some(array.count()),
-            array.values().to_vec(),
-            array.tokens().map_or_else(
-                || array.values().iter().map(|_| Vec::new()).collect(),
-                <[Vec<u8>]>::to_vec,
-            ),
-            Vec::new(),
+        SurfaceNamedValue::CountedScalarArray(array) => (
+            "counted_scalar_array", CompactValues::Empty, None, Some(array.count()),
+            ScalarValues::Optional(array.values()),
+            array.tokens().map_or(ScalarTokens::Missing(array.values().len()), ScalarTokens::Present),
+            &[][..],
         ),
-        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
-            "scalar_sequence",
-            Vec::new(),
-            None,
-            None,
-            values.iter().copied().map(Some).collect(),
-            Vec::new(),
-            Vec::new(),
+        SurfaceNamedValue::ScalarSequence(values) => (
+            "scalar_sequence", CompactValues::Empty, None, None,
+            ScalarValues::Sequence(values), ScalarTokens::Empty, &[][..],
         ),
-        crate::surface::SurfaceNamedValue::Opaque(value) => (
-            "opaque",
-            Vec::new(),
-            None,
-            None,
-            Vec::new(),
-            Vec::new(),
-            value.clone(),
+        SurfaceNamedValue::Opaque(bytes) => (
+            "opaque", CompactValues::Empty, None, None,
+            ScalarValues::Empty, ScalarTokens::Empty, bytes.as_slice(),
         ),
     };
     let mut map = serializer.serialize_map(Some(7))?;
-    map.serialize_entry("value_kind", &value_kind)?;
-    map.serialize_entry("compact_values", &compact_values)?;
-    map.serialize_entry("scalar_dimensions", &scalar_dimensions)?;
-    map.serialize_entry("scalar_count", &scalar_count)?;
-    map.serialize_entry("scalar_values", &scalar_values)?;
-    map.serialize_entry("scalar_tokens", &scalar_tokens)?;
+    map.serialize_entry("value_kind", kind)?;
+    map.serialize_entry("compact_values", &compact)?;
+    map.serialize_entry("scalar_dimensions", &dimensions)?;
+    map.serialize_entry("scalar_count", &count)?;
+    map.serialize_entry("scalar_values", &scalars)?;
+    map.serialize_entry("scalar_tokens", &tokens)?;
     map.serialize_entry("opaque", &opaque)?;
     map.end()
 }
@@ -2584,14 +2582,21 @@ pub(super) struct CreoTabulatedCylinderCurveReplayRecord {
     pub(super) source_section: String,
 }
 
-pub(super) fn surface_row_records(
-    scan: &ContainerScan,
-    rows: &[crate::surface::SurfaceRow],
+pub(super) fn surface_row_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    rows: &'a [crate::surface::SurfaceRow],
     namespace: &str,
-) -> Vec<CreoSurfaceRowRecord> {
-    rows.iter()
-        .map(|row| CreoSurfaceRowRecord {
-            id: format!("creo:{namespace}:surface_row#{}", row.id),
+) -> Result<Vec<CreoSurfaceRowRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for row in rows {
+        let id = ctx.format_retained(
+            format_args!("creo:{namespace}:surface_row#{}", row.id),
+            "creo native surface row record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native surface row records")?;
+        records.push(CreoSurfaceRowRecord {
+            id,
             surface_id: row.id,
             type_byte: row.kind.canonical_type_byte(),
             surface_family: surface_family(row.kind),
@@ -2601,58 +2606,243 @@ pub(super) fn surface_row_records(
             boundary_type: row.boundary_type.code(),
             next_surface: row.next_surface,
             offset: row.offset,
-            source_section: source_section(scan, row.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, row.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn surface_prototype_records(
-    scan: &ContainerScan,
-    records: &[crate::surface::SurfacePrototypeRecord],
+pub(super) fn surface_prototype_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    prototypes: &'a [crate::surface::SurfacePrototypeRecord],
     id_namespace: &str,
-) -> Vec<CreoSurfacePrototypeRecord> {
-    records
-        .iter()
-        .map(|record| CreoSurfacePrototypeRecord {
-            id: format!("creo:{id_namespace}:surface_prototype#{}", record.offset),
-            declared_family: record.family.name().to_owned(),
-            family: surface_prototype_family_name(&record.family),
-            parameters: record
-                .parameters
-                .iter()
-                .map(surface_named_parameter_record)
-                .collect(),
+) -> Result<Vec<CreoSurfacePrototypeRecord<'a>>, CodecError> {
+    use crate::surface::SurfacePrototypeFamily;
+    let mut records = Vec::new();
+    for record in prototypes {
+        let id = ctx.format_retained(
+            format_args!("creo:{id_namespace}:surface_prototype#{}", record.offset),
+            "creo native surface prototype record id",
+        )?;
+        let family = match &record.family {
+            SurfacePrototypeFamily::Plane => std::borrow::Cow::Borrowed("plane"),
+            SurfacePrototypeFamily::Cylinder => std::borrow::Cow::Borrowed("cylinder"),
+            SurfacePrototypeFamily::Cone => std::borrow::Cow::Borrowed("cone"),
+            SurfacePrototypeFamily::Torus(_) => std::borrow::Cow::Borrowed("torus_or_sphere"),
+            SurfacePrototypeFamily::Spline(_) => std::borrow::Cow::Borrowed("spline"),
+            SurfacePrototypeFamily::Fillet(_) => std::borrow::Cow::Borrowed("fillet"),
+            SurfacePrototypeFamily::Extrusion(_) => std::borrow::Cow::Borrowed("extrusion"),
+            SurfacePrototypeFamily::Other(name) => std::borrow::Cow::Owned(ctx.format_retained(
+                format_args!("other:{name}"),
+                "creo native surface prototype family",
+            )?),
+        };
+        let mut parameters = Vec::new();
+        for parameter in &record.parameters {
+            ctx.try_reserve_items(&mut parameters, 1, "creo native surface prototype parameters")?;
+            parameters.push(CreoSurfaceNamedParameterRecord {
+                name: &parameter.name,
+                value: &parameter.value,
+                body: &parameter.body,
+                offset: parameter.offset,
+                value_offset: parameter.value_offset,
+            });
+        }
+        ctx.try_reserve_items(&mut records, 1, "creo native surface prototype records")?;
+        records.push(CreoSurfacePrototypeRecord {
+            id,
+            declared_family: record.family.name(),
+            family,
+            parameters,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn surface_contour_records(
-    scan: &ContainerScan,
-    records: &[crate::surface::SurfaceContourRecord],
+pub(super) fn surface_contour_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+    contours: &'a [crate::surface::SurfaceContourRecord],
     namespace: &str,
-) -> Vec<CreoSurfaceContourRecord> {
-    records
-        .iter()
-        .map(|record| CreoSurfaceContourRecord {
-            id: format!(
-                "creo:{namespace}:surface_contour#{}-{}",
-                record.surface_id, record.offset
-            ),
+) -> Result<Vec<CreoSurfaceContourRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in contours {
+        let id = ctx.format_retained(
+            format_args!("creo:{namespace}:surface_contour#{}-{}", record.surface_id, record.offset),
+            "creo native surface contour record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native surface contour records")?;
+        records.push(CreoSurfaceContourRecord {
+            id,
             surface_id: record.surface_id,
             chain_index: record.chain_index,
             curve_header_id: record.curve_header_id,
             trv: record.trv,
             parameter_envelope: record.parameter_envelope,
             separator_reference: record.separator_reference,
-            body: record.body.clone(),
+            body: &record.body,
             offset: record.offset,
             envelope_offset: record.envelope_offset,
             surface_row_offset: record.surface_row_offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod surface_projection_limit_tests {
+    use super::{surface_contour_records, surface_prototype_records, surface_row_records};
+    use crate::surface::arrays::{CountedScalars, DimensionedScalars};
+    use crate::surface::{
+        BoundaryType, SurfaceContourRecord, SurfaceKind, SurfaceNamedParameter,
+        SurfaceNamedValue, SurfacePrototypeFamily, SurfacePrototypeRecord, SurfaceRow,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.push(SurfaceRow {
+            id: 7, kind: SurfaceKind::Plane, feature_id: 2, reversed: false,
+            boundary_type: BoundaryType::Code01, next_surface: 0, offset: 3,
+        });
+        scan.surfaces.contours.push(SurfaceContourRecord {
+            surface_id: 7, chain_index: 0, curve_header_id: 8, trv: 1,
+            parameter_envelope: [None; 4], separator_reference: None,
+            body: vec![8, 0xe3], offset: 5, envelope_offset: 6, surface_row_offset: 3,
+        });
+        let values = [
+            SurfaceNamedValue::Empty,
+            SurfaceNamedValue::CompactInt(4),
+            SurfaceNamedValue::CompactIntArray(vec![4, 5]),
+            SurfaceNamedValue::ContiguousEntityReferences(vec![7, 8]),
+            SurfaceNamedValue::ScalarArray(DimensionedScalars::empty(1, 2).expect("test scalar grid")),
+            SurfaceNamedValue::CountedScalarArray(CountedScalars::empty(2).expect("test scalar array")),
+            SurfaceNamedValue::ScalarSequence(vec![1.0, 2.0]),
+            SurfaceNamedValue::Opaque(vec![0xe3]),
+        ];
+        scan.surfaces.prototype_records.push(SurfacePrototypeRecord {
+            family: SurfacePrototypeFamily::Plane,
+            parameters: values.into_iter().enumerate().map(|(offset, value)| SurfaceNamedParameter {
+                name: "parameter".into(), value, body: vec![0xe3],
+                offset, value_offset: offset + 1,
+            }).collect(),
+            offset: 11,
+        });
+        scan
+    }
+
+    #[test]
+    fn surface_row_record_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_row_records(&ctx, &scan, &scan.surfaces.rows, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("one surface row exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native surface row records"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_contour_record_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_contour_records(&ctx, &scan, &scan.surfaces.contours, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("one contour exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native surface contour records"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_prototype_parameters_refuse_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("one parameter exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native surface prototype parameters"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_prototype_row_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("prototype row exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native surface prototype records"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_prototype_other_family_refuses_retained_limit() {
+        let mut scan = scan();
+        scan.surfaces.prototype_records[0].family = SurfacePrototypeFamily::Other("unknown".into());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            ("creo:visibgeom:surface_prototype#11".len() + "other:unknown".len() - 1) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom") {
+            Err(error) => error,
+            Ok(_) => panic!("unknown-family copy exceeds the retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native surface prototype family"), "{error:?}");
+    }
+
+    #[test]
+    fn surface_named_values_preserve_json_without_copying() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let records = surface_prototype_records(&ctx, &scan, &scan.surfaces.prototype_records, "visibgeom")
+            .expect("prototype is admitted");
+        let values = records[0].parameters.iter()
+            .map(|parameter| serde_json::to_value(parameter).expect("parameter serializes"))
+            .collect::<Vec<_>>();
+        assert_eq!(values[1]["compact_values"], serde_json::json!([4]));
+        assert_eq!(values[2]["compact_values"], serde_json::json!([4, 5]));
+        assert_eq!(values[3]["compact_values"], serde_json::json!([7, 8]));
+        assert_eq!(values[4]["scalar_values"], serde_json::json!([null, null]));
+        assert_eq!(values[4]["scalar_tokens"], serde_json::json!([]));
+        assert_eq!(values[5]["scalar_tokens"], serde_json::json!([[], []]));
+        assert_eq!(values[6]["scalar_values"], serde_json::json!([1.0, 2.0]));
+        assert_eq!(values[7]["opaque"], serde_json::json!([0xe3]));
+    }
 }
 
 fn curve_occurrence_identity(curve_id: u32, offset: usize, occurrence_count: usize) -> String {
