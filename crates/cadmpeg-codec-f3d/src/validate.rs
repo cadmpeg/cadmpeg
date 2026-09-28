@@ -698,6 +698,37 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(collected)
     }
 
+    fn collect_set<T: Eq + Hash>(
+        &self,
+        values: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<HashSet<T>, CodecError> {
+        let mut collected = HashSet::new();
+        for value in values {
+            self.insert_unique(&mut collected, value, operation)?;
+        }
+        Ok(collected)
+    }
+
+    fn collect_cloned<'b, T: Clone + 'b>(
+        &self,
+        values: impl IntoIterator<Item = &'b T>,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut collected = Vec::new();
+        for value in values {
+            self.charge_item(operation)?;
+            collected.try_reserve(1).map_err(|_| {
+                self.decode.map_or_else(
+                    || CodecError::malformed("F3D validation collection allocation failed"),
+                    |decode| decode.refuse_codec_limit(operation, 0, 1),
+                )
+            })?;
+            collected.push(value.clone());
+        }
+        Ok(collected)
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -957,8 +988,8 @@ fn validate_loaded(
     validate_act(&ctx, &mut findings);
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings)?;
-    validate_canvas_images(&ctx, &mut findings);
-    validate_decal_images(&ctx, &mut findings);
+    validate_canvas_images(&ctx, &mut findings)?;
+    validate_decal_images(&ctx, &mut findings)?;
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings)?;
     validate_configurations(&ctx, &mut findings)?;
@@ -1542,11 +1573,11 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate Canvas scope and Design object joins.
-fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut scope_bindings = HashSet::new();
     let mut geometry_records = HashSet::new();
-    let geometry_entities = native
+    let geometry_entities = ctx.collect_set(native
         .design_types
         .iter()
         .filter(|design_type| {
@@ -1563,8 +1594,8 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .values()
                 .map(move |suffix| (design_segment, *suffix))
         })
-        .collect::<HashSet<_>>();
-    let component_entities = native
+        , "index F3D Canvas geometry entities")?;
+    let component_entities = ctx.collect_set(native
         .design_types
         .iter()
         .filter(|design_type| {
@@ -1581,38 +1612,46 @@ fn validate_canvas_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .values()
                 .map(move |suffix| (design_segment, *suffix))
         })
-        .collect::<HashSet<_>>();
+        , "index F3D Canvas component entities")?;
     for image in &native.design_canvas_images {
         let native_stream = design_stream(&image.id);
         let design_segment = ids::design_segment(&image.id);
         let scope = ctx
             .scopes_by_index
             .get(&(native_stream, image.scope_record_index));
-        let valid = scope.is_some_and(|scope| {
+        let scope_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
-        }) && scope_bindings.insert((native_stream, image.scope_record_index))
-            && geometry_records.insert((native_stream, image.geometry().record_index()))
+        });
+        let scope_unique = if scope_valid {
+            ctx.insert_unique(&mut scope_bindings, (native_stream, image.scope_record_index), "index F3D Canvas scopes")?
+        } else {
+            false
+        };
+        let geometry_unique = if scope_unique {
+            ctx.insert_unique(&mut geometry_records, (native_stream, image.geometry().record_index()), "index F3D Canvas geometry records")?
+        } else {
+            false
+        };
+        let valid = scope_valid && scope_unique && geometry_unique
             && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
             && geometry_entities.contains(&(design_segment, u64::from(image.plane_entity_suffix)))
             && component_entities
                 .contains(&(design_segment, u64::from(image.component_entity_suffix)));
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Canvas image has an invalid frame or Design object join".into(),
-                entity: Some(image.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Canvas image has an invalid frame or Design object join",
+                Some(ctx.copy_entity(&image.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate Decal native and neutral object joins.
-fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     const TARGET_ROLE: DesignOperandRole = DesignOperandRole::BODIES_A;
     let mut scope_bindings = HashSet::new();
     let mut asset_records = HashSet::new();
-    let fusion_entities = ctx
+    let fusion_entities = ctx.collect_set(ctx
         .native
         .design_types
         .iter()
@@ -1624,7 +1663,7 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .values()
                 .map(move |suffix| (segment, *suffix))
         })
-        .collect::<HashSet<_>>();
+        , "index F3D Decal fusion entities")?;
     for image in &ctx.native.design_decal_images {
         let native_stream = design_stream(&image.id);
         let design_segment = ids::design_segment(&image.id);
@@ -1648,16 +1687,18 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let projected =
             if image.mapping_mode == crate::records::decal::DesignDecalMappingMode::FitToFaces {
-                operand.and_then(|operand| {
-                    let mut faces = operand
+                if let Some(operand) = operand {
+                    let mut faces = ctx.collect_cloned(operand
                         .references()
                         .iter()
-                        .flat_map(|reference| reference.candidate_faces.iter().cloned())
-                        .collect::<Vec<_>>();
+                        .flat_map(|reference| reference.candidate_faces.iter()),
+                        "collect F3D Decal projected faces")?;
                     faces.sort_by(|a, b| a.as_str().cmp(b.as_str()));
                     faces.dedup();
                     (!faces.is_empty()).then_some((operand, faces))
-                })
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -1682,10 +1723,20 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 })
             })
         });
-        let valid = scope.is_some_and(|scope| {
+        let scope_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
-        }) && scope_bindings.insert((native_stream, image.scope_record_index()))
-            && asset_records.insert((native_stream, image.asset.record_index()))
+        });
+        let scope_unique = if scope_valid {
+            ctx.insert_unique(&mut scope_bindings, (native_stream, image.scope_record_index()), "index F3D Decal scopes")?
+        } else {
+            false
+        };
+        let asset_unique = if scope_unique {
+            ctx.insert_unique(&mut asset_records, (native_stream, image.asset.record_index()), "index F3D Decal assets")?
+        } else {
+            false
+        };
+        let valid = scope_valid && scope_unique && asset_unique
             && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
             && fusion_entities.contains(&(design_segment, u64::from(image.asset.entity_suffix())))
             && group.is_some_and(|group| {
@@ -1696,14 +1747,12 @@ fn validate_decal_images(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && operand.is_some()
             && neutral_is_valid;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Decal image has an invalid frame or Design object join".into(),
-                entity: Some(image.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Decal image has an invalid frame or Design object join",
+                Some(ctx.copy_entity(&image.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate the ordered Design body-map binding entries and their pair runs.
