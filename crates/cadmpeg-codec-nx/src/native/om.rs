@@ -4563,78 +4563,97 @@ pub(super) fn data_block_control_class_references(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
-    let rows = container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .map(|(section_ordinal, (entry, section))| -> Result<Vec<_>, CodecError> {
-            let Some((control, _, records)) = section.as_offset_only() else {
-                return Ok(Vec::new());
-            };
-            if !matches!(
-                crate::om::offset_store_control_form(
-                    ctx,
-                    control.bytes,
-                    records.first().map(|record| record.bytes),
-                )?,
-                Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
-            ) {
-                return Ok(Vec::new());
-            }
-            let mut registry = BTreeMap::new();
-            for definition in container
-                .om_sections(ctx)?
-                .into_iter()
+    let framed_sections = container.om_sections(ctx)?;
+    let indexed_sections = container.indexed_om_sections(ctx)?;
+    let mut rows = Vec::new();
+    for (section_ordinal, (entry, section)) in indexed_sections.iter().enumerate() {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
+        if !matches!(
+            crate::om::offset_store_control_form(
+                ctx,
+                control.bytes,
+                records.first().map(|record| record.bytes),
+            )?,
+            Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
+        ) {
+            continue;
+        }
+        let definition_count = framed_sections.iter()
+            .filter(|(candidate, _)| candidate.index() == entry.index())
+            .try_fold(0usize, |count, (_, section)| count.checked_add(section.types.len()))
+            .and_then(|count| indexed_sections.iter()
                 .filter(|(candidate, _)| candidate.index() == entry.index())
-                .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
-                .chain(
-                    container
-                        .indexed_om_sections(ctx)?
-                        .into_iter()
-                        .filter(|(candidate, _)| candidate.index() == entry.index())
-                        .flat_map(|(_, section)| {
-                            std::sync::Arc::as_ref(&section.types).to_owned()
-                        }),
-                )
-            {
-                registry.entry(definition.offset).or_insert(definition);
+                .try_fold(count, |count, (_, section)| count.checked_add(section.types.len())))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX control class registry size", 0, 1))?;
+        let registry_node_bytes = std::mem::size_of::<(usize, &crate::om::TypeDefinition<'_>)>()
+            .checked_mul(4)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX control class registry size", 0, 1))?;
+        let registry_bytes = definition_count
+            .checked_mul(registry_node_bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX control class registry size", 0, 1))?;
+        let _registry_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(registry_bytes),
+            "NX control class registry",
+        )?;
+        let mut registry = BTreeMap::new();
+        for definition in framed_sections.iter()
+            .filter(|(candidate, _)| candidate.index() == entry.index())
+            .flat_map(|(_, section)| section.types.iter())
+            .chain(indexed_sections.iter()
+                .filter(|(candidate, _)| candidate.index() == entry.index())
+                .flat_map(|(_, section)| section.types.iter()))
+        {
+            if !registry.contains_key(&definition.offset) {
+                ctx.charge_collection_items(1, "NX control class registry entries")?;
+                registry.insert(definition.offset, definition);
             }
-            let registry = registry.into_values().collect::<Vec<_>>();
-            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(ctx, control.bytes)?
-            else {
-                return Ok(Vec::new());
-            };
-            let entry_index = entry.index();
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            Ok(ordinals
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, class_ordinal)| {
-                    let definition = usize::try_from(class_ordinal)
-                        .ok()
-                        .and_then(|ordinal| registry.get(ordinal));
-                    DataBlockControlClassReference {
-                        id: format!(
-                            "nx:om-data-block-control-class-references-{section_ordinal}:class#{ordinal}"
-                        ),
-                        data_block: data_block.clone(),
-                        ordinal: ordinal as u32,
-                        class_ordinal,
-                        class: definition.map(|definition| DataBlockControlClassRef {
-                            definition: format!(
-                                "nx:om-entry-{entry_index}:class#{}",
-                                definition.offset
-                            ),
-                            name: definition.name.to_string(),
-                        }),
-                        source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
-                    }
+        }
+        let Some(ordinals) = crate::om::offset_store_control_class_ordinals(ctx, control.bytes)?
+        else {
+            continue;
+        };
+        let entry_index = entry.index();
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (ordinal, class_ordinal) in ordinals.into_iter().enumerate() {
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX control class ordinal", 0, 1))?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(registry.len()),
+                "search NX control class registry",
+            )?;
+            let definition = usize::try_from(class_ordinal)
+                .ok()
+                .and_then(|ordinal| registry.values().nth(ordinal));
+            ctx.charge_collection_items(1, "NX control class references")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlClassReference>()),
+                "retain NX control class references",
+            )?;
+            rows.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX control class references", 0, 1))?;
+            let class = definition.map(|definition| -> Result<_, CodecError> {
+                Ok(DataBlockControlClassRef {
+                    definition: retained_om_index_id(ctx, "nx:om-entry-", entry_index, ":class#", cadmpeg_core::decode::u64_from_index(definition.offset), "NX control class definition id")?,
+                    name: copy_om_retained_text(ctx, definition.name, "NX control class name")?,
                 })
-                .collect())
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    Ok(rows.into_iter().flatten().collect())
+            }).transpose()?;
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(control.offset))
+                .and_then(|offset| offset.checked_add(u64::from(ordinal_u32).checked_mul(4)?))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX control class source offset", 0, 1))?;
+            rows.push(DataBlockControlClassReference {
+                id: retained_om_index_id(ctx, "nx:om-data-block-control-class-references-", section_ordinal, ":class#", u64::from(ordinal_u32), "NX control class reference id")?,
+                data_block: retained_om_index_id(ctx, "nx:om-data-blocks-", section_ordinal, ":block#", 0, "NX control class block id")?,
+                ordinal: ordinal_u32,
+                class_ordinal,
+                class,
+                source_offset,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
@@ -6783,6 +6802,54 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty test root");
         super::data_block_control_forms(&ctx, &container).unwrap_err()
+    }
+
+    fn control_class_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, file)
+        }).expect("control class fixture");
+        let classes = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_class_references(ctx, &container)
+        }).expect("control class projection");
+        assert_eq!(classes.len(), 1);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::data_block_control_class_references(&ctx, &container)
+            .expect_err("control class resource refusal")
+    }
+
+    #[test]
+    fn control_class_route_refuses_collection_limit() {
+        let error = control_class_route_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems), "{error:?}");
+    }
+
+    #[test]
+    fn control_class_route_refuses_retained_limit() {
+        let error = control_class_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn control_class_route_refuses_scoped_limit() {
+        let error = control_class_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn control_class_route_refuses_work_limit() {
+        let error = control_class_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits), "{error:?}");
     }
 
     #[test]
