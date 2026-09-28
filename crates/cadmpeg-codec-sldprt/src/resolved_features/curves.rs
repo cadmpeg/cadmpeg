@@ -1689,7 +1689,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
             {
                 return None;
             }
-            vec![
+            [
                 Point2::new(*first_u, *first_v),
                 Point2::new(*first_u, *second_v),
                 Point2::new(*second_u, *first_v),
@@ -1698,23 +1698,27 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         }
         [_, _, _] => {
             let axis_aligned = (|| {
-                let mut u = Vec::<f64>::new();
-                let mut v = Vec::<f64>::new();
+                let mut u = [0.0; 3];
+                let mut v = [0.0; 3];
+                let mut u_len = 0;
+                let mut v_len = 0;
                 for (_, [point_u, point_v]) in &known {
-                    if u.iter()
+                    if u[..u_len].iter()
                         .all(|candidate| !same_dimension_length(*candidate, *point_u))
                     {
-                        u.push(*point_u);
+                        u[u_len] = *point_u;
+                        u_len += 1;
                     }
-                    if v.iter()
+                    if v[..v_len].iter()
                         .all(|candidate| !same_dimension_length(*candidate, *point_v))
                     {
-                        v.push(*point_v);
+                        v[v_len] = *point_v;
+                        v_len += 1;
                     }
                 }
-                u.sort_by(f64::total_cmp);
-                v.sort_by(f64::total_cmp);
-                let ([u0, u1], [v0, v1]) = (u.as_slice(), v.as_slice()) else {
+                u[..u_len].sort_by(f64::total_cmp);
+                v[..v_len].sort_by(f64::total_cmp);
+                let ([u0, u1], [v0, v1]) = (&u[..u_len], &v[..v_len]) else {
                     return None;
                 };
                 let products = [
@@ -1736,7 +1740,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                     occupied[index] = true;
                 }
                 (occupied.iter().filter(|occupied| **occupied).count() == 3)
-                    .then_some(products.to_vec())
+                    .then_some(products)
             })();
             if let Some(corners) = axis_aligned {
                 corners
@@ -1744,42 +1748,48 @@ pub(super) fn indexed_rectangle_from_line_cycle(
                 let missing = *vertices
                     .iter()
                     .find(|vertex| known.iter().all(|(known, _)| known != *vertex))?;
-                let neighbors = edges
+                let mut neighbors = edges
                     .iter()
                     .filter(|edge| edge.contains(&missing))
-                    .map(|edge| edge[usize::from(edge[0] == missing)])
-                    .collect::<Vec<_>>();
-                let [first_neighbor, second_neighbor] = neighbors.as_slice() else {
+                    .map(|edge| edge[usize::from(edge[0] == missing)]);
+                let (Some(first_neighbor), Some(second_neighbor), None) =
+                    (neighbors.next(), neighbors.next(), neighbors.next()) else {
                     return None;
                 };
                 let opposite = *vertices.iter().find(|vertex| {
                     **vertex != missing
-                        && **vertex != *first_neighbor
-                        && **vertex != *second_neighbor
+                        && **vertex != first_neighbor
+                        && **vertex != second_neighbor
                 })?;
                 let coordinates = |vertex| {
                     known
                         .iter()
                         .find_map(|(known, coordinates)| (*known == vertex).then_some(*coordinates))
                 };
-                let [first_u, first_v] = coordinates(*first_neighbor)?;
-                let [second_u, second_v] = coordinates(*second_neighbor)?;
+                let [first_u, first_v] = coordinates(first_neighbor)?;
+                let [second_u, second_v] = coordinates(second_neighbor)?;
                 let [opposite_u, opposite_v] = coordinates(opposite)?;
                 let inferred = [
                     first_u + second_u - opposite_u,
                     first_v + second_v - opposite_v,
                 ];
-                known
-                    .iter()
-                    .map(|(_, [u, v])| Point2::new(*u, *v))
-                    .chain(std::iter::once(Point2::new(inferred[0], inferred[1])))
-                    .collect()
+                let [(_, first), (_, second), (_, third)] = known.as_slice() else {
+                    return None;
+                };
+                [
+                    Point2::new(first[0], first[1]),
+                    Point2::new(second[0], second[1]),
+                    Point2::new(third[0], third[1]),
+                    Point2::new(inferred[0], inferred[1]),
+                ]
             }
         }
-        [_, _, _, _] => known
-            .iter()
-            .map(|(_, [u, v])| Point2::new(*u, *v))
-            .collect(),
+        [(_, first), (_, second), (_, third), (_, fourth)] => [
+            Point2::new(first[0], first[1]),
+            Point2::new(second[0], second[1]),
+            Point2::new(third[0], third[1]),
+            Point2::new(fourth[0], fourth[1]),
+        ],
         _ => return None,
     };
     let corners = corners
