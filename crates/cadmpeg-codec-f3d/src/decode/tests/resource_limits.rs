@@ -363,6 +363,61 @@ fn mesh_texture_table_key_refuses_retained_limit() {
     assert!(tables.is_empty());
 }
 
+macro_rules! mesh_projection_item_refuses_collection_limit {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let ctx = context(&arena, 0);
+            let mut items = Vec::new();
+            let error = super::super::push_decode_item(&ctx, &mut items, 1_u32, $operation)
+                .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
+}
+
+mesh_projection_item_refuses_collection_limit!(mesh_triangle_group_refuses_collection_limit, "collect F3D mesh triangle groups");
+mesh_projection_item_refuses_collection_limit!(mesh_corner_normal_refuses_collection_limit, "collect F3D mesh corner normals");
+mesh_projection_item_refuses_collection_limit!(mesh_tessellation_refuses_collection_limit, "collect F3D mesh tessellations");
+
+#[test]
+fn mesh_scope_tessellation_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut index = std::collections::HashMap::new();
+    let error = super::super::insert_mesh_scope_tessellations(
+        &ctx,
+        &mut index,
+        "f3d:Design/BulkStream.dat",
+        10,
+        ["tessellation:one"],
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh scope tessellations"));
+    assert!(index.is_empty());
+}
+
+#[test]
+fn mesh_feature_scope_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 1);
+    let mut index = std::collections::HashMap::new();
+    let error = super::super::insert_mesh_scope_tessellations(
+        &ctx,
+        &mut index,
+        "f3d:Design/BulkStream.dat",
+        10,
+        ["tessellation:one"],
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D mesh feature scopes"));
+    assert!(index.is_empty());
+}
+
 #[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
