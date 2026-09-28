@@ -39,12 +39,13 @@ pub(super) fn exact_rectangular_pattern_construction(
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    lanes.sort_by_key(|owner| owner.local_ordinal());
-    let [u_count, v_count, u_extent, v_extent] = lanes.as_slice() else {
+        });
+    let mut ordered_lanes = [lanes.next()?, lanes.next()?, lanes.next()?, lanes.next()?];
+    if lanes.next().is_some() {
         return None;
-    };
+    }
+    ordered_lanes.sort_by_key(|owner| owner.local_ordinal());
+    let [u_count, v_count, u_extent, v_extent] = ordered_lanes;
     if [u_count, v_count, u_extent, v_extent]
         .iter()
         .enumerate()
@@ -91,17 +92,17 @@ fn exact_rectangular_pattern_instances(
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
 ) -> Option<DesignRectangularPatternInstances> {
-    let active = [
+    let mut active = [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
     ]
     .into_iter()
-    .filter(|(count, _)| *count > 1)
-    .collect::<Vec<_>>();
-    let [(count, extent)] = active.as_slice() else {
+    .filter(|(count, _)| *count > 1);
+    let (count, extent) = active.next()?;
+    if active.next().is_some() {
         return None;
-    };
-    let count = usize::try_from(*count).ok()?;
+    }
+    let count = usize::try_from(count).ok()?;
     if count > 4_096
         || scope.reference_members().len() != count.checked_add(6)?
         || !scope
@@ -164,7 +165,7 @@ fn exact_rectangular_pattern_instances(
             let mut unique = true;
             for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
                 let fraction = (ordinal + 1) as f64 / (count - 1) as f64;
-                let matches = record_candidates
+                let mut matches = record_candidates
                     .iter()
                     .filter(|candidate| {
                         same_transform_basis(&first.0, &candidate.0)
@@ -175,13 +176,16 @@ fn exact_rectangular_pattern_instances(
                                     (*value - total * fraction).abs()
                                         <= EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8
                                 })
-                    })
-                    .collect::<Vec<_>>();
-                let [candidate] = matches.as_slice() else {
+                    });
+                let Some(candidate) = matches.next() else {
                     unique = false;
                     break;
                 };
-                run.push(**candidate);
+                if matches.next().is_some() {
+                    unique = false;
+                    break;
+                }
+                run.push(*candidate);
             }
             if unique {
                 run.push(*final_candidate);
@@ -434,18 +438,12 @@ struct CircularPatternAxisCandidate {
 fn select_circular_pattern_axis(
     candidates: &[CircularPatternAxisCandidate],
 ) -> Option<&CircularPatternAxisCandidate> {
-    let inline = candidates
-        .iter()
-        .filter(|candidate| {
-            matches!(
-                candidate.axis,
-                patterns::DesignCircularPatternAxis::Inline { .. }
-            )
-        })
-        .collect::<Vec<_>>();
-    match inline.as_slice() {
-        [candidate] => Some(*candidate),
-        [] => match candidates {
+    let mut inline = candidates.iter().filter(|candidate| {
+        matches!(candidate.axis, patterns::DesignCircularPatternAxis::Inline { .. })
+    });
+    match (inline.next(), inline.next()) {
+        (Some(candidate), None) => Some(candidate),
+        (None, None) => match candidates {
             [candidate] => Some(candidate),
             _ => None,
         },
@@ -695,7 +693,7 @@ fn exact_fixed_pattern_count(
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<(u32, u64)> {
-    let candidates = records
+    let mut candidates = records
         .frames(record_index)
         .filter_map(|(start, paired_at)| {
             let (class_tag, after_tag) =
@@ -725,12 +723,9 @@ fn exact_fixed_pattern_count(
             }
             let count = View::u32_le_at(bytes, start + 40)?;
             (count > 0).then_some((count, (start + 40) as u64))
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 #[cfg(test)]
