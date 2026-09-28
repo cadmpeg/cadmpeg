@@ -78,6 +78,33 @@ fn metadata_source_refuses_retained_attribute_limit() {
 }
 
 #[test]
+fn metadata_unknown_stream_refuses_work_limit() {
+    let bytes = crate::test_support::test_prt::prt_with_partition(
+        &crate::test_support::test_streams::topology_partition_stream(),
+    );
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, scan_root) = DecodeContext::from_root_bytes(&bytes, &scan_arena, &scan_policy)
+        .expect("bounded topology input");
+    let scan = crate::decode::scan(&scan_ctx, scan_root).expect("valid topology container");
+    let (dialects, _) = crate::dialect::classify_layers(&scan_ctx, &scan)
+        .expect("classified topology input")
+        .into_report_parts();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("root input fits policy");
+    let error = super::super::build_metadata_ir(&ctx, root, &scan, &dialects)
+        .expect_err("one unknown stream needs digest work");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+    ));
+}
+
+#[test]
 fn untransferred_stream_report_refuses_loss_code_retained_limit() {
     let scan = crate::decode::Scan {
         container: crate::container::Container {
