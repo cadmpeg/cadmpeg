@@ -16,8 +16,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::{NurbsCurve, NurbsPoles3},
+    Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, ProceduralCurve,
+    ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -29,6 +30,21 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
+
+fn admit_offset_controls(
+    ctx: Option<&DecodeContext<'_>>,
+    controls: Vec<Point3>,
+    operation: &'static str,
+) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
+    let mut admitted = reserve_optional_vec(ctx, controls.len(), operation)?;
+    for point in controls {
+        let Some(point) = FinitePoint3::new(point) else {
+            return Ok(None);
+        };
+        admitted.push(point);
+    }
+    Ok(Some(admitted))
+}
 
 fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
     let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.get();
@@ -795,7 +811,25 @@ pub(super) fn project(
                 let mut knots = reserve_optional_vec(ctx, 4, "iges linear-offset knots")?;
                 knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
-                let offset_nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
+                let Some(controls) =
+                    admit_offset_controls(ctx, controls, "iges linear-offset admitted controls")?
+                else {
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "linear offset carrier is inconsistent: control_points contains a non-finite point"
+                        ),
+                    )?;
+                    continue;
+                };
+                let offset_nurbs = match NurbsCurve::new(
+                    1,
+                    knots,
+                    NurbsPoles3::Polynomial { points: controls },
+                    false,
+                ) {
                     Ok(nurbs) => nurbs,
                     Err(error) => {
                         super::push_optional_entity_loss(
@@ -1055,11 +1089,23 @@ pub(super) fn project(
                     function_parameter_offset,
                     function_parameter_scale,
                 };
-                let offset_nurbs = match NurbsCurve::from_lanes(
+                let Some(controls) =
+                    admit_offset_controls(ctx, controls, "iges function-offset admitted controls")?
+                else {
+                    super::push_optional_entity_loss(
+                        ctx,
+                        &mut losses,
+                        entry,
+                        format_args!(
+                            "offset-function carrier is inconsistent: control_points contains a non-finite point"
+                        ),
+                    )?;
+                    continue;
+                };
+                let offset_nurbs = match NurbsCurve::new(
                     function_nurbs.degree(),
                     knots,
-                    controls,
-                    None,
+                    NurbsPoles3::Polynomial { points: controls },
                     false,
                 ) {
                     Ok(nurbs) => nurbs,

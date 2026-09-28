@@ -123,6 +123,25 @@ fn offset_projection_refuses_unadmitted_controls_knots_and_neutral_slots() {
 }
 
 #[test]
+fn offset_nurbs_pole_admission_refuses_before_copy() {
+    for (bytes, operation) in [
+        (
+            linear_offset_line_file(1),
+            "iges linear-offset admitted controls",
+        ),
+        (
+            function_offset_line_file(),
+            "iges function-offset admitted controls",
+        ),
+    ] {
+        assert_offset_collection_refusal(&bytes, operation);
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+    }
+}
+
+#[test]
 fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {
     let interval = IncreasingParameterInterval::new([-f64::MAX, f64::MAX]).unwrap();
     let map = SourceParameterMap::new(interval, interval);
