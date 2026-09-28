@@ -89,3 +89,32 @@ fn untransferred_stream_report_refuses_loss_code_retained_limit() {
                 && limit.operation == "nx loss code text"
     ));
 }
+
+#[test]
+fn container_body_refuses_loss_code_retained_limit() {
+    let scan = crate::decode::Scan {
+        container: crate::container::Container {
+            data: Vec::new().into(),
+            physical_size: 0,
+            layout: crate::container::test_modern_layout(0x06),
+            entries: Vec::new(),
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        },
+        streams: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let error = super::super::build_container_body(&ctx, &scan, Vec::new(), Vec::new())
+        .expect_err("loss code needs retained bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx loss code text"
+    ));
+}
