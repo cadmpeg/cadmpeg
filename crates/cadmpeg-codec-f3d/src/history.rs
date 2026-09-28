@@ -7034,13 +7034,16 @@ fn historical_edge_context(
 }
 
 fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) -> bool {
-    let mut available = counts.to_vec();
-    required.iter().flatten().all(|required| {
-        let Some(index) = available.iter().position(|count| count == required) else {
-            return false;
+    required.iter().enumerate().all(|(ordinal, value)| {
+        let Some(value) = value else {
+            return true;
         };
-        available.remove(index);
-        true
+        let available = counts.iter().filter(|count| *count == value).count();
+        let needed = required[..=ordinal]
+            .iter()
+            .filter(|candidate| *candidate == &Some(*value))
+            .count();
+        available >= needed
     })
 }
 
