@@ -99,21 +99,36 @@ pub(crate) fn operation_reference_fields(
 ) -> Result<Vec<DirectReferenceFrame<usize>>, CodecError> {
     let prefix = kind.prefix();
     let mut fields = Vec::new();
-    for (marker, window) in record.payload()
-        .windows(prefix.len())
-        .enumerate()
-    {
-        if window != prefix { continue; }
-        let Some(token) = marker.checked_add(prefix.len()) else { continue; };
-        let Some(object) = record.payload().get(token..).and_then(CanonicalFeatureReferenceToken::read) else { continue; };
-        let Some(end) = token.checked_add(object.raw().len()) else { continue; };
-        let Some(suffix_end) = end.checked_add(kind.suffix().len()) else { continue; };
-        if record.payload().get(end..suffix_end) != Some(kind.suffix()) { continue; }
-        let Some(frame) = record.payload_offset().checked_add(marker).and_then(|offset| DirectReferenceFrame::<usize>::new(
-                kind,
-                object,
-                offset,
-            )) else { continue; };
+    for (marker, window) in record.payload().windows(prefix.len()).enumerate() {
+        if window != prefix {
+            continue;
+        }
+        let Some(token) = marker.checked_add(prefix.len()) else {
+            continue;
+        };
+        let Some(object) = record
+            .payload()
+            .get(token..)
+            .and_then(CanonicalFeatureReferenceToken::read)
+        else {
+            continue;
+        };
+        let Some(end) = token.checked_add(object.raw().len()) else {
+            continue;
+        };
+        let Some(suffix_end) = end.checked_add(kind.suffix().len()) else {
+            continue;
+        };
+        if record.payload().get(end..suffix_end) != Some(kind.suffix()) {
+            continue;
+        }
+        let Some(frame) = record
+            .payload_offset()
+            .checked_add(marker)
+            .and_then(|offset| DirectReferenceFrame::<usize>::new(kind, object, offset))
+        else {
+            continue;
+        };
         super::reserve_om_retained_item(ctx, &mut fields, "nx direct reference fields")?;
         fields.push(frame);
     }
@@ -175,9 +190,17 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::operation_reference_fields(&ctx, record(&bytes, 0), ReferenceFieldKind::DataBlock03).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = super::operation_reference_fields(
+            &ctx,
+            record(&bytes, 0),
+            ReferenceFieldKind::DataBlock03,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
@@ -186,8 +209,16 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::operation_reference_fields(&ctx, record(&bytes, 0), ReferenceFieldKind::DataBlock03).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = super::operation_reference_fields(
+            &ctx,
+            record(&bytes, 0),
+            ReferenceFieldKind::DataBlock03,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 }

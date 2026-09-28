@@ -85,7 +85,10 @@ pub(crate) fn operation_terminal_discriminator(
     if record.payload().last() != Some(&0) {
         return Ok(None);
     }
-    ctx.charge_work(u64_from_index(record.payload().len()), "scan NX terminal discriminator")?;
+    ctx.charge_work(
+        u64_from_index(record.payload().len()),
+        "scan NX terminal discriminator",
+    )?;
 
     let decode = |start: usize| {
         if record.payload().get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
@@ -121,17 +124,31 @@ pub(crate) fn operation_terminal_discriminator(
         }
 
         let origin = u64::try_from(record.payload_offset().checked_add(start)?).ok()?;
-        let token_bytes = first.raw().len().checked_add(second.raw().len())?
+        let token_bytes = first
+            .raw()
+            .len()
+            .checked_add(second.raw().len())?
             .checked_add(trailing_bytes.len())?;
-        origin.checked_add(17)?.checked_add(u64_from_index(token_bytes))?;
+        origin
+            .checked_add(17)?
+            .checked_add(u64_from_index(token_bytes))?;
 
-        Some((origin, [first, second], flags, trailing_bytes, trailing_count))
+        Some((
+            origin,
+            [first, second],
+            flags,
+            trailing_bytes,
+            trailing_count,
+        ))
     };
 
     let mut found = None;
     for start in 0..record.payload().len().saturating_sub(18) {
         if record.payload().get(start..start + 3) == Some(&[0x01, 0x01, 0x02]) {
-            ctx.charge_work(u64_from_index(record.payload().len() - start), "scan NX terminal discriminator candidate")?;
+            ctx.charge_work(
+                u64_from_index(record.payload().len() - start),
+                "scan NX terminal discriminator candidate",
+            )?;
         }
         let Some(candidate) = decode(start) else {
             continue;
@@ -141,20 +158,28 @@ pub(crate) fn operation_terminal_discriminator(
         }
         found = Some(candidate);
     }
-    let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else { return Ok(None); };
+    let Some((origin, indices, flags, trailing_bytes, trailing_count)) = found else {
+        return Ok(None);
+    };
     let count = u64_from_index(trailing_count);
     let operation = "NX terminal discriminator trailing indices";
     ctx.charge_collection_items(count, operation)?;
-    let bytes = count.checked_mul(u64_from_index(std::mem::size_of::<CompactIndexAtom>()))
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<CompactIndexAtom>()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
     ctx.charge_retained(bytes, operation)?;
     let mut trailing_indices = Vec::new();
-    trailing_indices.try_reserve_exact(trailing_count)
+    trailing_indices
+        .try_reserve_exact(trailing_count)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
     let mut scan = 0;
     while scan < trailing_bytes.len() {
-        let Some(tail) = trailing_bytes.get(scan..) else { return Ok(None); };
-        let Some(token) = CompactIndexAtom::read(tail) else { return Ok(None); };
+        let Some(tail) = trailing_bytes.get(scan..) else {
+            return Ok(None);
+        };
+        let Some(token) = CompactIndexAtom::read(tail) else {
+            return Ok(None);
+        };
         scan += token.raw().len();
         trailing_indices.push(token);
     }
@@ -167,13 +192,19 @@ mod tests {
     use super::operation_terminal_discriminator;
 
     fn scan(record: OperationPayload<'_>) -> Option<super::OperationTerminalDiscriminator> {
-        crate::test_support::with_decode_context(|ctx| operation_terminal_discriminator(ctx, record)).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            operation_terminal_discriminator(ctx, record)
+        })
+        .unwrap()
     }
 
-    fn terminal_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    fn terminal_limit_error(
+        policy: &cadmpeg_core::decode::DecodePolicy,
+    ) -> cadmpeg_core::CodecError {
         let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, policy).unwrap();
         let record = OperationPayload::new(payload, 200, "EXTRUDE").unwrap();
         operation_terminal_discriminator(&ctx, record).expect_err("terminal discriminator refusal")
     }
@@ -182,24 +213,30 @@ mod tests {
     fn om_terminal_discriminator_route_refuses_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        assert!(matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_retained_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        assert!(matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_work_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        assert!(matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]

@@ -52,12 +52,18 @@ impl<B> CountedPatternReferences<B> {
 }
 
 impl CountedPatternReferences<()> {
-    pub(crate) fn read(ctx: &DecodeContext<'_>, record: OperationPayload<'_>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn read(
+        ctx: &DecodeContext<'_>,
+        record: OperationPayload<'_>,
+    ) -> Result<Option<Self>, CodecError> {
         if record.name() != "Pattern Feature" {
             return Ok(None);
         }
         let bytes = record.payload();
-        ctx.charge_work(u64_from_index(bytes.len()), "scan NX counted pattern references")?;
+        ctx.charge_work(
+            u64_from_index(bytes.len()),
+            "scan NX counted pattern references",
+        )?;
         let shape = |start: usize| {
             if bytes.get(start) != Some(&1) {
                 return None;
@@ -80,23 +86,41 @@ impl CountedPatternReferences<()> {
             record.payload_offset().checked_add(end)?;
             Some((start, count))
         };
-        let Some((start, count)) = super::unique_candidate((0..bytes.len()).filter_map(shape)) else { return Ok(None); };
+        let Some((start, count)) = super::unique_candidate((0..bytes.len()).filter_map(shape))
+        else {
+            return Ok(None);
+        };
         let count = usize::from(count);
         let count_u64 = u64_from_index(count);
-        let slot_bytes = count_u64.checked_mul(u64_from_index(std::mem::size_of::<(PayloadIndexToken, ())>()))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX counted pattern references", u64::MAX, u64::MAX))?;
+        let slot_bytes = count_u64
+            .checked_mul(u64_from_index(
+                std::mem::size_of::<(PayloadIndexToken, ())>(),
+            ))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("NX counted pattern references", u64::MAX, u64::MAX)
+            })?;
         ctx.charge_collection_items(count_u64, "NX counted pattern references")?;
         ctx.charge_retained(slot_bytes, "NX counted pattern references")?;
         let mut entries = Vec::new();
-        entries.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit("NX counted pattern references", 0, count_u64))?;
-        let Some(mut at) = start.checked_add(2) else { return Ok(None); };
+        entries
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("NX counted pattern references", 0, count_u64))?;
+        let Some(mut at) = start.checked_add(2) else {
+            return Ok(None);
+        };
         for _ in 0..count {
-            let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else { return Ok(None); };
+            let Some(token) = bytes.get(at..).and_then(PayloadIndexToken::read) else {
+                return Ok(None);
+            };
             at += token.raw().len();
             entries.push((token, ()));
         }
-        let Some(offset) = record.payload_offset().checked_add(start) else { return Ok(None); };
-        Ok(BranchItems::new(entries).ok().and_then(|entries| Self::new(u64_from_index(offset), entries).ok()))
+        let Some(offset) = record.payload_offset().checked_add(start) else {
+            return Ok(None);
+        };
+        Ok(BranchItems::new(entries)
+            .ok()
+            .and_then(|entries| Self::new(u64_from_index(offset), entries).ok()))
     }
 
     pub(crate) fn resolve<B>(
@@ -105,11 +129,12 @@ impl CountedPatternReferences<()> {
         file_base: u64,
         mut target: impl FnMut(PayloadIndexToken) -> B,
     ) -> Result<Option<CountedPatternReferences<B>>, CodecError> {
-        let Some(offset) = self.offset.checked_add(file_base) else { return Ok(None); };
-        let entries = self.entries.map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
-        Ok(CountedPatternReferences::new(
-            offset,
-            entries,
-        ).ok())
+        let Some(offset) = self.offset.checked_add(file_base) else {
+            return Ok(None);
+        };
+        let entries = self
+            .entries
+            .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
+        Ok(CountedPatternReferences::new(offset, entries).ok())
     }
 }

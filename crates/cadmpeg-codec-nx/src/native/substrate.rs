@@ -74,21 +74,23 @@ fn prepare_topology_streams<'a>(
             paired_deltas.insert(delta);
         }
     }
-    let mut merge = |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
-        if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
-            let result =
-                crate::deltas::merge_full_records_with_tombstone_census(ctx, partition, deltas, census)?;
-            for (family, count) in result.unmatched_tombstones {
-                if !totals.contains_key(family) {
-                    ctx.charge_collection_items(1, "NX unmatched tombstone family totals")?;
+    let mut merge =
+        |partition: &[u8], deltas: &[u8], census: &Census| -> Result<Vec<u8>, CodecError> {
+            if let Some(totals) = unmatched_tombstone_counts.as_deref_mut() {
+                let result = crate::deltas::merge_full_records_with_tombstone_census(
+                    ctx, partition, deltas, census,
+                )?;
+                for (family, count) in result.unmatched_tombstones {
+                    if !totals.contains_key(family) {
+                        ctx.charge_collection_items(1, "NX unmatched tombstone family totals")?;
+                    }
+                    *totals.entry(family).or_default() += count;
                 }
-                *totals.entry(family).or_default() += count;
+                Ok(result.merged)
+            } else {
+                crate::deltas::merge_full_records_with_census(ctx, partition, deltas, census)
             }
-            Ok(result.merged)
-        } else {
-            crate::deltas::merge_full_records_with_census(ctx, partition, deltas, census)
-        }
-    };
+        };
     for (delta, stream) in scan.streams.iter().enumerate() {
         if stream.kind() == StreamKind::Deltas && !paired_deltas.contains(&delta) {
             let census = crate::deltas::census::walk(ctx, &stream.inflated)?;
@@ -248,10 +250,10 @@ impl StreamView {
         paired_deltas: Option<&Vec<usize>>,
         point_layout: crate::intersection::ChartPointLayout,
     ) -> Result<(Self, Rc<Graph>), CodecError> {
-        let semantic_graph = if semantic_bytes != topology_bytes {
-            Some(Rc::new(Graph::parse(ctx, semantic_bytes)?))
-        } else {
+        let semantic_graph = if semantic_bytes == topology_bytes {
             None
+        } else {
+            Some(Rc::new(Graph::parse(ctx, semantic_bytes)?))
         };
         let scan_graph = semantic_graph.as_deref().unwrap_or(&graph);
         let nurbs_graph = semantic_graph
@@ -397,7 +399,11 @@ impl<'a> ParsedStreams<'a> {
                 }
             }
             let identical = paired.is_none() && topology_matches_raw && residual.is_empty();
-            let raw = Rc::new(StreamView::parse_uniform(ctx, &stream.inflated, point_layout)?);
+            let raw = Rc::new(StreamView::parse_uniform(
+                ctx,
+                &stream.inflated,
+                point_layout,
+            )?);
             let (semantic, nurbs_graph) = if identical {
                 (Rc::clone(&raw), Rc::clone(&raw.graph))
             } else {
@@ -627,29 +633,35 @@ mod tests {
     #[test]
     fn parsed_streams_refuse_paired_index_at_collection_limit() {
         let scan = scan_with_streams(one_delta_pair());
-        let error = with_collection_limit(7, |ctx| ParsedStreams::parse(ctx, &scan))
+        let error = with_collection_limit(8, |ctx| ParsedStreams::parse(ctx, &scan))
             .err()
-            .expect("parsed paired index needs an eighth collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx parsed stream paired deltas"
-        ));
+            .expect("parsed paired index needs a ninth collection item");
+        assert!(
+            matches!(
+                &error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx parsed stream paired deltas"
+            ),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn auxiliary_replacement_views_refuse_slots_at_collection_limit() {
         let scan = scan_with_streams(one_delta_pair());
-        let error = with_collection_limit(10, |ctx| ParsedStreams::parse(ctx, &scan))
+        let error = with_collection_limit(12, |ctx| ParsedStreams::parse(ctx, &scan))
             .err()
-            .expect("replacement view needs an eleventh collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx auxiliary replacement views"
-        ));
+            .expect("replacement view needs a thirteenth collection item");
+        assert!(
+            matches!(
+                &error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == "nx auxiliary replacement views"
+            ),
+            "{error:?}"
+        );
     }
 
     fn pair_under_limits(collection_items: u64, work_units: u64) -> cadmpeg_core::CodecError {

@@ -75,15 +75,13 @@ fn display_jt_segment_entity_refuses_before_identity_and_record_allocation() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let source = View::over_retained(container.data.as_ref());
-    let error =
-        super::display_jt_segments((&ctx, source), &container, &documents).unwrap_err();
+    let error = super::display_jt_segments((&ctx, source), &container, &documents).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::Entities
             && limit.operation == "store DisplayJT segment"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let segments =
-        super::display_jt_segments((&service, source), &container, &documents).unwrap();
+    let segments = super::display_jt_segments((&service, source), &container, &documents).unwrap();
     assert_eq!(segments.len(), 1);
 }
 
@@ -146,7 +144,6 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let elements =
-        super::display_jt_shape_lod_elements((&service, source), &container, &[segment])
-            .unwrap();
+        super::display_jt_shape_lod_elements((&service, source), &container, &[segment]).unwrap();
     assert_eq!(elements.len(), 1);
 }

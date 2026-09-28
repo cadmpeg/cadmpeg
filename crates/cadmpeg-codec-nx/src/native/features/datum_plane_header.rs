@@ -61,14 +61,15 @@ impl FeatureDatumPlaneHeader {
 }
 
 /// Decode common datum-plane payload headers from feature-history records.
-pub(in crate::native) fn feature_datum_plane_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_datum_plane_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureDatumPlaneHeader>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, container)?;
     let mut headers = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(header) =

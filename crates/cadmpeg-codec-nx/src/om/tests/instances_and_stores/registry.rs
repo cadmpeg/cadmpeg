@@ -45,8 +45,13 @@ fn sample_color_table_bytes() -> Vec<u8> {
     bytes
 }
 
-fn expression_declaration_name_for_test(bytes: &[u8]) -> Option<crate::om::ExpressionDeclarationName<'_>> {
-    crate::test_support::with_decode_context(|ctx| crate::om::expression_declaration_name(ctx, bytes)).unwrap()
+fn expression_declaration_name_for_test(
+    bytes: &[u8],
+) -> Option<crate::om::ExpressionDeclarationName<'_>> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::expression_declaration_name(ctx, bytes)
+    })
+    .unwrap()
 }
 
 #[test]
@@ -54,8 +59,8 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
     let bytes = sample_color_table_bytes();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let tables = color_tables(&ctx, &bytes).unwrap();
     assert_eq!(tables.len(), 1);
     assert_eq!(
@@ -96,8 +101,8 @@ fn om_color_tables_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = color_tables(&ctx, &bytes).unwrap_err();
     assert!(matches!(
         error,
@@ -112,8 +117,8 @@ fn om_color_tables_refuse_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = color_tables(&ctx, &bytes).unwrap_err();
     assert!(matches!(
         error,
@@ -128,8 +133,8 @@ fn om_color_tables_refuse_work_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = color_tables(&ctx, &bytes).unwrap_err();
     assert!(matches!(
         error,
@@ -142,7 +147,8 @@ fn om_color_tables_refuse_work_limit() {
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
+    let sections =
+        crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
@@ -153,8 +159,12 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
-    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap().remove(0);
-    let expression_records = crate::test_support::with_decode_context(|ctx| section.numeric_expression_records(ctx)).unwrap();
+    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes))
+        .unwrap()
+        .remove(0);
+    let expression_records =
+        crate::test_support::with_decode_context(|ctx| section.numeric_expression_records(ctx))
+            .unwrap();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records
         .iter()
@@ -180,7 +190,8 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         Some(120.0)
     );
     let declaration =
-        expression_declaration_name_for_test(section.as_fixed().expect("fixed store")[1].bytes).unwrap();
+        expression_declaration_name_for_test(section.as_fixed().expect("fixed store")[1].bytes)
+            .unwrap();
     assert_eq!(
         declaration.name.as_str(),
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
@@ -191,7 +202,8 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
     assert_eq!(declaration.literal, Some("120"));
-    let declaration = expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
+    let declaration =
+        expression_declaration_name_for_test(b"\x04\x04p1\0\x04\x0a-5.1 * 2\0").unwrap();
     assert_eq!(declaration.name.as_str(), "p1");
     assert_eq!(declaration.literal, Some("-5.1 * 2"));
     let declaration =
@@ -210,8 +222,8 @@ fn om_indexed_numeric_expression_records_refuse_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = section.numeric_expression_records(&ctx).unwrap_err();
     assert!(matches!(
         error,
@@ -229,8 +241,8 @@ fn om_indexed_numeric_expression_records_refuse_scoped_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let error = section.numeric_expression_records(&ctx).unwrap_err();
     assert!(matches!(
         error,

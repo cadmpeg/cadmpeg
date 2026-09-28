@@ -1079,29 +1079,44 @@ pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec
 }
 
 pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
-    let chart = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_records(ctx,
-        ext11,
-        crate::intersection::ChartPointLayout::Ext11,
-    )).unwrap()
+    let chart = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_records(
+            ctx,
+            ext11,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .into_iter()
     .next()
     .expect("ext11 chart record");
-    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| crate::intersection::chart_source_record_at(ctx,
-        ext11,
-        chart.pos,
-        crate::intersection::ChartPointLayout::Ext11,
-    )).unwrap()
+    let (_, chart_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::chart_source_record_at(
+            ctx,
+            ext11,
+            chart.pos,
+            crate::intersection::ChartPointLayout::Ext11,
+        )
+    })
+    .unwrap()
     .expect("ext11 chart bounds");
     let mut deltas = DELTAS_PREAMBLE.to_vec();
     deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
-    for term in crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, ext11)).unwrap() {
+    for term in crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::term_use_records(ctx, ext11)
+    })
+    .unwrap()
+    {
         let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);
     }
-    let support_uv = crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, ext11)).unwrap()
-        .into_iter()
-        .next()
-        .expect("ext11 support UV");
+    let support_uv = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_records(ctx, ext11)
+    })
+    .unwrap()
+    .into_iter()
+    .next()
+    .expect("ext11 support UV");
     let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
         crate::intersection::support_uv_record_at(ctx, ext11, support_uv.pos)
     })

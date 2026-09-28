@@ -91,7 +91,9 @@ pub fn intersection(data: &[u8]) {
     let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &policy) else {
         return;
     };
-    if let Ok(curves) = crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3) {
+    if let Ok(curves) =
+        crate::intersection::curves(&ctx, data, crate::intersection::ChartPointLayout::Xyz3)
+    {
         for curve in curves {
             // discarded-value: fuzz decoded curve fields without using their values.
             let _ = (curve.references, curve.pos);
@@ -180,8 +182,12 @@ mod tests {
 
     #[test]
     fn om_wrapper_accepts_fixture() {
-        drop(super::om(&crate::test_support::test_om::indexed_om_section()));
-        drop(super::om(&crate::test_support::test_om::size_framed_om_section()));
+        drop(super::om(
+            &crate::test_support::test_om::indexed_om_section(),
+        ));
+        drop(super::om(
+            &crate::test_support::test_om::size_framed_om_section(),
+        ));
     }
 
     #[test]

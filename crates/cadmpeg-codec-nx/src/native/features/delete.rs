@@ -160,13 +160,14 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 
 /// Decode exact `DELETE` payload reference fields and independently resolve
 /// their non-null slots without assigning a target object family.
-pub(in crate::native) fn feature_delete_reference_fields(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_delete_reference_fields(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut fields = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(field) = DeleteReferences::read(record.payload_view()) else {
@@ -193,11 +194,11 @@ pub(in crate::native) fn feature_delete_reference_fields(ctx: &cadmpeg_core::dec
 
 /// Reconstruct one ordered logical payload from each complete same-store
 /// non-null `DELETE` reference field.
-pub(in crate::native) fn feature_delete_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_delete_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
-) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     Ok(fields
         .iter()

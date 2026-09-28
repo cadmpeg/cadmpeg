@@ -63,15 +63,38 @@ impl DisplayJtGraph {
         ctx: &DecodeContext<'_>,
         wire: DisplayJtGraphWire,
     ) -> Result<Self, NativeConvertError> {
-        let count = |length: usize| u64::try_from(length)
-            .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX));
-        let _documents = reserve_graph_index(ctx, count(wire.documents.len())?, "index DisplayJT graph records")?;
-        let _segments = reserve_graph_index(ctx, count(wire.segments.len())?, "index DisplayJT graph records")?;
-        let _elements = reserve_graph_index(ctx, count(wire.compressed_elements.len())?, "index DisplayJT graph records")?;
-        let _shape_lods = reserve_graph_index(ctx, count(wire.shape_lod_elements.len())?, "index DisplayJT graph records")?;
-        let _sequences = reserve_graph_index(ctx, count(wire.compressed_element_sequences.len())?, "index DisplayJT graph records")?;
+        let count = |length: usize| {
+            u64::try_from(length)
+                .map_err(|_| ctx.refuse_codec_limit("index DisplayJT graph records", 0, u64::MAX))
+        };
+        let _documents = reserve_graph_index(
+            ctx,
+            count(wire.documents.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _segments = reserve_graph_index(
+            ctx,
+            count(wire.segments.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _elements = reserve_graph_index(
+            ctx,
+            count(wire.compressed_elements.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _shape_lods = reserve_graph_index(
+            ctx,
+            count(wire.shape_lod_elements.len())?,
+            "index DisplayJT graph records",
+        )?;
+        let _sequences = reserve_graph_index(
+            ctx,
+            count(wire.compressed_element_sequences.len())?,
+            "index DisplayJT graph records",
+        )?;
         let toc_count = wire.documents.iter().try_fold(0_u64, |sum, document| {
-            count(document.toc_entries.len())?.checked_add(sum)
+            count(document.toc_entries.len())?
+                .checked_add(sum)
                 .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
         })?;
         let _toc = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
@@ -87,9 +110,21 @@ impl DisplayJtGraph {
             DisplayJtGraphWire {
                 documents: arena_as_charged(ctx, namespace, "display_jt_documents")?,
                 segments: arena_as_charged(ctx, namespace, "display_jt_segments")?,
-                shape_lod_elements: arena_as_charged(ctx, namespace, "display_jt_shape_lod_elements")?,
-                compressed_elements: arena_as_charged(ctx, namespace, "display_jt_compressed_elements")?,
-                compressed_element_sequences: arena_as_charged(ctx, namespace, "display_jt_compressed_element_sequences")?,
+                shape_lod_elements: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_shape_lod_elements",
+                )?,
+                compressed_elements: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_compressed_elements",
+                )?,
+                compressed_element_sequences: arena_as_charged(
+                    ctx,
+                    namespace,
+                    "display_jt_compressed_element_sequences",
+                )?,
             },
         )
     }
@@ -101,16 +136,29 @@ impl DisplayJtGraph {
             segments: namespace.arena_as("display_jt_segments")?,
             shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
             compressed_elements: namespace.arena_as("display_jt_compressed_elements")?,
-            compressed_element_sequences: namespace.arena_as("display_jt_compressed_element_sequences")?,
+            compressed_element_sequences: namespace
+                .arena_as("display_jt_compressed_element_sequences")?,
         })
     }
 
     fn from_wire(wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
         let documents = by_id(&wire.documents, |item| item.id.as_str(), "documents")?;
         let segments = by_id(&wire.segments, |item| item.id.as_str(), "segments")?;
-        let elements = by_id(&wire.compressed_elements, |item| item.id.as_str(), "compressed_elements")?;
-        by_id(&wire.shape_lod_elements, |item| item.id.as_str(), "shape_lod_elements")?;
-        by_id(&wire.compressed_element_sequences, |item| item.id.as_str(), "compressed_element_sequences")?;
+        let elements = by_id(
+            &wire.compressed_elements,
+            |item| item.id.as_str(),
+            "compressed_elements",
+        )?;
+        by_id(
+            &wire.shape_lod_elements,
+            |item| item.id.as_str(),
+            "shape_lod_elements",
+        )?;
+        by_id(
+            &wire.compressed_element_sequences,
+            |item| item.id.as_str(),
+            "compressed_element_sequences",
+        )?;
         wire.documents.iter().try_fold(0_u64, |sum, document| {
             u64::try_from(document.toc_entries.len())
                 .ok()

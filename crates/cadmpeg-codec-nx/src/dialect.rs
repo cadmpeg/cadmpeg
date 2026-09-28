@@ -101,7 +101,10 @@ pub(crate) fn classify_layers(
     ctx: &DecodeContext<'_>,
     scan: &crate::decode::Scan<'_>,
 ) -> Result<LayerClassification, CodecError> {
-    ctx.charge_work(u64_from_index(scan.streams.len()), "classify NX dialect layers")?;
+    ctx.charge_work(
+        u64_from_index(scan.streams.len()),
+        "classify NX dialect layers",
+    )?;
     let schema_count = scan
         .streams
         .iter()
@@ -118,9 +121,9 @@ pub(crate) fn classify_layers(
         })?;
     ctx.charge_retained(u64_from_index(index_bytes), "retain NX schema stream index")?;
     let mut streams = Vec::new();
-    streams
-        .try_reserve_exact(schema_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count)))?;
+    streams.try_reserve_exact(schema_count).map_err(|_| {
+        ctx.refuse_codec_limit("nx schema streams", 0, u64_from_index(schema_count))
+    })?;
     for stream in &scan.streams {
         if let Some(schema) = stream.schema_token() {
             streams.push((stream, schema));
@@ -153,7 +156,10 @@ pub(crate) fn classify_layers(
         let text_bytes = label_len.checked_add(schema.value().len()).ok_or_else(|| {
             ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
         })?;
-        ctx.charge_retained(u64_from_index(text_bytes), "retain NX schema carrier labels")?;
+        ctx.charge_retained(
+            u64_from_index(text_bytes),
+            "retain NX schema carrier labels",
+        )?;
         let mut label = String::new();
         label.try_reserve_exact(label_len).map_err(|_| {
             ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
@@ -162,10 +168,7 @@ pub(crate) fn classify_layers(
             .map_err(|_| {
                 ctx.refuse_codec_limit("nx schema carrier labels", 0, u64_from_index(label_len))
             })?;
-        carriers.push((
-            schema.clone(),
-            cadmpeg_parasolid::Carrier::new(label),
-        ));
+        carriers.push((schema.clone(), cadmpeg_parasolid::Carrier::new(label)));
     }
     let extra = cadmpeg_parasolid::extra_layers(
         carriers,

@@ -30,8 +30,11 @@ fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    let frames = crate::test_support::with_decode_context(|ctx| crate::native::features::holes::symbolic_thread_text_frames(ctx, record)).unwrap()
-        .expect("two text frames");
+    let frames = crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
+    })
+    .unwrap()
+    .expect("two text frames");
     assert_eq!(frames.len(), 3);
     assert_eq!(frames[0].marker, crate::om::OperationTextMarker::Text);
     assert_eq!(frames[0].offset, 500);
@@ -48,7 +51,11 @@ fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
     let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
     let record = crate::om::operation_record::OperationPayload::new(payload, 500, label).unwrap();
 
-    assert!(crate::test_support::with_decode_context(|ctx| crate::native::features::holes::symbolic_thread_text_frames(ctx, record)).unwrap().is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::symbolic_thread_text_frames(ctx, record)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]

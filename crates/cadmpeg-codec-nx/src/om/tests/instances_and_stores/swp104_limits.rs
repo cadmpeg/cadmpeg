@@ -17,24 +17,31 @@ fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     let mut policy = DecodePolicy::default();
     configure(&mut policy);
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let record = crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
+    let record =
+        crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
     crate::om::swp104_payload_leading_branch(&ctx, record).unwrap_err()
 }
 
 #[test]
 fn swp104_leading_branch_refuses_collection_limit() {
     let error = refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn swp104_leading_branch_refuses_retained_limit() {
     let error = refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+    );
 }
 
 #[test]
 fn swp104_leading_branch_refuses_work_limit() {
     let error = refusal(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+    );
 }

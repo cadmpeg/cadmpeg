@@ -257,7 +257,9 @@ pub(super) fn fast_load_component_object_groups(
             .filter(|value| value.uuid == uuid.uuid)
             .map(|value| value.id.clone())
             .collect::<Vec<_>>();
-        let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else { continue };
+        let Some(members) = UuidGroupMembers::new_charged(ctx, uses, values)? else {
+            continue;
+        };
         groups.push(FastLoadComponentObjectGroup {
             id: format!("nx:fast-load:object-group#{}", uuid.ordinal),
             component_uuid: uuid.id.clone(),
@@ -859,7 +861,10 @@ mod tests {
                 source_offset: 200 + ordinal,
             })
             .collect::<Vec<_>>();
-        let groups = crate::test_support::with_decode_context(|ctx| fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &values)).unwrap();
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &values)
+        })
+        .unwrap();
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].members.occurrences().count(), 3);
         assert_eq!(groups[0].members.object_uuid_values().count(), 3);
@@ -869,8 +874,14 @@ mod tests {
         );
 
         assert!(
-            crate::test_support::with_decode_context(|ctx| fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &values[..2])).unwrap()
-                .is_empty()
+            crate::test_support::with_decode_context(|ctx| fast_load_component_object_groups(
+                ctx,
+                &uuids,
+                occurrences.as_slice(),
+                &values[..2]
+            ))
+            .unwrap()
+            .is_empty()
         );
     }
 

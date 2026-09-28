@@ -183,13 +183,21 @@ impl TryFrom<&[u8]> for SketchBinary64PairForm {
 
 fn push_pair<T>(ctx: &DecodeContext<'_>, pairs: &mut Vec<T>, pair: T) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX binary64 pairs")?;
-    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), "NX binary64 pairs")?;
-    pairs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX binary64 pairs", 0, 1))?;
+    ctx.charge_retained(
+        u64_from_index(std::mem::size_of::<T>()),
+        "NX binary64 pairs",
+    )?;
+    pairs
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("NX binary64 pairs", 0, 1))?;
     pairs.push(pair);
     Ok(())
 }
 
-pub(crate) fn datum_plane_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Binary64Pair<DatumPlanePairForm>>, CodecError> {
+pub(crate) fn datum_plane_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<DatumPlanePairForm>>, CodecError> {
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum-plane pairs")?;
     let mut pairs = Vec::new();
     for offset in 0..bytes.len() {
@@ -200,8 +208,12 @@ pub(crate) fn datum_plane_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result
     Ok(pairs)
 }
 
-pub(crate) fn object_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Binary64Pair<ObjectPairForm>>, CodecError> {
-    let work = u64_from_index(bytes.len()).checked_mul(u64_from_index(ObjectPairForm::ALL.len()))
+pub(crate) fn object_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<ObjectPairForm>>, CodecError> {
+    let work = u64_from_index(bytes.len())
+        .checked_mul(u64_from_index(ObjectPairForm::ALL.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("scan NX object pairs", u64::MAX, u64::MAX))?;
     ctx.charge_work(work, "scan NX object pairs")?;
     let mut pairs = Vec::new();
@@ -217,14 +229,21 @@ pub(crate) fn object_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<
     Ok(pairs)
 }
 
-pub(crate) fn sketch_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
+pub(crate) fn sketch_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
     let mut pairs = Vec::new();
     for pair in object_pairs(ctx, bytes)? {
-        push_pair(ctx, &mut pairs, Binary64Pair {
-            form: SketchBinary64PairForm::Object(pair.form),
-            offset: pair.offset,
-            values: pair.values,
-        })?;
+        push_pair(
+            ctx,
+            &mut pairs,
+            Binary64Pair {
+                form: SketchBinary64PairForm::Object(pair.form),
+                offset: pair.offset,
+                values: pair.values,
+            },
+        )?;
     }
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX sketch pairs")?;
     for (offset, window) in bytes.windows(3).enumerate() {
@@ -251,7 +270,8 @@ pub(crate) fn sketch_pairs(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<
 #[cfg(test)]
 mod tests {
     fn datum_plane_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::DatumPlanePairForm>> {
-        crate::test_support::with_decode_context(|ctx| super::datum_plane_pairs(ctx, bytes)).unwrap()
+        crate::test_support::with_decode_context(|ctx| super::datum_plane_pairs(ctx, bytes))
+            .unwrap()
     }
     fn object_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::ObjectPairForm>> {
         crate::test_support::with_decode_context(|ctx| super::object_pairs(ctx, bytes)).unwrap()
@@ -271,9 +291,12 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = super::object_pairs(&ctx, &bytes).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]

@@ -65,8 +65,14 @@ use cadmpeg_ir::Exactness;
 
 use crate::NxCodec;
 
-fn append_design_intent_losses(ir: &cadmpeg_ir::document::CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
-    crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, ir, losses)).unwrap();
+fn append_design_intent_losses(
+    ir: &cadmpeg_ir::document::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::report::append_design_intent_losses(ctx, ir, losses)
+    })
+    .unwrap();
 }
 
 #[test]
@@ -84,7 +90,11 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides()[0].pcurve.is_some());
     assert!(context.sides()[1].surface.is_some());
     assert!(context.sides()[1].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -115,7 +125,11 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
         Some(&Point2::new(0.0, 10.0))
     );
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -164,7 +178,11 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .iter()
         .filter(|edge| edge.curve() == Some(owner))
         .all(|edge| edge.param_range().is_none()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -203,7 +221,11 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
         .expect("carrying edge");
     assert_eq!(edge.param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -236,7 +258,11 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 
     let second_point = stream
         .windows(4)
@@ -288,7 +314,11 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -348,7 +378,11 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
             .expect("carrying edge");
         assert_eq!(edge.param_range(), None);
-        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 }
 
@@ -391,7 +425,11 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -506,7 +544,11 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             if nurbs.poles().iter().any(|point| point.y == 30.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -522,7 +564,11 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.control_points().iter().any(|point| point.y == 10.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -538,7 +584,11 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
         Some([0.25, 0.75])
     );
     assert_eq!(result.ir().model.coedges.len(), 2);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -551,7 +601,11 @@ fn decode_resolves_forward_trimmed_curve_chain() {
         edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 0.75])
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -577,7 +631,11 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert_eq!(edge.param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -592,7 +650,11 @@ fn decode_omits_overflowing_line_trim_range() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges[0].param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -626,7 +688,11 @@ fn decode_tracks_extended_face_reference_shift() {
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -670,13 +736,19 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
         Some(0.1)
     );
     assert_eq!(result.ir().model.points[0].position().get().x, 10.0);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
@@ -720,7 +792,11 @@ fn decode_tracks_geometry_envelope_escape_shift() {
         result.ir().model.curves[0].geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -875,7 +951,11 @@ fn decode_retains_every_rmfastload_active_body() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -901,7 +981,9 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     assert!(topology_body_node_ids(0, &graph).is_empty());
 }
 
@@ -917,7 +999,11 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
         .unwrap()
         .iter()
         .any(|unknown| unknown.id.as_str() == "nx:container:parasolid#1"));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -951,7 +1037,11 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -970,7 +1060,11 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1129,7 +1223,11 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .iter()
             .any(|loss| loss.message.contains(name)));
     }
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1158,7 +1256,11 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]

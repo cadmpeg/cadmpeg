@@ -64,7 +64,12 @@ impl FeatureSwp104LeadingBranch {
         branch: Swp104PayloadLeadingBranch,
         resolve: impl Fn(PayloadIndexToken) -> Option<String>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
-        if source_offset.checked_add(branch.byte_len() as u64).is_none() { return Ok(None) }
+        if source_offset
+            .checked_add(branch.byte_len() as u64)
+            .is_none()
+        {
+            return Ok(None);
+        }
         let reference = |token| Reference {
             token,
             data_block: resolve(token),
@@ -78,7 +83,9 @@ impl FeatureSwp104LeadingBranch {
             leading_zero: branch.leading_zero,
             mode: branch.mode,
             state_lane: branch.state_lane,
-            members: branch.members.map_indexed_charged(ctx, |_, item| reference(item))?,
+            members: branch
+                .members
+                .map_indexed_charged(ctx, |_, item| reference(item))?,
             terminal: reference(branch.terminal),
         }))
     }
@@ -242,7 +249,17 @@ mod tests {
         branch: crate::om::Swp104PayloadLeadingBranch,
         resolve: impl Fn(crate::om::reference_index::PayloadIndexToken) -> Option<String>,
     ) -> Option<FeatureSwp104LeadingBranch> {
-        crate::test_support::with_decode_context(|ctx| FeatureSwp104LeadingBranch::from_source(ctx, id, operation_label, source_offset, branch, resolve)).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            FeatureSwp104LeadingBranch::from_source(
+                ctx,
+                id,
+                operation_label,
+                source_offset,
+                branch,
+                resolve,
+            )
+        })
+        .unwrap()
     }
 
     #[test]
@@ -271,7 +288,11 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::test_support::with_decode_context(|ctx| crate::om::swp104_payload_leading_branch(ctx, record)).unwrap().unwrap();
+                    let source = crate::test_support::with_decode_context(|ctx| {
+                        crate::om::swp104_payload_leading_branch(ctx, record)
+                    })
+                    .unwrap()
+                    .unwrap();
                     let branch = from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned OM caches retain their validated source bytes and decoded text.
 
-use std::{ops::Range, sync::Arc};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use std::{ops::Range, sync::Arc};
 
 use super::{
     EntityRecord, FieldDefinition, FixedEntityRecord, IndexedSection, IndexedStore, OperationLabel,
@@ -64,31 +64,50 @@ impl CachedDefinition {
 }
 
 impl CachedDefinition {
-    fn new(ctx: &DecodeContext<'_>, offset: usize, name: &str, tail: &[u8]) -> Result<Self, CodecError> {
+    fn new(
+        ctx: &DecodeContext<'_>,
+        offset: usize,
+        name: &str,
+        tail: &[u8],
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             offset,
             name: cached_text(ctx, name, "NX cached definition name")?,
-            registry_tail: ctx.copy_retained(tail, "NX cached definition tail")?.into_boxed_slice(),
+            registry_tail: ctx
+                .copy_retained(tail, "NX cached definition tail")?
+                .into_boxed_slice(),
         })
     }
 }
 
-pub(crate) fn charged_items<T>(ctx: &DecodeContext<'_>, count: usize, operation: &'static str) -> Result<Vec<T>, CodecError> {
+pub(crate) fn charged_items<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
     let count_u64 = u64_from_index(count);
-    let bytes = count_u64.checked_mul(u64_from_index(std::mem::size_of::<T>()))
+    let bytes = count_u64
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count_u64))?;
     ctx.charge_collection_items(count_u64, operation)?;
     ctx.charge_retained(bytes, operation)?;
     let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, count_u64, count_u64))?;
+    values
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, count_u64, count_u64))?;
     Ok(values)
 }
 
-fn cached_text(ctx: &DecodeContext<'_>, value: &str, operation: &'static str) -> Result<String, CodecError> {
+fn cached_text(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
     let length = u64_from_index(value.len());
     ctx.charge_retained(length, operation)?;
     let mut text = String::new();
-    text.try_reserve_exact(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, length, length))?;
+    text.try_reserve_exact(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, length, length))?;
     text.push_str(value);
     Ok(text)
 }
@@ -122,13 +141,23 @@ pub(crate) struct IndexedSectionLayout {
 }
 
 impl IndexedSectionLayout {
-    pub(crate) fn from_section(ctx: &DecodeContext<'_>, section: &IndexedSection<'_>, source: &Arc<[u8]>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn from_section(
+        ctx: &DecodeContext<'_>,
+        section: &IndexedSection<'_>,
+        source: &Arc<[u8]>,
+    ) -> Result<Option<Self>, CodecError> {
         let store = match &section.store {
             IndexedStore::Fixed { records } => {
                 let mut cached = charged_items(ctx, records.len(), "NX cached fixed records")?;
                 for record in records.iter() {
-                    let Some(bytes) = CachedRange::new(source, record.offset, record.bytes.len()) else { return Ok(None); };
-                    cached.push(FixedCachedRecord { object_id: record.object_id, bytes });
+                    let Some(bytes) = CachedRange::new(source, record.offset, record.bytes.len())
+                    else {
+                        return Ok(None);
+                    };
+                    cached.push(FixedCachedRecord {
+                        object_id: record.object_id,
+                        bytes,
+                    });
                 }
                 CachedStore::Fixed { records: cached }
             }
@@ -137,12 +166,23 @@ impl IndexedSectionLayout {
                 column_storage,
                 records,
             } => {
-                let Some(start) = control.offset.checked_add(control.bytes.len()) else { return Ok(None); };
-                let Some(control) = CachedRange::new(source, control.offset, control.bytes.len()) else { return Ok(None); };
-                let Some(column_storage) = CachedRange::new(source, start, column_storage.len()) else { return Ok(None); };
+                let Some(start) = control.offset.checked_add(control.bytes.len()) else {
+                    return Ok(None);
+                };
+                let Some(control) = CachedRange::new(source, control.offset, control.bytes.len())
+                else {
+                    return Ok(None);
+                };
+                let Some(column_storage) = CachedRange::new(source, start, column_storage.len())
+                else {
+                    return Ok(None);
+                };
                 let mut cached = charged_items(ctx, records.len(), "NX cached offset records")?;
                 for record in records.iter() {
-                    let Some(range) = CachedRange::new(source, record.offset, record.bytes.len()) else { return Ok(None); };
+                    let Some(range) = CachedRange::new(source, record.offset, record.bytes.len())
+                    else {
+                        return Ok(None);
+                    };
                     cached.push(range);
                 }
                 CachedStore::OffsetOnly {
@@ -154,11 +194,21 @@ impl IndexedSectionLayout {
         };
         let mut types = charged_items(ctx, section.types.len(), "NX cached types")?;
         for definition in section.types.iter() {
-            types.push(CachedDefinition::new(ctx, definition.offset, definition.name, definition.registry_tail)?);
+            types.push(CachedDefinition::new(
+                ctx,
+                definition.offset,
+                definition.name,
+                definition.registry_tail,
+            )?);
         }
         let mut fields = charged_items(ctx, section.fields.len(), "NX cached fields")?;
         for definition in section.fields.iter() {
-            fields.push(CachedDefinition::new(ctx, definition.offset, definition.name, definition.registry_tail)?);
+            fields.push(CachedDefinition::new(
+                ctx,
+                definition.offset,
+                definition.name,
+                definition.registry_tail,
+            )?);
         }
         Ok(Some(Self {
             base: section.base,
@@ -170,42 +220,56 @@ impl IndexedSectionLayout {
         }))
     }
 
-    pub(crate) fn materialize(&self, ctx: &DecodeContext<'_>) -> Result<IndexedSection<'_>, CodecError> {
+    pub(crate) fn materialize(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<IndexedSection<'_>, CodecError> {
         let store = match &self.store {
             CachedStore::Fixed { records } => {
-                let mut materialized = charged_items(ctx, records.len(), "NX materialized fixed records")?;
-                for record in records.iter() {
+                let mut materialized =
+                    charged_items(ctx, records.len(), "NX materialized fixed records")?;
+                for record in records {
                     materialized.push(FixedEntityRecord {
                         object_id: record.object_id,
                         offset: record.bytes.offset(),
                         bytes: record.bytes.bytes(),
                     });
                 }
-                IndexedStore::Fixed { records: materialized.into() }
+                IndexedStore::Fixed {
+                    records: materialized.into(),
+                }
             }
             CachedStore::OffsetOnly {
                 control,
                 column_storage,
                 records,
             } => {
-                let mut materialized = charged_items(ctx, records.len(), "NX materialized offset records")?;
-                for record in records.iter() {
-                    materialized.push(EntityRecord { offset: record.offset(), bytes: record.bytes() });
+                let mut materialized =
+                    charged_items(ctx, records.len(), "NX materialized offset records")?;
+                for record in records {
+                    materialized.push(EntityRecord {
+                        offset: record.offset(),
+                        bytes: record.bytes(),
+                    });
                 }
                 IndexedStore::OffsetOnly {
-                control: EntityRecord {
-                    offset: control.offset(),
-                    bytes: control.bytes(),
-                },
-                column_storage: column_storage.bytes(),
-                records: materialized.into(),
+                    control: EntityRecord {
+                        offset: control.offset(),
+                        bytes: control.bytes(),
+                    },
+                    column_storage: column_storage.bytes(),
+                    records: materialized.into(),
                 }
             }
         };
         let mut types = charged_items(ctx, self.types.len(), "NX materialized types")?;
-        for definition in &self.types { types.push(definition.type_definition()); }
+        for definition in &self.types {
+            types.push(definition.type_definition());
+        }
         let mut fields = charged_items(ctx, self.fields.len(), "NX materialized fields")?;
-        for definition in &self.fields { fields.push(definition.field_definition()); }
+        for definition in &self.fields {
+            fields.push(definition.field_definition());
+        }
         Ok(IndexedSection {
             base: self.base,
             entity_index_offset: self.entity_index_offset,
@@ -227,24 +291,46 @@ pub(crate) struct SectionLayout {
 }
 
 impl SectionLayout {
-    pub(crate) fn from_section(ctx: &DecodeContext<'_>, section: &Section<'_>, source: &Arc<[u8]>) -> Result<Option<Self>, CodecError> {
+    pub(crate) fn from_section(
+        ctx: &DecodeContext<'_>,
+        section: &Section<'_>,
+        source: &Arc<[u8]>,
+    ) -> Result<Option<Self>, CodecError> {
         let record_area = match section.record_area {
             Some(area) => {
-                let Some(range) = CachedRange::new(source, area.offset, area.bytes.len()) else { return Ok(None); };
+                let Some(range) = CachedRange::new(source, area.offset, area.bytes.len()) else {
+                    return Ok(None);
+                };
                 Some(range)
             }
             None => None,
         };
-        let Some(frame) = CachedRange::new(source, section.offset, section.byte_len) else { return Ok(None); };
+        let Some(frame) = CachedRange::new(source, section.offset, section.byte_len) else {
+            return Ok(None);
+        };
         let mut types = charged_items(ctx, section.types.len(), "NX cached framed types")?;
         for definition in section.types.iter() {
-            types.push(CachedDefinition::new(ctx, definition.offset, definition.name, definition.registry_tail)?);
+            types.push(CachedDefinition::new(
+                ctx,
+                definition.offset,
+                definition.name,
+                definition.registry_tail,
+            )?);
         }
         let mut fields = charged_items(ctx, section.fields.len(), "NX cached framed fields")?;
         for definition in section.fields.iter() {
-            fields.push(CachedDefinition::new(ctx, definition.offset, definition.name, definition.registry_tail)?);
+            fields.push(CachedDefinition::new(
+                ctx,
+                definition.offset,
+                definition.name,
+                definition.registry_tail,
+            )?);
         }
-        let mut operation_labels = charged_items(ctx, section.cached_operation_labels.len(), "NX cached operation labels")?;
+        let mut operation_labels = charged_items(
+            ctx,
+            section.cached_operation_labels.len(),
+            "NX cached operation labels",
+        )?;
         for label in section.cached_operation_labels.iter() {
             operation_labels.push(CachedOperationLabel::new(ctx, label)?);
         }
@@ -259,11 +345,21 @@ impl SectionLayout {
 
     pub(crate) fn materialize(&self, ctx: &DecodeContext<'_>) -> Result<Section<'_>, CodecError> {
         let mut types = charged_items(ctx, self.types.len(), "NX materialized framed types")?;
-        for definition in &self.types { types.push(definition.type_definition()); }
+        for definition in &self.types {
+            types.push(definition.type_definition());
+        }
         let mut fields = charged_items(ctx, self.fields.len(), "NX materialized framed fields")?;
-        for definition in &self.fields { fields.push(definition.field_definition()); }
-        let mut cached_operation_labels = charged_items(ctx, self.operation_labels.len(), "NX materialized operation labels")?;
-        for label in &self.operation_labels { cached_operation_labels.push(label.materialize()); }
+        for definition in &self.fields {
+            fields.push(definition.field_definition());
+        }
+        let mut cached_operation_labels = charged_items(
+            ctx,
+            self.operation_labels.len(),
+            "NX materialized operation labels",
+        )?;
+        for label in &self.operation_labels {
+            cached_operation_labels.push(label.materialize());
+        }
         Ok(Section {
             offset: self.frame.offset(),
             byte_len: self.frame.len(),

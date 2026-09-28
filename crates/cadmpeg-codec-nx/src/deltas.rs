@@ -461,48 +461,44 @@ fn transmit_header(
     stream: &[u8],
 ) -> Result<Option<TransmitHeader>, CodecError> {
     let Some((description_bytes, schema_bytes, references, end)) = (|| {
-    (stream.get(..2) == Some(b"PS")).then_some(())?;
-    let description_len = usize::try_from(View::u32_be_at(stream, 2)?).ok()?;
-    let description_start = 6usize;
-    let description_end = description_start.checked_add(description_len)?;
-    let description_bytes = stream.get(description_start..description_end)?;
-    let schema_len = usize::try_from(View::u32_be_at(stream, description_end)?).ok()?;
-    let schema_start = description_end.checked_add(4)?;
-    let schema_end = schema_start.checked_add(schema_len)?;
-    let schema_bytes = stream.get(schema_start..schema_end)?;
-    let mut at = schema_end;
-    (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
-    at = at.checked_add(2)?;
-    (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
-    at = at.checked_add(4)?;
-    (View::u16_be_at(stream, at) == Some(3)).then_some(())?;
-    at = at.checked_add(2)?;
-    (stream.get(at) == Some(&0xff)).then_some(())?;
-    at = at.checked_add(1)?;
-    let (first, consumed) = read_xmt(stream, at)?;
-    at = at.checked_add(consumed)?;
-    let (second, consumed) = read_xmt(stream, at)?;
-    at = at.checked_add(consumed)?;
-    (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-    at = at.checked_add(2)?;
+        (stream.get(..2) == Some(b"PS")).then_some(())?;
+        let description_len = usize::try_from(View::u32_be_at(stream, 2)?).ok()?;
+        let description_start = 6usize;
+        let description_end = description_start.checked_add(description_len)?;
+        let description_bytes = stream.get(description_start..description_end)?;
+        let schema_len = usize::try_from(View::u32_be_at(stream, description_end)?).ok()?;
+        let schema_start = description_end.checked_add(4)?;
+        let schema_end = schema_start.checked_add(schema_len)?;
+        let schema_bytes = stream.get(schema_start..schema_end)?;
+        let mut at = schema_end;
+        (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
+        at = at.checked_add(2)?;
+        (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
+        at = at.checked_add(4)?;
+        (View::u16_be_at(stream, at) == Some(3)).then_some(())?;
+        at = at.checked_add(2)?;
+        (stream.get(at) == Some(&0xff)).then_some(())?;
+        at = at.checked_add(1)?;
+        let (first, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        let (second, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
+        (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
+        at = at.checked_add(2)?;
 
         Some((description_bytes, schema_bytes, [first, second], at))
     })() else {
         return Ok(None);
     };
-    let description = String::from_utf8(ctx.copy_retained(description_bytes, "NX deltas description")?)
-        .ok();
-    let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?)
-        .ok();
-    Ok(description.zip(schema).and_then(|(description, schema)| Some(TransmitHeader {
-        state: TransmitState::new(
-            description,
-            schema,
-            references,
-        )
-        .ok()?,
-        end,
-    })))
+    let description =
+        String::from_utf8(ctx.copy_retained(description_bytes, "NX deltas description")?).ok();
+    let schema = String::from_utf8(ctx.copy_retained(schema_bytes, "NX deltas schema")?).ok();
+    Ok(description.zip(schema).and_then(|(description, schema)| {
+        Some(TransmitHeader {
+            state: TransmitState::new(description, schema, references).ok()?,
+            end,
+        })
+    }))
 }
 
 fn term_use_numeric_tails(
@@ -515,10 +511,18 @@ fn term_use_numeric_tails(
         .len()
         .checked_add(census.tombstones.len())
         .and_then(|n| n.checked_add(census.body_revisions.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event starts", 0, u64_from_index(census.records.len())))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX deltas event starts",
+                0,
+                u64_from_index(census.records.len()),
+            )
+        })?;
     let bytes = count
         .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count)))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count))
+        })?;
     let _reservation = ctx.reserve_scoped(u64_from_index(bytes), "NX deltas event starts")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event starts")?;
     let mut event_starts = Vec::new();
@@ -535,7 +539,9 @@ fn term_use_numeric_tails(
     );
     let sort_work = u64_from_index(count)
         .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count)))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX deltas event start sort", 0, u64_from_index(count))
+        })?;
     ctx.charge_work(sort_work, "sort NX deltas event starts")?;
     event_starts.sort_unstable();
     event_starts.dedup();
@@ -545,16 +551,19 @@ fn term_use_numeric_tails(
         if !matches!(record.family, RecordFamily::TermUse) {
             continue;
         }
-        let Some((term_use, parsed_end)) = crate::intersection::term_use_at(stream, record.offset) else {
+        let Some((term_use, parsed_end)) = crate::intersection::term_use_at(stream, record.offset)
+        else {
             continue;
         };
         if parsed_end != record.end || term_use.xmt != record.xmt {
             continue;
         }
-        let Some(tail) = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form) else {
+        let Some(tail) = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)
+        else {
             continue;
         };
-        let next_event = event_starts.get(event_starts.partition_point(|start| *start <= record.end));
+        let next_event =
+            event_starts.get(event_starts.partition_point(|start| *start <= record.end));
         if next_event.is_none_or(|start| *start >= tail.end()) {
             census::push_event(ctx, &mut tails, tail, "NX deltas term use numeric tails")?;
         }
@@ -591,7 +600,11 @@ fn tagged_reference_lanes(
                 census::push_event(
                     ctx,
                     &mut lanes,
-                    TaggedReferenceLane { references, offset, end },
+                    TaggedReferenceLane {
+                        references,
+                        offset,
+                        end,
+                    },
                     "NX tagged reference lanes",
                 )?;
             }
@@ -607,7 +620,9 @@ fn reference_type_maps(
 ) -> Result<Vec<ReferenceTypeMap>, CodecError> {
     let mut maps = Vec::new();
     for (offset, end) in uncovered_spans(ctx, stream.len(), census, true)? {
-        let map = if let Some(map) = reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(end))? {
+        let map = if let Some(map) =
+            reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(end))?
+        {
             Some(map)
         } else {
             let following_kind = census
@@ -622,8 +637,15 @@ fn reference_type_maps(
                 )
                 .find_map(|(event_offset, kind)| (event_offset == end).then_some(kind));
             if let Some((following_kind, shared_end)) = following_kind.zip(end.checked_add(2)) {
-                reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?
-                    .filter(|map| map.target_kind.is_none() && map.entries.last_kind() == following_kind)
+                reference_type_map(
+                    ctx,
+                    stream,
+                    offset,
+                    ReferenceTypeMapLimit::Bounded(shared_end),
+                )?
+                .filter(|map| {
+                    map.target_kind.is_none() && map.entries.last_kind() == following_kind
+                })
             } else {
                 None
             }
@@ -670,12 +692,14 @@ fn reference_type_map(
     loop {
         ctx.charge_work(1, "scan NX reference type map")?;
         if expected_end == Some(at) {
-            return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
-                entries,
-                target_kind: None,
-                offset,
-                end: at,
-            }));
+            return Ok(MapEntries::try_from(entries)
+                .ok()
+                .map(|entries| ReferenceTypeMap {
+                    entries,
+                    target_kind: None,
+                    offset,
+                    end: at,
+                }));
         }
         if expected_end.is_some_and(|end| at >= end) {
             return Ok(None);
@@ -699,12 +723,14 @@ fn reference_type_map(
             };
             at = next;
             if expected_end == Some(at) {
-                return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
-                    entries,
-                    target_kind: None,
-                    offset,
-                    end: at,
-                }));
+                return Ok(MapEntries::try_from(entries)
+                    .ok()
+                    .map(|entries| ReferenceTypeMap {
+                        entries,
+                        target_kind: None,
+                        offset,
+                        end: at,
+                    }));
             }
             let Some(target_kind) = View::u16_be_at(stream, at).and_then(NonZeroU16::new) else {
                 return Ok(None);
@@ -716,12 +742,14 @@ fn reference_type_map(
             if expected_end.is_some_and(|end| at > end) {
                 return Ok(None);
             }
-            return Ok(MapEntries::try_from(entries).ok().map(|entries| ReferenceTypeMap {
-                entries,
-                target_kind: Some(target_kind),
-                offset,
-                end: at,
-            }));
+            return Ok(MapEntries::try_from(entries)
+                .ok()
+                .map(|entries| ReferenceTypeMap {
+                    entries,
+                    target_kind: Some(target_kind),
+                    offset,
+                    end: at,
+                }));
         }
         let Some(kind) = View::u16_be_at(stream, at) else {
             return Ok(None);
@@ -733,7 +761,12 @@ fn reference_type_map(
         if expected_end.is_some_and(|end| at > end) {
             return Ok(None);
         }
-        census::push_event(ctx, &mut entries, (reference, kind), "NX reference type map entries")?;
+        census::push_event(
+            ctx,
+            &mut entries,
+            (reference, kind),
+            "NX reference type map entries",
+        )?;
     }
 }
 
@@ -759,8 +792,7 @@ fn reference_state_packet(
     offset: usize,
     gap_end: usize,
 ) -> Result<Option<ReferenceStatePacket>, CodecError> {
-    if View::u16_be_at(stream, offset) != Some(1)
-        || View::u16_be_at(stream, offset + 2) != Some(1)
+    if View::u16_be_at(stream, offset) != Some(1) || View::u16_be_at(stream, offset + 2) != Some(1)
     {
         return Ok(None);
     }
@@ -842,7 +874,12 @@ fn schema_reference_preambles(
         let mut at = offset;
         while let Some(preamble) = schema_reference_preamble(ctx, stream, at, gap_end)? {
             at = preamble.end;
-            census::push_event(ctx, &mut preambles, preamble, "NX schema reference preambles")?;
+            census::push_event(
+                ctx,
+                &mut preambles,
+                preamble,
+                "NX schema reference preambles",
+            )?;
         }
     }
     Ok(preambles)
@@ -855,40 +892,47 @@ fn schema_reference_preamble(
     gap_end: usize,
 ) -> Result<Option<SchemaReferencePreamble>, CodecError> {
     let Some((identity, references, state_references, state_words, count, mut at)) = (|| {
-    let identity = View::u16_be_at(stream, offset)?;
-    (View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
-        && stream.get(offset.checked_add(4)?) == Some(&0xff))
-    .then_some(())?;
-    let mut at = offset.checked_add(5)?;
-    let mut references = [0; 2];
-    for reference in &mut references {
-        let (value, consumed) = read_xmt(stream, at)?;
-        *reference = value;
-        at = at.checked_add(consumed)?;
-    }
-    let mut state_references = [0; 3];
-    for reference in &mut state_references {
-        let (value, consumed) = read_xmt(stream, at)?;
-        *reference = value;
-        at = at.checked_add(consumed)?;
-    }
-    let mut state_words = [0; 4];
-    for state_word in &mut state_words {
-        *state_word = View::u32_be_at(stream, at)?;
-        at = at.checked_add(4)?;
-    }
-    (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
-    at = at.checked_add(3)?;
-    (View::u16_be_at(stream, at) == Some(identity)).then_some(())?;
-    at = at.checked_add(2)?;
-    for _ in 0..2 {
-        let (reference, consumed) = read_xmt(stream, at)?;
-        (reference == 1).then_some(())?;
-        at = at.checked_add(consumed)?;
-    }
-    let count = View::u16_be_at(stream, at)?;
-    at = at.checked_add(2)?;
-        Some((identity, references, state_references, state_words, count, at))
+        let identity = View::u16_be_at(stream, offset)?;
+        (View::u16_be_at(stream, offset.checked_add(2)?) == Some(4)
+            && stream.get(offset.checked_add(4)?) == Some(&0xff))
+        .then_some(())?;
+        let mut at = offset.checked_add(5)?;
+        let mut references = [0; 2];
+        for reference in &mut references {
+            let (value, consumed) = read_xmt(stream, at)?;
+            *reference = value;
+            at = at.checked_add(consumed)?;
+        }
+        let mut state_references = [0; 3];
+        for reference in &mut state_references {
+            let (value, consumed) = read_xmt(stream, at)?;
+            *reference = value;
+            at = at.checked_add(consumed)?;
+        }
+        let mut state_words = [0; 4];
+        for state_word in &mut state_words {
+            *state_word = View::u32_be_at(stream, at)?;
+            at = at.checked_add(4)?;
+        }
+        (stream.get(at..at.checked_add(3)?) == Some(&[0, 0, 0])).then_some(())?;
+        at = at.checked_add(3)?;
+        (View::u16_be_at(stream, at) == Some(identity)).then_some(())?;
+        at = at.checked_add(2)?;
+        for _ in 0..2 {
+            let (reference, consumed) = read_xmt(stream, at)?;
+            (reference == 1).then_some(())?;
+            at = at.checked_add(consumed)?;
+        }
+        let count = View::u16_be_at(stream, at)?;
+        at = at.checked_add(2)?;
+        Some((
+            identity,
+            references,
+            state_references,
+            state_words,
+            count,
+            at,
+        ))
     })() else {
         return Ok(None);
     };
@@ -917,22 +961,23 @@ fn schema_reference_preamble(
                 return Ok(None);
             }
             return Ok(PreambleState::new(
-                    identity,
-                    references,
-                    state_references,
-                    state_words,
-                    count,
-                    entries,
-                    terminal_value,
-                )
-                .ok()
-                .map(|state| SchemaReferencePreamble {
-                state,
-                offset,
-                end,
-            }));
+                identity,
+                references,
+                state_references,
+                state_words,
+                count,
+                entries,
+                terminal_value,
+            )
+            .ok()
+            .map(|state| SchemaReferencePreamble { state, offset, end }));
         }
-        census::push_event(ctx, &mut entries, (entry_kind, reference), "NX schema reference entries")?;
+        census::push_event(
+            ctx,
+            &mut entries,
+            (entry_kind, reference),
+            "NX schema reference entries",
+        )?;
     }
 }
 
@@ -999,8 +1044,10 @@ fn inline_schema_declarations(
             let mut declaration = inline_schema_declaration(ctx, stream, at, gap_end)?;
             if declaration.is_none()
                 && parse_end > gap_end
-                && at.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
-                    .and_then(|end| stream.get(at..end)) == Some(ATTDEF_LIST_SCHEMA_HEADER)
+                && at
+                    .checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
+                    .and_then(|end| stream.get(at..end))
+                    == Some(ATTDEF_LIST_SCHEMA_HEADER)
             {
                 declaration = inline_schema_declaration(ctx, stream, at, parse_end)?;
             }
@@ -1008,7 +1055,12 @@ fn inline_schema_declarations(
                 break;
             };
             at = declaration.end;
-            census::push_event(ctx, &mut declarations, declaration, "NX inline schema declarations")?;
+            census::push_event(
+                ctx,
+                &mut declarations,
+                declaration,
+                "NX inline schema declarations",
+            )?;
         }
     }
     Ok(declarations)
@@ -1066,13 +1118,23 @@ fn inline_schema_declaration(
     offset: usize,
     gap_end: usize,
 ) -> Result<Option<InlineSchemaDeclaration>, CodecError> {
-    if offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
-        .and_then(|end| stream.get(offset..end)) == Some(ATTDEF_LIST_SCHEMA_HEADER)
+    if offset
+        .checked_add(ATTDEF_LIST_SCHEMA_HEADER.len())
+        .and_then(|end| stream.get(offset..end))
+        == Some(ATTDEF_LIST_SCHEMA_HEADER)
     {
-        let Some(body) = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len()) else { return Ok(None); };
-        let Some(shape) = attdef_list_shape(stream, body) else { return Ok(None); };
-        if shape.end > gap_end { return Ok(None); }
-        let Some(state) = materialize_attdef_list(ctx, stream, shape)? else { return Ok(None); };
+        let Some(body) = offset.checked_add(ATTDEF_LIST_SCHEMA_HEADER.len()) else {
+            return Ok(None);
+        };
+        let Some(shape) = attdef_list_shape(stream, body) else {
+            return Ok(None);
+        };
+        if shape.end > gap_end {
+            return Ok(None);
+        }
+        let Some(state) = materialize_attdef_list(ctx, stream, shape)? else {
+            return Ok(None);
+        };
         return Ok(Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::AttdefList { state },
             offset,
@@ -1080,106 +1142,128 @@ fn inline_schema_declaration(
         }));
     }
     let parsed = (|| {
-    if stream.get(offset..offset.checked_add(BODY_SCHEMA_HEADER.len())?) == Some(BODY_SCHEMA_HEADER)
-    {
-        let end = offset.checked_add(BODY_SCHEMA_HEADER.len())?;
-        (end <= gap_end).then_some(())?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::BodyHeader,
-            offset,
-            end,
-        });
-    }
-    if stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
-        == Some(REGION_SCHEMA_HEADER)
-    {
-        return region_schema_declaration(stream, offset, gap_end);
-    }
-    if stream.get(offset..offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?)
-        == Some(TYPE_70_SCHEMA_HEADER)
-    {
-        let body = offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?;
-        let (state, end) = type_70_body(stream, body, TrailingCopies::Two)
-            .filter(|(_, end)| *end <= gap_end)
-            .or_else(|| {
-                type_70_body(stream, body, TrailingCopies::One).filter(|(_, end)| {
-                    *end <= gap_end && (*end == gap_end || plausible_next(stream, *end))
-                })
-            })?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type70 { state },
-            offset,
-            end,
-        });
-    }
-    if stream.get(offset..offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?)
-        == Some(TYPE_100_SCHEMA_HEADER)
-    {
-        let mut at = offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?;
-        let (xmt, consumed) = read_xmt(stream, at)?;
-        at = at.checked_add(consumed)?;
-        (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
-        at = at.checked_add(4)?;
-        let mut references = [0; 3];
-        for reference in &mut references {
-            *reference = read_status_one_reference(stream, &mut at)?;
-        }
-        let mut transform = [0.0; 13];
-        for transform_value in &mut transform {
-            *transform_value = View::f64_be_at(stream, at)?;
-            at = at.checked_add(8)?;
-        }
-        (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
-        at = at.checked_add(4)?;
-        for _ in 0..3 {
-            (View::u64_be_at(stream, at) == Some(0xc2bc_928f_996e_0000)).then_some(())?;
-            at = at.checked_add(8)?;
-        }
-        (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
-        (at <= gap_end).then_some(())?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type100 {
-                state: PrecisionState::new(xmt, references, transform).ok()?,
-            },
-            offset,
-            end: at,
-        });
-    }
-    if stream.get(offset..offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?)
-        == Some(crate::topology::TYPE_38_SCHEMA_HEADER)
-    {
-        let mut at = offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?;
-        let (xmt, consumed) = read_xmt(stream, at)?;
-        let xmt = NonNullXmt::try_from(xmt).ok()?;
-        at = at.checked_add(consumed)?;
-        let node_id = View::u32_be_at(stream, at)?;
-        at = at.checked_add(4)?;
-        let mut leading_references = [0; 5];
-        let mut leading_statuses = [0; 5];
-        for (reference, status) in leading_references.iter_mut().zip(&mut leading_statuses) {
-            let (value, consumed) = read_xmt(stream, at)?;
-            at = at.checked_add(consumed)?;
-            *reference = value;
-            *status = *stream.get(at)?;
-            at = at.checked_add(1)?;
-        }
-        let marker = IntersectionMarker::try_from(*stream.get(at)?).ok()?;
-        at = at.checked_add(1)?;
-        if let Some((linked_references, state_references, state_end)) =
-            type_38_reference_lanes(stream, at, ReferenceLaneForm::TwoLinks)
+        if stream.get(offset..offset.checked_add(BODY_SCHEMA_HEADER.len())?)
+            == Some(BODY_SCHEMA_HEADER)
         {
-            let (numeric_values, end) = if stream
-                .get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
-                == Some(TYPE_41_SCHEMA_HEADER)
+            let end = offset.checked_add(BODY_SCHEMA_HEADER.len())?;
+            (end <= gap_end).then_some(())?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::BodyHeader,
+                offset,
+                end,
+            });
+        }
+        if stream.get(offset..offset.checked_add(REGION_SCHEMA_HEADER.len())?)
+            == Some(REGION_SCHEMA_HEADER)
+        {
+            return region_schema_declaration(stream, offset, gap_end);
+        }
+        if stream.get(offset..offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?)
+            == Some(TYPE_70_SCHEMA_HEADER)
+        {
+            let body = offset.checked_add(TYPE_70_SCHEMA_HEADER.len())?;
+            let (state, end) = type_70_body(stream, body, TrailingCopies::Two)
+                .filter(|(_, end)| *end <= gap_end)
+                .or_else(|| {
+                    type_70_body(stream, body, TrailingCopies::One).filter(|(_, end)| {
+                        *end <= gap_end && (*end == gap_end || plausible_next(stream, *end))
+                    })
+                })?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type70 { state },
+                offset,
+                end,
+            });
+        }
+        if stream.get(offset..offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?)
+            == Some(TYPE_100_SCHEMA_HEADER)
+        {
+            let mut at = offset.checked_add(TYPE_100_SCHEMA_HEADER.len())?;
+            let (xmt, consumed) = read_xmt(stream, at)?;
+            at = at.checked_add(consumed)?;
+            (View::u32_be_at(stream, at) == Some(0)).then_some(())?;
+            at = at.checked_add(4)?;
+            let mut references = [0; 3];
+            for reference in &mut references {
+                *reference = read_status_one_reference(stream, &mut at)?;
+            }
+            let mut transform = [0.0; 13];
+            for transform_value in &mut transform {
+                *transform_value = View::f64_be_at(stream, at)?;
+                at = at.checked_add(8)?;
+            }
+            (View::u32_be_at(stream, at) == Some(1)).then_some(())?;
+            at = at.checked_add(4)?;
+            for _ in 0..3 {
+                (View::u64_be_at(stream, at) == Some(0xc2bc_928f_996e_0000)).then_some(())?;
+                at = at.checked_add(8)?;
+            }
+            (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
+            (at <= gap_end).then_some(())?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type100 {
+                    state: PrecisionState::new(xmt, references, transform).ok()?,
+                },
+                offset,
+                end: at,
+            });
+        }
+        if stream.get(offset..offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?)
+            == Some(crate::topology::TYPE_38_SCHEMA_HEADER)
+        {
+            let mut at = offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?;
+            let (xmt, consumed) = read_xmt(stream, at)?;
+            let xmt = NonNullXmt::try_from(xmt).ok()?;
+            at = at.checked_add(consumed)?;
+            let node_id = View::u32_be_at(stream, at)?;
+            at = at.checked_add(4)?;
+            let mut leading_references = [0; 5];
+            let mut leading_statuses = [0; 5];
+            for (reference, status) in leading_references.iter_mut().zip(&mut leading_statuses) {
+                let (value, consumed) = read_xmt(stream, at)?;
+                at = at.checked_add(consumed)?;
+                *reference = value;
+                *status = *stream.get(at)?;
+                at = at.checked_add(1)?;
+            }
+            let marker = IntersectionMarker::try_from(*stream.get(at)?).ok()?;
+            at = at.checked_add(1)?;
+            if let Some((linked_references, state_references, state_end)) =
+                type_38_reference_lanes(stream, at, ReferenceLaneForm::TwoLinks)
             {
-                let (term_reference, numeric_values, end) =
-                    type_41_schema_state(stream, state_end, gap_end)?;
-                (term_reference == state_references[1]).then_some(())?;
-                (Some(numeric_values), end)
-            } else {
-                (state_end <= gap_end).then_some(())?;
-                (None, state_end)
-            };
+                let (numeric_values, end) = if stream
+                    .get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+                    == Some(TYPE_41_SCHEMA_HEADER)
+                {
+                    let (term_reference, numeric_values, end) =
+                        type_41_schema_state(stream, state_end, gap_end)?;
+                    (term_reference == state_references[1]).then_some(())?;
+                    (Some(numeric_values), end)
+                } else {
+                    (state_end <= gap_end).then_some(())?;
+                    (None, state_end)
+                };
+                return Some(InlineSchemaDeclaration {
+                    fields: InlineSchemaFields::Type38 {
+                        state: Type38State::new(
+                            xmt,
+                            node_id,
+                            leading_references,
+                            leading_statuses,
+                            marker,
+                            linked_references,
+                            state_references,
+                            numeric_values,
+                        )
+                        .ok()?,
+                    },
+                    offset,
+                    end,
+                });
+            }
+            let (linked_references, state_references, end) =
+                type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
+            (end <= gap_end).then_some(())?;
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
                     state: Type38State::new(
@@ -1190,7 +1274,7 @@ fn inline_schema_declaration(
                         marker,
                         linked_references,
                         state_references,
-                        numeric_values,
+                        None,
                     )
                     .ok()?,
                 },
@@ -1198,120 +1282,99 @@ fn inline_schema_declaration(
                 end,
             });
         }
-        let (linked_references, state_references, end) =
-            type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
-        (end <= gap_end).then_some(())?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type38 {
-                state: Type38State::new(
-                    xmt,
-                    node_id,
-                    leading_references,
-                    leading_statuses,
-                    marker,
-                    linked_references,
-                    state_references,
-                    None,
-                )
-                .ok()?,
-            },
-            offset,
-            end,
-        });
-    }
-    if stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
-        == Some(TYPE_41_SCHEMA_HEADER)
-    {
-        let (reference, numeric_values, end) = type_41_schema_state(stream, offset, gap_end)?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type41 {
-                reference,
-                numeric_values,
-            },
-            offset,
-            end,
-        });
-    }
-    if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
-        == Some(TYPE_101_SCHEMA_HEADER)
-    {
-        let mut at = offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?;
-        let (xmt, consumed) = read_xmt(stream, at)?;
-        (xmt == 2).then_some(())?;
-        at = at.checked_add(consumed)?;
-        let compact_end = at.checked_add(TYPE_101_COMPACT_STATE_LEN)?;
-        let compact = stream.get(at..compact_end)
-            == TYPE_101_SCHEMA_STATE_PREFIX.get(..TYPE_101_COMPACT_STATE_LEN);
-        let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
-        let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
-        let full_prefix = prefix_state.is_some_and(|state| {
-            matches!(state, [3, 4, 1] | [1, 1, 0])
-                && prefix.is_some_and(|prefix| {
-                    prefix
-                        .iter()
-                        .zip(TYPE_101_SCHEMA_STATE_PREFIX)
-                        .enumerate()
-                        .all(|(index, (actual, expected))| {
-                            matches!(index, 7 | 10 | 30) || actual == expected
-                        })
-                })
-        });
-        if !full_prefix {
-            (compact && compact_end <= gap_end && plausible_next(stream, compact_end))
-                .then_some(())?;
+        if stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+            == Some(TYPE_41_SCHEMA_HEADER)
+        {
+            let (reference, numeric_values, end) = type_41_schema_state(stream, offset, gap_end)?;
             return Some(InlineSchemaDeclaration {
-                fields: InlineSchemaFields::Type101Compact,
+                fields: InlineSchemaFields::Type41 {
+                    reference,
+                    numeric_values,
+                },
                 offset,
-                end: compact_end,
+                end,
             });
         }
-        let prefix_state = prefix_state?;
-        at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
-        (View::u16_be_at(stream, at) == Some(4)).then_some(())?;
-        at = at.checked_add(2)?;
-        let mut references = [0; 4];
-        for reference in &mut references {
-            let (value, consumed) = read_xmt(stream, at)?;
+        if stream.get(offset..offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?)
+            == Some(TYPE_101_SCHEMA_HEADER)
+        {
+            let mut at = offset.checked_add(TYPE_101_SCHEMA_HEADER.len())?;
+            let (xmt, consumed) = read_xmt(stream, at)?;
+            (xmt == 2).then_some(())?;
             at = at.checked_add(consumed)?;
-            *reference = value;
+            let compact_end = at.checked_add(TYPE_101_COMPACT_STATE_LEN)?;
+            let compact = stream.get(at..compact_end)
+                == TYPE_101_SCHEMA_STATE_PREFIX.get(..TYPE_101_COMPACT_STATE_LEN);
+            let prefix = stream.get(at..at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?);
+            let prefix_state = prefix.map(|prefix| [prefix[7], prefix[10], prefix[30]]);
+            let full_prefix = prefix_state.is_some_and(|state| {
+                matches!(state, [3, 4, 1] | [1, 1, 0])
+                    && prefix.is_some_and(|prefix| {
+                        prefix
+                            .iter()
+                            .zip(TYPE_101_SCHEMA_STATE_PREFIX)
+                            .enumerate()
+                            .all(|(index, (actual, expected))| {
+                                matches!(index, 7 | 10 | 30) || actual == expected
+                            })
+                    })
+            });
+            if !full_prefix {
+                (compact && compact_end <= gap_end && plausible_next(stream, compact_end))
+                    .then_some(())?;
+                return Some(InlineSchemaDeclaration {
+                    fields: InlineSchemaFields::Type101Compact,
+                    offset,
+                    end: compact_end,
+                });
+            }
+            let prefix_state = prefix_state?;
+            at = at.checked_add(TYPE_101_SCHEMA_STATE_PREFIX.len())?;
+            (View::u16_be_at(stream, at) == Some(4)).then_some(())?;
+            at = at.checked_add(2)?;
+            let mut references = [0; 4];
+            for reference in &mut references {
+                let (value, consumed) = read_xmt(stream, at)?;
+                at = at.checked_add(consumed)?;
+                *reference = value;
+            }
+            let (null_reference, consumed) = read_xmt(stream, at)?;
+            (null_reference == 1).then_some(())?;
+            at = at.checked_add(consumed)?;
+            (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
+            at = at.checked_add(2)?;
+            let (anchor_reference, consumed) = read_xmt(stream, at)?;
+            let anchor_reference = match anchor_reference {
+                0 => None,
+                value => Some(value),
+            };
+            at = at.checked_add(consumed)?;
+            let mut state_words = [0; 3];
+            for state_word in &mut state_words {
+                *state_word = View::u32_be_at(stream, at)?;
+                at = at.checked_add(4)?;
+            }
+            let terminal = stream.get(at..at.checked_add(5)?)?;
+            let terminal_value = terminal
+                .iter()
+                .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
+            at = at.checked_add(5)?;
+            (at <= gap_end).then_some(())?;
+            let state = type101_state::Type101State::new(
+                references,
+                anchor_reference,
+                state_words,
+                terminal_value,
+            )
+            .ok()?;
+            (state.prefix_state() == prefix_state).then_some(())?;
+            return Some(InlineSchemaDeclaration {
+                fields: InlineSchemaFields::Type101 { state },
+                offset,
+                end: at,
+            });
         }
-        let (null_reference, consumed) = read_xmt(stream, at)?;
-        (null_reference == 1).then_some(())?;
-        at = at.checked_add(consumed)?;
-        (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
-        at = at.checked_add(2)?;
-        let (anchor_reference, consumed) = read_xmt(stream, at)?;
-        let anchor_reference = match anchor_reference {
-            0 => None,
-            value => Some(value),
-        };
-        at = at.checked_add(consumed)?;
-        let mut state_words = [0; 3];
-        for state_word in &mut state_words {
-            *state_word = View::u32_be_at(stream, at)?;
-            at = at.checked_add(4)?;
-        }
-        let terminal = stream.get(at..at.checked_add(5)?)?;
-        let terminal_value = terminal
-            .iter()
-            .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
-        at = at.checked_add(5)?;
-        (at <= gap_end).then_some(())?;
-        let state = type101_state::Type101State::new(
-            references,
-            anchor_reference,
-            state_words,
-            terminal_value,
-        )
-        .ok()?;
-        (state.prefix_state() == prefix_state).then_some(())?;
-        return Some(InlineSchemaDeclaration {
-            fields: InlineSchemaFields::Type101 { state },
-            offset,
-            end: at,
-        });
-    }
-    None
+        None
     })();
     Ok(parsed)
 }
@@ -1392,7 +1455,10 @@ fn inline_body_state(
     offset: usize,
     gap_end: usize,
 ) -> Result<Option<InlineBodyState>, CodecError> {
-    ctx.charge_work(u64_from_index(gap_end - offset), "scan NX inline BODY state")?;
+    ctx.charge_work(
+        u64_from_index(gap_end - offset),
+        "scan NX inline BODY state",
+    )?;
     let next_header = ((offset + 1)..gap_end).find(|candidate| {
         [
             BODY_SCHEMA_HEADER,
@@ -1417,13 +1483,13 @@ fn inline_body_state(
         return Ok(None);
     };
     if stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
-        return Ok(NonNullXmt::try_from(first).ok().map(|reference| InlineBodyState {
-            fields: InlineBodyStateFields::Compact {
-                reference,
-            },
-            offset,
-            end: expected_end,
-        }));
+        return Ok(NonNullXmt::try_from(first)
+            .ok()
+            .map(|reference| InlineBodyState {
+                fields: InlineBodyStateFields::Compact { reference },
+                offset,
+                end: expected_end,
+            }));
     }
     if first != 3 {
         return Ok(None);
@@ -1444,11 +1510,14 @@ fn inline_body_state(
     })() else {
         return Ok(None);
     };
-    let Some(raw_state) = stream.get(at..expected_end).filter(|bytes| !bytes.is_empty()) else {
+    let Some(raw_state) = stream
+        .get(at..expected_end)
+        .filter(|bytes| !bytes.is_empty())
+    else {
         return Ok(None);
     };
-    let state_bytes = BodyStateBytes::try_from(ctx.copy_retained(raw_state, "NX inline BODY state bytes")?)
-        .ok();
+    let state_bytes =
+        BodyStateBytes::try_from(ctx.copy_retained(raw_state, "NX inline BODY state bytes")?).ok();
     Ok(state_bytes.map(|state_bytes| InlineBodyState {
         fields: InlineBodyStateFields::Revision {
             node_id,
@@ -1584,9 +1653,8 @@ fn uncovered_spans(
     }
     if at < stream_len {
         ctx.charge_collection_items(1, "NX deltas uncovered spans")?;
-        gaps.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1)
-        })?;
+        gaps.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("NX deltas uncovered spans allocation", 0, 1))?;
         gaps.push((at, stream_len));
     }
     Ok(gaps.into_iter())
@@ -1617,58 +1685,75 @@ fn merged_event_spans(
     ];
     let count = base_count
         .into_iter()
-        .chain(include_derived_events.then_some(derived_count).into_iter().flatten())
-        .try_fold(0usize, |sum, length| sum.checked_add(length))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event spans", 0, u64_from_index(census.records.len())))?;
+        .chain(
+            include_derived_events
+                .then_some(derived_count)
+                .into_iter()
+                .flatten(),
+        )
+        .try_fold(0usize, usize::checked_add)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX deltas event spans",
+                0,
+                u64_from_index(census.records.len()),
+            )
+        })?;
     let scratch_bytes = count
         .checked_mul(std::mem::size_of::<(usize, usize)>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event span bytes", 0, u64_from_index(count)))?;
-    let _covered_reservation = ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX deltas event span bytes", 0, u64_from_index(count))
+        })?;
+    let _covered_reservation =
+        ctx.reserve_scoped(u64_from_index(scratch_bytes), "NX deltas event spans")?;
     ctx.charge_collection_items(u64_from_index(count), "NX deltas event spans")?;
     let sort_width = usize::BITS - count.leading_zeros();
     let sort_work = u64_from_index(count)
         .checked_mul(u64::from(sort_width))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event span sort", 0, u64_from_index(count)))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX deltas event span sort", 0, u64_from_index(count))
+        })?;
     ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
     covered.try_reserve(count).map_err(|_| {
         ctx.refuse_codec_limit("NX deltas event span allocation", 0, u64_from_index(count))
     })?;
-    covered.extend(census
-        .transmit_header
-        .iter()
-        .map(|header| (0, header.end))
-        .chain(
-            census
-                .terminal_null_references
-                .iter()
-                .map(|trailer| (trailer.offset(), trailer.end())),
-        )
-        .chain(
-            census
-                .records
-                .iter()
-                .map(|record| (record.offset, record.end)),
-        )
-        .chain(
-            census
-                .tombstones
-                .iter()
-                .map(|tombstone| (tombstone.offset, tombstone.offset + 6)),
-        )
-        .chain(
-            census
-                .body_revisions
-                .iter()
-                .map(|revision| (revision.offset, revision.end)),
-        )
-        .chain(
-            census
-                .term_use_numeric_tails
-                .iter()
-                .map(|tail| (tail.offset(), tail.end())),
-        )
-        );
+    covered.extend(
+        census
+            .transmit_header
+            .iter()
+            .map(|header| (0, header.end))
+            .chain(
+                census
+                    .terminal_null_references
+                    .iter()
+                    .map(|trailer| (trailer.offset(), trailer.end())),
+            )
+            .chain(
+                census
+                    .records
+                    .iter()
+                    .map(|record| (record.offset, record.end)),
+            )
+            .chain(
+                census
+                    .tombstones
+                    .iter()
+                    .map(|tombstone| (tombstone.offset, tombstone.offset + 6)),
+            )
+            .chain(
+                census
+                    .body_revisions
+                    .iter()
+                    .map(|revision| (revision.offset, revision.end)),
+            )
+            .chain(
+                census
+                    .term_use_numeric_tails
+                    .iter()
+                    .map(|tail| (tail.offset(), tail.end())),
+            ),
+    );
     if include_derived_events {
         covered.extend(
             census
@@ -1726,9 +1811,9 @@ fn merged_event_spans(
             *merged_end = (*merged_end).max(end);
         } else {
             ctx.charge_collection_items(1, "NX deltas merged spans")?;
-            merged.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("NX deltas merged spans allocation", 0, 1)
-            })?;
+            merged
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX deltas merged spans allocation", 0, 1))?;
             merged.push((start, end));
         }
     }
@@ -1742,16 +1827,30 @@ fn consume_shared_record(
     records: &[Record],
     intersection_schema_anchor_seen: bool,
 ) -> Result<Option<Record>, CodecError> {
-    let Some(previous) = records.last() else { return Ok(None); };
-    if previous.end != offset || !has_shareable_terminal(stream, previous) { return Ok(None); }
-    let Some(record_offset) = offset.checked_sub(1) else { return Ok(None); };
+    let Some(previous) = records.last() else {
+        return Ok(None);
+    };
+    if previous.end != offset || !has_shareable_terminal(stream, previous) {
+        return Ok(None);
+    }
+    let Some(record_offset) = offset.checked_sub(1) else {
+        return Ok(None);
+    };
     if let Some(record) = consume_intersection_auxiliary(ctx, stream, record_offset)? {
         return Ok(Some(record));
     }
-    if let Some(record) = first_complete_record(ctx, stream, record_offset, intersection_schema_anchor_seen, false)? {
+    if let Some(record) = first_complete_record(
+        ctx,
+        stream,
+        record_offset,
+        intersection_schema_anchor_seen,
+        false,
+    )? {
         return Ok(Some(record));
     }
-    let Some(kind) = stream.get(offset).copied().map(u16::from) else { return Ok(None); };
+    let Some(kind) = stream.get(offset).copied().map(u16::from) else {
+        return Ok(None);
+    };
     let fixed = if let Some(signature) = fixed_signature(kind) {
         consume_fixed(ctx, stream, record_offset, kind, signature)?
     } else {
@@ -1771,15 +1870,29 @@ fn first_complete_record(
     intersection_schema_anchor_seen: bool,
     include_type_67: bool,
 ) -> Result<Option<Record>, CodecError> {
-    if let Some(record) = consume_nurbs_auxiliary(ctx, stream, offset)? { return Ok(Some(record)); }
-    if let Some(record) = consume_type_141(ctx, stream, offset)? { return Ok(Some(record)); }
-    if let Some(record) = consume_type_45(ctx, stream, offset)? { return Ok(Some(record)); }
-    if include_type_67 {
-        if let Some(record) = consume_type_67(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_nurbs_auxiliary(ctx, stream, offset)? {
+        return Ok(Some(record));
     }
-    if let Some(record) = consume_type_70(ctx, stream, offset)? { return Ok(Some(record)); }
-    if let Some(record) = consume_attdef_list(ctx, stream, offset)? { return Ok(Some(record)); }
-    if let Some(record) = consume_type_101(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_type_141(ctx, stream, offset)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = consume_type_45(ctx, stream, offset)? {
+        return Ok(Some(record));
+    }
+    if include_type_67 {
+        if let Some(record) = consume_type_67(ctx, stream, offset)? {
+            return Ok(Some(record));
+        }
+    }
+    if let Some(record) = consume_type_70(ctx, stream, offset)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = consume_attdef_list(ctx, stream, offset)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = consume_type_101(ctx, stream, offset)? {
+        return Ok(Some(record));
+    }
     consume_intersection_data(ctx, stream, offset, intersection_schema_anchor_seen)
 }
 
@@ -1855,12 +1968,17 @@ fn push_merge_event(
 ) -> Result<(), CodecError> {
     if !events.contains_key(&key) {
         ctx.charge_collection_items(1, "NX deltas merge event keys")?;
-        reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), Vec<MergeEvent>)>()))?;
+        reservation.grow(u64_from_index(std::mem::size_of::<(
+            (u8, u32),
+            Vec<MergeEvent>,
+        )>()))?;
     }
     let bucket = events.entry(key).or_default();
     ctx.charge_collection_items(1, "NX deltas merge events")?;
     reservation.grow(u64_from_index(std::mem::size_of::<MergeEvent>()))?;
-    bucket.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX deltas merge events", 0, 1))?;
+    bucket
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("NX deltas merge events", 0, 1))?;
     bucket.push(event);
     Ok(())
 }
@@ -1900,7 +2018,13 @@ pub(crate) fn merge_full_records_with_tombstone_census(
     census: &Census,
 ) -> Result<MergeFullRecordsResult, CodecError> {
     let mut unmatched_tombstones = BTreeMap::new();
-    let merged = merge_records(ctx, partition, deltas, census, Some(&mut unmatched_tombstones))?;
+    let merged = merge_records(
+        ctx,
+        partition,
+        deltas,
+        census,
+        Some(&mut unmatched_tombstones),
+    )?;
     Ok(MergeFullRecordsResult {
         merged,
         unmatched_tombstones,
@@ -1930,13 +2054,20 @@ fn merge_records(
         if mergeable_record(ctx, record, kind)? {
             if !replacements.contains_key(&(kind, record.xmt)) {
                 ctx.charge_collection_items(1, "NX deltas replacement keys")?;
-                replacement_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Record)>()))?;
+                replacement_reservation
+                    .grow(u64_from_index(std::mem::size_of::<((u8, u32), &Record)>()))?;
             }
             replacements.insert((kind, record.xmt), record);
             if let Some((_, events)) = &mut unmatched_events {
-                push_merge_event(ctx, &mut event_reservation, events, (kind, record.xmt), MergeEvent::Full {
-                    offset: record.offset,
-                })?;
+                push_merge_event(
+                    ctx,
+                    &mut event_reservation,
+                    events,
+                    (kind, record.xmt),
+                    MergeEvent::Full {
+                        offset: record.offset,
+                    },
+                )?;
             }
         }
     }
@@ -1951,14 +2082,23 @@ fn merge_records(
         let kind = tombstone.kind.code();
         if !tombstones.contains_key(&(kind, tombstone.xmt)) {
             ctx.charge_collection_items(1, "NX deltas tombstone keys")?;
-            tombstone_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Tombstone)>()))?;
+            tombstone_reservation
+                .grow(u64_from_index(
+                    std::mem::size_of::<((u8, u32), &Tombstone)>(),
+                ))?;
         }
         tombstones.insert((kind, tombstone.xmt), tombstone);
         if let Some((_, events)) = &mut unmatched_events {
-            push_merge_event(ctx, &mut event_reservation, events, (kind, tombstone.xmt), MergeEvent::Tombstone {
-                offset: tombstone.offset,
-                kind: tombstone.kind,
-            })?;
+            push_merge_event(
+                ctx,
+                &mut event_reservation,
+                events,
+                (kind, tombstone.xmt),
+                MergeEvent::Tombstone {
+                    offset: tombstone.offset,
+                    kind: tombstone.kind,
+                },
+            )?;
         }
     }
 
@@ -1976,16 +2116,19 @@ fn merge_records(
     let mut deletion_reservation = ctx.reserve_scoped(0, "NX deltas deletion keys")?;
     for (key, tombstone) in tombstones {
         if NodeKind::try_from(key.0)
-                .ok()
-                .and_then(|kind| graph.get(kind, key.1))
-                .is_some()
-                && !topology_carriers.contains(&key.1)
-                && replacements
-                    .get(&key)
-                    .is_none_or(|record| tombstone.offset > record.offset)
+            .ok()
+            .and_then(|kind| graph.get(kind, key.1))
+            .is_some()
+            && !topology_carriers.contains(&key.1)
+            && replacements
+                .get(&key)
+                .is_none_or(|record| tombstone.offset > record.offset)
         {
             ctx.charge_collection_items(1, "NX deltas deletion keys")?;
-            deletion_reservation.grow(u64_from_index(std::mem::size_of::<((u8, u32), &Tombstone)>()))?;
+            deletion_reservation
+                .grow(u64_from_index(
+                    std::mem::size_of::<((u8, u32), &Tombstone)>(),
+                ))?;
             deletions.insert(key, tombstone);
         }
     }
@@ -1994,9 +2137,18 @@ fn merge_records(
         let total_len = replacements
             .iter()
             .filter(|((kind, _), _)| included(*kind))
-            .try_fold(partition.len(), |sum, (_, record)| sum.checked_add(record.canonical_bytes.len()))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(partition.len())))?;
-        let reservation = ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
+            .try_fold(partition.len(), |sum, (_, record)| {
+                sum.checked_add(record.canonical_bytes.len())
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX merged partition bytes",
+                    0,
+                    u64_from_index(partition.len()),
+                )
+            })?;
+        let reservation =
+            ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
         let mut merged = Vec::new();
         merged.try_reserve_exact(total_len).map_err(|_| {
             ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(total_len))
@@ -2056,9 +2208,11 @@ pub(crate) fn unmatched_terminal_tombstones(
     partition: &[u8],
     deltas: &[u8],
 ) -> Result<usize, CodecError> {
-    Ok(unmatched_terminal_tombstones_by_family(ctx, partition, deltas)?
-        .values()
-        .sum())
+    Ok(
+        unmatched_terminal_tombstones_by_family(ctx, partition, deltas)?
+            .values()
+            .sum(),
+    )
 }
 
 /// Count unmatched terminal tombstones by Parasolid record family.
@@ -2073,11 +2227,16 @@ fn unmatched_terminal_tombstones_by_family(
     count_unmatched_events(ctx, events, &graph)
 }
 
+type ChargedMergeEvents<'ctx> = (
+    BTreeMap<(u8, u32), Vec<MergeEvent>>,
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+);
+
 fn collect_unmatched_events<'ctx>(
     ctx: &'ctx DecodeContext<'_>,
     census: &Census,
     stream_len: usize,
-) -> Result<(BTreeMap<(u8, u32), Vec<MergeEvent>>, cadmpeg_core::decode::ScopedReservation<'ctx>), CodecError> {
+) -> Result<ChargedMergeEvents<'ctx>, CodecError> {
     let current_scopes = current_revision_scopes(ctx, census, stream_len)?;
     let mut events = BTreeMap::<(u8, u32), Vec<MergeEvent>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX unmatched deltas events")?;
@@ -2092,9 +2251,15 @@ fn collect_unmatched_events<'ctx>(
         if !mergeable_record(ctx, record, kind)? {
             continue;
         }
-        push_merge_event(ctx, &mut reservation, &mut events, (kind, record.xmt), MergeEvent::Full {
-            offset: record.offset,
-        })?;
+        push_merge_event(
+            ctx,
+            &mut reservation,
+            &mut events,
+            (kind, record.xmt),
+            MergeEvent::Full {
+                offset: record.offset,
+            },
+        )?;
     }
     for tombstone in census
         .tombstones
@@ -2102,10 +2267,16 @@ fn collect_unmatched_events<'ctx>(
         .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let kind = tombstone.kind.code();
-        push_merge_event(ctx, &mut reservation, &mut events, (kind, tombstone.xmt), MergeEvent::Tombstone {
-            offset: tombstone.offset,
-            kind: tombstone.kind,
-        })?;
+        push_merge_event(
+            ctx,
+            &mut reservation,
+            &mut events,
+            (kind, tombstone.xmt),
+            MergeEvent::Tombstone {
+                offset: tombstone.offset,
+                kind: tombstone.kind,
+            },
+        )?;
     }
     Ok((events, reservation))
 }
@@ -2118,7 +2289,8 @@ fn count_unmatched_events(
     let mut unmatched = BTreeMap::new();
     for ((kind, xmt), mut events) in events {
         let count = u64_from_index(events.len());
-        let work = count.checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
+        let work = count
+            .checked_mul(u64::from(usize::BITS - events.len().leading_zeros()))
             .ok_or_else(|| ctx.refuse_codec_limit("sort NX unmatched deltas events", 0, count))?;
         ctx.charge_work(work, "sort NX unmatched deltas events")?;
         events.sort_by_key(|event| match event {
@@ -2146,7 +2318,11 @@ fn count_unmatched_events(
     Ok(unmatched)
 }
 
-fn mergeable_record(ctx: &DecodeContext<'_>, record: &Record, kind: u8) -> Result<bool, CodecError> {
+fn mergeable_record(
+    ctx: &DecodeContext<'_>,
+    record: &Record,
+    kind: u8,
+) -> Result<bool, CodecError> {
     let Ok(kind) = NodeKind::try_from(kind) else {
         return Ok(false);
     };
@@ -2174,15 +2350,29 @@ fn current_revision_scopes(
 ) -> Result<Vec<RevisionScope>, CodecError> {
     // Only xmt 3 BODY envelopes delimit snapshots. Other validated type-12
     // envelopes remain available to the byte ledger without changing scope.
-    ctx.charge_work(u64_from_index(census.body_revisions.len()), "scan NX BODY revisions")?;
-    let count = census.body_revisions.iter().filter(|revision| u32::from(revision.xmt) == 3).count();
+    ctx.charge_work(
+        u64_from_index(census.body_revisions.len()),
+        "scan NX BODY revisions",
+    )?;
+    let count = census
+        .body_revisions
+        .iter()
+        .filter(|revision| u32::from(revision.xmt) == 3)
+        .count();
     ctx.charge_collection_items(u64_from_index(count), "NX snapshot revision indices")?;
-    let snapshot_bytes = count.checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count)))?;
-    let _snapshot_reservation = ctx.reserve_scoped(u64_from_index(snapshot_bytes), "NX snapshot revision indices")?;
+    let snapshot_bytes = count
+        .checked_mul(std::mem::size_of::<usize>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
+        })?;
+    let _snapshot_reservation = ctx.reserve_scoped(
+        u64_from_index(snapshot_bytes),
+        "NX snapshot revision indices",
+    )?;
     let mut snapshot_revisions = Vec::new();
-    snapshot_revisions.try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count)))?;
+    snapshot_revisions.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
+    })?;
     for (index, revision) in census.body_revisions.iter().enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);
@@ -2190,7 +2380,10 @@ fn current_revision_scopes(
     }
     if snapshot_revisions.is_empty() {
         ctx.charge_collection_items(1, "NX current revision scopes")?;
-        ctx.charge_retained(u64_from_index(std::mem::size_of::<RevisionScope>()), "NX current revision scopes")?;
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<RevisionScope>()),
+            "NX current revision scopes",
+        )?;
         return Ok(vec![RevisionScope {
             start: 0,
             end: stream_len,
@@ -2199,15 +2392,19 @@ fn current_revision_scopes(
 
     let direction = revision_direction(census, &snapshot_revisions);
     ctx.charge_collection_items(1, "NX revision run starts")?;
-    let mut _run_reservation = ctx.reserve_scoped(u64_from_index(std::mem::size_of::<usize>()), "NX revision run starts")?;
+    let mut run_reservation = ctx.reserve_scoped(
+        u64_from_index(std::mem::size_of::<usize>()),
+        "NX revision run starts",
+    )?;
     let mut run_starts = vec![0];
     for (position, pair) in snapshot_revisions.windows(2).enumerate() {
         let previous = census.body_revisions[pair[0]].node_id;
         let current = census.body_revisions[pair[1]].node_id;
         if !revision_follows_direction(previous, current, direction) {
             ctx.charge_collection_items(1, "NX revision run starts")?;
-            _run_reservation.grow(u64_from_index(std::mem::size_of::<usize>()))?;
-            run_starts.try_reserve(1)
+            run_reservation.grow(u64_from_index(std::mem::size_of::<usize>()))?;
+            run_starts
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("NX revision run starts", 0, 1))?;
             run_starts.push(position + 1);
         }
@@ -2228,7 +2425,8 @@ fn current_revision_scopes(
         if current_revision.offset < end {
             ctx.charge_collection_items(1, "NX current revision scopes")?;
             scopes_reservation.grow(u64_from_index(std::mem::size_of::<RevisionScope>()))?;
-            scopes.try_reserve(1)
+            scopes
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("NX current revision scopes", 0, 1))?;
             scopes.push(RevisionScope {
                 start: current_revision.offset,
@@ -2244,11 +2442,17 @@ fn revision_direction(census: &Census, revision_indices: &[usize]) -> RevisionDi
     // A stream can serialize one revision sequence in either direction. The
     // direction with fewer violations is the sequence direction; the opposite
     // transitions are the resets that begin another sequence.
-    let ascending_violations = revision_indices.windows(2)
-        .filter(|pair| census.body_revisions[pair[1]].node_id < census.body_revisions[pair[0]].node_id)
+    let ascending_violations = revision_indices
+        .windows(2)
+        .filter(|pair| {
+            census.body_revisions[pair[1]].node_id < census.body_revisions[pair[0]].node_id
+        })
         .count();
-    let descending_violations = revision_indices.windows(2)
-        .filter(|pair| census.body_revisions[pair[1]].node_id > census.body_revisions[pair[0]].node_id)
+    let descending_violations = revision_indices
+        .windows(2)
+        .filter(|pair| {
+            census.body_revisions[pair[1]].node_id > census.body_revisions[pair[0]].node_id
+        })
         .count();
     if ascending_violations <= descending_violations {
         RevisionDirection::Ascending
@@ -2301,16 +2505,21 @@ pub(crate) fn semantic_residual_with_census(
     let scan_work = u64_from_index(census.records.len())
         .checked_mul(u64_from_index(current_scopes.len()))
         .and_then(|value| value.checked_add(u64_from_index(census.tombstones.len())))
-        .ok_or_else(|| ctx.refuse_codec_limit("NX semantic residual scan", 0, u64_from_index(census.records.len())))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX semantic residual scan",
+                0,
+                u64_from_index(census.records.len()),
+            )
+        })?;
     ctx.charge_work(scan_work, "NX semantic residual scan")?;
     let is_semantic = |record: &Record| {
-            let is_current = current_scope_contains(&current_scopes, record.offset);
-            let is_semantic = matches!(
-                record.kind(),
-                40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
-            ) || record.kind() == 90
-                && record.canonical_bytes.first() == Some(&0x5a);
-            is_current && is_semantic
+        let is_current = current_scope_contains(&current_scopes, record.offset);
+        let is_semantic = matches!(
+            record.kind(),
+            40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
+        ) || record.kind() == 90 && record.canonical_bytes.first() == Some(&0x5a);
+        is_current && is_semantic
     };
     let mut total_len = stream.len();
     for record in census.records.iter().filter(|record| is_semantic(record)) {
@@ -2319,14 +2528,22 @@ pub(crate) fn semantic_residual_with_census(
         } else {
             0
         };
-        total_len = total_len.checked_add(prefix_len)
+        total_len = total_len
+            .checked_add(prefix_len)
             .and_then(|length| length.checked_add(record.canonical_bytes.len()))
-            .ok_or_else(|| ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(stream.len())))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX semantic residual bytes",
+                    0,
+                    u64_from_index(stream.len()),
+                )
+            })?;
     }
     ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    residual.try_reserve_exact(total_len)
-        .map_err(|_| ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(total_len)))?;
+    residual.try_reserve_exact(total_len).map_err(|_| {
+        ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(total_len))
+    })?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {
@@ -2367,7 +2584,9 @@ fn consume_fixed(
     } else {
         direct
     };
-    let Some(candidate) = candidate else { return Ok(None); };
+    let Some(candidate) = candidate else {
+        return Ok(None);
+    };
     let shadows_type_101 = (candidate.offset + 1..candidate.end)
         .any(|offset| type_101_shape(stream, offset).is_some_and(|(_, end)| end > candidate.end));
     if shadows_type_101 {
@@ -2386,13 +2605,20 @@ struct FixedCandidate {
 }
 
 impl FixedCandidate {
-    fn materialize(self, ctx: &DecodeContext<'_>, stream: &[u8], signature: &[Token]) -> Result<Record, CodecError> {
+    fn materialize(
+        self,
+        ctx: &DecodeContext<'_>,
+        stream: &[u8],
+        signature: &[Token],
+    ) -> Result<Record, CodecError> {
         let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
         ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        canonical_bytes.try_reserve_exact(self.canonical_len).map_err(|_| {
-            ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, canonical_len)
-        })?;
+        canonical_bytes
+            .try_reserve_exact(self.canonical_len)
+            .map_err(|_| {
+                ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, canonical_len)
+            })?;
         canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
         let mut at = self.prefix_end;
         for token in signature {
@@ -2404,7 +2630,10 @@ impl FixedCandidate {
                     (consumed, 1)
                 }
                 Token::Tolerance | Token::Scalar => (8, 0),
-                Token::Sense | Token::OffsetDiscriminator | Token::BlendSubtype | Token::Boolean => (1, 0),
+                Token::Sense
+                | Token::OffsetDiscriminator
+                | Token::BlendSubtype
+                | Token::Boolean => (1, 0),
                 Token::Position | Token::Vector => (24, 0),
             };
             canonical_bytes.extend_from_slice(&stream[at..at + len]);
@@ -2533,41 +2762,51 @@ fn consume_variable(
     if kind == 91 {
         return consume_type_91(ctx, stream, offset);
     }
-    let parsed = (|| -> Option<_> { Some(match kind {
-        81 => {
-            let record = crate::parasolid::entity_51_record_at(stream, offset)?;
-            (
-                record.xmt.into(),
-                record.byte_len,
-                RecordFamily::Entity51 {
-                    leading_references: record.leading_references,
-                    trailing_references: record.trailing_references,
-                },
-            )
-        }
-        82..=89 | 98 => {
-            let (parsed_kind, xmt, byte_len) =
-                crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)?;
-            (parsed_kind == kind).then_some(())?;
-            let family = match parsed_kind {
-                82 => RecordFamily::Entity52,
-                83 => RecordFamily::Entity53,
-                84 => RecordFamily::Entity54,
-                85 => RecordFamily::Entity55,
-                86 => RecordFamily::Entity56,
-                87 => RecordFamily::Entity57,
-                88 => RecordFamily::Entity58,
-                89 => RecordFamily::Entity59,
-                98 => RecordFamily::Entity62,
-                _ => return None,
-            };
-            (xmt, byte_len, family)
-        }
-        _ => return None,
-    }) })();
-    let Some((xmt, byte_len, family)) = parsed else { return Ok(None); };
-    let Some(end) = offset.checked_add(byte_len) else { return Ok(None); };
-    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    let parsed = (|| -> Option<_> {
+        Some(match kind {
+            81 => {
+                let record = crate::parasolid::entity_51_record_at(stream, offset)?;
+                (
+                    record.xmt.into(),
+                    record.byte_len,
+                    RecordFamily::Entity51 {
+                        leading_references: record.leading_references,
+                        trailing_references: record.trailing_references,
+                    },
+                )
+            }
+            82..=89 | 98 => {
+                let (parsed_kind, xmt, byte_len) =
+                    crate::parasolid::value_records::entity_value_record_identity_at(
+                        stream, offset,
+                    )?;
+                (parsed_kind == kind).then_some(())?;
+                let family = match parsed_kind {
+                    82 => RecordFamily::Entity52,
+                    83 => RecordFamily::Entity53,
+                    84 => RecordFamily::Entity54,
+                    85 => RecordFamily::Entity55,
+                    86 => RecordFamily::Entity56,
+                    87 => RecordFamily::Entity57,
+                    88 => RecordFamily::Entity58,
+                    89 => RecordFamily::Entity59,
+                    98 => RecordFamily::Entity62,
+                    _ => return None,
+                };
+                (xmt, byte_len, family)
+            }
+            _ => return None,
+        })
+    })();
+    let Some((xmt, byte_len, family)) = parsed else {
+        return Ok(None);
+    };
+    let Some(end) = offset.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    let Some(bytes) = stream.get(offset..end) else {
+        return Ok(None);
+    };
     Ok(Some(Record {
         family,
         xmt,
@@ -2589,7 +2828,9 @@ fn admitted_record(
     family: RecordFamily,
     xmt: u32,
 ) -> Result<Option<Record>, CodecError> {
-    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    let Some(bytes) = stream.get(offset..end) else {
+        return Ok(None);
+    };
     Ok(Some(Record {
         family,
         xmt,
@@ -2599,7 +2840,11 @@ fn admitted_record(
     }))
 }
 
-fn consume_group(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_group(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(90)).then_some(())?;
         let direct = group_layout(stream, offset, 0);
@@ -2609,18 +2854,28 @@ fn consume_group(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Resul
             .flatten();
         let (xmt, node_id, references, selector, linked_reference_status, end) =
             select_enveloped_layout(escaped_marker, direct, escaped)?;
-        Some((RecordFamily::Group {
-            references: references.try_into().ok()?,
-            node_id,
-            selector,
-            linked_reference_status,
-        }, xmt, end))
+        Some((
+            RecordFamily::Group {
+                references: references.try_into().ok()?,
+                node_id,
+                selector,
+                linked_reference_status,
+            },
+            xmt,
+            end,
+        ))
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    let Some((family, xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
-fn consume_attdef_list(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_attdef_list(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
         let direct = attdef_list_shape(stream, offset.checked_add(2)?);
@@ -2630,12 +2885,29 @@ fn consume_attdef_list(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) ->
             .flatten();
         select_enveloped_layout(escaped_marker, direct, escaped)
     })();
-    let Some(shape) = parsed else { return Ok(None); };
-    let Some(state) = materialize_attdef_list(ctx, stream, shape)? else { return Ok(None); };
-    admitted_record(ctx, stream, offset, shape.end, RecordFamily::AttdefList { slots: state.into_slots() }, shape.xmt)
+    let Some(shape) = parsed else {
+        return Ok(None);
+    };
+    let Some(state) = materialize_attdef_list(ctx, stream, shape)? else {
+        return Ok(None);
+    };
+    admitted_record(
+        ctx,
+        stream,
+        offset,
+        shape.end,
+        RecordFamily::AttdefList {
+            slots: state.into_slots(),
+        },
+        shape.xmt,
+    )
 }
 
-fn consume_type_70(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_type_70(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(70)).then_some(())?;
         let direct = type_70_body(stream, offset.checked_add(2)?, TrailingCopies::Two);
@@ -2644,13 +2916,19 @@ fn consume_type_70(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Res
             .then(|| type_70_body(stream, offset.checked_add(3)?, TrailingCopies::Two))
             .flatten();
         let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-        Some((RecordFamily::Type70 {
-            node_id: state.node_id(),
-            references: state.references(),
-            trailing_reference: state.trailing_reference(),
-        }, state.xmt(), end))
+        Some((
+            RecordFamily::Type70 {
+                node_id: state.node_id(),
+                references: state.references(),
+                trailing_reference: state.trailing_reference(),
+            },
+            state.xmt(),
+            end,
+        ))
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    let Some((family, xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
@@ -2696,8 +2974,14 @@ fn type_70_body(
     ))
 }
 
-fn consume_type_101(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
-    let Some((references, end)) = type_101_shape(stream, offset) else { return Ok(None); };
+fn consume_type_101(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
+    let Some((references, end)) = type_101_shape(stream, offset) else {
+        return Ok(None);
+    };
     let family = RecordFamily::Type101 { references };
     admitted_record(ctx, stream, offset, end, family, 2)
 }
@@ -2792,20 +3076,32 @@ fn materialize_attdef_list(
     stream: &[u8],
     shape: AttdefListShape,
 ) -> Result<Option<AttdefState>, CodecError> {
-    let count = usize::try_from(shape.slot_count)
-        .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count)))?;
+    let count = usize::try_from(shape.slot_count).map_err(|_| {
+        ctx.refuse_codec_limit("NX ATTDEF references", 0, u64::from(shape.slot_count))
+    })?;
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count_u64, "NX ATTDEF references")?;
-    let bytes = count_u64.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>()))
+    let bytes = count_u64
+        .checked_mul(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>(),
+        ))
         .ok_or_else(|| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
     ctx.charge_retained(bytes, "NX ATTDEF references")?;
     let mut references = Vec::new();
-    references.try_reserve_exact(count)
+    references
+        .try_reserve_exact(count)
         .map_err(|_| ctx.refuse_codec_limit("NX ATTDEF references", 0, count_u64))?;
     let mut at = shape.references_start;
     for _ in 0..count {
-        let Some((reference, consumed)) = read_xmt(stream, at) else { return Ok(None); };
-        let Some(next) = at.checked_add(consumed).and_then(|next| next.checked_add(1)) else { return Ok(None); };
+        let Some((reference, consumed)) = read_xmt(stream, at) else {
+            return Ok(None);
+        };
+        let Some(next) = at
+            .checked_add(consumed)
+            .and_then(|next| next.checked_add(1))
+        else {
+            return Ok(None);
+        };
         at = next;
         references.push(reference);
     }
@@ -2910,7 +3206,11 @@ fn group_layout_without_leading_statuses(
     ))
 }
 
-fn consume_type_91(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_type_91(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(91)).then_some(())?;
         let direct = type_91_layout(stream, offset, 0);
@@ -2923,9 +3223,17 @@ fn consume_type_91(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Res
         } else {
             direct?
         };
-        Some((RecordFamily::Type91 { references: references.try_into().ok()? }, xmt, end))
+        Some((
+            RecordFamily::Type91 {
+                references: references.try_into().ok()?,
+            },
+            xmt,
+            end,
+        ))
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    let Some((family, xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
@@ -2951,7 +3259,11 @@ fn type_91_layout(
     Some((xmt, references, at))
 }
 
-fn consume_type_141(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_type_141(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(141)).then_some(())?;
         let direct = type_141_layout(stream, offset, 0);
@@ -2964,13 +3276,25 @@ fn consume_type_141(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Re
         } else {
             direct?
         };
-        Some((RecordFamily::Type141 { references: references.try_into().ok()? }, xmt, end))
+        Some((
+            RecordFamily::Type141 {
+                references: references.try_into().ok()?,
+            },
+            xmt,
+            end,
+        ))
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    let Some((family, xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
-fn consume_type_45(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_type_45(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
         let direct = type_45_layout(stream, offset, 0);
@@ -2980,11 +3304,17 @@ fn consume_type_45(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Res
             .flatten();
         select_enveloped_layout(escaped_marker, direct, escaped)
     })();
-    let Some((xmt, end)) = parsed else { return Ok(None); };
+    let Some((xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, RecordFamily::Type45, xmt)
 }
 
-fn consume_type_67(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+fn consume_type_67(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let parsed = (|| {
         (View::u16_be_at(stream, offset) == Some(67)).then_some(())?;
         let direct = type_67_layout(stream, offset, 0);
@@ -2992,13 +3322,20 @@ fn consume_type_67(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Res
         let escaped = escaped_marker
             .then(|| type_67_layout(stream, offset, 1))
             .flatten();
-        let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-        Some((RecordFamily::Type67 {
-            node_id,
-            references: references.try_into().ok()?,
-        }, xmt, end))
+        let (xmt, node_id, references, end) =
+            select_enveloped_layout(escaped_marker, direct, escaped)?;
+        Some((
+            RecordFamily::Type67 {
+                node_id,
+                references: references.try_into().ok()?,
+            },
+            xmt,
+            end,
+        ))
     })();
-    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    let Some((family, xmt, end)) = parsed else {
+        return Ok(None);
+    };
     admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
@@ -3116,7 +3453,9 @@ fn consume_intersection_data(
         stream,
         offset,
         intersection_schema_anchor_seen,
-    ) else { return Ok(None); };
+    ) else {
+        return Ok(None);
+    };
     let mut references = curve
         .header_references
         .map(crate::framing::xmt_reference::XmtTarget::to_wire)
@@ -3126,8 +3465,17 @@ fn consume_intersection_data(
             .references
             .map(crate::framing::xmt_reference::XmtTarget::to_wire),
     );
-    let Ok(references) = references.try_into() else { return Ok(None); };
-    admitted_record(ctx, stream, offset, end, RecordFamily::IntersectionData { references }, curve.xmt)
+    let Ok(references) = references.try_into() else {
+        return Ok(None);
+    };
+    admitted_record(
+        ctx,
+        stream,
+        offset,
+        end,
+        RecordFamily::IntersectionData { references },
+        curve.xmt,
+    )
 }
 
 // Names follow the ordered source slots in this fixed-width lane.
@@ -3137,12 +3485,13 @@ fn consume_intersection_auxiliary(
     stream: &[u8],
     offset: usize,
 ) -> Result<Option<Record>, CodecError> {
-    let (family, xmt, end) = if let Some((chart, end)) = crate::intersection::chart_source_record_at(
-        ctx,
-        stream,
-        offset,
-        crate::intersection::ChartPointLayout::Ext11,
-    )? {
+    let (family, xmt, end) = if let Some((chart, end)) =
+        crate::intersection::chart_source_record_at(
+            ctx,
+            stream,
+            offset,
+            crate::intersection::ChartPointLayout::Ext11,
+        )? {
         (RecordFamily::Chart, chart.xmt, end)
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (RecordFamily::TermUse, term.xmt, end)
@@ -3163,10 +3512,16 @@ fn consume_intersection_auxiliary(
             end,
         )
     } else {
-        let Some((support_uv, end)) = crate::intersection::support_uv_record_at(ctx, stream, offset)? else { return Ok(None); };
+        let Some((support_uv, end)) =
+            crate::intersection::support_uv_record_at(ctx, stream, offset)?
+        else {
+            return Ok(None);
+        };
         (RecordFamily::SupportUv, support_uv.xmt, end)
     };
-    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    let Some(bytes) = stream.get(offset..end) else {
+        return Ok(None);
+    };
     let canonical_bytes = ctx.copy_retained(bytes, "NX deltas intersection auxiliary bytes")?;
     Ok(Some(Record {
         family,
@@ -3177,9 +3532,22 @@ fn consume_intersection_auxiliary(
     }))
 }
 
-fn consume_nurbs_auxiliary(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
-    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(stream, offset) else { return Ok(None); };
-    admitted_record(ctx, stream, offset, auxiliary.end, auxiliary.family, auxiliary.xmt)
+fn consume_nurbs_auxiliary(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
+    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(stream, offset) else {
+        return Ok(None);
+    };
+    admitted_record(
+        ctx,
+        stream,
+        offset,
+        auxiliary.end,
+        auxiliary.family,
+        auxiliary.xmt,
+    )
 }
 
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
@@ -3290,9 +3658,10 @@ mod type_67_record_tests {
         let record_end = bytes.len();
         bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
-        let parsed = crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &bytes, 0))
-            .expect("resource limit admits test record")
-            .expect("complete current-record grammar");
+        let parsed =
+            crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &bytes, 0))
+                .expect("resource limit admits test record")
+                .expect("complete current-record grammar");
 
         assert_eq!(parsed.end, record_end);
         assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
@@ -3321,23 +3690,41 @@ mod type_67_record_tests {
     fn rejects_incomplete_or_noncanonical_type_67_records() {
         let bytes = record(true);
         for end in 0..bytes.len() {
-            assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &bytes[..end], 0))
+            assert!(
+                crate::test_support::with_decode_context(|ctx| consume_type_67(
+                    ctx,
+                    &bytes[..end],
+                    0
+                ))
                 .expect("resource limit admits test prefix")
-                .is_none());
+                .is_none()
+            );
         }
 
         let mut invalid_status = bytes.clone();
         invalid_status[11] = 0;
-        assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &invalid_status, 0))
+        assert!(
+            crate::test_support::with_decode_context(|ctx| consume_type_67(
+                ctx,
+                &invalid_status,
+                0
+            ))
             .expect("resource limit admits invalid test record")
-            .is_none());
+            .is_none()
+        );
 
         let mut subnormal_value = bytes;
         let value_at = subnormal_value.len() - 32;
         subnormal_value[value_at..value_at + 8].copy_from_slice(&1u64.to_be_bytes());
-        assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &subnormal_value, 0))
+        assert!(
+            crate::test_support::with_decode_context(|ctx| consume_type_67(
+                ctx,
+                &subnormal_value,
+                0
+            ))
             .expect("resource limit admits invalid test record")
-            .is_none());
+            .is_none()
+        );
     }
 }
 
@@ -3354,9 +3741,10 @@ mod type_45_record_tests {
         let record_end = bytes.len();
         bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
-        let parsed = crate::test_support::with_decode_context(|ctx| consume_type_45(ctx, &bytes, 0))
-            .expect("resource limit admits test record")
-            .expect("complete declared value lane");
+        let parsed =
+            crate::test_support::with_decode_context(|ctx| consume_type_45(ctx, &bytes, 0))
+                .expect("resource limit admits test record")
+                .expect("complete declared value lane");
 
         assert_eq!(parsed.end, record_end);
         assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
@@ -3398,12 +3786,22 @@ mod type_150_state_packet_tests {
 
         let mut malformed = bytes.clone();
         malformed[6] = 0;
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &malformed)).unwrap().type_150_state_packets.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &malformed))
+                .unwrap()
+                .type_150_state_packets
+                .is_empty()
+        );
 
         let mut nonfinite = bytes;
         let value_offset = nonfinite.len() - 9 * 8;
         nonfinite[value_offset..value_offset + 8].copy_from_slice(&f64::NAN.to_be_bytes());
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &nonfinite)).unwrap().type_150_state_packets.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonfinite))
+                .unwrap()
+                .type_150_state_packets
+                .is_empty()
+        );
     }
 }
 
@@ -3449,9 +3847,11 @@ mod schema_reference_preamble_tests {
     #[test]
     fn schema_reference_preamble_retains_variable_reference_lane() {
         let bytes = preamble();
-        let parsed = crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &bytes, 0, bytes.len()))
-            .unwrap()
-            .expect("complete preamble must be admitted");
+        let parsed = crate::test_support::with_decode_context(|ctx| {
+            schema_reference_preamble(ctx, &bytes, 0, bytes.len())
+        })
+        .unwrap()
+        .expect("complete preamble must be admitted");
 
         assert_eq!(
             parsed,
@@ -3480,9 +3880,16 @@ mod schema_reference_preamble_tests {
         mismatched_kind[repeated_kind + 1] ^= 1;
 
         for malformed in [&bytes[..bytes.len() - 1], mismatched_kind.as_slice()] {
-            assert!(crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, malformed, 0, malformed.len()))
+            assert!(
+                crate::test_support::with_decode_context(|ctx| schema_reference_preamble(
+                    ctx,
+                    malformed,
+                    0,
+                    malformed.len()
+                ))
                 .unwrap()
-                .is_none());
+                .is_none()
+            );
         }
     }
 
@@ -3519,18 +3926,27 @@ mod schema_reference_preamble_tests {
             linked_state,
         );
 
-        let parsed = crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &bytes, 0, bytes.len()))
-            .unwrap()
-            .expect("linked state-reference lane must be admitted");
+        let parsed = crate::test_support::with_decode_context(|ctx| {
+            schema_reference_preamble(ctx, &bytes, 0, bytes.len())
+        })
+        .unwrap()
+        .expect("linked state-reference lane must be admitted");
 
         assert_eq!(parsed.state.references(), [40_000, 40_001]);
         assert_eq!(parsed.state.state_references(), [1, 40_002, 1]);
 
         let mut invalid = bytes;
         invalid[first_state_reference + 3] ^= 1;
-        assert!(crate::test_support::with_decode_context(|ctx| schema_reference_preamble(ctx, &invalid, 0, invalid.len()))
+        assert!(
+            crate::test_support::with_decode_context(|ctx| schema_reference_preamble(
+                ctx,
+                &invalid,
+                0,
+                invalid.len()
+            ))
             .unwrap()
-            .is_none());
+            .is_none()
+        );
     }
 }
 
@@ -3558,20 +3974,24 @@ mod inline_schema_tests {
         let mut stream = BODY_SCHEMA_HEADER.to_vec();
         stream.extend_from_slice(&[0xaa, 0xbb]);
 
-        let declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, 0, stream.len()))
-            .expect("test context admits declaration")
-            .expect("complete BODY schema header must be admitted");
+        let declaration = crate::test_support::with_decode_context(|ctx| {
+            inline_schema_declaration(ctx, &stream, 0, stream.len())
+        })
+        .expect("test context admits declaration")
+        .expect("complete BODY schema header must be admitted");
 
         assert_eq!(declaration.fields, InlineSchemaFields::BodyHeader);
         assert_eq!(declaration.end, BODY_SCHEMA_HEADER.len());
-        assert!(crate::test_support::with_decode_context(|ctx| inline_schema_declaration(
-            ctx,
-            &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
-            0,
-            BODY_SCHEMA_HEADER.len() - 1,
-        ))
-        .expect("test context admits prefix")
-        .is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| inline_schema_declaration(
+                ctx,
+                &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
+                0,
+                BODY_SCHEMA_HEADER.len() - 1,
+            ))
+            .expect("test context admits prefix")
+            .is_none()
+        );
     }
 
     #[test]
@@ -3580,7 +4000,8 @@ mod inline_schema_tests {
             let mut compact = BODY_SCHEMA_HEADER.to_vec();
             compact.extend_from_slice(&reference.to_be_bytes());
             compact.push(0);
-            let compact_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap();
+            let compact_census =
+                crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap();
             assert_eq!(
                 compact_census.inline_body_states,
                 [InlineBodyState {
@@ -3593,7 +4014,12 @@ mod inline_schema_tests {
             );
             let compact_status = compact.len() - 1;
             compact[compact_status] = 1;
-            assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap().inline_body_states.is_empty());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| walk(ctx, &compact))
+                    .unwrap()
+                    .inline_body_states
+                    .is_empty()
+            );
         }
 
         let mut revision = BODY_SCHEMA_HEADER.to_vec();
@@ -3608,7 +4034,8 @@ mod inline_schema_tests {
         let state_end = revision.len();
         revision.extend_from_slice(TYPE_70_SCHEMA_HEADER);
 
-        let revision_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &revision)).unwrap();
+        let revision_census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &revision)).unwrap();
         assert_eq!(revision_census.inline_body_states.len(), 1);
         assert_eq!(
             revision_census.inline_body_states[0],
@@ -3643,8 +4070,9 @@ mod inline_schema_tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 1;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-            .expect("test root is admitted");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("test root is admitted");
         assert!(matches!(
             super::census::walk(&ctx, &stream),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
@@ -3657,8 +4085,9 @@ mod inline_schema_tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 7;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-            .expect("test root is admitted");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+                .expect("test root is admitted");
         assert!(matches!(
             super::census::walk(&ctx, &stream),
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
@@ -3917,11 +4346,21 @@ mod inline_schema_tests {
 
         let mut invalid_status = bytes.clone();
         invalid_status[fifth_status_offset] = 2;
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &invalid_status)).unwrap().inline_schema_declarations.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &invalid_status))
+                .unwrap()
+                .inline_schema_declarations
+                .is_empty()
+        );
 
         let mut invalid_anchor = bytes;
         invalid_anchor[first_state_offset + 1] ^= 1;
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &invalid_anchor)).unwrap().inline_schema_declarations.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &invalid_anchor))
+                .unwrap()
+                .inline_schema_declarations
+                .is_empty()
+        );
     }
 
     #[test]
@@ -3976,7 +4415,8 @@ mod inline_schema_tests {
         translated[translation..translation + 8].copy_from_slice(&(-0.0f64).to_be_bytes());
         translated[translation + 8..translation + 16].copy_from_slice(&(-0.0f64).to_be_bytes());
         translated[translation + 16..translation + 24].copy_from_slice(&1.25f64.to_be_bytes());
-        let translated_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &translated)).unwrap();
+        let translated_census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &translated)).unwrap();
         assert!(matches!(
             translated_census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type100 { state } if matches!((state.xmt(), state.references(), state.transform()), (53, [2, 54, 1], [
@@ -4040,7 +4480,8 @@ mod inline_schema_tests {
         }
         alternate.extend_from_slice(&[0, 0, 0, 0, 3]);
 
-        let alternate_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &alternate)).unwrap();
+        let alternate_census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &alternate)).unwrap();
         assert!(matches!(
             alternate_census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type101 {
@@ -4067,7 +4508,8 @@ mod inline_schema_tests {
         }
         unanchored.extend_from_slice(&[0, 0, 0, 0, 4]);
 
-        let unanchored_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &unanchored)).unwrap();
+        let unanchored_census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &unanchored)).unwrap();
         assert!(matches!(
             unanchored_census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type101 {
@@ -4080,7 +4522,8 @@ mod inline_schema_tests {
         push_xmt(&mut compact, 2);
         compact.extend_from_slice(&TYPE_101_SCHEMA_STATE_PREFIX[..TYPE_101_COMPACT_STATE_LEN]);
 
-        let compact_census = crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap();
+        let compact_census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap();
         assert_eq!(
             compact_census.inline_schema_declarations,
             [InlineSchemaDeclaration {
@@ -4092,7 +4535,12 @@ mod inline_schema_tests {
         assert_eq!(compact_census.bytes_decoded(), compact.len());
 
         compact.push(0);
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &compact)).unwrap().inline_schema_declarations.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &compact))
+                .unwrap()
+                .inline_schema_declarations
+                .is_empty()
+        );
     }
 
     #[test]
@@ -4104,12 +4552,16 @@ mod inline_schema_tests {
             [attdef_list.as_slice(), type_70.as_slice()].concat(),
             [type_70.as_slice(), attdef_list.as_slice()].concat(),
         ] {
-            let first = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, 0, stream.len()))
-                .expect("test context admits declaration")
-                .expect("first declaration must be complete");
-            let second = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &stream, first.end, stream.len()))
-                .expect("test context admits declaration")
-                .expect("second declaration must be complete");
+            let first = crate::test_support::with_decode_context(|ctx| {
+                inline_schema_declaration(ctx, &stream, 0, stream.len())
+            })
+            .expect("test context admits declaration")
+            .expect("first declaration must be complete");
+            let second = crate::test_support::with_decode_context(|ctx| {
+                inline_schema_declaration(ctx, &stream, first.end, stream.len())
+            })
+            .expect("test context admits declaration")
+            .expect("second declaration must be complete");
             assert_eq!(second.end, stream.len());
             assert!(
                 matches!(first.fields, InlineSchemaFields::AttdefList { .. })
@@ -4170,9 +4622,11 @@ mod inline_schema_tests {
         single.extend_from_slice(&45u16.to_be_bytes());
         single.push(0);
 
-        let single_declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &single, 0, single.len()))
-            .expect("test context admits declaration")
-            .expect("complete single-tail type-70 declaration");
+        let single_declaration = crate::test_support::with_decode_context(|ctx| {
+            inline_schema_declaration(ctx, &single, 0, single.len())
+        })
+        .expect("test context admits declaration")
+        .expect("complete single-tail type-70 declaration");
         assert!(matches!(
             single_declaration.fields,
             InlineSchemaFields::Type70 {
@@ -4181,9 +4635,11 @@ mod inline_schema_tests {
         ));
         assert_eq!(single_declaration.end, single.len());
 
-        let duplicated_declaration = crate::test_support::with_decode_context(|ctx| inline_schema_declaration(ctx, &duplicated, 0, duplicated.len()))
-            .expect("test context admits declaration")
-            .expect("complete duplicated-tail type-70 declaration");
+        let duplicated_declaration = crate::test_support::with_decode_context(|ctx| {
+            inline_schema_declaration(ctx, &duplicated, 0, duplicated.len())
+        })
+        .expect("test context admits declaration")
+        .expect("complete duplicated-tail type-70 declaration");
         assert!(matches!(
             duplicated_declaration.fields,
             InlineSchemaFields::Type70 {
@@ -4208,7 +4664,10 @@ mod inline_schema_tests {
         {
             stream.pop();
             assert!(
-                crate::test_support::with_decode_context(|ctx| walk(ctx, &stream)).unwrap().inline_schema_declarations.is_empty(),
+                crate::test_support::with_decode_context(|ctx| walk(ctx, &stream))
+                    .unwrap()
+                    .inline_schema_declarations
+                    .is_empty(),
                 "truncated declaration {name}"
             );
         }
@@ -4269,7 +4728,12 @@ mod nurbs_auxiliary_tests {
         bad_dimension[11] = 5;
 
         for malformed in [&bytes[..bytes.len() - 1], &bad_status, &bad_dimension] {
-            assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, malformed)).unwrap().records.is_empty());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| walk(ctx, malformed))
+                    .unwrap()
+                    .records
+                    .is_empty()
+            );
         }
     }
 
@@ -4440,7 +4904,12 @@ mod reference_type_map_tests {
 
         let mut incomplete_tombstone = bytes;
         incomplete_tombstone[11] = 2;
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &incomplete_tombstone)).unwrap().reference_type_maps.is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &incomplete_tombstone))
+                .unwrap()
+                .reference_type_maps
+                .is_empty()
+        );
     }
 
     #[test]
@@ -4529,7 +4998,12 @@ mod reference_type_map_tests {
             unknown_entry_type.as_slice(),
             zero_target_type.as_slice(),
         ] {
-            assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, malformed)).unwrap().reference_type_maps.is_empty());
+            assert!(
+                crate::test_support::with_decode_context(|ctx| walk(ctx, malformed))
+                    .unwrap()
+                    .reference_type_maps
+                    .is_empty()
+            );
         }
     }
 }
@@ -4541,7 +5015,8 @@ mod terminal_null_reference_tests {
     #[test]
     fn retains_two_or_four_null_references_at_the_stream_boundary() {
         let four_references = [0, 1, 0, 1, 0, 1, 0, 1];
-        let census = crate::test_support::with_decode_context(|ctx| walk(ctx, &four_references)).unwrap();
+        let census =
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &four_references)).unwrap();
 
         assert_eq!(
             census.terminal_null_references.map(|tail| (
@@ -4555,21 +5030,30 @@ mod terminal_null_reference_tests {
 
         let two_references = [0, 1, 0, 1];
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| walk(ctx, &two_references)).unwrap().terminal_null_references.map(|tail| (
-                tail.offset(),
-                tail.end(),
-                tail.form().references().len()
-            )),
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &two_references))
+                .unwrap()
+                .terminal_null_references
+                .map(|tail| (tail.offset(), tail.end(), tail.form().references().len())),
             Some((0, two_references.len(), 2))
         );
 
         let mut nonterminal = four_references.to_vec();
         nonterminal.extend_from_slice(&[0, 29]);
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &nonterminal)).unwrap().terminal_null_references.is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonterminal))
+                .unwrap()
+                .terminal_null_references
+                .is_none()
+        );
 
         let mut nonnull = four_references;
         nonnull[7] = 2;
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &nonnull)).unwrap().terminal_null_references.is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonnull))
+                .unwrap()
+                .terminal_null_references
+                .is_none()
+        );
     }
 }
 
@@ -4586,8 +5070,10 @@ mod transmit_header_tests {
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = walk(&ctx, &bytes).expect_err("retained refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     fn header(references: &[u8]) -> Vec<u8> {
@@ -4629,10 +5115,19 @@ mod transmit_header_tests {
     fn transmit_header_rejects_nonconsecutive_references_and_truncation() {
         let nonconsecutive = header(&[0x04, 0x27, 0x04, 0x29]);
         let complete = header(&[0x04, 0x27, 0x04, 0x28]);
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &nonconsecutive)).unwrap().transmit_header.is_none());
-        assert!(crate::test_support::with_decode_context(|ctx| walk(ctx, &complete[..complete.len() - 1])).unwrap()
-            .transmit_header
-            .is_none());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| walk(ctx, &nonconsecutive))
+                .unwrap()
+                .transmit_header
+                .is_none()
+        );
+        assert!(crate::test_support::with_decode_context(|ctx| walk(
+            ctx,
+            &complete[..complete.len() - 1]
+        ))
+        .unwrap()
+        .transmit_header
+        .is_none());
     }
 }
 

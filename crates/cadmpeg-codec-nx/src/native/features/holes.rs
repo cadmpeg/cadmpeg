@@ -667,20 +667,26 @@ fn symbolic_thread_text_frames<'a>(
 }
 
 /// Decode complete typed text frames from symbolic-thread operations.
-pub(in crate::native) fn feature_symbolic_threads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_symbolic_threads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSymbolicThread>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSymbolicThread>, cadmpeg_core::CodecError> {
     let mut threads = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let frames = match symbolic_thread_text_frames(ctx, record.payload_view()) {
                 Ok(Some(frames)) => frames,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
@@ -711,7 +717,9 @@ pub(in crate::native) fn feature_symbolic_threads(ctx: &cadmpeg_core::decode::De
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(threads)
 }
 
@@ -825,27 +833,39 @@ pub(in crate::native) fn feature_threaded_hole_templates(
 }
 
 /// Decode exact nonempty duplicated scalar lanes from simple-hole operations.
-pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLane>, cadmpeg_core::CodecError> {
     let mut pairs = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let pair = match crate::om::simple_hole_repeated_scalar_lane(ctx, record.payload_view()) {
+            if failure.is_some() {
+                return;
+            }
+            let pair = match crate::om::simple_hole_repeated_scalar_lane(ctx, record.payload_view())
+            {
                 Ok(Some(pair)) => pair,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let values = match pair.map_charged(ctx, |token| RepeatedScalar {
                 scalar: token.scalar,
-                witness_offsets: token.witness_offsets.map(|offset| entry_offset + offset as u64),
+                witness_offsets: token
+                    .witness_offsets
+                    .map(|offset| entry_offset + offset as u64),
             }) {
                 Ok(values) => values,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             pairs.push(FeatureSimpleHoleRepeatedScalarLane {
                 id: format!(
@@ -858,16 +878,18 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(ctx: &cadmpeg
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(pairs)
 }
 
 /// Resolve the tagged block-index pairs following both repeated scalar-lane
 /// witnesses through the unique offset store that owns the operation inputs.
-pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>, cadmpeg_core::CodecError> {
     let inputs = feature_input_blocks(ctx, container)?;
     let blocks = data_blocks(ctx, container)?
         .into_iter()
@@ -875,10 +897,13 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
         .collect::<BTreeSet<_>>();
     let mut references = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let prefixes = inputs
@@ -927,7 +952,9 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
@@ -1033,13 +1060,14 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
 }
 
 /// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.
-pub(in crate::native) fn feature_hole_package_construction_group_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_hole_package_construction_group_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureHolePackageConstructionGroupLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureHolePackageConstructionGroupLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(lane) = crate::om::hole_package_construction_group_lane(record.payload_view())

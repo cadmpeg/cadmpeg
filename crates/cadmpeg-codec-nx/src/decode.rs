@@ -147,7 +147,8 @@ fn report_untransferred_streams(
     body: &mut DecodeBody,
     typed_native: TypedNative,
 ) -> Result<(), CodecError> {
-    let (control_count, classified_control_count) = offset_store_control_counts(ctx, &scan.container)?;
+    let (control_count, classified_control_count) =
+        offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
         body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
             "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
@@ -187,9 +188,17 @@ pub(super) fn offset_store_control_counts(
     let mut total = 0;
     let mut classified = 0;
     for (_, section) in container.indexed_om_sections(ctx)? {
-        let Some((control, _, records)) = section.as_offset_only() else { continue };
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
         total += 1;
-        if crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?.is_some() {
+        if crate::om::offset_store_control_form(
+            ctx,
+            control.bytes,
+            records.first().map(|record| record.bytes),
+        )?
+        .is_some()
+        {
             classified += 1;
         }
     }

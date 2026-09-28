@@ -38,19 +38,30 @@ pub(in crate::native) fn data_block_counted_index_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((_, _, records)) = section.as_offset_only() else { continue; };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((_, _, records)) = section.as_offset_only() else {
+            continue;
+        };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let block_count = records.len() + 1;
         for (record_ordinal, block) in records.iter().enumerate() {
             let block_ordinal = record_ordinal + 1;
-            let Some(source_base) = entry_offset.checked_add(block.offset as u64) else { continue; };
+            let Some(source_base) = entry_offset.checked_add(block.offset as u64) else {
+                continue;
+            };
             let mut ordinal = 0usize;
             for lane in counted_lanes(ctx, block.bytes)? {
-                let Some(lane) = lane.into_absolute(source_base) else { continue; };
+                let Some(lane) = lane.into_absolute(source_base) else {
+                    continue;
+                };
                 let Some(frame) = lane.try_resolve_charged(ctx, |atom| {
                     control_index_data_block(section_ordinal, block_count, atom.value())
-                })? else { continue; };
+                })?
+                else {
+                    continue;
+                };
                 output.push(DataBlockCountedIndexLane {
                     id: format!("nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"),
                     data_block: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
@@ -70,19 +81,33 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((_, storage, records)) = section.as_offset_only() else { continue; };
-        let Some(storage_offset) = records.first().map(|record| record.offset) else { continue; };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((_, storage, records)) = section.as_offset_only() else {
+            continue;
+        };
+        let Some(storage_offset) = records.first().map(|record| record.offset) else {
+            continue;
+        };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else { continue; };
+        let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else {
+            continue;
+        };
         let block_count = records.len() + 1;
         let mut ordinal = 0usize;
         for lane in abr_lanes(ctx, storage)? {
-            let Some(frame) = lane.into_absolute(source_base).and_then(|lane| lane.try_resolve(|atom| {
-                control_index_data_block(section_ordinal, block_count, atom.value())
-            })) else { continue; };
+            let Some(frame) = lane.into_absolute(source_base).and_then(|lane| {
+                lane.try_resolve(|atom| {
+                    control_index_data_block(section_ordinal, block_count, atom.value())
+                })
+            }) else {
+                continue;
+            };
             output.push(DataBlockAbrReferenceLane {
-                id: format!("nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"),
+                id: format!(
+                    "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
+                ),
                 section_ordinal: section_ordinal as u32,
                 ordinal: ordinal as u32,
                 frame,

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-CSYS descriptor identities and bounded source positions.
 
-use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
@@ -91,12 +91,21 @@ impl CsysDescriptor {
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((start, end)) = Self::identity_bounds(bytes) else { return Ok(None); };
+        let Some((start, end)) = Self::identity_bounds(bytes) else {
+            return Ok(None);
+        };
         let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
-        let identity_bytes = ctx.copy_retained(&bytes[start..end], "NX datum CSYS descriptor identity")?;
+        let identity_bytes =
+            ctx.copy_retained(&bytes[start..end], "NX datum CSYS descriptor identity")?;
         let suffix = ctx.copy_retained(&bytes[end..], "NX datum CSYS descriptor suffix")?;
-        let Ok(identity) = String::from_utf8(identity_bytes) else { return Ok(None); };
-        Ok(Some(Self { prefix, identity: CsysIdentity(identity), suffix }))
+        let Ok(identity) = String::from_utf8(identity_bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            prefix,
+            identity: CsysIdentity(identity),
+            suffix,
+        }))
     }
 
     // This conversion consumes the input carrier at the typed construction boundary.

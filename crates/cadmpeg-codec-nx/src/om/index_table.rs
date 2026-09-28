@@ -26,8 +26,12 @@ impl<'a> DescendingU32Edges<'a> {
             {
                 let offsets = &mut offsets_by_alignment[offset % 4];
                 ctx.charge_collection_items(1, "nx descending index edges")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
-                offsets.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx descending index edges", 0, 1))?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    usize,
+                >()))?;
+                offsets
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx descending index edges", 0, 1))?;
                 offsets.push(offset);
             }
         }
@@ -225,7 +229,8 @@ mod tests {
     fn fixed_index_pairs_ids_with_empty_and_nonempty_records() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
         let mut bytes = Vec::new();
         for word in [0u32, 32, 34, 34, 3, 0, 7, 9] {
@@ -249,7 +254,8 @@ mod tests {
     fn offset_index_retains_control_and_contiguous_storage() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
         let mut bytes = Vec::new();
         for word in [20u32, 22, 24, 24, 2] {
@@ -267,14 +273,21 @@ mod tests {
         assert!(records[1].bytes.is_empty());
         assert!(OffsetIndex::new(&edges, 0, 4, 17).is_none());
         bytes[8..12].copy_from_slice(&21u32.to_le_bytes());
-        assert!(OffsetIndex::new(&DescendingU32Edges::new(&ctx, &mut reservation, &bytes).unwrap(), 0, 4, 16).is_none());
+        assert!(OffsetIndex::new(
+            &DescendingU32Edges::new(&ctx, &mut reservation, &bytes).unwrap(),
+            0,
+            4,
+            16
+        )
+        .is_none());
     }
 
     #[test]
     fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut reservation = ctx.reserve_scoped(0, "test index edges").unwrap();
         let words = [10_u32, 20, 30, 25, 40];
         let bytes = words

@@ -94,7 +94,9 @@ impl<T> ThruCurveBranchItems<T> {
         mut f: impl FnMut(usize, T) -> U,
     ) -> Result<ThruCurveBranchItems<U>, CodecError> {
         match self {
-            Self::Standard(members) => Ok(ThruCurveBranchItems::Standard(members.map_indexed_charged(ctx, f)?)),
+            Self::Standard(members) => Ok(ThruCurveBranchItems::Standard(
+                members.map_indexed_charged(ctx, f)?,
+            )),
             Self::Extended { members, values } => {
                 let mut index = 0;
                 let members = members.map(|member| {

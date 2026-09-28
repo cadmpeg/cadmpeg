@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pattern row layouts with their exact scalar families.
 
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 use super::branch_items::BranchItems;
@@ -93,26 +93,32 @@ impl<I, O> PatternRows<I, O> {
         mut offset: impl FnMut(O) -> P,
     ) -> Result<PatternRows<J, P>, CodecError> {
         match self {
-            Self::Scalar(rows) => Ok(PatternRows::Scalar(rows.map_indexed_charged(ctx, |_, row| PatternRow {
-                values: PatternValue {
-                    scalar: row.values.scalar,
-                    offset: offset(row.values.offset),
-                },
-                selector: selector(row.selector),
-            })?)),
-            Self::Wide(rows) => Ok(PatternRows::Wide(rows.map_indexed_charged(ctx, |_, row| PatternRow {
-                values: PatternWideValues {
-                    first: row.values.first.map(|value| PatternValue {
-                        scalar: value.scalar,
-                        offset: offset(value.offset),
-                    }),
-                    terminal: PatternValue {
-                        scalar: row.values.terminal.scalar,
-                        offset: offset(row.values.terminal.offset),
+            Self::Scalar(rows) => Ok(PatternRows::Scalar(rows.map_indexed_charged(
+                ctx,
+                |_, row| PatternRow {
+                    values: PatternValue {
+                        scalar: row.values.scalar,
+                        offset: offset(row.values.offset),
                     },
+                    selector: selector(row.selector),
                 },
-                selector: selector(row.selector),
-            })?)),
+            )?)),
+            Self::Wide(rows) => Ok(PatternRows::Wide(rows.map_indexed_charged(
+                ctx,
+                |_, row| PatternRow {
+                    values: PatternWideValues {
+                        first: row.values.first.map(|value| PatternValue {
+                            scalar: value.scalar,
+                            offset: offset(value.offset),
+                        }),
+                        terminal: PatternValue {
+                            scalar: row.values.terminal.scalar,
+                            offset: offset(row.values.terminal.offset),
+                        },
+                    },
+                    selector: selector(row.selector),
+                },
+            )?)),
         }
     }
 }

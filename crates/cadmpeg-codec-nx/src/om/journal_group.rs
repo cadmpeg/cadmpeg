@@ -44,8 +44,16 @@ impl<O: Copy + From<u8> + std::ops::Sub<Output = O>> JournalGroup<O> {
 }
 
 impl JournalGroup<usize> {
-    pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8], at: usize, end: usize, base: usize) -> Result<Option<Self>, CodecError> {
-        let Some(tail) = bytes.get(at..end) else { return Ok(None) };
+    pub(super) fn read(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        at: usize,
+        end: usize,
+        base: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(tail) = bytes.get(at..end) else {
+            return Ok(None);
+        };
         let [0x04, a, b, 0x00, ..] = tail else {
             return Ok(None);
         };
@@ -56,17 +64,25 @@ impl JournalGroup<usize> {
         } else {
             Header::Plain
         };
-        let Some(mut cursor) = at.checked_add(usize::from(header.byte_len())) else { return Ok(None) };
+        let Some(mut cursor) = at.checked_add(usize::from(header.byte_len())) else {
+            return Ok(None);
+        };
         let mut rows = Vec::new();
         while cursor < end {
             let Some(row) = JournalRow::read(bytes, cursor, end, base) else {
                 break;
             };
-            let Some(next) = cursor.checked_add(row.byte_len()) else { return Ok(None) };
+            let Some(next) = cursor.checked_add(row.byte_len()) else {
+                return Ok(None);
+            };
             cursor = next;
             ctx.charge_collection_items(1, "NX state-journal rows")?;
-            ctx.charge_retained(u64_from_index(std::mem::size_of::<JournalRow<usize>>()), "NX state-journal rows")?;
-            rows.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX state-journal rows", 0, 1))?;
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<JournalRow<usize>>()),
+                "NX state-journal rows",
+            )?;
+            rows.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX state-journal rows", 0, 1))?;
             rows.push(row);
         }
         Ok(NonEmpty::from_vec(rows).map(|rows| Self {
@@ -81,12 +97,19 @@ impl JournalGroup<usize> {
         last.offset() + last.byte_len()
     }
 
-    pub(crate) fn into_absolute(self, ctx: &DecodeContext<'_>, base: u64) -> Result<Option<JournalGroup>, CodecError> {
-        Ok(self.rows.try_map_charged(ctx, |row| row.into_absolute(base))?.map(|rows| JournalGroup {
-            selector: self.selector,
-            header: self.header,
-            rows,
-        }))
+    pub(crate) fn into_absolute(
+        self,
+        ctx: &DecodeContext<'_>,
+        base: u64,
+    ) -> Result<Option<JournalGroup>, CodecError> {
+        Ok(self
+            .rows
+            .try_map_charged(ctx, |row| row.into_absolute(base))?
+            .map(|rows| JournalGroup {
+                selector: self.selector,
+                header: self.header,
+                rows,
+            }))
     }
 }
 

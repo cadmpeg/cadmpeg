@@ -62,7 +62,10 @@ fn graph_scopes_equal_names_by_native_unit_label() {
         ),
     ];
 
-    crate::test_support::with_decode_context(|ctx| evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        evaluate_expression_graphs(ctx, &mut expressions)
+    })
+    .unwrap();
 
     assert_eq!(
         expressions[1]

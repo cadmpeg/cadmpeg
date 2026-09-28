@@ -167,8 +167,10 @@ pub(super) struct OmOperationStateMessage {
 }
 
 /// Decode internally pointed record areas from linked OM sections.
-pub(super) fn om_record_areas(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError>
-{
+pub(super) fn om_record_areas(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError> {
     let links = segment_om_links(ctx, container)?;
     let sections = container.om_sections(ctx)?;
     Ok(links
@@ -208,66 +210,76 @@ pub(super) fn om_record_areas(ctx: &cadmpeg_core::decode::DecodeContext<'_>, con
 }
 
 /// Decode complete rows from audit-trail record areas.
-pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError>
-{
+pub(super) fn audit_trail_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
     for (section_ordinal, link) in segment_om_links(ctx, container)?
-        .into_iter().filter(|link| link.schema_role == OmSchemaRole::AuditTrail).enumerate() {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
-                continue;
-            };
-            let Some(rows) = section.audit_trail_rows(ctx)? else {
-                continue;
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            out.extend(rows.into_iter()
-                .filter_map(move |row| {
-                    let record = row.record();
-                    let ordinal = record.ordinal.value();
-                    OmAuditTrailRow::new(
-                        format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                        link.id.clone(),
-                        record,
-                        entry.name.clone(),
-                        entry_offset.checked_add(row.offset() as u64)?,
-                    )
-                }));
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
+        .enumerate()
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span()
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.location.section_offset()
+        }) else {
+            continue;
+        };
+        let Some(rows) = section.audit_trail_rows(ctx)? else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let section_key = format!("{section_ordinal:010}");
+        out.extend(rows.into_iter().filter_map(move |row| {
+            let record = row.record();
+            let ordinal = record.ordinal.value();
+            OmAuditTrailRow::new(
+                format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
+                link.id.clone(),
+                record,
+                entry.name.clone(),
+                entry_offset.checked_add(row.offset() as u64)?,
+            )
+        }));
     }
     Ok(out)
 }
 
 /// Decode exact object state-counter rows from canonical feature-history areas.
-pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError>
-{
+pub(super) fn operation_state_counters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
-        .into_iter().enumerate() {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
-                continue;
-            };
-            let Some(map) = section.operation_state_counter_map(ctx)? else {
-                continue;
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            out.extend(map.into_rows()
+    for (section_ordinal, link) in
+        crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+            .into_iter()
+            .enumerate()
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span()
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.location.section_offset()
+        }) else {
+            continue;
+        };
+        let Some(map) = section.operation_state_counter_map(ctx)? else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let section_key = format!("{section_ordinal:010}");
+        out.extend(
+            map.into_rows()
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
@@ -280,48 +292,56 @@ pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext
                         frame: row.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
                     })
-                }));
+                }),
+        );
     }
     Ok(out)
 }
 
 /// Decode anchored state-journal groups from canonical feature-history areas.
-pub(super) fn operation_state_journal_groups(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn operation_state_journal_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     let mut out = Vec::new();
-    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
-        .into_iter().enumerate() {
-            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-                entry
-                    .file_span()
-                    .map_or(section.offset as u64, |(offset, _)| {
-                        offset + section.offset as u64
-                    })
-                    == link.location.section_offset()
-            }) else {
+    for (section_ordinal, link) in
+        crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+            .into_iter()
+            .enumerate()
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span()
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.location.section_offset()
+        }) else {
+            continue;
+        };
+        let Some(groups) = section.operation_state_journal_groups(ctx)? else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let section_key = format!("{section_ordinal:010}");
+        for (ordinal, group) in groups.into_iter().enumerate() {
+            let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
             };
-            let Some(groups) = section.operation_state_journal_groups(ctx)? else {
+            let Some(frame) = group.into_absolute(ctx, entry_offset)? else {
                 continue;
             };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let section_key = format!("{section_ordinal:010}");
-            for (ordinal, group) in groups.into_iter().enumerate() {
-                let Some(ordinal) = u32::try_from(ordinal).ok() else { continue };
-                let Some(frame) = group.into_absolute(ctx, entry_offset)? else { continue };
-                out.push(OmOperationStateJournalGroup {
-                        id: format!(
-                            "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        frame,
-                        source_entry: entry.name.clone(),
-                });
-            }
+            out.push(OmOperationStateJournalGroup {
+                id: format!(
+                    "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
+                ),
+                section_link: link.id.clone(),
+                ordinal,
+                frame,
+                source_entry: entry.name.clone(),
+            });
+        }
     }
     Ok(out)
 }
@@ -405,21 +425,23 @@ pub(super) fn operation_state_messages(
             let rows = messages
                 .into_iter()
                 .enumerate()
-                .map(|(ordinal, message)| -> Result<Option<OmOperationStateMessage>, CodecError> {
-                    let Ok(ordinal) = u32::try_from(ordinal) else {
-                        return Ok(None);
-                    };
-                    Ok(Some(OmOperationStateMessage {
-                        id: format!(
+                .map(
+                    |(ordinal, message)| -> Result<Option<OmOperationStateMessage>, CodecError> {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return Ok(None);
+                        };
+                        Ok(Some(OmOperationStateMessage {
+                            id: format!(
                             "nx:feature-history:operation-state-message#{section_key}-{ordinal:010}"
                         ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        body: message.body().into_owned(ctx)?,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + message.offset() as u64,
-                    }))
-                })
+                            section_link: link.id.clone(),
+                            ordinal,
+                            body: message.body().into_owned(ctx)?,
+                            source_entry: entry.name.clone(),
+                            source_offset: entry_offset + message.offset() as u64,
+                        }))
+                    },
+                )
                 .collect::<Result<Vec<_>, CodecError>>()?;
             Ok(rows.into_iter().flatten().collect())
         })
@@ -913,28 +935,52 @@ pub(crate) fn evaluate_parameterized_expression(
     }
 
     let bytes = expression.as_bytes();
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "NX expression substitution")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+        "NX expression substitution",
+    )?;
     let mut reservation = ctx.reserve_scoped(0, "NX expression substitution")?;
     let mut substituted = String::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if let Some(end) = expression_parameter_reference_end(bytes, at) {
-            let Some(value) = parameter_value(&expression[at..end]) else { return Ok(None) };
-            let mut number = NumberText { bytes: [0; 400], len: 0 };
+            let Some(value) = parameter_value(&expression[at..end]) else {
+                return Ok(None);
+            };
+            let mut number = NumberText {
+                bytes: [0; 400],
+                len: 0,
+            };
             std::fmt::Write::write_fmt(&mut number, format_args!("{value}"))
                 .map_err(|_| ctx.refuse_codec_limit("NX expression number formatting", 0, 400))?;
-            let value_text = std::str::from_utf8(&number.bytes[..number.len])
-                .map_err(|_| ctx.refuse_codec_limit("NX expression number formatting", 0, cadmpeg_core::decode::u64_from_index(number.len)))?;
-            let added = value_text.len().checked_add(2).ok_or_else(|| ctx.refuse_codec_limit("NX expression substitution", 0, u64::MAX))?;
+            let value_text = std::str::from_utf8(&number.bytes[..number.len]).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "NX expression number formatting",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(number.len),
+                )
+            })?;
+            let added = value_text
+                .len()
+                .checked_add(2)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX expression substitution", 0, u64::MAX))?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(added))?;
-            substituted.try_reserve(added).map_err(|_| ctx.refuse_codec_limit("NX expression substitution", 0, cadmpeg_core::decode::u64_from_index(added)))?;
+            substituted.try_reserve(added).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "NX expression substitution",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(added),
+                )
+            })?;
             substituted.push('(');
-            substituted.push_str(&value_text);
+            substituted.push_str(value_text);
             substituted.push(')');
             at = end;
         } else {
             reservation.grow(1)?;
-            substituted.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX expression substitution", 0, 1))?;
+            substituted
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("NX expression substitution", 0, 1))?;
             substituted.push(char::from(bytes[at]));
             at += 1;
         }
@@ -1445,16 +1491,22 @@ fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
 /// serialized bytes: no cross-record owner relation proves that they are
 /// position-independent. A shared finite work budget returns no identity when
 /// canonicalization would exceed the decoder's bounded resource policy.
-fn stable_object_record_identities(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source_entry: &str, records: &[&[u8]]) -> Result<Vec<Option<String>>, cadmpeg_core::CodecError> {
+fn stable_object_record_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source_entry: &str,
+    records: &[&[u8]],
+) -> Result<Vec<Option<String>>, cadmpeg_core::CodecError> {
     const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
     let references = records
         .iter()
         .map(|bytes| {
-            Ok(crate::om::counted_record_references(ctx, bytes, 0, records.len())?
-                .into_iter()
-                .map(|reference| (reference.offset, usize::from(reference.value)))
-                .collect::<Vec<_>>())
+            Ok(
+                crate::om::counted_record_references(ctx, bytes, 0, records.len())?
+                    .into_iter()
+                    .map(|reference| (reference.offset, usize::from(reference.value)))
+                    .collect::<Vec<_>>(),
+            )
         })
         .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let mut graph_work = MAX_GRAPH_WORK;
@@ -2866,17 +2918,17 @@ pub(super) fn external_reference_tail_reference_pairs(
 ) -> Result<Vec<ExternalReferenceTailReferencePair>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
     for record in records {
-            let Some(source_offset) = record
-                .source_offset
-                .checked_add(record.handles.prefix_byte_len() as u64)
-            else {
-                continue;
-            };
-            let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len)
-            else {
-                continue;
-            };
-            out.extend(crate::container::parse_extref_reference_pairs(ctx, bytes)?
+        let Some(source_offset) = record
+            .source_offset
+            .checked_add(record.handles.prefix_byte_len() as u64)
+        else {
+            continue;
+        };
+        let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len) else {
+            continue;
+        };
+        out.extend(
+            crate::container::parse_extref_reference_pairs(ctx, bytes)?
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, (offset, persistent_handle, tagged_reference))| {
@@ -2894,8 +2946,8 @@ pub(super) fn external_reference_tail_reference_pairs(
                         tagged_reference,
                         source_offset: source_offset + offset as u64,
                     }
-                })
-            );
+                }),
+        );
     }
     Ok(out)
 }
@@ -3215,12 +3267,12 @@ struct RegistryDefinition {
 }
 
 /// Merge both section forms with framed definitions taking precedence.
-fn registry_definitions<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn registry_definitions<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     kind: RegistryKind,
     project: impl Fn(RegistryDefinition) -> T,
-) -> Result<Vec<T>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let framed = container
         .om_sections(ctx)?
         .into_iter()
@@ -3335,8 +3387,10 @@ pub(super) fn field_definitions(
 }
 
 /// Catalog every externally bounded NX OM entity record.
-pub(super) fn object_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError>
-{
+pub(super) fn object_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
@@ -3355,18 +3409,18 @@ pub(super) fn object_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cont
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
         for (source, record) in records.iter().enumerate() {
             for reference in record.references(ctx, records.len())? {
-            let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
-                continue;
-            };
-            let target = usize::from(ordinal);
-            let outgoing = dependencies.entry(source).or_default();
-            if !outgoing.contains(&target) {
-                outgoing.push(target);
-            }
-            let incoming = dependents.entry(target).or_default();
-            if !incoming.contains(&source) {
-                incoming.push(source);
-            }
+                let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
+                    continue;
+                };
+                let target = usize::from(ordinal);
+                let outgoing = dependencies.entry(source).or_default();
+                if !outgoing.contains(&target) {
+                    outgoing.push(target);
+                }
+                let incoming = dependents.entry(target).or_default();
+                if !incoming.contains(&source) {
+                    incoming.push(source);
+                }
             }
         }
         for (record_ordinal, record) in records.iter().cloned().enumerate() {
@@ -3602,8 +3656,10 @@ fn assign_rmfastload_object_id_identities(
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
-pub(super) fn data_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError>
-{
+pub(super) fn data_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError> {
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
@@ -3680,40 +3736,87 @@ pub(super) fn data_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, contain
 }
 
 /// Classify every admitted complete offset-only store control lane.
-pub(super) fn data_block_control_forms(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlForm>, CodecError> {
+pub(super) fn data_block_control_forms(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlockControlForm>, CodecError> {
     let mut forms = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((control, _, records)) = section.as_offset_only() else { continue };
-        let Some(form) = crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))? else { continue };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
+        let Some(form) = crate::om::offset_store_control_form(
+            ctx,
+            control.bytes,
+            records.first().map(|record| record.bytes),
+        )?
+        else {
+            continue;
+        };
         let kind = match form {
             crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => {
-                let Some(value_count) = u32::try_from(values.len()).ok().and_then(std::num::NonZeroU32::new) else { continue };
+                let Some(value_count) = u32::try_from(values.len())
+                    .ok()
+                    .and_then(std::num::NonZeroU32::new)
+                else {
+                    continue;
+                };
                 DataBlockControlFormKind::ZeroPrefixed { value_count }
             }
-            crate::om::OffsetStoreControlForm::ProductAnchored { leading_value, values } => {
-                let Some(value_count) = u32::try_from(values.len()).ok().and_then(std::num::NonZeroU32::new) else { continue };
-                let Some(byte_len) = std::num::NonZeroU64::new(control.bytes.len() as u64) else { continue };
-                DataBlockControlFormKind::ProductAnchored { leading: leading_value, value_count, byte_len }
+            crate::om::OffsetStoreControlForm::ProductAnchored {
+                leading_value,
+                values,
+            } => {
+                let Some(value_count) = u32::try_from(values.len())
+                    .ok()
+                    .and_then(std::num::NonZeroU32::new)
+                else {
+                    continue;
+                };
+                let Some(byte_len) = std::num::NonZeroU64::new(control.bytes.len() as u64) else {
+                    continue;
+                };
+                DataBlockControlFormKind::ProductAnchored {
+                    leading: leading_value,
+                    value_count,
+                    byte_len,
+                }
             }
         };
         forms.push(DataBlockControlForm {
             id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
             data_block: format!("nx:om-data-blocks-{section_ordinal}:block#0"),
             kind,
-            source_offset: entry.file_span().map_or(0, |(offset, _)| offset) + control.offset as u64,
+            source_offset: entry.file_span().map_or(0, |(offset, _)| offset)
+                + control.offset as u64,
         });
     }
     Ok(forms)
 }
 
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
-pub(super) fn data_block_control_values(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlValue>, CodecError> {
+pub(super) fn data_block_control_values(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlockControlValue>, CodecError> {
     let mut rows = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((control, _, records)) = section.as_offset_only() else { continue };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
         let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
-            crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?
-        else { continue };
+            crate::om::offset_store_control_form(
+                ctx,
+                control.bytes,
+                records.first().map(|record| record.bytes),
+            )?
+        else {
+            continue;
+        };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
         for (ordinal, value) in values.into_iter().enumerate() {
@@ -3809,25 +3912,45 @@ pub(super) fn data_block_control_class_references(
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
-pub(super) fn data_block_control_index_values(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
+pub(super) fn data_block_control_index_values(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlockControlIndexValue>, CodecError> {
     let mut rows = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((control, _, records)) = section.as_offset_only() else { continue };
-        let Some(crate::om::OffsetStoreControlForm::ProductAnchored { leading_value, values }) =
-            crate::om::offset_store_control_form(ctx, control.bytes, records.first().map(|record| record.bytes))?
-        else { continue };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
+        let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
+            leading_value,
+            values,
+        }) = crate::om::offset_store_control_form(
+            ctx,
+            control.bytes,
+            records.first().map(|record| record.bytes),
+        )?
+        else {
+            continue;
+        };
         let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
         let block_count = records.len() + 1;
         for (ordinal, value) in values.into_iter().enumerate() {
             rows.push(DataBlockControlIndexValue {
-                id: format!("nx:om-data-block-control-index-values-{section_ordinal}:value#{ordinal}"),
+                id: format!(
+                    "nx:om-data-block-control-index-values-{section_ordinal}:value#{ordinal}"
+                ),
                 data_block: data_block.clone(),
                 ordinal: ordinal as u32,
                 value,
                 target_data_block: control_index_data_block(section_ordinal, block_count, value),
-                source_offset: entry_offset + control.offset as u64 + leading_value_width as u64 + ordinal as u64 * 4,
+                source_offset: entry_offset
+                    + control.offset as u64
+                    + leading_value_width as u64
+                    + ordinal as u64 * 4,
             });
         }
     }
@@ -3866,29 +3989,34 @@ fn column_storage_block_at(
 }
 
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
-pub(super) fn data_block_control_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn data_block_control_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-            let Some((control, _, _)) = section.as_offset_only() else {
-                continue;
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            for (ordinal, reference) in crate::om::references(ctx, control.bytes, control.offset)?.into_iter().enumerate() {
-                output.push(DataBlockControlReference {
-                    id: format!(
-                        "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
-                        reference.offset
-                    ),
-                    data_block: data_block.clone(),
-                    ordinal: ordinal as u32,
-                    reference: reference.value,
-                    source_offset: entry_offset + reference.offset as u64,
-                });
-            }
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((control, _, _)) = section.as_offset_only() else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+        for (ordinal, reference) in crate::om::references(ctx, control.bytes, control.offset)?
+            .into_iter()
+            .enumerate()
+        {
+            output.push(DataBlockControlReference {
+                id: format!(
+                    "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
+                    reference.offset
+                ),
+                data_block: data_block.clone(),
+                ordinal: ordinal as u32,
+                reference: reference.value,
+                source_offset: entry_offset + reference.offset as u64,
+            });
+        }
     }
     Ok(output)
 }
@@ -3940,12 +4068,12 @@ pub(super) fn data_block_control_handle_pairs(
 }
 
 /// Decode framed object references from offset-only OM data blocks.
-pub(super) fn data_block_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn data_block_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
-) -> Result<Vec<DataBlockReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<DataBlockReference>, cadmpeg_core::CodecError> {
     let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
         let (object_id, _) = record.object_id;
@@ -3962,14 +4090,23 @@ pub(super) fn data_block_references(ctx: &cadmpeg_core::decode::DecodeContext<'_
             .push(declaration.id.clone());
     }
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        let Some((control, _, records)) = section.as_offset_only() else { continue; };
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         for (block_ordinal, block) in std::iter::once(control).chain(records).enumerate() {
-            for (ordinal, reference) in crate::om::data_block_object_references(ctx, block.bytes)?.into_iter().enumerate() {
+            for (ordinal, reference) in crate::om::data_block_object_references(ctx, block.bytes)?
+                .into_iter()
+                .enumerate()
+            {
                 let key = (entry.name.clone(), reference.object_index.value());
                 let unique = |candidates: Option<&Vec<String>>| {
-                    let [target] = candidates?.as_slice() else { return None; };
+                    let [target] = candidates?.as_slice() else {
+                        return None;
+                    };
                     Some(target.clone())
                 };
                 output.push(DataBlockReference {
@@ -4142,8 +4279,10 @@ pub(super) fn data_block_column_index_tables(
 }
 
 /// Decode one product/version header from each indexed NX OM store.
-pub(super) fn store_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError>
-{
+pub(super) fn store_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError> {
     Ok(container
         .indexed_om_sections(ctx)?
         .into_iter()
@@ -4186,70 +4325,85 @@ pub(super) fn store_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, conta
 }
 
 /// Decode self-framed printable values from bounded NX OM records.
-pub(super) fn string_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<StringValue>, cadmpeg_core::CodecError>
-{
+pub(super) fn string_values(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<StringValue>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-            let Some(records) = section.as_fixed() else {
-                continue;
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            for (record_ordinal, record) in records.iter().enumerate() {
-                for (value_ordinal, value) in record.string_values(ctx)?.into_iter().enumerate() {
-                    let record_id =
-                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
-                    output.push(StringValue {
-                        id: format!(
-                            "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
-                            value.offset
-                        ),
-                        record: record_id,
-                        object_id: record.object_id.0,
-                        ordinal: value_ordinal as u32,
-                        value: value.value.into_owned(),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + value.offset as u64,
-                    });
-                }
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some(records) = section.as_fixed() else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (record_ordinal, record) in records.iter().enumerate() {
+            for (value_ordinal, value) in record.string_values(ctx)?.into_iter().enumerate() {
+                let record_id =
+                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                output.push(StringValue {
+                    id: format!(
+                        "nx:om-string-values-{section_ordinal}-{record_ordinal}:value#{}",
+                        value.offset
+                    ),
+                    record: record_id,
+                    object_id: record.object_id.0,
+                    ordinal: value_ordinal as u32,
+                    value: value.value.into_owned(),
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + value.offset as u64,
+                });
             }
+        }
     }
     Ok(output)
 }
 
 /// Decode ordered tagged references from bounded NX OM records.
-pub(super) fn object_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError>
-{
+pub(super) fn object_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-            let Some(records) = section.as_fixed() else {
-                continue;
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            for (record_ordinal, record) in records.iter().enumerate() {
-                for (reference_ordinal, reference) in record.references(ctx, records.len())?.into_iter().enumerate() {
-                        let record_id = format!(
-                            "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
-                        );
-                        output.push(ObjectReference {
-                            id: format!(
-                                "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
-                                reference.offset
-                            ),
-                            record: record_id,
-                            object_id: record.object_id.0,
-                            ordinal: reference_ordinal as u32,
-                            reference: match reference.value {
-                                RecordReference::Direct(value) => RecordReference::Direct(value),
-                                RecordReference::RecordOrdinal16 { ordinal, .. } => RecordReference::RecordOrdinal16 {
-                                    ordinal,
-                                    target: format!("nx:om-record-directory-{section_ordinal}:entry#{ordinal}"),
-                                },
-                            },
-                            source_entry: entry.name.clone(),
-                            source_offset: entry_offset + reference.offset as u64,
-                        });
-                }
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        let Some(records) = section.as_fixed() else {
+            continue;
+        };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        for (record_ordinal, record) in records.iter().enumerate() {
+            for (reference_ordinal, reference) in record
+                .references(ctx, records.len())?
+                .into_iter()
+                .enumerate()
+            {
+                let record_id =
+                    format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                output.push(ObjectReference {
+                    id: format!(
+                        "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
+                        reference.offset
+                    ),
+                    record: record_id,
+                    object_id: record.object_id.0,
+                    ordinal: reference_ordinal as u32,
+                    reference: match reference.value {
+                        RecordReference::Direct(value) => RecordReference::Direct(value),
+                        RecordReference::RecordOrdinal16 { ordinal, .. } => {
+                            RecordReference::RecordOrdinal16 {
+                                ordinal,
+                                target: format!(
+                                    "nx:om-record-directory-{section_ordinal}:entry#{ordinal}"
+                                ),
+                            }
+                        }
+                    },
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + reference.offset as u64,
+                });
             }
+        }
     }
     Ok(output)
 }
@@ -4377,18 +4531,29 @@ pub(super) fn expression_declarations(
     container: &Container,
 ) -> Result<Vec<ExpressionDeclaration>, CodecError> {
     let mut declarations = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
-        if !section.types.iter().any(|definition| definition.name == "UGS::EXP_expression") {
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
+    {
+        if !section
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::EXP_expression")
+        {
             continue;
         }
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let Some(records) = section.as_fixed() else { continue };
+        let Some(records) = section.as_fixed() else {
+            continue;
+        };
         for (record_ordinal, record) in records.iter().enumerate() {
-            let Some(declaration) = crate::om::expression_declaration_name(ctx, record.bytes)? else {
+            let Some(declaration) = crate::om::expression_declaration_name(ctx, record.bytes)?
+            else {
                 continue;
             };
             declarations.push(ExpressionDeclaration {
-                id: format!("nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"),
+                id: format!(
+                    "nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"
+                ),
                 object_id: record.object_id.0,
                 record: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
                 name: declaration.name.into_owned(),
@@ -4402,7 +4567,10 @@ pub(super) fn expression_declarations(
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
-pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<Expression>, CodecError> {
+pub(super) fn expressions(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<Expression>, CodecError> {
     let declarations = expression_declarations(ctx, container)?;
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
     for declaration in &declarations {
@@ -4500,7 +4668,10 @@ pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Res
     Ok(expressions)
 }
 
-fn evaluate_expression_graphs(ctx: &DecodeContext<'_>, expressions: &mut [Expression]) -> Result<(), CodecError> {
+fn evaluate_expression_graphs(
+    ctx: &DecodeContext<'_>,
+    expressions: &mut [Expression],
+) -> Result<(), CodecError> {
     let mut name_counts = BTreeMap::<(String, String, ExpressionUnit), usize>::new();
     for expression in expressions.iter() {
         *name_counts
@@ -4541,17 +4712,18 @@ fn evaluate_expression_graphs(ctx: &DecodeContext<'_>, expressions: &mut [Expres
             if name_counts.get(&expression_key) != Some(&1) {
                 continue;
             }
-            let evaluated = evaluate_parameterized_expression(ctx, &expression.expression, |name| {
-                let key = (
-                    expression.source_table.as_str().to_string(),
-                    name.to_string(),
-                    expression.unit.clone(),
-                );
-                if name_counts.get(&key) != Some(&1) {
-                    return None;
-                }
-                values.get(&key).copied()
-            })?;
+            let evaluated =
+                evaluate_parameterized_expression(ctx, &expression.expression, |name| {
+                    let key = (
+                        expression.source_table.as_str().to_string(),
+                        name.to_string(),
+                        expression.unit.clone(),
+                    );
+                    if name_counts.get(&key) != Some(&1) {
+                        return None;
+                    }
+                    values.get(&key).copied()
+                })?;
             if let Some(value) = evaluated {
                 expression.value = Some(value);
                 values.insert(expression_key.clone(), value.get());
@@ -4573,9 +4745,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = super::evaluate_parameterized_expression(&ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let error =
+            super::evaluate_parameterized_expression(&ctx, "p1 + 2", |_| Some(3.0)).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
     }
 
     use crate::test_support::test_om::offset_only_indexed_om_section;
@@ -4669,7 +4845,10 @@ mod tests {
             expression("p6", "p4_ + 2", None),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4707,7 +4886,10 @@ mod tests {
             expression("p9", "p8 + p7", None),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[2]
@@ -4744,7 +4926,10 @@ mod tests {
             expression("p3", "-p1^2", None),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4807,7 +4992,10 @@ mod tests {
             ),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[1]
@@ -4877,7 +5065,10 @@ mod tests {
             ),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[0]
@@ -4965,7 +5156,10 @@ mod tests {
             ),
         ];
 
-        crate::test_support::with_decode_context(|ctx| super::evaluate_expression_graphs(ctx, &mut expressions)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            super::evaluate_expression_graphs(ctx, &mut expressions)
+        })
+        .unwrap();
 
         assert_eq!(
             expressions[0]
@@ -5138,13 +5332,20 @@ mod tests {
                 .map(String::as_str),
             Some("degree")
         );
-        assert!(crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap().is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            feature_completeness::incomplete_expression_parameters(ctx, &ir)
+        })
+        .unwrap()
+        .is_empty());
 
         ir.model.parameters[0]
             .properties
             .insert(cadmpeg_core::nonblank_literal!("unit"), "native".into());
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &ir)
+            })
+            .unwrap(),
             [
                 ir.model.parameters[0].id.clone(),
                 ir.model.parameters[2].id.clone(),
@@ -5233,7 +5434,11 @@ mod tests {
                 cadmpeg_ir::scalar::Length::new(value).unwrap(),
             ));
         }
-        assert!(crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap().is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            feature_completeness::incomplete_expression_parameters(ctx, &ir)
+        })
+        .unwrap()
+        .is_empty());
 
         let mut inconsistent = ir.clone();
         inconsistent.model.parameters[1].value =
@@ -5241,14 +5446,20 @@ mod tests {
                 cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ));
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &inconsistent)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &inconsistent)
+            })
+            .unwrap(),
             [inconsistent.model.parameters[1].id.clone()].into()
         );
 
         let mut duplicate_name = ir.clone();
         duplicate_name.model.parameters[1].name = duplicate_name.model.parameters[0].name.clone();
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &duplicate_name)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &duplicate_name)
+            })
+            .unwrap(),
             duplicate_name.model.parameters[..2]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5258,7 +5469,10 @@ mod tests {
         let mut unevaluated = ir.clone();
         unevaluated.model.parameters[1].value = None;
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &unevaluated)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &unevaluated)
+            })
+            .unwrap(),
             [unevaluated.model.parameters[1].id.clone()].into()
         );
 
@@ -5272,7 +5486,10 @@ mod tests {
             ),
         );
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &operation_owned)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &operation_owned)
+            })
+            .unwrap(),
             [operation_owned.model.parameters[1].id.clone()].into()
         );
     }
@@ -5315,7 +5532,10 @@ mod tests {
             .iter()
             .all(|parameter| parameter.dependencies.is_empty()));
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &ir)
+            })
+            .unwrap(),
             ir.model
                 .parameters
                 .iter()
@@ -5323,7 +5543,10 @@ mod tests {
                 .collect()
         );
         let mut losses = Vec::new();
-        crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, &ir, &mut losses)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            crate::decode::report::append_design_intent_losses(ctx, &ir, &mut losses)
+        })
+        .unwrap();
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("2 NX expression parameter(s)"));
     }
@@ -5381,7 +5604,10 @@ mod tests {
             ));
         }
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| feature_completeness::incomplete_expression_parameters(ctx, &ir)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| {
+                feature_completeness::incomplete_expression_parameters(ctx, &ir)
+            })
+            .unwrap(),
             ir.model.parameters[2..]
                 .iter()
                 .map(|parameter| parameter.id.clone())
@@ -5653,7 +5879,10 @@ mod tests {
         bytes.extend_from_slice(&0x1020u32.to_le_bytes());
         bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &bytes, None)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
+                ctx, &bytes, None
+            ))
+            .unwrap(),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(
                     crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
@@ -5666,7 +5895,12 @@ mod tests {
         nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
         nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &nonzero_leading, None)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(
+                ctx,
+                &nonzero_leading,
+                None
+            ))
+            .unwrap(),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(
                     crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
@@ -5678,7 +5912,11 @@ mod tests {
 
         let mut duplicate = bytes;
         duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-        assert!(crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, &duplicate, None)).unwrap().is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            crate::om::offset_store_control_form(ctx, &duplicate, None)
+        })
+        .unwrap()
+        .is_none());
         assert_eq!(
             super::control_index_data_block(2, 700, 496).as_deref(),
             Some("nx:om-data-blocks-2:block#496")
@@ -5694,8 +5932,14 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        assert!(crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container)).unwrap().is_empty());
-        let blocks = crate::test_support::with_decode_context(|ctx| super::data_blocks(ctx, &container)).unwrap();
+        assert!(
+            crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container))
+                .unwrap()
+                .is_empty()
+        );
+        let blocks =
+            crate::test_support::with_decode_context(|ctx| super::data_blocks(ctx, &container))
+                .unwrap();
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].block_ordinal, 0);
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
@@ -5706,7 +5950,10 @@ mod tests {
         }
         assert!(blocks[0].byte_len > 0);
         assert!(blocks[0].stable_identity.is_some());
-        let forms = crate::test_support::with_decode_context(|ctx| super::data_block_control_forms(ctx, &container)).unwrap();
+        let forms = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_forms(ctx, &container)
+        })
+        .unwrap();
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
         assert_eq!(
@@ -5717,7 +5964,10 @@ mod tests {
         );
         assert_eq!(forms[0].kind.value_count(), 2);
         assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
-        let control_values = crate::test_support::with_decode_context(|ctx| super::data_block_control_values(ctx, &container)).unwrap();
+        let control_values = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_values(ctx, &container)
+        })
+        .unwrap();
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
         assert_eq!(control_values[0].ordinal, 0);
@@ -5741,8 +5991,18 @@ mod tests {
                 .map(|class| class.definition.as_str()),
             Some("nx:om-entry-0:class#8")
         );
-        assert!(crate::test_support::with_decode_context(|ctx| super::string_values(ctx, &container)).unwrap().is_empty());
-        assert!(crate::test_support::with_decode_context(|ctx| super::object_references(ctx, &container)).unwrap().is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| super::string_values(ctx, &container))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            crate::test_support::with_decode_context(|ctx| super::object_references(
+                ctx, &container
+            ))
+            .unwrap()
+            .is_empty()
+        );
         let expressions = with_test_ctx(|ctx| super::expressions(ctx, &container).unwrap());
         assert_eq!(expressions.len(), 1);
         assert_eq!(
@@ -5842,7 +6102,10 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        let forms = crate::test_support::with_decode_context(|ctx| super::data_block_control_forms(ctx, &container)).unwrap();
+        let forms = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_forms(ctx, &container)
+        })
+        .unwrap();
         assert_eq!(forms.len(), 1);
         assert_eq!(
             forms[0].kind,
@@ -5855,8 +6118,21 @@ mod tests {
             }
         );
         assert_eq!(forms[0].kind.value_count(), 2);
-        assert!(crate::test_support::with_decode_context(|ctx| super::data_block_control_values(ctx, &container)).unwrap().is_empty());
-        assert_eq!(crate::test_support::with_decode_context(|ctx| super::data_block_control_index_values(ctx, &container)).unwrap().len(), 2);
+        assert!(
+            crate::test_support::with_decode_context(|ctx| super::data_block_control_values(
+                ctx, &container
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| super::data_block_control_index_values(
+                ctx, &container
+            ))
+            .unwrap()
+            .len(),
+            2
+        );
     }
 
     #[test]
@@ -5893,7 +6169,11 @@ mod tests {
         assert_eq!(expressions.len(), 1);
         assert_eq!(expressions[0].name.as_str(), "p9");
         assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
-        assert_eq!(crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx)).unwrap(), None);
+        assert_eq!(
+            crate::test_support::with_decode_context(|ctx| expressions[0].constant_value(ctx))
+                .unwrap(),
+            None
+        );
         assert_eq!(
             super::expression_parameter_names(expressions[0].expression),
             vec!["p2", "p7_radius"]
@@ -6420,7 +6700,9 @@ mod object_record_identity_tests {
             crate::container::scan_bytes(ctx, prt_with_indexed_om_section())
         })
         .expect("required invariant");
-        let records = crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container)).unwrap();
+        let records =
+            crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container))
+                .unwrap();
         assert_eq!(records.len(), 2);
         assert!(records
             .iter()
@@ -6429,7 +6711,10 @@ mod object_record_identity_tests {
     }
 
     fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
-        crate::test_support::with_decode_context(|ctx| super::stable_object_record_identities(ctx, "/entry", records)).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            super::stable_object_record_identities(ctx, "/entry", records)
+        })
+        .unwrap()
     }
 
     #[test]
@@ -6449,8 +6734,7 @@ mod object_record_identity_tests {
 
         let unrelated: &[u8] = &[0xd0];
         let with_unrelated = [original[0], original[1], unrelated];
-        let with_unrelated_identities =
-            stable_identities_for_test(&with_unrelated);
+        let with_unrelated_identities = stable_identities_for_test(&with_unrelated);
         assert_eq!(original_identities[0], with_unrelated_identities[0]);
         assert_eq!(original_identities[1], with_unrelated_identities[1]);
 

@@ -292,7 +292,11 @@ pub(super) fn build_geometry_report(
     })
 }
 
-pub(crate) fn append_design_intent_losses(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr, losses: &mut Vec<LossNote>) -> Result<(), cadmpeg_core::CodecError> {
+pub(crate) fn append_design_intent_losses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
     let current_body_ids = ir
         .model
         .bodies

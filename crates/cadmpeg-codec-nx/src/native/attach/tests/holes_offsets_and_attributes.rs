@@ -378,12 +378,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
 
     let default_arena = cadmpeg_core::decode::DecodeArena::new();
     let default_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (default_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &default_arena,
-        &default_policy,
-    )
-    .unwrap();
+    let (default_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
+            .unwrap();
     let operation = "counterbore".to_string();
     let template = FeatureSimpleHoleTemplate {
         id: "template-counterbore".into(),
@@ -646,7 +643,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(inferred.counterbores, projection.counterbores);
     assert_eq!(
-        counterbore_axis_placements_for_operations(&default_ctx, &ir, &operations, &outputs).unwrap(),
+        counterbore_axis_placements_for_operations(&default_ctx, &ir, &operations, &outputs)
+            .unwrap(),
         BTreeMap::from([(
             operation.clone(),
             HolePlacement::Axis {

@@ -1956,8 +1956,7 @@ fn attach_feature_operations(
     )?;
     let blind_hole_placements =
         blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
-    let simple_hole_chamfers =
-        simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
+    let simple_hole_chamfers = simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
         ir,
         simple_hole_templates,

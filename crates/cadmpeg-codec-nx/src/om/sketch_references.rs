@@ -61,54 +61,66 @@ impl SketchReferenceCount {
 pub(crate) struct SketchReferenceField(References);
 
 impl SketchReferenceField {
-    pub(super) fn read(ctx: &DecodeContext<'_>, record: OperationPayload<'_>, start: usize) -> Result<Option<Self>, CodecError> {
+    pub(super) fn read(
+        ctx: &DecodeContext<'_>,
+        record: OperationPayload<'_>,
+        start: usize,
+    ) -> Result<Option<Self>, CodecError> {
         let mut failure = None;
         let field = (|| {
-        let bytes = record.payload().get(start..)?;
-        let source_offset = record.payload_offset() + start;
-        let (count, mut at) = match *bytes.get(2)? {
-            0 => (None, 3),
-            1 => (Some(NonZeroU8::new(*bytes.get(3)?)?), 4),
-            _ => return None,
-        };
-        let leading_count = count.map_or(0, |count| usize::from(count.get() - 1));
-        let mut references = Vec::new();
-        for _ in 0..leading_count {
-            let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
-            let width = token.raw().len();
-            if let Err(error) = super::reserve_om_retained_item(ctx, &mut references, "nx sketch references") {
-                failure = Some(error);
-                return None;
-            }
-            references.push(PayloadObjectReference {
-                offset: source_offset + at,
-                token,
-            });
-            at += width;
-        }
-        (bytes.get(at..at + 2) == Some(&[0, 0])).then_some(())?;
-        at += 2;
-        let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
-        let width = token.raw().len();
-        let terminal = PayloadObjectReference {
-            offset: source_offset + at,
-            token,
-        };
-        at += width;
-        (bytes.get(at..at + 4) == Some(&[1, 0, 0, 0])).then_some(())?;
-        Some(Self(match count {
-            None => References::Implicit(terminal),
-            Some(count) => {
-                if let Err(error) = super::reserve_om_retained_item(ctx, &mut references, "nx sketch references") {
+            let bytes = record.payload().get(start..)?;
+            let source_offset = record.payload_offset() + start;
+            let (count, mut at) = match *bytes.get(2)? {
+                0 => (None, 3),
+                1 => (Some(NonZeroU8::new(*bytes.get(3)?)?), 4),
+                _ => return None,
+            };
+            let leading_count = count.map_or(0, |count| usize::from(count.get() - 1));
+            let mut references = Vec::new();
+            for _ in 0..leading_count {
+                let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
+                let width = token.raw().len();
+                if let Err(error) =
+                    super::reserve_om_retained_item(ctx, &mut references, "nx sketch references")
+                {
                     failure = Some(error);
                     return None;
                 }
-                references.push(terminal);
-                References::Explicit { count, references }
+                references.push(PayloadObjectReference {
+                    offset: source_offset + at,
+                    token,
+                });
+                at += width;
             }
-        }))
+            (bytes.get(at..at + 2) == Some(&[0, 0])).then_some(())?;
+            at += 2;
+            let token = ReferenceIndexToken::read_payload(bytes.get(at..)?)?;
+            let width = token.raw().len();
+            let terminal = PayloadObjectReference {
+                offset: source_offset + at,
+                token,
+            };
+            at += width;
+            (bytes.get(at..at + 4) == Some(&[1, 0, 0, 0])).then_some(())?;
+            Some(Self(match count {
+                None => References::Implicit(terminal),
+                Some(count) => {
+                    if let Err(error) = super::reserve_om_retained_item(
+                        ctx,
+                        &mut references,
+                        "nx sketch references",
+                    ) {
+                        failure = Some(error);
+                        return None;
+                    }
+                    references.push(terminal);
+                    References::Explicit { count, references }
+                }
+            }))
         })();
-        if let Some(error) = failure { return Err(error); }
+        if let Some(error) = failure {
+            return Err(error);
+        }
         Ok(field)
     }
 
@@ -224,7 +236,10 @@ mod tests {
     };
 
     fn read_field(record: OperationPayload<'_>, start: usize) -> Option<SketchReferenceField> {
-        crate::test_support::with_decode_context(|ctx| SketchReferenceField::read(ctx, record, start)).unwrap()
+        crate::test_support::with_decode_context(|ctx| {
+            SketchReferenceField::read(ctx, record, start)
+        })
+        .unwrap()
     }
 
     #[test]
@@ -233,10 +248,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
         let error = crate::om::sketch_payload_references(&ctx, record).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
@@ -245,10 +263,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
         let error = crate::om::sketch_payload_references(&ctx, record).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
@@ -257,10 +278,13 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
         let record = OperationPayload::new(bytes, 0, "SKETCH").unwrap();
         let error = crate::om::sketch_payload_references(&ctx, record).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
@@ -311,9 +335,7 @@ mod tests {
             bytes.extend_from_slice(&[0xf0, 0x42]);
         }
         bytes.extend_from_slice(&[0, 0, 0xf0, 0x43, 1, 0, 0, 0]);
-        let field =
-            read_field(OperationPayload::new(&bytes, 100, "SKETCH").unwrap(), 0)
-                .unwrap();
+        let field = read_field(OperationPayload::new(&bytes, 100, "SKETCH").unwrap(), 0).unwrap();
         assert_eq!(
             field.declared_count(),
             SketchReferenceCount::from_count_byte(255)

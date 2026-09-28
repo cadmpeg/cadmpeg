@@ -72,7 +72,10 @@ pub(in crate::native) struct DataBlockTargetIndexRow {
 }
 
 /// Decode complete index rows from offset-store column storage.
-pub(in crate::native) fn data_block_index_rows(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockIndexRow>, CodecError> {
+pub(in crate::native) fn data_block_index_rows(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlockIndexRow>, CodecError> {
     project_column_rows(
         ctx,
         container,
@@ -165,7 +168,8 @@ pub(in crate::native) fn data_block_target_index_rows(
 }
 
 /// One owner for section framing, source locations and admitted row ordinals.
-fn project_column_rows<F, T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn project_column_rows<F, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     scan: impl Fn(&[u8], usize, usize, u64) -> Result<Vec<(usize, F)>, CodecError>,
     project: impl Fn(usize, usize, F, String, (String, u32)) -> T,

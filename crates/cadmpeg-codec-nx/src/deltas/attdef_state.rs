@@ -80,7 +80,11 @@ impl AttdefSlots {
         {
             return Err("references: active slots must be non-null");
         }
-        Ok(Self { references, active_count, slot_count })
+        Ok(Self {
+            references,
+            active_count,
+            slot_count,
+        })
     }
     pub(super) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
         if references.first() != Some(&1) {
