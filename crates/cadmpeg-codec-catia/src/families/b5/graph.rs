@@ -2006,14 +2006,9 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         if !is_targeted_geometry_class(frame.family, frame.class) {
             continue;
         }
-        let header = if frame.family == 0xa8 { 11 } else { 8 };
-        let record = B5Record {
-            offset: frame.start,
-            family: frame.family,
-            class: frame.class,
-            object_id: frame.object_id,
-            payload: bytes[frame.start + header..frame.end].to_vec(),
-        };
+        let Some(record) = record_from_frame(ctx, bytes, frame)? else { continue };
+        crate::resource::admit_map_entry(ctx, &mut candidates, &frame.object_id,
+            "catia_b5_targeted_geometry_candidates")?;
         candidates
             .entry(frame.object_id)
             .and_modify(|stored| {
@@ -2027,7 +2022,11 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
             })
             .or_insert(Some(record));
     }
-    let mut records = candidates.into_values().flatten().collect::<Vec<_>>();
+    let mut records = Vec::new();
+    for record in candidates.into_values().flatten() {
+        crate::resource::push(ctx, &mut records, record,
+            "catia_b5_targeted_geometry_records")?;
+    }
     records.sort_by_key(|record| record.offset);
     parse_from_records(ctx, bytes, &records, frames, false, refusal)
 }

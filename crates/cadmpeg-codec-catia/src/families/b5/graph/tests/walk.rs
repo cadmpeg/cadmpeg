@@ -12,7 +12,8 @@ use crate::families::b5::graph::{
     record_from_frame, records_from_frames, records_from_frames_budgeted,
     select_object_stream_population, topology_surface_references,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
-    targeted_geometry_graph, topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
+    targeted_geometry_graph, targeted_geometry_graph_from_frames,
+    topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
     typed_class_21_pcurves_from_records, typed_edge_records, typed_edge_records_from_records,
     typed_face_records, typed_face_records_from_records, typed_loop_records,
     typed_loop_records_from_records, typed_parameter_incidences,
@@ -767,6 +768,39 @@ fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
     assert_eq!(crate::test_support::with_service_context(|ctx| {
         topology_surface_references(ctx, &[record])
     }).expect("service budget"), std::collections::HashSet::from([9]));
+}
+
+#[test]
+fn targeted_geometry_record_candidates_refuse_each_collection_limit() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x18, 9, &[0x81, 0x89]);
+    let frames = crate::test_support::with_service_context(|ctx| {
+        collect_object_stream_frames(ctx, &bytes)
+    }).expect("service budget");
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        targeted_geometry_graph_from_frames(
+            ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_record_payload"));
+    for (limit, operation) in [
+        (2, "catia_b5_targeted_geometry_candidates"),
+        (3, "catia_b5_targeted_geometry_records"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            targeted_geometry_graph_from_frames(
+                ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    crate::test_support::with_service_context(|ctx| {
+        targeted_geometry_graph_from_frames(
+            ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+        )
+    }).expect("service budget");
 }
 
 #[test]
