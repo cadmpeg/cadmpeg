@@ -435,7 +435,11 @@ pub(crate) fn project_occurrences(
                 name: None,
                 visible: None,
                 link: None,
-                native_ref: Some(reference.id.clone()),
+                native_ref: Some(copy_string_charged(
+                    ctx,
+                    &reference.id,
+                    "copy F3D xref native reference",
+                )?),
             });
     }
     Ok(occurrences)
