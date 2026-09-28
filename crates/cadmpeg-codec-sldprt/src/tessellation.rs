@@ -1008,15 +1008,23 @@ pub(crate) fn assign_unique_surface_owners(
             }
         }
         if owners.len() > 1 {
-            owners.retain(|candidate| {
-                candidate.trim.as_ref().is_none_or(|trim| {
-                    trim.contains_mesh(
+            let mut trimmed = Vec::new();
+            for candidate in owners {
+                let keep = match candidate.trim.as_ref() {
+                    Some(trim) => trim.contains_mesh(
+                        ctx,
                         mesh,
                         candidate.inverse,
                         candidate.tolerance.max(quantization_tolerance),
-                    )
-                })
-            });
+                    )?,
+                    None => true,
+                };
+                if keep {
+                    ctx.reserve_collection_vec(&mut trimmed, 1, "collect SLDPRT trimmed tessellation owners")?;
+                    trimmed.push(candidate);
+                }
+            }
+            owners = trimmed;
         }
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
@@ -1109,11 +1117,23 @@ fn approximate_surface_owner(
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
     let best_deflection = fits[0].1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
-    fits.retain(|(index, _)| {
-        candidates[*index].trim.as_ref().is_none_or(|trim| {
-            trim.contains_mesh(mesh, candidates[*index].inverse, quantization_tolerance)
-        })
-    });
+    let mut trimmed = Vec::new();
+    for fit @ (index, _) in fits {
+        let keep = match candidates[index].trim.as_ref() {
+            Some(trim) => trim.contains_mesh(
+                ctx,
+                mesh,
+                candidates[index].inverse,
+                quantization_tolerance,
+            )?,
+            None => true,
+        };
+        if keep {
+            ctx.reserve_collection_vec(&mut trimmed, 1, "collect SLDPRT trimmed surface fits")?;
+            trimmed.push(fit);
+        }
+    }
+    let fits = trimmed;
     let [(index, deflection), rest @ ..] = fits.as_slice() else {
         return Ok(None);
     };
@@ -1152,7 +1172,7 @@ fn approximate_trimmed_surface_owner(
                 ) {
                     Ok(Some(measure)) => measure,
                     Ok(None) => return None,
-                    Err(limit) => return Some(Err(limit)),
+                    Err(limit) => return Some(Err(cadmpeg_core::CodecError::from(limit))),
                 };
                 max_residual = max_residual.max(measure.residual);
             }
@@ -1161,8 +1181,11 @@ fn approximate_trimmed_surface_owner(
             {
                 return None;
             }
-            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
-                .then_some(Ok((index, max_residual)))
+            match trim.contains_mesh(ctx, mesh, candidate.inverse, quantization_tolerance) {
+                Ok(true) => Some(Ok((index, max_residual))),
+                Ok(false) => None,
+                Err(limit) => Some(Err(limit)),
+            }
         })
     {
         let fit = outcome?;
@@ -1328,14 +1351,15 @@ enum AnalyticTrim {
 impl AnalyticTrim {
     fn contains_mesh(
         &self,
+        ctx: &DecodeContext<'_>,
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         match self {
-            Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Cylindrical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
-            Self::Conical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+            Self::Planar(trim) => trim.contains_mesh(ctx, mesh, inverse_body, tolerance),
+            Self::Cylindrical(trim) => Ok(trim.contains_mesh(mesh, inverse_body, tolerance)),
+            Self::Conical(trim) => Ok(trim.contains_mesh(mesh, inverse_body, tolerance)),
         }
     }
 }
@@ -1479,44 +1503,44 @@ impl ConicalTrim {
 impl PlanarTrim {
     fn contains_mesh(
         &self,
+        ctx: &DecodeContext<'_>,
         mesh: &cadmpeg_ir::tessellation::Tessellation,
         inverse_body: cadmpeg_ir::transform::Transform,
         tolerance: f64,
-    ) -> bool {
+    ) -> Result<bool, cadmpeg_core::CodecError> {
         let tolerance = tolerance + self.boundary_tolerance;
-        let Some(projected) = mesh
-            .vertices()
-            .iter()
-            .map(|point| {
-                inverse_body
-                    .apply_point(point.get())
-                    .map(|point| self.frame.project(point.get()))
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return false;
-        };
-        let holes = self
-            .holes
-            .iter()
-            .map(|hole| match hole {
+        let mut projected = Vec::new();
+        for point in mesh.vertices() {
+            ctx.charge_work(1, "project SLDPRT planar trim mesh vertex")?;
+            let Some(point) = inverse_body.apply_point(point.get()) else {
+                return Ok(false);
+            };
+            ctx.reserve_collection_vec(&mut projected, 1, "collect SLDPRT planar trim projections")?;
+            projected.push(self.frame.project(point.get()));
+        }
+        let mut holes = Vec::new();
+        for hole in &self.holes {
+            ctx.charge_work(1, "test SLDPRT planar trim hole")?;
+            let constraint = match hole {
                 PlanarHole::Polygon {
                     boundary,
                     triangles,
-                } => Some(HoleConstraint::Polygon {
+                } => HoleConstraint::Polygon {
                     boundary,
                     triangles,
-                }),
-                PlanarHole::Circle(hole) => chordal_hole_constraint(*hole, &projected, tolerance)
-                    .map(|(exclusion, boundary)| HoleConstraint::Circle {
-                        exclusion,
-                        boundary,
-                    }),
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(holes) = holes else {
-            return false;
-        };
+                },
+                PlanarHole::Circle(hole) => {
+                    let Some((exclusion, boundary)) =
+                        chordal_hole_constraint(ctx, *hole, &projected, tolerance)?
+                    else {
+                        return Ok(false);
+                    };
+                    HoleConstraint::Circle { exclusion, boundary }
+                }
+            };
+            ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim constraints")?;
+            holes.push(constraint);
+        }
         if projected.iter().any(|point| {
             self.outer.as_ref().is_some_and(|outer| !match outer {
                 PlanarOuter::Polygon(outer) => polygon_contains(outer, *point, tolerance),
@@ -1527,9 +1551,9 @@ impl PlanarTrim {
                 .iter()
                 .any(|hole| hole.contains_interior(*point, tolerance))
         }) {
-            return false;
+            return Ok(false);
         }
-        mesh.triangles().iter().all(|triangle| {
+        Ok(mesh.triangles().iter().all(|triangle| {
             let [Some(a), Some(b), Some(c)] =
                 triangle.map(|index| projected.get(index as usize).copied())
             else {
@@ -1538,7 +1562,7 @@ impl PlanarTrim {
             holes
                 .iter()
                 .all(|hole| !hole.crosses_triangle([a, b, c], tolerance))
-        })
+        }))
     }
 }
 
@@ -2707,53 +2731,59 @@ fn circular_outer_and_holes(
 }
 
 fn chordal_hole_constraint(
+    ctx: &DecodeContext<'_>,
     hole: CircularHole,
     points: &[Point2],
     tolerance: f64,
-) -> Option<(CircularHole, CircularHole)> {
-    let distances = points
-        .iter()
-        .map(|point| point_distance(*point, hole.center))
-        .collect::<Vec<_>>();
-    let minimum = distances.iter().copied().reduce(f64::min)?;
+) -> Result<Option<(CircularHole, CircularHole)>, cadmpeg_core::CodecError> {
+    let mut minimum = None::<f64>;
+    for point in points {
+        ctx.charge_work(1, "measure SLDPRT circular trim point")?;
+        let distance = point_distance(*point, hole.center);
+        minimum = Some(minimum.map_or(distance, |current| current.min(distance)));
+    }
+    let Some(minimum) = minimum else { return Ok(None); };
     if minimum >= hole.radius - tolerance {
-        return Some((hole, hole));
+        return Ok(Some((hole, hole)));
     }
 
-    let mut boundary_angles = points
-        .iter()
-        .zip(&distances)
-        .filter_map(|(point, distance)| {
-            ((*distance - hole.radius).abs() <= tolerance)
-                .then_some((point.v - hole.center.v).atan2(point.u - hole.center.u))
-        })
-        .collect::<Vec<_>>();
+    let mut boundary_angles = Vec::new();
+    for point in points {
+        ctx.charge_work(1, "scan SLDPRT circular trim boundary")?;
+        let distance = point_distance(*point, hole.center);
+        if (distance - hole.radius).abs() <= tolerance {
+            ctx.reserve_collection_vec(&mut boundary_angles, 1, "collect SLDPRT circular trim angles")?;
+            boundary_angles.push((point.v - hole.center.v).atan2(point.u - hole.center.u));
+        }
+    }
     boundary_angles.sort_by(f64::total_cmp);
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);
     if boundary_angles.len() < 3 {
-        return None;
+        return Ok(None);
     }
-    let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *boundary_angles.last()?;
+    let Some(last) = boundary_angles.last() else { return Ok(None); };
+    let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *last;
     let maximum_gap = boundary_angles
         .windows(2)
         .map(|pair| pair[1] - pair[0])
         .chain(std::iter::once(wrap_gap))
-        .reduce(f64::max)?;
+        .reduce(f64::max);
+    let Some(maximum_gap) = maximum_gap else { return Ok(None); };
     if maximum_gap > std::f64::consts::PI {
-        return None;
+        return Ok(None);
     }
     let maximum_sagitta = hole.radius * (1.0 - (maximum_gap / 2.0).cos());
     let inward_deflection = hole.radius - minimum;
     if inward_deflection > maximum_sagitta + tolerance {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         CircularHole {
             radius: hole.radius - maximum_sagitta,
             ..hole
         },
         hole,
-    ))
+    )))
 }
 
 fn triangle_crosses_hole(

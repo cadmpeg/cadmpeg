@@ -72,6 +72,17 @@ macro_rules! assign_unique_surface_owners {
     }};
 }
 
+macro_rules! planar_contains_mesh {
+    ($trim:expr, $mesh:expr, $tolerance:expr) => {{
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        $trim.contains_mesh(&ctx, $mesh, cadmpeg_ir::transform::Transform::identity(), $tolerance)
+            .expect("service profile admits planar trim")
+    }};
+}
+
 fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurfaceReference> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -1519,16 +1530,8 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
         [0, 1, 2],
     );
 
-    assert!(trim.contains_mesh(
-        &boundary_chord,
-        cadmpeg_ir::transform::Transform::identity(),
-        1.0e-9
-    ));
-    assert!(!trim.contains_mesh(
-        &crossing,
-        cadmpeg_ir::transform::Transform::identity(),
-        1.0e-9
-    ));
+    assert!(planar_contains_mesh!(trim, &boundary_chord, 1.0e-9));
+    assert!(!planar_contains_mesh!(trim, &crossing, 1.0e-9));
 }
 
 #[test]
@@ -1594,26 +1597,10 @@ fn polygonal_planar_hole_excludes_inner_face_mesh() {
         vec![[0, 1, 2]],
     );
 
-    assert!(!trim.contains_mesh(
-        &inner_face,
-        cadmpeg_ir::transform::Transform::identity(),
-        EPS_DISPLAY_QUANTIZATION
-    ));
-    assert!(trim.contains_mesh(
-        &outer_face,
-        cadmpeg_ir::transform::Transform::identity(),
-        EPS_DISPLAY_QUANTIZATION
-    ));
-    assert!(trim.contains_mesh(
-        &exterior_boundary_chord,
-        cadmpeg_ir::transform::Transform::identity(),
-        EPS_DISPLAY_QUANTIZATION
-    ));
-    assert!(!trim.contains_mesh(
-        &interior_boundary_chord,
-        cadmpeg_ir::transform::Transform::identity(),
-        EPS_DISPLAY_QUANTIZATION
-    ));
+    assert!(!planar_contains_mesh!(trim, &inner_face, EPS_DISPLAY_QUANTIZATION));
+    assert!(planar_contains_mesh!(trim, &outer_face, EPS_DISPLAY_QUANTIZATION));
+    assert!(planar_contains_mesh!(trim, &exterior_boundary_chord, EPS_DISPLAY_QUANTIZATION));
+    assert!(!planar_contains_mesh!(trim, &interior_boundary_chord, EPS_DISPLAY_QUANTIZATION));
 }
 
 #[test]

@@ -95,6 +95,10 @@ fn numerical_followup_arc_error_retains_the_sagitta_at_the_segment_cap() {
 
 #[test]
 fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let hole = CircularHole {
         center: Point2::new(0.0, 0.0),
         radius: 1.0,
@@ -109,17 +113,17 @@ fn chordal_hole_constraint_uses_the_boundary_sampling_sagitta() {
     let angle = std::f64::consts::PI / 6.0;
     chordal.push(Point2::new(0.9 * angle.cos(), 0.9 * angle.sin()));
     let (exclusion, boundary_circle) =
-        chordal_hole_constraint(hole, &chordal, EPS_DISPLAY_QUANTIZATION).unwrap();
+        chordal_hole_constraint(&ctx, hole, &chordal, EPS_DISPLAY_QUANTIZATION).unwrap().unwrap();
     assert_eq!(boundary_circle.radius, hole.radius);
     assert!(exclusion.radius < hole.radius);
     assert!(exclusion.radius > 0.8);
 
     let mut deep = boundary;
     deep.push(Point2::new(0.7 * angle.cos(), 0.7 * angle.sin()));
-    assert!(chordal_hole_constraint(hole, &deep, EPS_DISPLAY_QUANTIZATION).is_none());
+    assert!(chordal_hole_constraint(&ctx, hole, &deep, EPS_DISPLAY_QUANTIZATION).unwrap().is_none());
 
     let interior = vec![Point2::new(0.5, 0.0), Point2::new(0.0, 0.5)];
-    assert!(chordal_hole_constraint(hole, &interior, EPS_DISPLAY_QUANTIZATION).is_none());
+    assert!(chordal_hole_constraint(&ctx, hole, &interior, EPS_DISPLAY_QUANTIZATION).unwrap().is_none());
 }
 
 #[test]
