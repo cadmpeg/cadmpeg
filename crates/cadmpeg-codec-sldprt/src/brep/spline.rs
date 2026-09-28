@@ -902,7 +902,8 @@ pub(crate) fn scan_curve_carriers(
             descriptor.control_count,
             "decode Parasolid curve poles",
         )?;
-        let mut points = Vec::with_capacity(descriptor.control_count);
+        let mut points = Vec::new();
+        ctx.reserve_precharged_vec(&mut points, descriptor.control_count, "decode Parasolid curve poles")?;
         if descriptor.dimension == 4 {
             charge_items(
                 ctx,
@@ -911,6 +912,9 @@ pub(crate) fn scan_curve_carriers(
             )?;
         }
         let mut weights = (descriptor.dimension == 4).then(Vec::new);
+        if let Some(values) = &mut weights {
+            ctx.reserve_precharged_vec(values, descriptor.control_count, "decode Parasolid curve weights")?;
+        }
         for pole in control.chunks_exact(descriptor.dimension) {
             if pole.iter().any(|value| !value.is_finite()) {
                 points.clear();
@@ -961,6 +965,9 @@ pub(crate) fn scan_curve_carriers(
             }
         };
         charge_items(ctx, 1, "collect Parasolid curve carriers")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect Parasolid curve carriers", u64::MAX - 1, u64::MAX)
+        })?;
         out.entry(attr).or_insert(CurveCarrier {
             attr,
             offset: off,
@@ -1022,11 +1029,10 @@ fn surface_knot_values(
     let mut resolved = Vec::<SurfaceKnotValues>::new();
     let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
     for multiplicities in compact_u16_arrays(ctx, bytes, arrays, multiplicity_attr)? {
-        charge_items(ctx, 1, "group Parasolid knot multiplicities")?;
-        multiplicities_by_count
-            .entry(multiplicities.len())
-            .or_default()
-            .push(multiplicities);
+        reserve_map_key(ctx, &mut multiplicities_by_count, &multiplicities.len(), "index Parasolid knot multiplicity counts")?;
+        let group = multiplicities_by_count.entry(multiplicities.len()).or_default();
+        ctx.reserve_collection_vec(group, 1, "group Parasolid knot multiplicities")?;
+        group.push(multiplicities);
     }
     for unique in compact_f64_arrays(ctx, bytes, arrays, knot_attr)? {
         let Some(multiplicity_candidates) = multiplicities_by_count.get(&unique.len()) else {
@@ -1038,18 +1044,18 @@ fn surface_knot_values(
             else {
                 continue;
             };
-            charge_items(ctx, unique.len(), "copy Parasolid distinct knots")?;
-            charge_items(
-                ctx,
-                multiplicities.len(),
-                "copy Parasolid knot multiplicities",
-            )?;
+            let mut unique_copy = Vec::new();
+            ctx.reserve_collection_vec(&mut unique_copy, unique.len(), "copy Parasolid distinct knots")?;
+            unique_copy.extend_from_slice(unique);
+            let mut multiplicity_copy = Vec::new();
+            ctx.reserve_collection_vec(&mut multiplicity_copy, multiplicities.len(), "copy Parasolid knot multiplicities")?;
+            multiplicity_copy.extend_from_slice(multiplicities);
             let candidate = SurfaceKnotValues {
-                unique: unique.to_vec(),
-                multiplicities: multiplicities.to_vec(),
+                unique: unique_copy,
+                multiplicities: multiplicity_copy,
             };
             if !resolved.contains(&candidate) {
-                charge_items(ctx, 1, "collect Parasolid knot candidates")?;
+                ctx.reserve_collection_vec(&mut resolved, 1, "collect Parasolid knot candidates")?;
                 resolved.push(candidate);
             }
         }
@@ -1066,15 +1072,17 @@ pub(crate) fn scan_surface_carriers(
     refusals: &mut Vec<LossNote>,
 ) -> Result<HashMap<u16, SurfaceCarrier>, cadmpeg_core::CodecError> {
     let descriptors = scan_surface_descriptors(ctx, bytes)?;
-    charge_items(
-        ctx,
-        descriptors.len() * 5,
-        "collect Parasolid surface array references",
-    )?;
-    let compact_attrs = descriptors
-        .values()
-        .flat_map(|descriptor| descriptor.refs)
-        .collect();
+    let maximum_refs = descriptors.len().checked_mul(5).ok_or_else(|| {
+        ctx.refuse_codec_limit("collect Parasolid surface array references", u64::MAX - 1, u64::MAX)
+    })?;
+    charge_items(ctx, maximum_refs, "collect Parasolid surface array references")?;
+    let mut compact_attrs = HashSet::new();
+    compact_attrs.try_reserve(maximum_refs).map_err(|_| {
+        ctx.refuse_codec_limit("collect Parasolid surface array references", u64::MAX - 1, u64::MAX)
+    })?;
+    for descriptor in descriptors.values() {
+        compact_attrs.extend(descriptor.refs);
+    }
     let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
@@ -1172,7 +1180,8 @@ pub(crate) fn scan_surface_carriers(
             continue;
         }
         charge_items(ctx, expected_poles, "decode Parasolid surface poles")?;
-        let mut points = Vec::with_capacity(expected_poles);
+        let mut points = Vec::new();
+        ctx.reserve_precharged_vec(&mut points, expected_poles, "decode Parasolid surface poles")?;
         let dimension = if descriptor.rational {
             descriptor.dimension
         } else {
@@ -1182,6 +1191,9 @@ pub(crate) fn scan_surface_carriers(
             charge_items(ctx, expected_poles, "decode Parasolid surface weights")?;
         }
         let mut weights = (descriptor.rational).then(Vec::new);
+        if let Some(values) = &mut weights {
+            ctx.reserve_precharged_vec(values, expected_poles, "decode Parasolid surface weights")?;
+        }
         for pole in control.chunks_exact(dimension) {
             if pole.iter().any(|value| !value.is_finite()) {
                 points.clear();
@@ -1231,6 +1243,27 @@ pub(crate) fn scan_surface_carriers(
         }
         charge_items(ctx, descriptor.u_count, "admit Parasolid surface pole rows")?;
         charge_items(ctx, expected_poles, "admit Parasolid surface poles")?;
+        let mut pole_rows = Vec::new();
+        ctx.reserve_precharged_vec(&mut pole_rows, descriptor.u_count, "partition Parasolid surface pole rows")?;
+        for row in points.chunks(descriptor.v_count) {
+            let mut copy = Vec::new();
+            ctx.reserve_precharged_vec(&mut copy, row.len(), "partition Parasolid surface poles")?;
+            copy.extend_from_slice(row);
+            pole_rows.push(copy);
+        }
+        let weight_rows = if let Some(values) = weights {
+            let mut rows = Vec::new();
+            ctx.reserve_precharged_vec(&mut rows, descriptor.u_count, "partition Parasolid surface weight rows")?;
+            for row in values.chunks(descriptor.v_count) {
+                let mut copy = Vec::new();
+                ctx.reserve_precharged_vec(&mut copy, row.len(), "partition Parasolid surface weights")?;
+                copy.extend_from_slice(row);
+                rows.push(copy);
+            }
+            Some(rows)
+        } else {
+            None
+        };
         let nurbs = match NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 descriptor.u_degree,
@@ -1243,16 +1276,8 @@ pub(crate) fn scan_surface_carriers(
                 descriptor.v_periodic,
             ),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                points
-                    .chunks(descriptor.v_count as u32 as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights.map(|values| {
-                    values
-                        .chunks(descriptor.v_count as u32 as usize)
-                        .map(<[_]>::to_vec)
-                        .collect()
-                }),
+                pole_rows,
+                weight_rows,
             ),
             false,
         ) {
@@ -1268,6 +1293,9 @@ pub(crate) fn scan_surface_carriers(
             }
         };
         charge_items(ctx, 1, "collect Parasolid surface carriers")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect Parasolid surface carriers", u64::MAX - 1, u64::MAX)
+        })?;
         out.entry(attr).or_insert(SurfaceCarrier {
             attr,
             offset: off,
@@ -1462,7 +1490,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 102;
+        policy.limits.max_collection_items = 109;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("four surface poles exceed the remaining items");
@@ -1487,7 +1515,7 @@ mod tests {
         let bytes = crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 119;
+        policy.limits.max_collection_items = 126;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
         let error = scan_surface_carriers(&ctx, &bytes, &mut Vec::new())
             .expect_err("four surface weights exceed the remaining items");
@@ -1543,116 +1571,116 @@ mod tests {
     );
     plain_surface_boundary!(
         parasolid_compact_arrays_refuse_before_insertion,
-        6,
+        7,
         "scan Parasolid compact arrays"
     );
     plain_surface_boundary!(
         parasolid_scalar_arrays_refuse_before_insertion,
-        23,
+        28,
         "collect Parasolid scalar arrays"
     );
     plain_surface_boundary!(
         parasolid_integer_arrays_refuse_before_insertion,
-        27,
+        32,
         "collect Parasolid integer arrays"
     );
     plain_surface_boundary!(
         parasolid_scalar_values_refuse_before_candidate_copy,
-        41,
+        46,
         "copy Parasolid scalar array values"
     );
     plain_surface_boundary!(
         parasolid_scalar_candidates_refuse_before_insertion,
-        53,
+        58,
         "collect Parasolid scalar candidates"
     );
     plain_surface_boundary!(
         parasolid_compact_scalar_values_refuse_before_allocation,
-        54,
+        59,
         "decode Parasolid compact scalar values"
     );
     plain_surface_boundary!(
         parasolid_integer_values_refuse_before_candidate_copy,
-        70,
+        75,
         "copy Parasolid integer array values"
     );
     plain_surface_boundary!(
         parasolid_integer_candidates_refuse_before_insertion,
-        72,
+        77,
         "collect Parasolid integer candidates"
     );
     plain_surface_boundary!(
         parasolid_compact_integer_values_refuse_before_allocation,
-        73,
+        78,
         "decode Parasolid compact integer values"
     );
     plain_surface_boundary!(
         parasolid_knot_multiplicity_groups_refuse_before_insertion,
-        75,
+        81,
         "group Parasolid knot multiplicities"
     );
     plain_surface_boundary!(
         parasolid_distinct_knots_refuse_before_copy,
-        81,
+        87,
         "copy Parasolid distinct knots"
     );
     plain_surface_boundary!(
         parasolid_knot_multiplicities_refuse_before_copy,
-        83,
+        89,
         "copy Parasolid knot multiplicities"
     );
     plain_surface_boundary!(
         parasolid_knot_candidates_refuse_before_insertion,
-        85,
+        91,
         "collect Parasolid knot candidates"
     );
     plain_surface_boundary!(
         parasolid_surface_pole_rows_refuse_before_partition,
-        114,
+        121,
         "partition Parasolid surface pole rows"
     );
     plain_surface_boundary!(
         parasolid_surface_poles_refuse_before_partition,
-        116,
+        123,
         "partition Parasolid surface poles"
     );
     plain_surface_boundary!(
         parasolid_surface_pole_rows_refuse_before_admission,
-        120,
+        127,
         "admit Parasolid surface pole rows"
     );
     plain_surface_boundary!(
         parasolid_surface_poles_refuse_before_admission,
-        122,
+        129,
         "admit Parasolid surface poles"
     );
     plain_surface_boundary!(
         parasolid_surface_carriers_refuse_before_insertion,
-        126,
+        133,
         "collect Parasolid surface carriers"
     );
     surface_collection_boundary!(
         parasolid_surface_weight_rows_refuse_before_partition,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        137,
+        144,
         "partition Parasolid surface weight rows"
     );
     surface_collection_boundary!(
         parasolid_surface_weights_refuse_before_partition,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        139,
+        146,
         "partition Parasolid surface weights"
     );
     surface_collection_boundary!(
         parasolid_weighted_surface_rows_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        143,
+        150,
         "pair Parasolid weighted pole rows"
     );
     surface_collection_boundary!(
         parasolid_weighted_surface_poles_refuse_before_pairing,
         crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10),
-        145,
+        152,
         "pair Parasolid weighted poles"
     );
 
