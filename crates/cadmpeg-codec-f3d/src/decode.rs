@@ -3352,7 +3352,7 @@ impl<'a> F3dDecodeSession<'a> {
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
-                    populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
+                    populate_annotations(ctx, &self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(ctx, scan)?;
                 if mesh_projection.count > 0 {
                     apply_mesh_body_classification(ctx, &mut self.report, scan, mesh_projection.count)?;
@@ -3405,6 +3405,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native
             .store(ctx, self.ir.native.namespace_mut("f3d"))?;
         let annotations = populate_annotations(
+            ctx,
             &self.ir,
             scan,
             &self.native,
@@ -3483,7 +3484,7 @@ fn decode_scanned_document<'a>(
             unknowns,
         } = build_metadata_ir(ctx, scan)?;
         annotate_docstruct(ctx, &mut source_attributes, scan)?;
-        let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
+        let annotations = populate_annotations(ctx, &ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(ctx, scan)?;
         let mut report = crate::report::build_decode_report(
             ctx,
@@ -4623,29 +4624,45 @@ pub(crate) fn document_local_sha256_with_source(
     )?)
 }
 
+fn annotation_stream(
+    ctx: &DecodeContext<'_>,
+    entry_name: &str,
+) -> Result<StreamHandle, CodecError> {
+    ctx.charge_collection_items(1, "collect F3D annotation streams")?;
+    let name = crate::ids::native_scope_charged(ctx, entry_name)?;
+    let name = cadmpeg_ir::StreamName::try_from(name).map_err(CodecError::malformed)?;
+    Ok(StreamHandle::new(name))
+}
+
+fn note_native_annotation(
+    ctx: &DecodeContext<'_>,
+    annotations: &mut AnnotationBuilder,
+    stream: &StreamHandle,
+    id: &str,
+    tag: &str,
+) -> Result<(), CodecError> {
+    annotations.note_charged(ctx, id, stream, trailing_offset(id), tag)
+}
+
 fn populate_annotations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
     brep: Option<(&str, &[cadmpeg_asm::brep::annotations::AnnotationRecord])>,
     unknowns: &[UnknownRecord],
 ) -> Result<cadmpeg_ir::Annotations, cadmpeg_core::CodecError> {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
 
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
-        let stream = StreamHandle::new(
-            cadmpeg_ir::stream_name!("f3d:")
-                .with_suffix(crate::ids::identity_key_component(stream_name)),
-        );
+        let stream = annotation_stream(ctx, stream_name)?;
         for record in records {
             annotations
-                .note(&record.id, &stream, record.offset)
-                .tag(record.tag.as_str());
+                .note_charged(ctx, &record.id, &stream, record.offset, record.tag.as_str())?;
             for field in &record.derived_fields {
                 annotations
-                    .derived(&record.id, *field)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    .derived_charged(ctx, &record.id, field)?;
             }
         }
     }
@@ -4653,70 +4670,74 @@ fn populate_annotations(
     let mut constraints_by_native = HashMap::new();
     for constraint in &ir.model.sketch_constraints {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
-            constraints_by_native
-                .entry(native_ref)
-                .or_insert(constraint.id.as_str());
+            if !constraints_by_native.contains_key(native_ref) {
+                ctx.charge_collection_items(1, "index F3D annotation constraints")?;
+                constraints_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D annotation constraints", 0, 1))?;
+                constraints_by_native.insert(native_ref, constraint.id.as_str());
+            }
         }
     }
     let mut entities_by_native = HashMap::new();
     for entity in &ir.model.sketch_entities {
         if let Some(native_ref) = entity.native_ref.as_deref() {
-            entities_by_native
-                .entry(native_ref)
-                .or_insert(entity.id().as_str());
+            if !entities_by_native.contains_key(native_ref) {
+                ctx.charge_collection_items(1, "index F3D annotation entities")?;
+                entities_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D annotation entities", 0, 1))?;
+                entities_by_native.insert(native_ref, entity.id().as_str());
+            }
         }
     }
-    let planar_sketches = ir
-        .model
-        .sketches
-        .iter()
-        .map(|sketch| sketch.id.as_str())
-        .collect::<HashSet<_>>();
-    let spatial_sketches = ir
-        .model
-        .spatial_sketches
-        .iter()
-        .map(|sketch| sketch.id.as_str())
-        .collect::<HashSet<_>>();
+    let planar_sketches = collect_decode_set(
+        ctx,
+        ir.model.sketches.iter().map(|sketch| sketch.id.as_str()),
+        "index F3D annotation planar sketches",
+    )?;
+    let spatial_sketches = collect_decode_set(
+        ctx,
+        ir.model.spatial_sketches.iter().map(|sketch| sketch.id.as_str()),
+        "index F3D annotation spatial sketches",
+    )?;
 
+    ctx.charge_collection_items(1, "collect F3D annotation streams")?;
     let native_stream = StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
-    let mut note = |id: &str, tag: &str| {
-        let offset = trailing_offset(id);
-        annotations.note(id, &native_stream, offset).tag(tag);
-    };
+    macro_rules! note {
+        ($id:expr, $tag:expr $(,)?) => {{
+            note_native_annotation(ctx, &mut annotations, &native_stream, $id, $tag)?;
+        }};
+    }
     {
         for entity in &native.construction_recipes {
-            note(&entity.id, "construction_recipe");
+            note!(&entity.id, "construction_recipe");
         }
         for entity in &native.persistent_references {
-            note(&entity.id, "persistent_reference");
+            note!(&entity.id, "persistent_reference");
         }
         for entity in &native.lost_edge_references {
-            note(&entity.id, "EDGE_REFERENCE_LOST");
+            note!(&entity.id, "EDGE_REFERENCE_LOST");
         }
         for entity in &native.design_types {
-            note(&entity.id, "design_type");
+            note!(&entity.id, "design_type");
         }
         for entity in &native.design_parameters {
-            note(&entity.id, "design_parameter");
+            note!(&entity.id, "design_parameter");
         }
         for entity in &native.design_parameter_companions {
-            note(entity.id(), "design_parameter_companion");
+            note!(entity.id(), "design_parameter_companion");
         }
         for entity in &native.design_dimension_locus_pairs {
-            note(&entity.id, "design_dimension_locus_pair");
+            note!(&entity.id, "design_dimension_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_constraint");
+                note!(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_annotation_frames {
-            note(&entity.id, "design_dimension_annotation_frame");
+            note!(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_constraint");
+                note!(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_presentation_frames {
-            note(&entity.id, "design_dimension_presentation_frame");
+            note!(&entity.id, "design_dimension_presentation_frame");
             let projected = native
                 .design_parameter_companions
                 .iter()
@@ -4728,63 +4749,63 @@ fn populate_annotations(
                         .flatten()
                 });
             if let Some(projected) = projected {
-                note(projected, "sketch_constraint");
+                note!(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_locus_groups {
-            note(&entity.id, "design_dimension_locus_group");
+            note!(&entity.id, "design_dimension_locus_group");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_constraint");
+                note!(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_null_locus_pairs {
-            note(&entity.id, "design_dimension_null_locus_pair");
+            note!(&entity.id, "design_dimension_null_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_constraint");
+                note!(projected, "sketch_constraint");
             }
         }
         for entity in &native.design_parameter_owners {
-            note(entity.id(), "design_parameter_owner");
+            note!(entity.id(), "design_parameter_owner");
         }
         for entity in &native.design_parameter_scopes {
-            note(&entity.id, "design_parameter_scope");
+            note!(&entity.id, "design_parameter_scope");
         }
         for entity in &native.design_edge_operands {
-            note(&entity.id, "design_edge_operand");
+            note!(&entity.id, "design_edge_operand");
         }
         for entity in &native.design_face_operands {
-            note(&entity.id, "design_face_operand");
+            note!(&entity.id, "design_face_operand");
         }
         for entity in &native.design_face_source_groups {
-            note(&entity.id, "design_face_source_group");
+            note!(&entity.id, "design_face_source_group");
         }
         for entity in &native.design_sketch_placements {
-            note(&entity.id, "design_sketch_placement");
+            note!(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
-                note(planar.as_str(), "sketch");
+                note!(planar.as_str(), "sketch");
             }
             let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
-                note(spatial.as_str(), "spatial_sketch");
+                note!(spatial.as_str(), "spatial_sketch");
             }
         }
         for entity in &native.design_entity_headers {
-            note(&entity.id, "design_entity_header");
+            note!(&entity.id, "design_entity_header");
         }
         for entity in &native.design_record_headers {
-            note(&entity.id, "design_record_header");
+            note!(&entity.id, "design_record_header");
         }
         for entity in &native.design_body_members {
-            note(&entity.id, "BodiesRoot");
+            note!(&entity.id, "BodiesRoot");
         }
         for entity in &native.design_material_assignments {
-            note(&entity.id, "material_assignment");
+            note!(&entity.id, "material_assignment");
         }
         for entity in &native.sketch_relations {
-            note(&entity.id, "sketch_relation");
+            note!(&entity.id, "sketch_relation");
             if constraints_by_native.contains_key(entity.id.as_str()) {
-                note(
+                note!(
                     crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index)
                         .as_str(),
                     "sketch_constraint",
@@ -4792,56 +4813,56 @@ fn populate_annotations(
             }
         }
         for entity in &native.sketch_points {
-            note(&entity.id, "sketch_point");
+            note!(&entity.id, "sketch_point");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_entity");
+                note!(projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
-            note(&entity.id, "sketch_curve");
+            note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note(projected, "sketch_entity");
+                note!(projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_surfaces {
-            note(&entity.id, "sketch_surface");
+            note!(&entity.id, "sketch_surface");
         }
         for entity in &native.sketch_curve_links {
-            note(&entity.id, "sketch_curve_link");
+            note!(&entity.id, "sketch_curve_link");
         }
         for entity in &native.persistent_design_links {
-            note(&entity.id, "persistent_design_link");
+            note!(&entity.id, "persistent_design_link");
         }
         for entity in &native.persistent_subentity_tags {
-            note(&entity.id, "persistent_subentity_tag");
+            note!(&entity.id, "persistent_subentity_tag");
         }
         for entity in &native.act_entities {
-            note(entity.id(), "ACTEntity");
+            note!(entity.id(), "ACTEntity");
         }
         for entity in &native.act_guids {
-            note(entity.id(), "ACTGuid");
+            note!(entity.id(), "ACTGuid");
         }
         for entity in &native.act_registry_channels {
-            note(entity.id(), "ACTRegistryChannel");
+            note!(entity.id(), "ACTRegistryChannel");
         }
         for entity in &native.act_root_components {
-            note(entity.id(), "ACTRootComponent");
+            note!(entity.id(), "ACTRootComponent");
         }
         for entity in &native.act_table_references {
-            note(entity.id(), "ACTTableReference");
+            note!(entity.id(), "ACTTableReference");
         }
         for history in &native.asm_histories {
-            note(&history.id, "history_stream");
+            note!(&history.id, "history_stream");
             for state in &history.states {
-                note(&state.id, "delta_state");
+                note!(&state.id, "delta_state");
                 for board in &state.bulletin_boards {
-                    note(&board.id, "BulletinBoard");
+                    note!(&board.id, "BulletinBoard");
                     for change in &board.changes {
-                        note(&change.id, "entity_change");
+                        note!(&change.id, "entity_change");
                     }
                 }
                 for record in &state.records {
-                    note(&record.id, record.name());
+                    note!(&record.id, record.name());
                 }
             }
         }
@@ -4851,34 +4872,24 @@ fn populate_annotations(
         .entries
         .iter()
         .find(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
-        .map(|entry| {
-            StreamHandle::new(
-                cadmpeg_ir::stream_name!("f3d:")
-                    .with_suffix(crate::ids::identity_key_component(&entry.name)),
-            )
-        });
+        .map(|entry| annotation_stream(ctx, &entry.name))
+        .transpose()?;
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
             annotations
-                .note(appearance.id.as_str(), &stream, 0)
-                .tag(appearance.schema.as_deref().unwrap_or("appearance"));
+                .note_charged(ctx, appearance.id.as_str(), &stream, 0, appearance.schema.as_deref().unwrap_or("appearance"))?;
         }
     }
     for binding in &ir.model.appearance_bindings {
         annotations
-            .note(&binding.id, &native_stream, 0)
-            .tag("appearance_binding");
+            .note_charged(ctx, binding.id.as_str(), &native_stream, 0, "appearance_binding")?;
     }
     if brep.is_none() {
         if let Some(fallback) = container::select_fallback_brep(scan) {
-            let stream = StreamHandle::new(
-                cadmpeg_ir::stream_name!("f3d:")
-                    .with_suffix(crate::ids::identity_key_component(&fallback.name)),
-            );
+            let stream = annotation_stream(ctx, &fallback.name)?;
             for unknown in unknowns {
                 annotations
-                    .note(unknown.id().as_str(), &stream, unknown.offset())
-                    .tag("opaque_brep");
+                    .note_charged(ctx, unknown.id().as_str(), &stream, unknown.offset(), "opaque_brep")?;
             }
         }
     }
