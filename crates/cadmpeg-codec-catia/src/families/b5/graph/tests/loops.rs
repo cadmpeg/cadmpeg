@@ -1414,8 +1414,12 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         edge_parameter_incidences: &edge_parameter_incidences,
         parameter_incidences: &parameter_incidences,
     };
-    assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
-    let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        counted_references(ctx, &records[0], 0x05).expect("service budget")
+    }), Some(vec![30, 31]));
+    let incidence = crate::test_support::with_service_context(|ctx| {
+        parameter_incidence(ctx, &records[1]).expect("service budget")
+    }).expect("parameter incidence");
     assert_eq!(
         incidence.lanes,
         [B5IncidenceLane {
@@ -1440,7 +1444,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             [0.0, 5.0, 0.0]
         ) < 1e-24
     );
-    let coordinates = incidence_vertex_coordinates(
+    let coordinates = crate::test_support::with_service_context(|ctx| incidence_vertex_coordinates(
+        ctx,
         &BTreeMap::from([(40, [10, 11])]),
         &BTreeMap::from([(
             10,
@@ -1452,7 +1457,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         )]),
         &by_id,
         &geometry,
-    );
+    )).expect("service budget");
 
     assert_eq!(coordinates.len(), 1);
     assert!(
@@ -1470,7 +1475,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         .iter()
         .map(|record| (record.object_id, record))
         .collect::<HashMap<_, _>>();
-    let conflicting = incidence_vertex_coordinates(
+    let conflicting = crate::test_support::with_service_context(|ctx| incidence_vertex_coordinates(
+        ctx,
         &BTreeMap::from([(40, [10, 11])]),
         &BTreeMap::from([(
             10,
@@ -1482,7 +1488,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         )]),
         &conflicting_by_id,
         &geometry,
-    );
+    )).expect("service budget");
     assert!(conflicting.is_empty());
 
     drop(conflicting_by_id);
@@ -1491,7 +1497,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         .iter()
         .map(|record| (record.object_id, record))
         .collect::<HashMap<_, _>>();
-    let out_of_domain = incidence_vertex_coordinates(
+    let out_of_domain = crate::test_support::with_service_context(|ctx| incidence_vertex_coordinates(
+        ctx,
         &BTreeMap::from([(40, [10, 11])]),
         &BTreeMap::from([(
             10,
@@ -1503,7 +1510,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         )]),
         &out_of_domain_by_id,
         &geometry,
-    );
+    )).expect("service budget");
     assert!(out_of_domain.is_empty());
 }
 

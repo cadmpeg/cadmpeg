@@ -1299,12 +1299,13 @@ fn parse_from_records_with_class21(
             .get(&pcurve.surface)
             .and_then(|surface| parse_sphere_great_circle_pcurve(record, surface));
     }
-    let parameter_incidences: BTreeMap<u32, B5ParameterIncidence> = records
-        .iter()
-        .filter_map(|record| {
-            parameter_incidence(record).map(|incidence| (record.object_id, incidence))
-        })
-        .collect();
+    let mut parameter_incidences = BTreeMap::new();
+    for record in records {
+        if let Some(incidence) = parameter_incidence(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut parameter_incidences,
+                record.object_id, incidence, "catia_b5_graph_parameter_incidences")?;
+        }
+    }
     let edges: BTreeMap<u32, B5Edge> = records
         .iter()
         .filter(|record| record.class == 0x5e)
@@ -1382,11 +1383,12 @@ fn parse_from_records_with_class21(
         .map(|(&object_id, edge)| (object_id, edge.vertices))
         .collect();
     let native_vertex_coordinates = incidence_vertex_coordinates(
+        ctx,
         &native_edge_vertices,
         &vertex_incidence_links,
         by_id,
         &geometry,
-    );
+    )?;
     let bound_vertices = bind_native_vertices(
         &loops,
         &geometry,
@@ -2165,46 +2167,58 @@ struct B5PcurveContext<'a> {
 }
 
 fn incidence_vertex_coordinates(
+    ctx: &DecodeContext<'_>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     vertex_incidence_links: &BTreeMap<u32, B5VertexIncidenceLink>,
     by_id: &HashMap<u32, &B5Record>,
     geometry: &B5PcurveContext<'_>,
-) -> BTreeMap<u32, FinitePoint3> {
-    native_edges
-        .values()
-        .flatten()
-        .copied()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .filter_map(|vertex| {
-            let incidence = vertex_incidence_links.get(&vertex)?.incidence;
-            let incidence_records = counted_references(by_id.get(&incidence)?, 0x05)?;
-            let points = incidence_records
-                .into_iter()
-                .map(|incidence_record| {
-                    let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
-                    let points = incidence
-                        .lanes
-                        .into_iter()
-                        .map(|lane| lift_parameter_incidence(lane.curve, lane.parameter, geometry))
-                        .collect::<Option<Vec<_>>>()?;
-                    (!points.is_empty()).then_some(points)
-                })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>();
-            let point = *points.first()?;
-            let tolerance_squared = POINT_TOLERANCE * POINT_TOLERANCE;
-            points
-                .iter()
-                .all(|candidate| {
-                    distance_squared(coordinates(*candidate), coordinates(point))
-                        <= tolerance_squared
-                })
-                .then_some((vertex, point))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, FinitePoint3>, CodecError> {
+    let mut seen = HashSet::new();
+    let mut coordinates_by_vertex = BTreeMap::new();
+    for vertex in native_edges.values().flatten().copied() {
+        if !crate::resource::insert_set(ctx, &mut seen, vertex,
+            "catia_b5_incidence_vertex_seen")? {
+            continue;
+        }
+        let Some(link) = vertex_incidence_links.get(&vertex) else { continue };
+        let Some(roster_record) = by_id.get(&link.incidence) else { continue };
+        let Some(incidence_records) = counted_references(ctx, roster_record, 0x05)? else {
+            continue;
+        };
+        let mut first = None;
+        let mut valid = true;
+        let tolerance_squared = POINT_TOLERANCE * POINT_TOLERANCE;
+        'incidences: for incidence_record in incidence_records {
+            let Some(record) = by_id.get(&incidence_record) else { valid = false; break };
+            let Some(incidence) = parameter_incidence(ctx, record)? else {
+                valid = false;
+                break;
+            };
+            if incidence.lanes.is_empty() {
+                valid = false;
+                break;
+            }
+            for lane in incidence.lanes {
+                let Some(point) = lift_parameter_incidence(lane.curve, lane.parameter, geometry) else {
+                    valid = false;
+                    break 'incidences;
+                };
+                if let Some(reference) = first {
+                    if distance_squared(coordinates(point), coordinates(reference)) > tolerance_squared {
+                        valid = false;
+                        break 'incidences;
+                    }
+                } else {
+                    first = Some(point);
+                }
+            }
+        }
+        if let (true, Some(point)) = (valid, first) {
+            crate::resource::insert_btree_map(ctx, &mut coordinates_by_vertex,
+                vertex, point, "catia_b5_incidence_vertex_coordinates")?;
+        }
+    }
+    Ok(coordinates_by_vertex)
 }
 
 /// Evaluate one class-`06` curve/parameter pair at its native parameter
@@ -2250,42 +2264,52 @@ fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLin
     })
 }
 
-fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
-    (record.class == class).then_some(())?;
-    let (references, position) = wire::tokens::counted_refs(&record.payload, true)?;
-    (position == record.payload.len()).then_some(references)
+fn counted_references(
+    ctx: &DecodeContext<'_>,
+    record: &B5Record,
+    class: u8,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    if record.class != class { return Ok(None); }
+    let Some((references, position)) = wire::tokens::counted_refs(ctx, &record.payload, true)? else {
+        return Ok(None);
+    };
+    Ok((position == record.payload.len()).then_some(references))
 }
 
-fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
-    (record.class == 0x06).then_some(())?;
-    let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
+fn parameter_incidence(
+    ctx: &DecodeContext<'_>,
+    record: &B5Record,
+) -> Result<Option<B5ParameterIncidence>, CodecError> {
+    if record.class != 0x06 { return Ok(None); }
+    let Some(count) = record.payload.first().and_then(|lead| lead.checked_sub(0x80)) else {
+        return Ok(None);
+    };
+    let count = usize::from(count);
     let mut position = 1;
-    let references = (0..count)
-        .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()?;
-    (record.payload.get(position) == Some(&(0x80u8.checked_add(u8::try_from(count).ok()?)?)))
-        .then_some(())?;
+    let Some(references) = crate::resource::collect_options(
+        ctx,
+        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+        "catia_b5_parameter_incidence_references",
+    )? else { return Ok(None) };
+    let Some(expected) = u8::try_from(count).ok().and_then(|count| 0x80u8.checked_add(count)) else {
+        return Ok(None);
+    };
+    if record.payload.get(position) != Some(&expected) { return Ok(None); }
     position += 1;
-    let mut parameters = Vec::with_capacity(count);
-    let mut controls = Vec::with_capacity(count);
-    for _ in 0..count {
-        parameters.push(f64_le(&record.payload, position)?);
-        position += 8;
-        controls.push(wire::tokens::compact_uint(&record.payload, &mut position)?);
+    let mut lanes = Vec::new();
+    for curve in references {
+        let Some(parameter) = f64_le(&record.payload, position) else { return Ok(None) };
+        let Some(next) = position.checked_add(8) else { return Ok(None) };
+        position = next;
+        let Some(control) = wire::tokens::compact_uint(&record.payload, &mut position) else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut lanes, B5IncidenceLane { curve, parameter, control },
+            "catia_b5_parameter_incidence_lanes")?;
     }
-    (position == record.payload.len()).then_some(B5ParameterIncidence {
-        object_id: record.object_id,
-        lanes: references
-            .into_iter()
-            .zip(parameters)
-            .zip(controls)
-            .map(|((curve, parameter), control)| B5IncidenceLane {
-                curve,
-                parameter,
-                control,
-            })
-            .collect(),
-    })
+    Ok((position == record.payload.len()).then_some(B5ParameterIncidence {
+        object_id: record.object_id, lanes,
+    }))
 }
 
 fn implicit_pcurve_bindings(
@@ -2319,20 +2343,17 @@ fn implicit_pcurve_bindings(
             let Some(edge) = by_id.get(&occurrence[1]).and_then(|edge| parse_edge(edge)) else {
                 continue;
             };
-            let endpoint_incidence_contains = |reference_id| {
-                by_id
-                    .get(&reference_id)
-                    .and_then(|incidence| parameter_incidence(incidence))
-                    .is_some_and(|incidence| {
-                        incidence.lanes.iter().any(|lane| lane.curve == pcurve)
-                    })
+            let endpoint_incidence_contains = |reference_id| -> Result<bool, CodecError> {
+                let Some(record) = by_id.get(&reference_id) else { return Ok(false) };
+                Ok(parameter_incidence(ctx, record)?
+                    .is_some_and(|incidence| incidence.lanes.iter().any(|lane| lane.curve == pcurve)))
             };
             let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
                 matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)
             });
             if !(curve_wrapper_contains
-                || endpoint_incidence_contains(edge.parameter_incidences[0])
-                    && endpoint_incidence_contains(edge.parameter_incidences[1]))
+                || endpoint_incidence_contains(edge.parameter_incidences[0])?
+                    && endpoint_incidence_contains(edge.parameter_incidences[1])?)
             {
                 continue;
             }
@@ -6002,18 +6023,23 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_parameter_incidences_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_parameter_incidences_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_parameter_incidences_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5ParameterIncidence> {
-    records
-        .iter()
-        .filter_map(|record| {
-            parameter_incidence(record).map(|incidence| (record.object_id, incidence))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, B5ParameterIncidence>, CodecError> {
+    let mut incidences = BTreeMap::new();
+    for record in records {
+        if let Some(incidence) = parameter_incidence(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut incidences,
+                record.object_id, incidence, "catia_b5_typed_parameter_incidences")?;
+        }
+    }
+    Ok(incidences)
 }
 
 /// Read every structurally complete vertex-incidence roster independently of
@@ -6022,18 +6048,23 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_vertex_incidence_rosters_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_vertex_incidence_rosters_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, Vec<u32>> {
-    records
-        .iter()
-        .filter_map(|record| {
-            counted_references(record, 0x05).map(|members| (record.object_id, members))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, Vec<u32>>, CodecError> {
+    let mut rosters = BTreeMap::new();
+    for record in records {
+        if let Some(members) = counted_references(ctx, record, 0x05)? {
+            crate::resource::insert_btree_map(ctx, &mut rosters,
+                record.object_id, members, "catia_b5_typed_vertex_incidence_rosters")?;
+        }
+    }
+    Ok(rosters)
 }
 
 /// Read each face's leading surface reference independently of its loop grammar.

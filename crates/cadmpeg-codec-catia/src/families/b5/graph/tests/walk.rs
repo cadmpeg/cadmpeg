@@ -645,11 +645,15 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     );
     assert_eq!(
         typed_parameter_incidences(&bytes),
-        typed_parameter_incidences_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_parameter_incidences_from_records(ctx, &records).expect("service budget")
+        })
     );
     assert_eq!(
         typed_vertex_incidence_rosters(&bytes),
-        typed_vertex_incidence_rosters_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_vertex_incidence_rosters_from_records(ctx, &records).expect("service budget")
+        })
     );
 }
 
@@ -1905,13 +1909,14 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     payload.push(0x15);
     payload.extend_from_slice(&2.5f64.to_le_bytes());
     payload.push(0x2d);
-    let incidence = parameter_incidence(&B5Record {
+    let incidence = crate::test_support::with_service_context(|ctx| parameter_incidence(ctx, &B5Record {
         offset: 0,
         family: 0xb5,
         class: 0x06,
         object_id: 17,
         payload,
-    })
+    }))
+    .expect("service budget")
     .expect("parameter incidence");
 
     assert_eq!(incidence.object_id, 17);
@@ -1930,6 +1935,56 @@ fn parameter_incidence_retains_aligned_compact_controls() {
             },
         ]
     );
+}
+
+#[test]
+fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
+    let roster = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x05,
+        object_id: 18,
+        payload: vec![0x82, 0x89, 0x8a],
+    };
+    let mut payload = vec![0x82, 0x89, 0x8a, 0x82];
+    payload.extend_from_slice(&1.25f64.to_le_bytes());
+    payload.push(0x15);
+    payload.extend_from_slice(&2.5f64.to_le_bytes());
+    payload.push(0x2d);
+    let parameter = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x06,
+        object_id: 17,
+        payload,
+    };
+    for (limit, operation) in [
+        (1, "catia_b5_parameter_incidence_references"),
+        (2, "catia_b5_parameter_incidence_lanes"),
+        (4, "catia_b5_typed_parameter_incidences"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    for (limit, operation) in [
+        (1, "catia_wire_counted_references"),
+        (2, "catia_b5_typed_vertex_incidence_rosters"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
+    }).expect("service budget")[&17].lanes.len(), 2);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
+    }).expect("service budget")[&18], [9, 10]);
 }
 
 #[test]
