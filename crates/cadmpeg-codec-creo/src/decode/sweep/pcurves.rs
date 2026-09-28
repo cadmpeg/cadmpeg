@@ -272,7 +272,7 @@ pub(in super::super) fn revolved_brep_surface(
         let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
             return Ok(None);
         };
-        let Some(placed_directrix) = placed_section_nurbs(transform, &directrix) else {
+        let Some(placed_directrix) = placed_section_nurbs(ctx, transform, &directrix)? else {
             return Ok(None);
         };
         let Some(surface) = revolved_nurbs_surface(ctx, &placed_directrix, axis, record, refusal)? else {

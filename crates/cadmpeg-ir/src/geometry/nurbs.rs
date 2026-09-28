@@ -1409,6 +1409,37 @@ impl NurbsCurve {
         })
     }
 
+    /// Copy a curve after charging its knot and pole lanes, then map the
+    /// copied positions without another allocation. A non-finite result leaves
+    /// the source untouched and returns no curve.
+    pub fn map_control_points_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+        mut map: impl FnMut(Point3) -> Point3,
+    ) -> Result<Option<Self>, CodecError> {
+        let mut mapped = self.copy_admitted(ctx, operation)?;
+        match &mut mapped.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for point in points {
+                    let Some(next) = FinitePoint3::new(map(point.get())) else {
+                        return Ok(None);
+                    };
+                    *point = next;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for pole in points {
+                    let Some(next) = FinitePoint3::new(map(pole.point.get())) else {
+                        return Ok(None);
+                    };
+                    pole.point = next;
+                }
+            }
+        }
+        Ok(Some(mapped))
+    }
+
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

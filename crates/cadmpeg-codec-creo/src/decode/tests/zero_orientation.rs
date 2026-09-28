@@ -1370,7 +1370,9 @@ fn nonplanar_saved_spline_places_as_model_curve() {
     )
     .expect("valid local NURBS");
 
-    let placed = placed_section_nurbs(&transform, &local).expect("finite placed NURBS");
+    let placed = crate::decode::with_test_decode_ctx(|ctx| {
+        placed_section_nurbs(ctx, &transform, &local)
+    }).expect("placement resources").expect("finite placed NURBS");
 
     assert_eq!(placed.control_points()[0], Point3::new(11.0, 17.0, 32.0));
     assert_eq!(placed.control_points()[1], Point3::new(14.0, 14.0, 35.0));

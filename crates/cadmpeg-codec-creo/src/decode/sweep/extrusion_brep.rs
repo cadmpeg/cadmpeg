@@ -265,36 +265,33 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
-        let unprojectable = profiles
+        let mut unprojectable = false;
+        for (entity_index, entity) in profiles
             .iter()
             .flat_map(super::profiles::ValidatedProfile::entities)
             .enumerate()
-            .any(|(entity_index, entity)| {
-                let geometry = entity.geometry();
-                let reversed = entity.reversed();
-                let start = entity.start();
-                let end = entity.end();
-                geometry
-                    .to_sketch()
-                    .and_then(|sketch_geometry| {
-                        extrusion_brep_side_surface(
-                            ctx,
-                            transform,
-                            &sketch_geometry,
-                            reversed,
-                            start,
-                            end,
-                            span,
-                            &mut crate::lane_refusal::LaneRefusalContext::new(
-                                &format_args!(
-                                    "extrusion feature {feature_id} profile entity {entity_index}"
-                                ),
-                                &mut refusal,
-                            ),
-                        )
-                    })
-                    .is_none()
-            });
+        {
+            let Some(sketch_geometry) = entity.geometry().to_sketch() else {
+                unprojectable = true;
+                break;
+            };
+            if extrusion_brep_side_surface(
+                ctx,
+                transform,
+                &sketch_geometry,
+                entity.reversed(),
+                entity.start(),
+                entity.end(),
+                span,
+                &mut crate::lane_refusal::LaneRefusalContext::new(
+                    &format_args!("extrusion feature {feature_id} profile entity {entity_index}"),
+                    &mut refusal,
+                ),
+            )?.is_none() {
+                unprojectable = true;
+                break;
+            }
+        }
         let records = refusal.take_records_checked()?;
         if !records.is_empty() {
             // The probe states every side before the first record of this body
@@ -496,17 +493,17 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             else {
                                 continue;
                             };
-                            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
+                            let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
                                 continue;
                             };
                             let Some(translated) = translated_nurbs_curve(
-                                &placed,
+                                ctx, &placed,
                                 [
                                     offset * transform.normal()[0],
                                     offset * transform.normal()[1],
                                     offset * transform.normal()[2],
                                 ],
-                            ) else {
+                            )? else {
                                 continue;
                             };
                             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated))
@@ -825,7 +822,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     profile[index].end(),
                     span,
                     &mut diagnostics,
-                );
+                )?;
                 let records = refusal.take_records_checked()?;
                 if !records.is_empty() {
                     // The shell of this body already declares this side face,

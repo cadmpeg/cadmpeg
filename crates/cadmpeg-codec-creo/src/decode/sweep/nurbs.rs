@@ -587,36 +587,27 @@ pub(in super::super) fn interpolation_spline_surface(
 }
 
 pub(in super::super) fn placed_section_nurbs(
+    ctx: &DecodeContext<'_>,
     transform: &crate::placement::FeatureSectionTransform,
     nurbs: &NurbsCurve,
-) -> Option<NurbsCurve> {
-    let mut placed = nurbs.clone();
-    placed
-        .edit_control_points(|point| {
-            let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
-            *point = Point3::from(model);
-            Ok(())
-        })
-        .ok()?;
-    Some(placed)
+) -> Result<Option<NurbsCurve>, CodecError> {
+    nurbs.map_control_points_admitted(ctx, "creo placed section NURBS curve", |point| {
+        Point3::from(section_xyz_in_model(transform, [point.x, point.y, point.z]))
+    })
 }
 
 pub(super) fn translated_nurbs_curve(
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     translation: [f64; 3],
-) -> Option<NurbsCurve> {
-    let mut translated = curve.clone();
-    translated
-        .edit_control_points(|point| {
-            *point = Point3::new(
-                point.x + translation[0],
-                point.y + translation[1],
-                point.z + translation[2],
-            );
-            Ok(())
-        })
-        .ok()?;
-    Some(translated)
+) -> Result<Option<NurbsCurve>, CodecError> {
+    curve.map_control_points_admitted(ctx, "creo translated NURBS curve", |point| {
+        Point3::new(
+            point.x + translation[0],
+            point.y + translation[1],
+            point.z + translation[2],
+        )
+    })
 }
 
 pub(in super::super) fn extruded_nurbs_surface(
@@ -762,33 +753,44 @@ pub(in super::super) fn extrusion_brep_side_surface(
     end: [f64; 2],
     span: ExtrusionSpan,
     diagnostics: &mut crate::lane_refusal::LaneRefusalContext<'_, '_>,
-) -> Option<SurfaceGeometry> {
+) -> Result<Option<SurfaceGeometry>, CodecError> {
     if matches!(
         geometry.definition(),
         SketchGeometryDefinition::Nurbs { .. }
     ) {
-        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
+        let Some(directrix) = oriented_sketch_nurbs_curve(geometry, reversed) else {
+            return Ok(None);
+        };
         let lower_translation = transform.normal().map(|value| value * span.lower());
         let sweep = transform
             .normal()
             .map(|value| value * (span.upper() - span.lower()));
-        let placed = placed_section_nurbs(transform, &directrix)?;
-        let translated = translated_nurbs_curve(&placed, lower_translation)?;
-        return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            extruded_nurbs_surface(ctx, &translated, sweep, diagnostics.record, diagnostics.refusals)?,
-        )));
+        let Some(placed) = placed_section_nurbs(ctx, transform, &directrix)? else {
+            return Ok(None);
+        };
+        let Some(translated) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+            return Ok(None);
+        };
+        let Some(surface) = extruded_nurbs_surface(
+            ctx, &translated, sweep, diagnostics.record, diagnostics.refusals,
+        ) else {
+            return Ok(None);
+        };
+        return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))));
     }
     let section_geometry = match geometry.definition() {
         SketchGeometryDefinition::Line { .. } => {
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            let Ok(line) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),
-            })
-            .ok()?
+            }) else {
+                return Ok(None);
+            };
+            line
         }
         _ => geometry.clone(),
     };
-    extruded_geometry_surface(transform, &section_geometry)
+    Ok(extruded_geometry_surface(transform, &section_geometry))
 }
 
 pub(in super::super) fn signed_unit_chart(
@@ -1105,7 +1107,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        extruded_nurbs_surface, oriented_sketch_nurbs_curve, signed_unit_chart,
+        extruded_nurbs_surface, oriented_sketch_nurbs_curve, placed_section_nurbs, signed_unit_chart,
         translated_nurbs_curve,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1278,8 +1280,58 @@ mod tests {
         )
         .expect("finite NURBS fixture");
 
-        assert!(translated_nurbs_curve(&curve, [f64::MAX, 0.0, 0.0]).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            translated_nurbs_curve(ctx, &curve, [f64::MAX, 0.0, 0.0])
+        }).expect("translation resources").is_none());
         assert_eq!(curve.control_points()[0], Point3::new(f64::MAX, 0.0, 0.0));
+    }
+
+    #[test]
+    fn placed_section_nurbs_refuses_knot_and_pole_limits() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
+            None,
+            false,
+        ).expect("finite curve");
+        let transform = crate::placement::FeatureSectionTransform::new(
+            1, Some(1), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
+        ).expect("section frame");
+        for limit in [0, 4] {
+            let error = with_collection_limit(limit, |ctx| {
+                placed_section_nurbs(ctx, &transform, &curve)
+            }).expect_err("knot or pole copy exceeds limit");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.operation == "creo placed section NURBS curve"
+                    && resource.dimension == ResourceDimension::CollectionItems));
+        }
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            placed_section_nurbs(ctx, &transform, &curve)
+        }).expect("service resources").is_some());
+    }
+
+    #[test]
+    fn translated_nurbs_refuses_knot_and_pole_limits() {
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(1.0, 2.0, 0.0), Point3::new(3.0, 4.0, 0.0)],
+            None,
+            false,
+        ).expect("finite curve");
+        for limit in [0, 4] {
+            let error = with_collection_limit(limit, |ctx| {
+                translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
+            }).expect_err("knot or pole copy exceeds limit");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.operation == "creo translated NURBS curve"
+                    && resource.dimension == ResourceDimension::CollectionItems));
+        }
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| {
+            translated_nurbs_curve(ctx, &curve, [0.0, 0.0, 2.0])
+        }).expect("service resources").expect("finite translation").control_points(),
+            vec![Point3::new(1.0, 2.0, 2.0), Point3::new(3.0, 4.0, 2.0)]);
     }
     fn planar_or_offset_spline(z: f64) -> crate::feature::definitions::FeatureSavedSpline {
         crate::feature::definitions::FeatureSavedSpline {
