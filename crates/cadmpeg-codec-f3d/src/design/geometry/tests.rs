@@ -1880,3 +1880,18 @@ fn circular_arc_profile_segment_refuses_collection_limit() {
             if failure.operation == "f3d circular arc profile segment"
     ));
 }
+
+#[test]
+fn certified_profile_tubes_refuse_collection_limit() {
+    let (entities, profile) = single_line_profile();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::certified_profile_loop(&profile, &entities,
+            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d certified profile tubes"
+    ));
+}
