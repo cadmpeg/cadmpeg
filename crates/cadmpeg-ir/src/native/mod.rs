@@ -735,6 +735,13 @@ impl NativeNamespace {
                     });
                 }
             };
+            typed.try_reserve(1).map_err(|_| {
+                NativeConvertError::Resource(ctx.refuse_codec_limit(
+                    "load typed native record",
+                    0,
+                    1,
+                ))
+            })?;
             typed.push(value);
         }
         Ok(typed)
