@@ -595,103 +595,92 @@ fn slot_curve_reference_cells(payload: &[u8], offset: usize) -> Option<SlotRefer
 }
 
 pub(super) fn resolve_slot_marker_arcs(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     markers: &[&SketchInputEntity],
     entities: &mut [SketchEntity],
     tolerance: f64,
-) {
+) -> Result<(), CodecError> {
     let Some((curve_indices, center_indices)) = markers.iter().find_map(|marker| {
         let offset = usize::try_from(marker.offset()).ok()?;
         slot_curve_and_center_indices(payload, offset)
     }) else {
-        return;
+        return Ok(());
     };
-    let mut curves = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.coordinates_m.is_none()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                )
-        })
-        .collect::<Vec<_>>();
+    let mut curves = Vec::new();
+    for marker in markers {
+        if marker.coordinates_m.is_none()
+            && matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)
+        {
+            ctx.reserve_collection_vec(&mut curves, 1, "collect SLDPRT slot curves")?;
+            curves.push(*marker);
+        }
+    }
+    let curve_count = cadmpeg_core::decode::u64_from_index(curves.len());
+    let curve_sort_work = curve_count
+        .checked_mul(u64::from(usize::BITS - curves.len().leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot curves", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(curve_sort_work, "sort SLDPRT slot curves")?;
     curves.sort_unstable_by_key(|marker| marker.offset());
     if curves.len() != 4 {
-        return;
+        return Ok(());
     }
-    let Some(cycle) = curve_indices
-        .map(|index| curves.get(index).copied())
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
+    let [Some(first), Some(second), Some(third), Some(fourth)] =
+        curve_indices.map(|index| curves.get(index).copied()) else {
+        return Ok(());
     };
-    if cycle
-        .iter()
-        .map(|marker| marker.id())
-        .collect::<HashSet<_>>()
-        .len()
-        != 4
-    {
-        return;
+    let cycle = [first, second, third, fourth];
+    if cycle.iter().enumerate().any(|(index, marker)| {
+        cycle[index + 1..].iter().any(|other| marker.id() == other.id())
+    }) {
+        return Ok(());
     }
-    let mut points = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        })
-        .collect::<Vec<_>>();
+    let mut points = Vec::new();
+    for marker in markers {
+        if marker.coordinates_m.is_some()
+            && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+        {
+            ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT slot points")?;
+            points.push(*marker);
+        }
+    }
+    let point_count = cadmpeg_core::decode::u64_from_index(points.len());
+    let point_sort_work = point_count
+        .checked_mul(u64::from(usize::BITS - points.len().leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT slot points", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(point_sort_work, "sort SLDPRT slot points")?;
     points.sort_unstable_by_key(|marker| marker.offset());
-    let Some(center_refs) = center_indices
-        .map(|index| points.get(index).map(|point| point.id()))
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
+    let [Some(first_center), Some(second_center)] =
+        center_indices.map(|index| points.get(index).map(|point| point.id())) else {
+        return Ok(());
     };
+    let center_refs = [first_center, second_center];
     if center_refs[0] == center_refs[1] {
-        return;
+        return Ok(());
     }
-    let by_native_ref = entities
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entity)| Some((entity.native_ref.as_deref()?, index)))
-        .collect::<HashMap<_, _>>();
-    let Some(cycle_entities) = cycle
-        .iter()
-        .map(|marker| by_native_ref.get(marker.id()).copied())
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
+    let lookup_work = cadmpeg_core::decode::u64_from_index(entities.len())
+        .checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("find SLDPRT slot curve entities", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(lookup_work, "find SLDPRT slot curve entities")?;
+    let [Some(first), Some(second), Some(third), Some(fourth)] = cycle.map(|marker| {
+        entities.iter().rposition(|entity| entity.native_ref.as_deref() == Some(marker.id()))
+    }) else {
+        return Ok(());
     };
-    let native_arcs = cycle_entities
-        .iter()
-        .copied()
-        .filter(|index| {
+    let cycle_entities = [first, second, third, fourth];
+    let mut native_arcs = cycle_entities.iter().filter(|index| {
             matches!((
-                entities[*index].geometry).definition(),
+                entities[**index].geometry).definition(),
                 SketchGeometryDefinition::Native { ref native_kind }
                     if native_kind == "sldprt:marker-geometry:2"
             )
-        })
-        .collect::<Vec<_>>();
-    let resolved_arcs = cycle_entities
-        .iter()
-        .copied()
-        .filter(|index| {
+        });
+    let mut resolved_arcs = cycle_entities.iter().filter(|index| {
             matches!(
-                (entities[*index].geometry).definition(),
+                (entities[**index].geometry).definition(),
                 SketchGeometryDefinition::Arc { .. }
             )
-        })
-        .collect::<Vec<_>>();
+        });
     let lines = cycle_entities
         .iter()
         .copied()
@@ -702,26 +691,29 @@ pub(super) fn resolve_slot_marker_arcs(
             )
         })
         .count();
-    let ([target], [resolved_arc]) = (native_arcs.as_slice(), resolved_arcs.as_slice()) else {
-        return;
+    let (Some(target), Some(resolved_arc)) = (native_arcs.next(), resolved_arcs.next()) else {
+        return Ok(());
     };
+    if native_arcs.next().is_some() || resolved_arcs.next().is_some() {
+        return Ok(());
+    }
     if lines != 2 {
-        return;
+        return Ok(());
     }
     let Some(target_position) = cycle_entities
         .iter()
         .position(|candidate| candidate == target)
     else {
-        return;
+        return Ok(());
     };
     let Some(resolved_position) = cycle_entities
         .iter()
         .position(|candidate| candidate == resolved_arc)
     else {
-        return;
+        return Ok(());
     };
     if (target_position + 2) % 4 != resolved_position {
-        return;
+        return Ok(());
     }
     let endpoint_refs = |index: usize| {
         let refs = entities[index].endpoint_refs.as_slice();
@@ -733,69 +725,81 @@ pub(super) fn resolve_slot_marker_arcs(
     let endpoint_not_shared = |entity: usize, other: usize| {
         let entity = endpoint_refs(entity)?;
         let other = endpoint_refs(other)?;
-        let unique = entity
+        let mut unique = entity
             .into_iter()
-            .filter(|endpoint| !other.contains(endpoint))
-            .collect::<Vec<_>>();
-        let [endpoint] = unique.as_slice() else {
-            return None;
-        };
-        Some(*endpoint)
+            .filter(|endpoint| !other.contains(endpoint));
+        let endpoint = unique.next()?;
+        unique.next().is_none().then_some(endpoint)
     };
     let previous = cycle_entities[(target_position + 3) % 4];
     let previous_other = cycle_entities[(target_position + 2) % 4];
     let next = cycle_entities[(target_position + 1) % 4];
     let next_other = cycle_entities[(target_position + 2) % 4];
     let Some(start_ref) = endpoint_not_shared(previous, previous_other) else {
-        return;
+        return Ok(());
     };
     let Some(end_ref) = endpoint_not_shared(next, next_other) else {
-        return;
+        return Ok(());
     };
     if start_ref == end_ref {
-        return;
+        return Ok(());
     }
-    let point_positions = entities
-        .iter()
-        .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.as_deref()?, position.get()))
+    let point_lookup_work = cadmpeg_core::decode::u64_from_index(entities.len())
+        .checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("find SLDPRT slot point entities", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(point_lookup_work, "find SLDPRT slot point entities")?;
+    let point_position = |reference: &str| {
+        entities.iter().rev().find_map(|entity| {
+            if entity.native_ref.as_deref() != Some(reference) {
+                return None;
             }
-            _ => None,
+            match *entity.geometry.definition() {
+                SketchGeometryDefinition::Point { position } => Some(position.get()),
+                _ => None,
+            }
         })
-        .collect::<HashMap<_, _>>();
+    };
     let (Some(start), Some(end)) = (
-        point_positions.get(start_ref).copied(),
-        point_positions.get(end_ref).copied(),
+        point_position(start_ref),
+        point_position(end_ref),
     ) else {
-        return;
+        return Ok(());
     };
-    let Some(centers) = center_refs
-        .iter()
-        .map(|reference| point_positions.get(reference).copied())
-        .collect::<Option<Vec<_>>>()
-    else {
-        return;
+    let [Some(first_center), Some(second_center)] = center_refs.map(point_position) else {
+        return Ok(());
     };
+    let centers = [first_center, second_center];
     let SketchGeometryDefinition::Arc { center: used, .. } =
         *(entities[*resolved_arc].geometry).definition()
     else {
-        return;
+        return Ok(());
     };
-    let remaining = centers
+    let mut remaining = centers
         .into_iter()
         .filter(|center| {
             !same_dimension_length(center.u, used.u) || !same_dimension_length(center.v, used.v)
-        })
-        .collect::<Vec<_>>();
-    let [center] = remaining.as_slice() else {
-        return;
+        });
+    let Some(center) = remaining.next() else {
+        return Ok(());
     };
-    let Some(geometry) = minor_arc_geometry(start, end, *center, tolerance) else {
-        return;
+    if remaining.next().is_some() {
+        return Ok(());
+    }
+    let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
+        return Ok(());
     };
-    entities[*target].endpoint_refs = vec![start_ref.to_string(), end_ref.to_string()];
+    let mut endpoint_refs = Vec::new();
+    for reference in [start_ref, end_ref] {
+        let reference = ctx.format_retained(
+            format_args!("{reference}"),
+            "copy SLDPRT slot endpoint identity",
+        )?;
+        ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT slot endpoints")?;
+        endpoint_refs.push(reference);
+    }
+    entities[*target].endpoint_refs = endpoint_refs;
     entities[*target].geometry = geometry;
+    Ok(())
 }
 
 fn closed_cycle_marker_arc_geometry(
