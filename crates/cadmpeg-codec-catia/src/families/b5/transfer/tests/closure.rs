@@ -10,7 +10,6 @@ use super::super::edges::{
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc, revolve_nurbs};
-use super::super::vertices::transfer_vertex_tolerances;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
@@ -30,6 +29,18 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn transfer_vertex_tolerances(
+    graph: &B5Graph,
+    supports: &super::super::B5SupportPlan,
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
+) -> BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports,
+            surfaces, pcurves)
+    }).expect("service budget")
+}
 
 fn referenced_surface_ids(
     roots: impl IntoIterator<Item = u32>,

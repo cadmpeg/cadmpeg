@@ -20,12 +20,17 @@ use crate::math::distance;
 const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 pub(super) fn transfer_vertex_tolerances(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> BTreeMap<usize, PositiveReal> {
-    let mut tolerances = graph.vertex_tolerances.clone();
+) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
+    let mut tolerances = BTreeMap::new();
+    for (&vertex, &tolerance) in &graph.vertex_tolerances {
+        crate::resource::insert_btree_map(ctx, &mut tolerances, vertex, tolerance,
+            "catia_b5_transfer_vertex_tolerances")?;
+    }
     for (&edge, supports) in supports {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {
             continue;
@@ -58,8 +63,11 @@ pub(super) fn transfer_vertex_tolerances(
                 else {
                     continue;
                 };
+                let index = vertex.combined_index(graph.vertices.raw_points().len());
+                crate::resource::admit_btree_entry(ctx, &tolerances, &index,
+                    "catia_b5_transfer_vertex_tolerances")?;
                 tolerances
-                    .entry(vertex.combined_index(graph.vertices.raw_points().len()))
+                    .entry(index)
                     .and_modify(|tolerance| {
                         if candidate > *tolerance {
                             *tolerance = candidate;
@@ -69,7 +77,7 @@ pub(super) fn transfer_vertex_tolerances(
             }
         }
     }
-    tolerances
+    Ok(tolerances)
 }
 
 /// Emit the points and vertices for every endpoint used by a transferred edge.

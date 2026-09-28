@@ -10,10 +10,9 @@ use crate::families::b5::transfer::{
 };
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
-use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
-    cylinder_point, neutral_pcurve_point, oriented_line_plan, oriented_nurbs_range,
+    cylinder_point, neutral_pcurve_point, oriented_line_plan,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
 use super::super::surfaces::revolution_surface;
@@ -28,6 +27,29 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn merge_curve_plan(
+    plans: &mut HashMap<u32, CurvePlan>,
+    conflicts: &mut HashSet<u32>,
+    edge: u32,
+    candidate: CurvePlan,
+) {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::edges::merge_curve_plan(ctx, plans, conflicts, edge, candidate)
+    }).expect("service budget");
+}
+
+fn oriented_nurbs_range(
+    geometry: CurveGeometry,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::oriented_nurbs_range(ctx, &geometry,
+            parameters, edge_start, edge_end)
+    }).expect("service budget")
+}
 
 fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
     crate::test_support::with_service_context(|ctx| {
@@ -544,6 +566,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         )
         .expect("valid affine lift curve"),
     ));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurves::oriented_nurbs_range(ctx, &geometry,
+            [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_oriented_nurbs_curve"));
     let forward = oriented_nurbs_range(
         geometry.clone(),
         [2.0, 8.0],
@@ -896,6 +924,15 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
     ));
     let mut plans = HashMap::new();
     let mut conflicts = HashSet::new();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::edges::merge_curve_plan(ctx, &mut HashMap::new(),
+            &mut HashSet::new(), 4, CurvePlan {
+                geometry: geometry.clone(), parameter_range: None,
+                edge_tolerance: None, cache_fit_tolerance: None,
+            })
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_curve_plans"));
     merge_curve_plan(
         &mut plans,
         &mut conflicts,

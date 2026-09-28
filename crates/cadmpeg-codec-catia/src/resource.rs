@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged fallible growth for CATIA decode collections.
 
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 use std::hash::Hash;
 
@@ -735,6 +735,19 @@ pub(crate) fn insert_btree_map<K: Ord, V>(
 ) -> Result<Option<V>, CodecError> {
     admit_btree_entry(ctx, values, &key, operation)?;
     Ok(values.insert(key, value))
+}
+
+pub(crate) fn insert_btree_set<T: Ord>(
+    ctx: &DecodeContext<'_>,
+    values: &mut BTreeSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if values.contains(&value) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, operation)?;
+    Ok(values.insert(value))
 }
 
 fn temporary_bytes<T>(
