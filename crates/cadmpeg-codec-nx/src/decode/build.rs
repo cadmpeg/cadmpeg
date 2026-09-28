@@ -1272,7 +1272,7 @@ pub(super) fn try_decode_geometry(
             ir.model
                 .pcurves
                 .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
-            intersection_index.reindex_pcurves_after_prune(&ir);
+            intersection_index.reindex_pcurves_after_prune(ctx, &ir)?;
         }
         retain_unresolved_topology_carriers(
             ctx,
@@ -1399,7 +1399,7 @@ pub(super) fn try_decode_geometry(
         stream_unknowns.push((si, unknown_index));
     }
 
-    intersection_index.complete_from_model(&mut ir);
+    intersection_index.complete_from_model(ctx, &mut ir)?;
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(completion_streams.len()),
         "nx completion sources",
