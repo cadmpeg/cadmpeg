@@ -81,10 +81,12 @@ pub(super) fn emit_topology(
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
     let scope = IdScope::stream(stream_index);
-    let valid_face_xmts: BTreeSet<u32> = graph.body_shape_shells()
-        .filter_map(|shell| graph.shell_face_xmts(shell))
-        .flatten()
-        .collect();
+    let mut valid_face_xmts = BTreeSet::new();
+    for shell in graph.body_shape_shells() {
+        if let Some(faces) = graph.shell_face_xmts(ctx, shell)? {
+            valid_face_xmts.extend(faces);
+        }
+    }
     let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for face_xmt in &valid_face_xmts {
