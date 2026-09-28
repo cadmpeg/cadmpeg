@@ -399,23 +399,52 @@ fn charged_vec<T>(
     Ok(result)
 }
 
-fn charged_set<'a, T: Eq + Hash + 'a>(
+fn charged_set<'a, T: Eq + Hash + ?Sized + 'a>(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = &'a T>,
     operation: &'static str,
 ) -> Result<HashSet<&'a T>, CodecError> {
     let mut set = HashSet::new();
     for value in values {
-        ctx.charge_work(1, operation)?;
-        if !set.contains(value) {
-            ctx.charge_collection_items(1, operation)?;
-            set.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?;
-            set.insert(value);
-        }
+        insert_charged_set(ctx, &mut set, value, operation)?;
     }
     Ok(set)
+}
+
+fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
+    ctx: &DecodeContext<'_>,
+    set: &mut HashSet<&'a T>,
+    value: &'a T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(1, operation)?;
+    if !set.contains(value) {
+        ctx.charge_collection_items(1, operation)?;
+        set.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        set.insert(value);
+    }
+    Ok(())
+}
+
+fn charged_hash_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, CodecError> {
+    let mut map = HashMap::new();
+    for (key, value) in entries {
+        ctx.charge_work(1, operation)?;
+        if !map.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            map.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        map.insert(key, value);
+    }
+    Ok(map)
 }
 
 fn has_incoherent_refs<T: Eq + Hash>(
@@ -1047,17 +1076,19 @@ fn append_design_losses(
             )))?;
     }
 
-    let unprojected_relations = native
-        .as_ref()
-        .map_or(0, |native| unprojected_sketch_relation_records(ir, native));
+    let unprojected_relations = match native.as_ref() {
+        Some(native) => unprojected_sketch_relation_records(ctx, ir, native)?,
+        None => 0,
+    };
     if unprojected_relations > 0 {
         push_report_loss(ctx, report, SldprtLossCode::SketchRelationUnprojected.note(format!(
                 "{unprojected_relations} native sketch relation record(s) have no projected neutral constraint."
             )))?;
     }
-    let multiply_projected_relations = native.as_ref().map_or(0, |native| {
-        multiply_projected_sketch_relation_records(ir, native)
-    });
+    let multiply_projected_relations = match native.as_ref() {
+        Some(native) => multiply_projected_sketch_relation_records(ctx, ir, native)?,
+        None => 0,
+    };
     if multiply_projected_relations > 0 {
         push_report_loss(ctx, report, SldprtLossCode::SketchRelationMultiplyProjected.note(format!(
                 "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
@@ -1886,12 +1917,14 @@ fn unbound_feature_input_operation_objects(
         .count())
 }
 
-fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
-    let sketch_feature_refs = ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| {
+fn unprojected_sketch_relation_records(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native: &crate::native::SldprtNative,
+) -> Result<usize, CodecError> {
+    let sketch_feature_refs = charged_set(
+        ctx,
+        ir.model.features.iter().filter(|feature| {
             matches!(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1900,54 +1933,53 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 )
             )
         })
-        .filter_map(|feature| feature.native_ref.as_deref())
-        .collect::<std::collections::HashSet<_>>();
-    let projected = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter_map(|constraint| constraint.native_ref.clone())
+        .filter_map(|feature| feature.native_ref.as_deref()),
+        "index SLDPRT sketch feature references",
+    )?;
+    let projected = charged_set(
+        ctx,
+        ir.model.sketch_constraints.iter()
+        .filter_map(|constraint| constraint.native_ref.as_deref())
         .chain(
             ir.model
                 .sketch_entities
                 .iter()
-                .filter_map(|entity| entity.native_ref.clone()),
+                .filter_map(|entity| entity.native_ref.as_deref()),
         )
         .chain(
             ir.model
                 .spatial_sketch_entities
                 .iter()
-                .filter_map(|entity| entity.native_ref.clone()),
+                .filter_map(|entity| entity.native_ref.as_deref()),
         )
         .chain(
             ir.model
                 .spatial_sketch_constraints
                 .iter()
-                .filter_map(|constraint| constraint.native_ref.clone()),
-        )
-        .collect::<std::collections::HashSet<_>>();
+                .filter_map(|constraint| constraint.native_ref.as_deref()),
+        ),
+        "index SLDPRT projected sketch relations",
+    )?;
     let owned_instances = crate::resolved_features::relation_geometry::owned_relation_parameters(
         &ir.model.features,
         &ir.model.parameters,
         &native.feature_input_lanes,
     );
 
-    native
-        .feature_input_lanes
-        .iter()
-        .map(|lane| {
-            let markers_by_id = lane
-                .sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker))
-                .collect();
+    let mut total = 0;
+    for lane in &native.feature_input_lanes {
+            let markers_by_id = charged_hash_map(
+                ctx,
+                lane.sketch_entities.iter().map(|marker| (marker.id(), marker)),
+                "index SLDPRT sketch relation markers",
+            )?;
             let instances = lane
                 .relation_instances
                 .iter()
                 .filter(|relation| {
                     sketch_feature_refs.contains(relation.feature_ref.as_str())
                         && owned_instances.contains_key(&relation.id)
-                        && !projected.contains(&relation.id)
+                        && !projected.contains(relation.id.as_str())
                 })
                 .count();
             let bindings = lane
@@ -1979,38 +2011,48 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                         && !projected.contains(marker.id())
                 })
                 .count();
-            instances + bindings + markers
-        })
-        .sum()
+            total += instances + bindings + markers;
+    }
+    Ok(total)
 }
 
 fn multiply_projected_sketch_relation_records(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     native: &crate::native::SldprtNative,
-) -> usize {
-    let native_relation_ids = native
-        .feature_input_lanes
-        .iter()
-        .flat_map(|lane| {
-            let markers_by_id = lane
-                .sketch_entities
-                .iter()
-                .map(|marker| (marker.id(), marker))
-                .collect();
-            lane.relation_instances
-                .iter()
-                .map(|relation| relation.id.as_str())
-                .chain(lane.sketch_entities.iter().filter_map(move |marker| {
-                    crate::resolved_features::typed_relations::marker_owns_constraint(
-                        marker,
-                        &markers_by_id,
-                    )
-                    .then_some(marker.id())
-                }))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    let mut projection_counts = BTreeMap::<&str, usize>::new();
-    for native_ref in ir
+) -> Result<usize, CodecError> {
+    let mut native_relation_ids = HashSet::new();
+    for lane in &native.feature_input_lanes {
+        let markers_by_id = charged_hash_map(
+            ctx,
+            lane.sketch_entities.iter().map(|marker| (marker.id(), marker)),
+            "index SLDPRT sketch relation markers",
+        )?;
+        for relation in &lane.relation_instances {
+            insert_charged_set(
+                ctx,
+                &mut native_relation_ids,
+                relation.id.as_str(),
+                "index SLDPRT native relation IDs",
+            )?;
+        }
+        for marker in &lane.sketch_entities {
+            if crate::resolved_features::typed_relations::marker_owns_constraint(
+                marker,
+                &markers_by_id,
+            ) {
+                insert_charged_set(
+                    ctx,
+                    &mut native_relation_ids,
+                    marker.id(),
+                    "index SLDPRT native relation IDs",
+                )?;
+            }
+        }
+    }
+    let projection_counts = count_keys(
+        ctx,
+        ir
         .model
         .sketch_constraints
         .iter()
@@ -2033,14 +2075,13 @@ fn multiply_projected_sketch_relation_records(
                 .iter()
                 .filter_map(|constraint| constraint.native_ref.as_deref()),
         )
-        .filter(|native_ref| native_relation_ids.contains(native_ref))
-    {
-        *projection_counts.entry(native_ref).or_default() += 1;
-    }
-    projection_counts
+        .filter(|native_ref| native_relation_ids.contains(native_ref)),
+        "count SLDPRT relation projections",
+    )?;
+    Ok(projection_counts
         .values()
         .filter(|count| **count > 1)
-        .count()
+        .count())
 }
 
 fn copy_retained_string(
