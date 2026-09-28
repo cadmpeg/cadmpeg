@@ -189,6 +189,15 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_retained_limit(bytes, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_retained_limit(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::RetainedBytes,
             &self.retained,
@@ -196,7 +205,6 @@ impl DecodeBudget {
             bytes,
             operation,
         )
-        .map_err(Into::into)
     }
 
     /// Report allocator refusal after a retained charge was already recorded.
@@ -205,7 +213,15 @@ impl DecodeBudget {
         charged: u64,
         operation: &'static str,
     ) -> CodecError {
-        self.refuse(
+        self.retained_allocation_failed_limit(charged, operation).into()
+    }
+
+    pub(super) fn retained_allocation_failed_limit(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> ResourceLimit {
+        self.refuse_limit(
             ResourceDimension::RetainedBytes,
             ResourceFailure::AllocationFailed,
             self.retained_allowance(),
