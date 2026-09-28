@@ -167,17 +167,16 @@ pub(in crate::families) fn try_decode_e5(
             &mut unknowns,
             &mut annotations,
             scan,
-            cadmpeg_ir::ids::UnknownId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-                cadmpeg_ir::identity_key!("e5"),
-            ),
+            admitted!(crate::resource::copy_id(ctx, "catia:payload:unknown#e5",
+                cadmpeg_ir::ids::UnknownId::mint, "catia_e5_payload_id")),
         ) {
             Ok(index) => index,
             Err(error) => return Some(Err(error)),
         };
         for (index, point) in points.iter().enumerate() {
-            let point_id =
-                PointId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index);
+            let point_id = admitted!(crate::resource::compose_index_id(ctx,
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index,
+                PointId::mint, "catia_e5_point_id"));
             admitted!(annotate(
                 ctx,
                 &mut annotations,
@@ -191,9 +190,11 @@ pub(in crate::families) fn try_decode_e5(
             }
             ir.model
                 .points
-                .push(Point::new(point_id.clone(), *point, None));
-            let vertex_id =
-                VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
+                .push(Point::new(admitted!(crate::resource::copy_id(ctx, point_id.as_str(),
+                    PointId::mint, "catia_e5_point_record_id")), *point, None));
+            let vertex_id = admitted!(crate::resource::compose_index_id(ctx,
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index,
+                VertexId::mint, "catia_e5_vertex_id"));
             admitted!(annotate(
                 ctx,
                 &mut annotations,
@@ -213,10 +214,9 @@ pub(in crate::families) fn try_decode_e5(
             });
         }
         for (index, circle) in circles.iter().enumerate() {
-            let id = CurveId::compose(
+            let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
-                index,
-            );
+                index, CurveId::mint, "catia_e5_curve_id"));
             admitted!(annotate(
                 ctx,
                 &mut annotations,
@@ -235,10 +235,9 @@ pub(in crate::families) fn try_decode_e5(
             });
         }
         for (index, surface) in surfaces.iter().enumerate() {
-            let id = SurfaceId::compose(
+            let id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-                index,
-            );
+                index, SurfaceId::mint, "catia_e5_surface_id"));
             admitted!(annotate(
                 ctx,
                 &mut annotations,
@@ -259,20 +258,24 @@ pub(in crate::families) fn try_decode_e5(
             }
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: surface.geometry.clone(),
+                geometry: match &surface.geometry {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) =>
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                            admitted!(crate::resource::copy_nurbs_surface(ctx, nurbs,
+                                "catia_e5_model_surface_geometry")))),
+                    _ => surface.geometry.clone(),
+                },
                 source_object: None,
             });
         }
         for (index, jet) in rolling_ball_jets.iter().enumerate() {
             let surface_index = surfaces.len() + index;
-            let surface_id = SurfaceId::compose(
+            let surface_id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-                surface_index,
-            );
-            let procedural_id = ProceduralSurfaceId::compose(
+                surface_index, SurfaceId::mint, "catia_e5_jet_surface_id"));
+            let procedural_id = admitted!(crate::resource::compose_index_id(ctx,
                 &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
-                surface_index,
-            );
+                surface_index, ProceduralSurfaceId::mint, "catia_e5_jet_procedural_id"));
             admitted!(annotate(
                 ctx,
                 &mut annotations,
@@ -286,9 +289,11 @@ pub(in crate::families) fn try_decode_e5(
                 return Some(Err(error));
             }
             ir.model.surfaces.push(Surface {
-                id: surface_id.clone(),
+                id: admitted!(crate::resource::copy_id(ctx, surface_id.as_str(),
+                    SurfaceId::mint, "catia_e5_jet_surface_record_id")),
                 geometry: SurfaceGeometry::Procedural {
-                    construction: procedural_id.clone(),
+                    construction: admitted!(crate::resource::copy_id(ctx, procedural_id.as_str(),
+                        ProceduralSurfaceId::mint, "catia_e5_jet_construction_id")),
                     cache: None,
                 },
                 source_object: None,
