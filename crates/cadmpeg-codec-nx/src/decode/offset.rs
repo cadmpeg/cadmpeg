@@ -2529,23 +2529,27 @@ pub(super) fn intersection_side(
 /// metres, the others are unchanged. A scaled parameter is finite only when
 /// the serialized one is, so the one admission states both.
 pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<FinitePoint2> {
+    match surface {
+        SurfaceGeometry::Procedural { .. } => FinitePoint2::new(Point2::new(uv[0], uv[1])),
+        SurfaceGeometry::Solved(solved) => surface_parameters_solved(solved, uv),
+    }
+}
+
+fn surface_parameters_solved(surface: &SolvedSurfaceGeometry, uv: [f64; 2]) -> Option<FinitePoint2> {
     let point = match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+        SolvedSurfaceGeometry::Plane(_) => {
             Point2::new(uv[0] * 1000.0, uv[1] * 1000.0)
         }
-        SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_),
-        ) => Point2::new(uv[0], uv[1] * 1000.0),
-        SurfaceGeometry::Solved(
-            SolvedSurfaceGeometry::Sphere(_)
+        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
+            Point2::new(uv[0], uv[1] * 1000.0)
+        }
+        SolvedSurfaceGeometry::Sphere(_)
             | SolvedSurfaceGeometry::Torus(_)
             | SolvedSurfaceGeometry::Nurbs(_)
             | SolvedSurfaceGeometry::Polygonal(_)
-            | SolvedSurfaceGeometry::Unknown { .. },
-        )
-        | SurfaceGeometry::Procedural { .. } => Point2::new(uv[0], uv[1]),
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
-            return surface_parameters(&SurfaceGeometry::Solved(placed.basis().clone()), uv)
+            | SolvedSurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            return surface_parameters_solved(placed.basis(), uv)
         }
     };
     FinitePoint2::new(point)
