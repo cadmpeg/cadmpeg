@@ -34,6 +34,7 @@ mod timeline_limits;
 mod parameter_scope_limits;
 mod body_recipe_limits;
 mod edge_operand_limits;
+mod edge_treatment_vertex_limits;
 mod operand_group_carrier_limits;
 mod face_group_limits;
 mod face_source_limits;
