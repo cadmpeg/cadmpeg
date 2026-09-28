@@ -7025,25 +7025,43 @@ fn resolved_feature_payload_references(
 ) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() {
+                return;
+            }
             let Some(decoded) = decode(record.payload_view(), entry_offset) else {
                 return;
             };
-            references.extend(decoded.into_iter().enumerate().map(
-                |(ordinal, (token, source_offset))| ResolvedFeaturePayloadReference {
-                    section_key: section_key.to_string(),
+            let projected = (|| -> Result<(), CodecError> {
+                for (ordinal, (token, source_offset)) in decoded.into_iter().enumerate() {
+                    let data_block = charged_unique_offset_data_block(ctx, &indexed, token.value())?;
+                    let section_key = copy_operation_text(ctx, section_key, "NX resolved feature reference section")?;
+                    ctx.charge_collection_items(1, "NX resolved feature payload references")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ResolvedFeaturePayloadReference>()), "NX resolved feature payload reference")?;
+                    references.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX resolved feature payload references", 0, 1))?;
+                    references.push(ResolvedFeaturePayloadReference {
+                    section_key,
                     operation_ordinal,
                     ordinal,
                     token,
-                    data_block: unique_offset_data_block(&indexed, token.value()),
+                    data_block,
                     source_offset,
-                },
-            ));
+                    });
+                }
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
@@ -7053,8 +7071,7 @@ pub(super) fn feature_projected_curve_references(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
-    Ok(
-        resolved_feature_payload_references(ctx, container, |record, base| {
+    let references = resolved_feature_payload_references(ctx, container, |record, base| {
             crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
                 |field| {
                     field
@@ -7066,27 +7083,31 @@ pub(super) fn feature_projected_curve_references(
                         .collect()
                 },
             )
-        })?
-        .into_iter()
-        .map(|reference| {
-            let operation_label = format!(
-                "nx:feature-history:operation-label#{}-{:010}",
-                reference.section_key, reference.operation_ordinal
-            );
-            FeatureProjectedCurveReference {
-                id: format!(
-                    "nx:feature-history:projected-curve-reference#{}-{:010}-{:010}",
-                    reference.section_key, reference.operation_ordinal, reference.ordinal
-                ),
+        })?;
+    let mut output = Vec::new();
+    for reference in references {
+        let operation_label = format_feature_history_id(
+            ctx, "operation-label", &reference.section_key, reference.operation_ordinal, None,
+        )?;
+        let id = format_feature_history_id(
+            ctx, "projected-curve-reference", &reference.section_key,
+            reference.operation_ordinal, Some(reference.ordinal),
+        )?;
+        ctx.charge_collection_items(1, "NX projected curve references")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureProjectedCurveReference>()), "NX projected curve reference")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX projected curve references", 0, 1))?;
+        output.push(FeatureProjectedCurveReference {
+                id,
                 operation_label,
-                ordinal: reference.ordinal as u32,
+                ordinal: u32::try_from(reference.ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX projected curve reference ordinal", 0, 1))?,
                 token: reference.token,
                 data_block: reference.data_block,
                 source_offset: reference.source_offset,
-            }
-        })
-        .collect(),
-    )
+        });
+    }
+    Ok(output)
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.

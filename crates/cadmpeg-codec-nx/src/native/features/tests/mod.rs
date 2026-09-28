@@ -4,6 +4,7 @@ mod body_uses_and_history;
 mod lane_wire;
 mod link_order;
 mod operation_identity;
+mod reference_admission;
 mod record_wire;
 mod sketch_admission;
 mod source_and_sketch;
