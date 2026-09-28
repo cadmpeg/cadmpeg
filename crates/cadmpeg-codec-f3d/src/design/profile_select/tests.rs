@@ -1622,15 +1622,17 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
     assert_eq!(
         crate::design::profile_select::unique_multi_face_deleted_carrier_family(
             &[20, 11, 10],
-            &topology
-        ),
+            &topology,
+            None,
+        ).unwrap(),
         Some(vec![10, 11])
     );
     assert_eq!(
         crate::design::profile_select::unique_multi_face_deleted_carrier_family(
             &[10, 10],
-            &topology
-        ),
+            &topology,
+            None,
+        ).unwrap(),
         None
     );
 
@@ -1648,8 +1650,9 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
     assert_eq!(
         crate::design::profile_select::unique_multi_face_deleted_carrier_family(
             &[10, 11, 30, 31],
-            &ambiguous
-        ),
+            &ambiguous,
+            None,
+        ).unwrap(),
         None
     );
 
@@ -1660,8 +1663,9 @@ fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
     assert_eq!(
         crate::design::profile_select::unique_multi_face_deleted_carrier_family(
             &[10, 11, 20],
-            &incomplete
-        ),
+            &incomplete,
+            None,
+        ).unwrap(),
         None
     );
 }
