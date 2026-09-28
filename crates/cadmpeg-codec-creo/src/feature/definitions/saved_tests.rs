@@ -9,7 +9,7 @@ use crate::feature::definitions::saved_arc_scalar;
 use crate::feature::definitions::saved_circular_entities as parse_saved_circular_entities;
 use crate::feature::definitions::saved_conic_entities as parse_saved_conic_entities;
 use crate::feature::definitions::saved_line_entities as parse_saved_line_entities;
-use crate::feature::definitions::saved_positional_generated_entities;
+use crate::feature::definitions::saved_positional_generated_entities as parse_saved_positional_generated_entities;
 use crate::feature::definitions::saved_section as parse_saved_section;
 use crate::feature::definitions::saved_section_scalar;
 use crate::feature::definitions::saved_spline_entities as parse_saved_spline_entities;
@@ -107,6 +107,141 @@ fn positional_saved_section(
         parse_positional_saved_section(ctx, payload, start, end, cache, order_table, segments)
     })
     .expect("positional saved section admitted")
+}
+
+fn saved_positional_generated_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Vec<FeatureSavedEntity> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_saved_positional_generated_entities(
+            ctx, payload, start, end, cache, order_table, segments,
+        )
+    })
+    .expect("positional generated entities admitted")
+}
+
+fn generated_row_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+    kind: FeatureSegmentKind,
+    vertical_horizontal: Option<u32>,
+    scalar_count: usize,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    let mut payload = vec![0xe3, 7, 0xe2];
+    payload.extend(vec![0x0f; scalar_count]);
+    payload.push(0xe3);
+    let order = FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureOrderRow {
+            external_id: 42,
+            internal_id: 7,
+            bitmask: 0,
+            offset: 0,
+        }],
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureSegment {
+            kind,
+            directions: [None; 3],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            body: Vec::new(),
+            offset: 0,
+        }]
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
+        offset: 0,
+    };
+    with_saved_leaf_limits(&payload, collection_limit, retained_limit, |ctx| {
+        parse_saved_positional_generated_entities(
+            ctx, &payload, 0, payload.len(), &scalar::ScalarCache::default(),
+            Some(&order), Some(&segments),
+        )
+    })
+}
+
+fn generated_arc_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    generated_row_with_limits(
+        collection_limit,
+        retained_limit,
+        FeatureSegmentKind::Arc([1, 2]),
+        None,
+        12,
+    )
+}
+
+fn generated_line_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    generated_row_with_limits(
+        collection_limit,
+        retained_limit,
+        FeatureSegmentKind::Line([1, 2]),
+        Some(0),
+        6,
+    )
+}
+
+macro_rules! generated_arc_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(generated_arc_with_limits($limit, u64::MAX),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == $operation));
+            let entities = generated_arc_with_limits(3, 14).expect("generated arc admitted");
+            let [FeatureSavedEntity::Arc(arc)] = entities.as_slice() else {
+                panic!("generated arc");
+            };
+            assert_eq!(arc.entity_id, 7);
+            assert_eq!(arc.body.len(), 14);
+        }
+    };
+}
+
+generated_arc_collection_limit_test!(saved_generated_segment_node_refuses_before_btree_insertion, 0, "creo saved generated segment nodes");
+generated_arc_collection_limit_test!(saved_generated_row_start_refuses_before_vec_growth, 1, "creo saved generated row starts");
+generated_arc_collection_limit_test!(saved_generated_arc_refuses_before_entity_append, 2, "creo saved generated entities");
+
+#[test]
+fn saved_generated_arc_body_refuses_before_retained_copy() {
+    assert!(matches!(generated_arc_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved generated arc body"));
+    assert_eq!(generated_arc_with_limits(3, 14).expect("generated arc admitted").len(), 1);
+}
+
+#[test]
+fn saved_generated_line_body_refuses_before_retained_copy() {
+    assert!(matches!(generated_line_with_limits(3, 7), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo saved generated line body"));
+    let entities = generated_line_with_limits(3, 8).expect("generated line admitted");
+    let [FeatureSavedEntity::Line(line)] = entities.as_slice() else {
+        panic!("generated line");
+    };
+    assert_eq!(line.body.len(), 8);
 }
 
 fn with_saved_leaf_limits<T>(
